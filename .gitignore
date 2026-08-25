@@ -1,0 +1,41 @@
+# ── Tajne ──────────────────────────────────────────────────────────────────
+# Ništa od ovoga ne smije završiti u repozitoriju.
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*credentials*
+*secret*
+*token*
+
+# ── Podatci ────────────────────────────────────────────────────────────────
+# Baza se stvara skriptom scripts/init-db.sh, ne prenosi se kroz git.
+data/
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# ── Radne datoteke ─────────────────────────────────────────────────────────
+node_modules/
+dist/
+build/
+*.log
+logs/
+tmp/
+.tmp/
+*.pid
+*.lock
+!bun.lock
+
+# ── Uređivači i sustav ─────────────────────────────────────────────────────
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+__pycache__/
+*.pyc

@@ -1,0 +1,939 @@
+#!/usr/bin/env bun
+import { TM_DB } from './paths'
+import os from 'os'
+/**
+ * TaskManagerSQL - SQL-Only Task Manager for REGOČ
+ *
+ * Replaces the dual Markdown+SQLite approach with pure SQL.
+ * All task operations go directly to SQLite (regoc.db).
+ * Audit trail via task_history table.
+ *
+ * Author: Jelena Kovačević (Engineer Agent)
+ * Version: 2.0.0
+ * Date: 2026-05-28
+ */
+
+import Database, { type Statement } from "bun:sqlite";
+import { TaskIdAllocator } from "./TaskIdAllocator";
+import { assertNotLiveDbInTest } from "./LiveDbGuard";
+
+// ============================================
+// TYPES & INTERFACES
+// ============================================
+
+export type TaskStatus = 'pending' | 'in_progress' | 'blocked' | 'completed' | 'cancelled';
+export type TaskPriority = 1 | 2 | 3 | 4 | 5;
+
+export type AgentId =
+  | 'regoc' | 'klaudio' | 'stribor' | 'kosjenka' | 'jelena'
+  | 'malik' | 'manda' | 'potjeh' | 'dora' | 'gita' | 'grga'
+  | 'pai' | 'user' | 'scheduler';
+
+export const AGENT_IDS: string[] = [
+  'regoc', 'klaudio', 'stribor', 'kosjenka', 'jelena',
+  'malik', 'manda', 'potjeh', 'dora', 'gita', 'grga',
+  'pai', 'user', 'scheduler'
+];
+
+/**
+ * TASK-3009: pretinac za zadatke koji nisu dobili projekt.
+ *
+ * ZASTO: prije ovoga je zadatak bez `projectId` zavrsavao s `project_id = NULL`,
+ * pa je propust bio NEVIDLJIV — 28.07. je REGOC poslao `project` umjesto
+ * `projectId` na 7 zadataka, API je vratio 200 i polje je tiho nestalo.
+ * Pretinac je obican redak u `projects` (naziv: "Pretinac (zadatci bez
+ * projekta)"), ne stvaran projekt: cini propuste BROJIVIMA i vidljivima na
+ * ploci umjesto da nestanu u NULL.
+ *
+ * PAZI: ID je stvarni broj koji je API dodijelio (API ne postuje zadani `id`
+ * nego uzima svoj sljedeci) — dakle PRJ-033, NE 'PRJ-INBOX'.
+ */
+export const INBOX_PROJECT_ID = 'PRJ-033';
+
+export const PRIORITY_LABELS: Record<number, string> = {
+  1: 'critical',
+  2: 'high',
+  3: 'normal',
+  4: 'low',
+  5: 'trivial'
+};
+
+export interface ProgressNote {
+  timestamp: string;
+  agent: string;
+  note: string;
+}
+
+export interface Task {
+  id: string;
+  title: string;
+  description: string;
+  status: TaskStatus;
+  priority: TaskPriority;
+  assignee?: string;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+  startedAt?: string;
+  completedAt?: string;
+  blockedBy: string[];
+  blocks: string[];
+  blockedReason?: string;
+  tags: string[];
+  progressNotes: ProgressNote[];
+  progressPercent?: number;
+  nextcloudFolder?: string;
+  projectId?: string;
+  dueDate?: string;
+  resultSummary?: string;
+  /** TASK-3047: ručna kočnica. Ortogonalna statusu — vidi PauseControl.ts. */
+  paused?: boolean;
+  pausedAt?: string;
+  pausedBy?: string;
+  pauseReason?: string;
+}
+
+export interface CreateTaskInput {
+  title: string;
+  description?: string;
+  priority?: TaskPriority;
+  assignee?: string;
+  createdBy?: string;
+  blockedBy?: string[];
+  tags?: string[];
+  projectId?: string;
+  dueDate?: string;
+}
+
+export interface UpdateTaskInput {
+  title?: string;
+  description?: string;
+  status?: TaskStatus;
+  priority?: TaskPriority;
+  assignee?: string;
+  blockedBy?: string[];
+  blockedReason?: string;
+  tags?: string[];
+  progressPercent?: number;
+  nextcloudFolder?: string;
+  projectId?: string;
+  dueDate?: string;
+  resultSummary?: string;
+}
+
+export interface TaskFilter {
+  status?: TaskStatus | TaskStatus[];
+  assignee?: string;
+  priority?: TaskPriority;
+  tags?: string[];
+  search?: string;
+  projectId?: string;
+  createdAfter?: string;
+  createdBefore?: string;
+}
+
+export interface HistoryEntry {
+  id: number;
+  task_id: string;
+  field: string;
+  old_value: string | null;
+  new_value: string | null;
+  changed_by: string;
+  changed_at: string;
+}
+
+export interface DashboardStats {
+  total: number;
+  byStatus: Record<TaskStatus, number>;
+  byPriority: Record<number, number>;
+  byAgent: Record<string, number>;
+  byProject: Record<string, number>;
+}
+
+// Valid status transitions
+const ValidStatusTransitions: Record<string, string[]> = {
+  'pending': ['in_progress', 'blocked', 'cancelled'],
+  'in_progress': ['completed', 'blocked', 'cancelled'],
+  'blocked': ['pending', 'in_progress', 'cancelled'],
+  'completed': [],
+  'cancelled': []
+};
+
+// ============================================
+// DB PATH
+// ============================================
+
+const HOME = process.env.HOME || os.homedir();
+export const DB_PATH = TM_DB;
+
+// ============================================
+// ROW → TASK MAPPER
+// ============================================
+
+function rowToTask(row: any): Task {
+  return {
+    id: row.id,
+    title: row.title,
+    description: row.description || '',
+    status: row.status as TaskStatus,
+    priority: (row.priority ?? 3) as TaskPriority,
+    assignee: row.assignee || undefined,
+    createdBy: row.created_by || 'user',
+    createdAt: row.created_at || new Date().toISOString(),
+    updatedAt: row.updated_at || new Date().toISOString(),
+    startedAt: row.started_at || undefined,
+    completedAt: row.completed_at || undefined,
+    blockedBy: safeParseJSON(row.blocked_by, []),
+    blocks: safeParseJSON(row.blocks, []),
+    blockedReason: row.blocked_reason || undefined,
+    tags: safeParseJSON(row.tags, []),
+    progressNotes: safeParseJSON(row.progress_notes, []),
+    progressPercent: row.progress_percent ?? undefined,
+    nextcloudFolder: row.nextcloud_folder || undefined,
+    projectId: row.project_id || undefined,
+    dueDate: row.due_date || undefined,
+    resultSummary: row.result_summary || undefined,
+    paused: Number(row.paused ?? 0) === 1,
+    pausedAt: row.paused_at || undefined,
+    pausedBy: row.paused_by || undefined,
+    pauseReason: row.pause_reason || undefined,
+  };
+}
+
+function safeParseJSON(value: any, fallback: any): any {
+  if (value === null || value === undefined || value === '') return fallback;
+  if (typeof value !== 'string') return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return fallback;
+  }
+}
+
+// ============================================
+// TASK MANAGER SQL CLASS
+// ============================================
+
+export class TaskManagerSQL {
+  private db: Database;
+
+  // Prepared statements
+  private stmtGetAll!: Statement;
+  private stmtGetById!: Statement;
+  private stmtCreate!: Statement;
+  private stmtUpdate!: Statement;
+  private stmtAddHistory!: Statement;
+  private stmtGetHistory!: Statement;
+  private stmtDelete!: Statement;
+  private stmtCountByStatus!: Statement;
+  private stmtCountByPriority!: Statement;
+  private stmtCountByAgent!: Statement;
+  private stmtCountByProject!: Statement;
+  private stmtCountTotal!: Statement;
+
+  /** TASK-2702: jedini allocator ID-eva, dijeljen s TaskManager.ts (markdown put) */
+  private idAllocator: TaskIdAllocator;
+
+  constructor(dbPath: string = DB_PATH) {
+    // TASK-3020: pod test-runnerom je otvaranje ZIVE baze zabranjeno (LiveDbGuard.ts).
+    assertNotLiveDbInTest(dbPath, 'TaskManagerSQL');
+    this.db = new Database(dbPath);
+    this.db.exec("PRAGMA journal_mode=WAL");
+    this.db.exec("PRAGMA foreign_keys=ON");
+    this.db.exec("PRAGMA busy_timeout=5000");
+
+    this.ensurePauseColumns();
+    this.prepareStatements();
+    this.idAllocator = new TaskIdAllocator(this.db);
+    console.log(`[TaskManagerSQL] Initialized. Next ID: ${this.idAllocator.peek()}`);
+  }
+
+  // ============================================
+  // PREPARED STATEMENTS
+  // ============================================
+
+  private prepareStatements(): void {
+    this.stmtGetAll = this.db.prepare(`
+      SELECT * FROM tasks ORDER BY
+        CASE status
+          WHEN 'in_progress' THEN 1
+          WHEN 'pending' THEN 2
+          WHEN 'blocked' THEN 3
+          WHEN 'completed' THEN 4
+          WHEN 'cancelled' THEN 5
+        END,
+        priority ASC,
+        created_at DESC
+    `);
+
+    this.stmtGetById = this.db.prepare("SELECT * FROM tasks WHERE id = ?");
+
+    this.stmtCreate = this.db.prepare(`
+      INSERT INTO tasks (
+        id, title, description, status, priority, assignee,
+        created_by, created_at, updated_at, blocked_by, blocks,
+        tags, progress_notes, progress_percent, nextcloud_folder,
+        project_id, started_at, completed_at, blocked_reason,
+        due_date, result_summary
+      ) VALUES (
+        $id, $title, $description, $status, $priority, $assignee,
+        $created_by, $created_at, $updated_at, $blocked_by, $blocks,
+        $tags, $progress_notes, $progress_percent, $nextcloud_folder,
+        $project_id, $started_at, $completed_at, $blocked_reason,
+        $due_date, $result_summary
+      )
+    `);
+
+    this.stmtUpdate = this.db.prepare(`
+      UPDATE tasks SET
+        title = $title,
+        description = $description,
+        status = $status,
+        priority = $priority,
+        assignee = $assignee,
+        updated_at = $updated_at,
+        blocked_by = $blocked_by,
+        blocks = $blocks,
+        tags = $tags,
+        progress_notes = $progress_notes,
+        progress_percent = $progress_percent,
+        nextcloud_folder = $nextcloud_folder,
+        project_id = $project_id,
+        started_at = $started_at,
+        completed_at = $completed_at,
+        blocked_reason = $blocked_reason,
+        due_date = $due_date,
+        result_summary = $result_summary
+      WHERE id = $id
+    `);
+
+    this.stmtDelete = this.db.prepare("DELETE FROM tasks WHERE id = ?");
+
+    this.stmtAddHistory = this.db.prepare(`
+      INSERT INTO task_history (task_id, field, old_value, new_value, changed_by)
+      VALUES ($task_id, $field, $old_value, $new_value, $changed_by)
+    `);
+
+    this.stmtGetHistory = this.db.prepare(
+      "SELECT * FROM task_history WHERE task_id = ? ORDER BY changed_at DESC"
+    );
+
+    this.stmtCountByStatus = this.db.prepare(
+      "SELECT status, COUNT(*) as cnt FROM tasks GROUP BY status"
+    );
+
+    this.stmtCountByPriority = this.db.prepare(
+      "SELECT priority, COUNT(*) as cnt FROM tasks GROUP BY priority"
+    );
+
+    this.stmtCountByAgent = this.db.prepare(
+      "SELECT COALESCE(assignee, 'unassigned') as agent, COUNT(*) as cnt FROM tasks GROUP BY agent ORDER BY cnt DESC"
+    );
+
+    this.stmtCountByProject = this.db.prepare(
+      "SELECT COALESCE(project_id, 'none') as project, COUNT(*) as cnt FROM tasks WHERE project_id IS NOT NULL AND project_id != '' GROUP BY project ORDER BY cnt DESC"
+    );
+
+    this.stmtCountTotal = this.db.prepare("SELECT COUNT(*) as cnt FROM tasks");
+  }
+
+  // ============================================
+  // ID GENERATION
+  // ============================================
+
+  /**
+   * TASK-2702: ID dolazi iskljucivo iz TaskIdAllocatora (perzistentni brojac u bazi).
+   * Nema vise in-memory nextIdNum -> dva procesa ne mogu dodijeliti isti ID.
+   */
+  protected generateId(): string {
+    return this.idAllocator.allocate();
+  }
+
+  /** ID koji bi sljedeci createTask dobio (bez rezervacije). */
+  peekNextId(): string {
+    return this.idAllocator.peek();
+  }
+
+  // ============================================
+  // AUDIT TRAIL
+  // ============================================
+
+  private logChange(taskId: string, field: string, oldValue: any, newValue: any, changedBy: string = 'system'): void {
+    try {
+      this.stmtAddHistory.run({
+        $task_id: taskId,
+        $field: field,
+        $old_value: oldValue !== undefined && oldValue !== null ? String(oldValue) : null,
+        $new_value: newValue !== undefined && newValue !== null ? String(newValue) : null,
+        $changed_by: changedBy,
+      });
+    } catch (e: any) {
+      console.error(`[TaskManagerSQL] Failed to log history for ${taskId}.${field}:`, e.message);
+    }
+  }
+
+  // ============================================
+  // CRUD OPERATIONS
+  // ============================================
+
+  /**
+   * Get all tasks, optionally filtered
+   */
+  getTasks(filter?: TaskFilter): Task[] {
+    let tasks: Task[];
+
+    if (!filter || Object.keys(filter).length === 0) {
+      tasks = (this.stmtGetAll.all() as any[]).map(rowToTask);
+    } else {
+      // Build dynamic query for filters
+      const conditions: string[] = [];
+      const params: any[] = [];
+
+      if (filter.status) {
+        if (Array.isArray(filter.status)) {
+          const placeholders = filter.status.map(() => '?').join(',');
+          conditions.push(`status IN (${placeholders})`);
+          params.push(...filter.status);
+        } else {
+          conditions.push("status = ?");
+          params.push(filter.status);
+        }
+      }
+
+      if (filter.assignee) {
+        conditions.push("assignee = ?");
+        params.push(filter.assignee);
+      }
+
+      if (filter.priority) {
+        conditions.push("priority = ?");
+        params.push(filter.priority);
+      }
+
+      if (filter.projectId) {
+        conditions.push("project_id = ?");
+        params.push(filter.projectId);
+      }
+
+      if (filter.search) {
+        conditions.push("(title LIKE ? OR description LIKE ?)");
+        const searchTerm = `%${filter.search}%`;
+        params.push(searchTerm, searchTerm);
+      }
+
+      if (filter.createdAfter) {
+        conditions.push("created_at >= ?");
+        params.push(filter.createdAfter);
+      }
+
+      if (filter.createdBefore) {
+        conditions.push("created_at <= ?");
+        params.push(filter.createdBefore);
+      }
+
+      const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+      const sql = `SELECT * FROM tasks ${whereClause} ORDER BY
+        CASE status
+          WHEN 'in_progress' THEN 1
+          WHEN 'pending' THEN 2
+          WHEN 'blocked' THEN 3
+          WHEN 'completed' THEN 4
+          WHEN 'cancelled' THEN 5
+        END,
+        priority ASC,
+        created_at DESC`;
+
+      const rows = this.db.prepare(sql).all(...params) as any[];
+      tasks = rows.map(rowToTask);
+
+      // Post-filter for tags (JSON array in column)
+      if (filter.tags && filter.tags.length > 0) {
+        tasks = tasks.filter(t =>
+          filter.tags!.some(tag => t.tags.includes(tag))
+        );
+      }
+    }
+
+    return tasks;
+  }
+
+  /**
+   * Get single task by ID
+   */
+  getTask(id: string): Task | null {
+    const row = this.stmtGetById.get(id) as any;
+    if (!row) return null;
+    return rowToTask(row);
+  }
+
+  /**
+   * Get the list of statuses a task may transition to from its current status.
+   * Returns [] for terminal states (completed, cancelled).
+   * Exposes the module-private ValidStatusTransitions table so callers (e.g. the
+   * HTTP layer) can distinguish a forbidden transition from a genuine not-found
+   * and build a clear error message without duplicating the transition table.
+   */
+  getAllowedTransitions(status: string): string[] {
+    return ValidStatusTransitions[status] ?? [];
+  }
+
+  // ============================================
+  // PAUZA ZADATKA (TASK-3047)
+  // ============================================
+
+  /**
+   * Dodaj stupce pauze ako ih nema. Migracija je ovdje, a ne u zasebnoj skripti, jer se
+   * baza otvara iz više procesa (WebUI, daemon, alati) i svaki mora zateći isti oblik —
+   * `ALTER TABLE` koji padne na „duplicate column" je jedini očekivani ishod na drugom
+   * pozivu i namjerno se guta.
+   */
+  private ensurePauseColumns(): void {
+    for (const ddl of [
+      "ALTER TABLE tasks ADD COLUMN paused INTEGER NOT NULL DEFAULT 0",
+      "ALTER TABLE tasks ADD COLUMN paused_at TEXT",
+      "ALTER TABLE tasks ADD COLUMN paused_by TEXT",
+      "ALTER TABLE tasks ADD COLUMN pause_reason TEXT",
+    ]) {
+      try { this.db.exec(ddl); } catch { /* stupac već postoji */ }
+    }
+  }
+
+  /**
+   * Pauziraj/nastavi zadatak. Status se NE dira — pauza je ortogonalna dimenzija
+   * (vidi PauseControl.ts). Vraća ažurirani zadatak ili `null` ako ga nema.
+   */
+  setTaskPaused(id: string, paused: boolean, by: string = 'user', reason: string = ''): Task | null {
+    const existing = this.getTask(id);
+    if (!existing) return null;
+
+    const now = new Date().toISOString();
+    this.db.query(
+      `UPDATE tasks SET paused = ?, paused_at = ?, paused_by = ?, pause_reason = ?, updated_at = ? WHERE id = ?`
+    ).run(paused ? 1 : 0, paused ? now : null, paused ? by : null, paused ? reason : null, now, id);
+
+    // U povijest ide i pauza i nastavak — bez toga se poslije ne može rekonstruirati
+    // zašto je zadatak stajao (isti razlog zbog kojeg postoji task_history za status).
+    this.logChange(id, 'paused', existing.paused ? '1' : '0', paused ? '1' : '0', by);
+    this.addProgressNote(
+      id,
+      by,
+      paused
+        ? `⏸️ PAUZA (ručno, ${by})${reason ? ` — ${reason}` : ''}. Auto-exec preskače zadatak, tekući agent se prekida. Status ostaje '${existing.status}'.`
+        : `▶️ NASTAVAK (ručno, ${by}). Zadatak se vraća u normalan tijek.`
+    );
+
+    return this.getTask(id);
+  }
+
+  isTaskPaused(id: string): boolean {
+    const row = this.db.query(`SELECT paused FROM tasks WHERE id = ?`).get(id) as any;
+    return !!row && Number(row.paused) === 1;
+  }
+
+  /** ID-evi svih pauziranih zadataka — daemon time filtrira red i prekida spawnove. */
+  getPausedTaskIds(): string[] {
+    const rows = this.db.query(`SELECT id FROM tasks WHERE paused = 1`).all() as any[];
+    return rows.map(r => String(r.id));
+  }
+
+  /**
+   * Create a new task
+   */
+  createTask(input: CreateTaskInput): Task {
+    const now = new Date().toISOString();
+    const id = this.generateId();
+
+    const status: TaskStatus = (input.blockedBy && input.blockedBy.length > 0) ? 'blocked' : 'pending';
+
+    // TASK-3009: bez projekta -> pretinac, nikad NULL. Prazan string tretiramo kao
+    // "nije zadano" jer ga HTTP sloj salje kad polje nije ispunjeno.
+    const requestedProjectId = input.projectId?.trim() || '';
+    const projectId = requestedProjectId || INBOX_PROJECT_ID;
+
+    const params = {
+      $id: id,
+      $title: input.title,
+      $description: input.description || '',
+      $status: status,
+      $priority: input.priority ?? 3,
+      $assignee: input.assignee || null,
+      $created_by: input.createdBy || 'user',
+      $created_at: now,
+      $updated_at: now,
+      $blocked_by: JSON.stringify(input.blockedBy || []),
+      $blocks: '[]',
+      $tags: JSON.stringify(input.tags || []),
+      $progress_notes: '[]',
+      $progress_percent: null,
+      $nextcloud_folder: null,
+      $project_id: projectId as string | null,
+      $started_at: null,
+      $completed_at: null,
+      $blocked_reason: '',
+      $due_date: input.dueDate || null,
+      $result_summary: '',
+    };
+
+    // TASK-2702: strogi INSERT (id je PRIMARY KEY) - kolizija mora puknuti, ne prepisati
+    try {
+      this.stmtCreate.run(params);
+    } catch (error: any) {
+      const message: string = error?.message ?? '';
+
+      // TASK-3009: FK fallback. `tasks` ima TOCNO JEDAN strani kljuc
+      // (project_id -> projects.id, provjereno s PRAGMA foreign_key_list(tasks)),
+      // pa je svaka FK greska ovdje greska projekta. Ako netko obrise ili
+      // arhivira pretinac, stvaranje zadataka NE SMIJE stati — upisujemo NULL,
+      // vicemo u log i pustamo zadatak da nastane.
+      if (/FOREIGN KEY constraint failed/i.test(message)) {
+        console.warn(
+          `[TaskManagerSQL] WARN TASK-3009: project_id='${projectId}' ne postoji u tablici projects ` +
+          `(${requestedProjectId ? 'projekt zadan u zahtjevu' : `pretinac ${INBOX_PROJECT_ID} nedostaje/arhiviran`}). ` +
+          `Zadatak ${id} nastaje s project_id=NULL. Popravi redak projekta pa napravi backfill.`
+        );
+        this.stmtCreate.run({ ...params, $project_id: null });
+      } else if (/UNIQUE|constraint/i.test(message)) {
+        throw new Error(
+          `[TaskManagerSQL] ID collision: ${id} already exists. Refusing to overwrite. ` +
+          `(original: ${error.message})`
+        );
+      } else {
+        throw error;
+      }
+    }
+
+    // Audit: task created
+    this.logChange(id, 'created', null, input.title, input.createdBy || 'user');
+
+    // Update blocks arrays on blocking tasks
+    if (input.blockedBy && input.blockedBy.length > 0) {
+      for (const blockerId of input.blockedBy) {
+        const blocker = this.getTask(blockerId);
+        if (blocker && !blocker.blocks.includes(id)) {
+          const newBlocks = [...blocker.blocks, id];
+          this.db.prepare("UPDATE tasks SET blocks = ?, updated_at = ? WHERE id = ?")
+            .run(JSON.stringify(newBlocks), now, blockerId);
+        }
+      }
+    }
+
+    const task = this.getTask(id);
+    if (!task) throw new Error(`Failed to create task ${id}`);
+    return task;
+  }
+
+  /**
+   * Update an existing task
+   */
+  updateTask(id: string, updates: UpdateTaskInput & { progressNotes?: string[] }): Task | null {
+    const existing = this.getTask(id);
+    if (!existing) return null;
+
+    // Status transition validation
+    if (updates.status && updates.status !== existing.status) {
+      if (!ValidStatusTransitions[existing.status]?.includes(updates.status)) {
+        console.error(`[TaskManagerSQL] Invalid status transition: ${existing.status} -> ${updates.status}`);
+        return null;
+      }
+    }
+
+    const now = new Date().toISOString();
+    const changedBy = updates.assignee || existing.assignee || 'system';
+
+    // Track changes for audit
+    const fieldsToCheck: Array<{ key: keyof UpdateTaskInput; dbField: string }> = [
+      { key: 'title', dbField: 'title' },
+      { key: 'description', dbField: 'description' },
+      { key: 'status', dbField: 'status' },
+      { key: 'priority', dbField: 'priority' },
+      { key: 'assignee', dbField: 'assignee' },
+      { key: 'blockedReason', dbField: 'blocked_reason' },
+      { key: 'progressPercent', dbField: 'progress_percent' },
+      { key: 'projectId', dbField: 'project_id' },
+    ];
+
+    for (const { key, dbField } of fieldsToCheck) {
+      if (updates[key] !== undefined && updates[key] !== (existing as any)[key]) {
+        this.logChange(id, dbField, (existing as any)[key], updates[key], changedBy);
+      }
+    }
+
+    // Handle progress notes addition
+    let progressNotes = existing.progressNotes;
+    if (updates.progressNotes && Array.isArray(updates.progressNotes) && updates.progressNotes.length > 0) {
+      const agent = updates.assignee || existing.assignee || 'regoc';
+      for (const noteText of updates.progressNotes) {
+        progressNotes.push({
+          timestamp: now,
+          agent: agent,
+          note: noteText,
+        });
+      }
+    }
+
+    // Calculate started_at and completed_at
+    let startedAt = existing.startedAt;
+    let completedAt = existing.completedAt;
+
+    if (updates.status === 'in_progress' && !startedAt) {
+      startedAt = now;
+    }
+    if (updates.status === 'completed' && !completedAt) {
+      completedAt = now;
+    }
+
+    // Apply updates
+    this.stmtUpdate.run({
+      $id: id,
+      $title: updates.title ?? existing.title,
+      $description: updates.description ?? existing.description,
+      $status: updates.status ?? existing.status,
+      $priority: updates.priority ?? existing.priority,
+      $assignee: updates.assignee !== undefined ? (updates.assignee || null) : (existing.assignee || null),
+      $updated_at: now,
+      $blocked_by: updates.blockedBy ? JSON.stringify(updates.blockedBy) : JSON.stringify(existing.blockedBy),
+      $blocks: JSON.stringify(existing.blocks),
+      $tags: updates.tags ? JSON.stringify(updates.tags) : JSON.stringify(existing.tags),
+      $progress_notes: JSON.stringify(progressNotes),
+      $progress_percent: updates.progressPercent !== undefined ? updates.progressPercent : (existing.progressPercent ?? null),
+      $nextcloud_folder: updates.nextcloudFolder !== undefined ? (updates.nextcloudFolder || null) : (existing.nextcloudFolder || null),
+      $project_id: updates.projectId !== undefined ? (updates.projectId || null) : (existing.projectId || null),
+      $started_at: startedAt || null,
+      $completed_at: completedAt || null,
+      $blocked_reason: updates.blockedReason !== undefined ? (updates.blockedReason || '') : (existing.blockedReason || ''),
+      $due_date: updates.dueDate !== undefined ? (updates.dueDate || null) : (existing.dueDate || null),
+      $result_summary: updates.resultSummary !== undefined ? (updates.resultSummary || '') : (existing.resultSummary || ''),
+    });
+
+    // Handle completion: unblock waiting tasks
+    if (updates.status === 'completed') {
+      for (const waitingId of existing.blocks) {
+        const waitingTask = this.getTask(waitingId);
+        if (waitingTask) {
+          const newBlockedBy = waitingTask.blockedBy.filter(bid => bid !== id);
+          const newStatus = (newBlockedBy.length === 0 && waitingTask.status === 'blocked') ? 'pending' : waitingTask.status;
+          this.db.prepare("UPDATE tasks SET blocked_by = ?, status = ?, blocked_reason = CASE WHEN ? = 'pending' THEN '' ELSE blocked_reason END, updated_at = ? WHERE id = ?")
+            .run(JSON.stringify(newBlockedBy), newStatus, newStatus, now, waitingId);
+          if (newStatus !== waitingTask.status) {
+            this.logChange(waitingId, 'status', waitingTask.status, newStatus, 'system');
+          }
+        }
+      }
+    }
+
+    return this.getTask(id);
+  }
+
+  /**
+   * Add a progress note to a task
+   */
+  addProgressNote(id: string, agent: string, note: string): void {
+    const task = this.getTask(id);
+    if (!task) return;
+
+    const now = new Date().toISOString();
+    const notes = [...task.progressNotes, { timestamp: now, agent, note }];
+
+    this.db.prepare("UPDATE tasks SET progress_notes = ?, updated_at = ? WHERE id = ?")
+      .run(JSON.stringify(notes), now, id);
+
+    this.logChange(id, 'progress_note', null, `[${agent}] ${note}`, agent);
+  }
+
+  /**
+   * Complete a task with optional result summary
+   */
+  completeTask(id: string, result: string, agent: string): void {
+    const task = this.getTask(id);
+    if (!task) return;
+
+    this.updateTask(id, {
+      status: 'completed',
+      resultSummary: result,
+    });
+
+    if (result) {
+      this.addProgressNote(id, agent, `COMPLETED: ${result}`);
+    }
+  }
+
+  /**
+   * Reclaim a stale `in_progress` task back to `pending` (R2 stale-watchdog, TASK-2560).
+   *
+   * `in_progress -> pending` is deliberately ABSENT from ValidStatusTransitions: agents
+   * must not be able to regress their own work through the ordinary update path. The
+   * watchdog is the one legitimate exception, so it gets its own audited entry point
+   * instead of a hole in the transition table.
+   *
+   * Only `in_progress` may be reclaimed — every other status returns null (the caller
+   * distinguishes "not found" by checking getTask first). The assignee is kept on
+   * purpose: the audit trail must still show who dropped the task.
+   */
+  reclaimStaleTask(id: string, reason: string, by: string = 'stale-watchdog'): Task | null {
+    const task = this.getTask(id);
+    if (!task) return null;
+    if (task.status !== 'in_progress') return null;
+
+    const now = new Date().toISOString();
+    const notes = [...task.progressNotes, { timestamp: now, agent: by, note: `stale-watchdog: ${reason}` }];
+
+    this.db.prepare(
+      "UPDATE tasks SET status = 'pending', progress_notes = ?, updated_at = ? WHERE id = ?"
+    ).run(JSON.stringify(notes), now, id);
+
+    this.logChange(id, 'status', 'in_progress', 'pending', by);
+    this.logChange(id, 'stale_reclaim', null, reason, by);
+
+    return this.getTask(id);
+  }
+
+  /**
+   * Delete a task
+   */
+  deleteTask(id: string): boolean {
+    const task = this.getTask(id);
+    if (!task) return false;
+
+    // Log deletion
+    this.logChange(id, 'deleted', task.title, null, 'system');
+
+    // Update blocks arrays of tasks that were blocked by this one
+    for (const blockedId of task.blocks) {
+      const blockedTask = this.getTask(blockedId);
+      if (blockedTask) {
+        const newBlockedBy = blockedTask.blockedBy.filter(bid => bid !== id);
+        this.db.prepare("UPDATE tasks SET blocked_by = ?, updated_at = ? WHERE id = ?")
+          .run(JSON.stringify(newBlockedBy), new Date().toISOString(), blockedId);
+      }
+    }
+
+    this.stmtDelete.run(id);
+    return true;
+  }
+
+  // ============================================
+  // STATISTICS
+  // ============================================
+
+  /**
+   * Get dashboard statistics (all SQL, no in-memory)
+   */
+  getStats(): DashboardStats {
+    const total = (this.stmtCountTotal.get() as { cnt: number }).cnt;
+
+    const byStatus: Record<TaskStatus, number> = {
+      pending: 0,
+      in_progress: 0,
+      blocked: 0,
+      completed: 0,
+      cancelled: 0,
+    };
+
+    for (const row of this.stmtCountByStatus.all() as Array<{ status: string; cnt: number }>) {
+      if (row.status in byStatus) {
+        (byStatus as any)[row.status] = row.cnt;
+      }
+    }
+
+    const byPriority: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+    for (const row of this.stmtCountByPriority.all() as Array<{ priority: number; cnt: number }>) {
+      byPriority[row.priority] = row.cnt;
+    }
+
+    const byAgent: Record<string, number> = {};
+    for (const row of this.stmtCountByAgent.all() as Array<{ agent: string; cnt: number }>) {
+      byAgent[row.agent] = row.cnt;
+    }
+
+    const byProject: Record<string, number> = {};
+    for (const row of this.stmtCountByProject.all() as Array<{ project: string; cnt: number }>) {
+      byProject[row.project] = row.cnt;
+    }
+
+    return { total, byStatus, byPriority, byAgent, byProject };
+  }
+
+  // ============================================
+  // HISTORY / AUDIT
+  // ============================================
+
+  /**
+   * Get audit history for a task
+   */
+  getHistory(taskId: string): HistoryEntry[] {
+    return this.stmtGetHistory.all(taskId) as HistoryEntry[];
+  }
+
+  // ============================================
+  // COMPATIBILITY METHODS (for existing WebUI code)
+  // ============================================
+
+  /**
+   * Legacy compatibility: getTasksFromSQLite
+   * Now just calls getTasks() since everything is SQL
+   */
+  getTasksFromSQLite(): Task[] {
+    return this.getTasks();
+  }
+
+  /**
+   * Start working on a task
+   */
+  startTask(taskId: string, agent: string): Task | null {
+    return this.updateTask(taskId, {
+      status: 'in_progress',
+      assignee: agent,
+    });
+  }
+
+  /**
+   * Block a task
+   */
+  blockTask(taskId: string, reason: string, blockedBy?: string[]): Task | null {
+    return this.updateTask(taskId, {
+      status: 'blocked',
+      blockedReason: reason,
+      blockedBy: blockedBy,
+    });
+  }
+
+  /**
+   * Unblock a task
+   */
+  unblockTask(taskId: string): Task | null {
+    return this.updateTask(taskId, {
+      status: 'pending',
+      blockedReason: '',
+      blockedBy: [],
+    });
+  }
+
+  /**
+   * Assign task to agent
+   */
+  assignTask(taskId: string, agent: string): Task | null {
+    return this.updateTask(taskId, { assignee: agent });
+  }
+
+  /**
+   * Close database
+   */
+  close(): void {
+    this.db.close();
+  }
+}
+
+// ============================================
+// SINGLETON EXPORT
+// ============================================
+
+let instance: TaskManagerSQL | null = null;
+
+export function getTaskManagerSQL(): TaskManagerSQL {
+  if (!instance) {
+    instance = new TaskManagerSQL();
+  }
+  return instance;
+}
+
+export default TaskManagerSQL;
