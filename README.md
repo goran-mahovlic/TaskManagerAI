@@ -4,8 +4,9 @@ Upravitelj zadataka za rad s AI agentima: SQLite baza, web ploča i REST API na 
 Pisan je za slučaj u kojem zadatke ne otvara i ne zatvara samo čovjek nego i programi — agenti
 uzimaju zadatke, mijenjaju im stanje i ostavljaju bilješke, a čovjek to gleda na ploči.
 
-Nastao je iz [Tasks.md](https://github.com/BaldissaraMatheus/Tasks.md), ali je s vremenom prešao
-s datoteka na SQL, pa od izvornika danas ostaje samo ideja ploče.
+Nastao je iz [Tasks.md](https://github.com/BaldissaraMatheus/Tasks.md) Matheusa Baldissare — odatle
+dolazi zamisao ploče na kojoj su zadatci obične datoteke koje uređuješ kako hoćeš. S vremenom je
+prešao s datoteka na SQL, jer su zadatke počeli otvarati i zatvarati programi, a ne samo ljudi.
 
 ---
 
@@ -89,6 +90,18 @@ dokle se s ovim alatom može otići.
 
 ---
 
+## Zahvala i podrijetlo
+
+Projekt počinje od **[Tasks.md](https://github.com/BaldissaraMatheus/Tasks.md)** (autor
+[Matheus Baldissara](https://github.com/BaldissaraMatheus), MIT). Odande je preuzeta osnovna
+zamisao: ploča sa zadatcima koju možeš držati uz sebe, bez računa i bez usluge u oblaku.
+
+Otkad su zadatke počeli otvarati i agenti, a ne samo ljudi, trebalo je ono što datoteke ne daju —
+istodobno pisanje bez sudara, red za izvršavanje, povijest svake promjene i upit koji vrati sve
+zadatke jednoga nositelja. Zato je pohrana prešla na SQLite, a s njom se promijenio i najveći dio
+koda. Ideja je ostala.
+
 ## Licencija
 
-MIT.
+MIT, ista kao u izvornom projektu. Autorska prava zadržavaju i Matheus Baldissara (Tasks.md,
+2023.) i Goran Mahovlić (TaskManagerAI, 2026.). Puni tekst je u [LICENSE](LICENSE).

@@ -26,5 +26,18 @@
   },
   "engines": {
     "bun": ">=1.1.0"
-  }
+  },
+  "author": "Goran Mahovlić",
+  "contributors": [
+    "Matheus Baldissara (Tasks.md — izvorni projekt)"
+  ],
+  "keywords": [
+    "task-manager",
+    "kanban",
+    "sqlite",
+    "bun",
+    "ai-agents",
+    "rest-api",
+    "self-hosted"
+  ]
 }
