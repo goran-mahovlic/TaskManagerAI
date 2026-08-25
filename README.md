@@ -84,17 +84,24 @@ TM_AGENTS=ana,ivan,marko bun run start
 | [docs/TOOLS.md](docs/TOOLS.md) | skripte, konzola, periodički poslovi |
 | [REGOC/README.md](REGOC/README.md) | kako izgleda pravi sustav agenata izgrađen oko ovoga |
 
-Mapa `REGOC` opisuje sustav iz kojega je TaskManagerAI izvučen — višeagentnu orkestraciju s
-Telegramom, glasom i lokalnim modelima. Nije potrebna za rad TaskManagera; služi kao primjer
-dokle se s ovim alatom može otići.
+Mapa `REGOC` opisuje sustav iz kojega je TaskManagerAI izvučen: tim agenata s vlastitim ulogama i
+modelima, demon koji radi u pozadini, sjednice koje preživljavaju prekid, kočnice autonomije,
+usmjeravanje poruka, glas i lokalne modele. Nije potrebna za rad TaskManagera; služi kao prikaz
+dokle se s ovim alatom može otići i što se pritom naučilo. Sam REGOČ počiva na
+[PAI — Personal AI Infrastructure](https://github.com/danielmiessler/PAI).
 
 ---
 
 ## Zahvala i podrijetlo
 
-Projekt počinje od **[Tasks.md](https://github.com/BaldissaraMatheus/Tasks.md)** (autor
+Upravitelj zadataka počinje od **[Tasks.md](https://github.com/BaldissaraMatheus/Tasks.md)** (autor
 [Matheus Baldissara](https://github.com/BaldissaraMatheus), MIT). Odande je preuzeta osnovna
 zamisao: ploča sa zadatcima koju možeš držati uz sebe, bez računa i bez usluge u oblaku.
+
+Sustav koji je oko njega izrastao počinje od **[PAI — Personal AI Infrastructure](https://github.com/danielmiessler/PAI)**
+(autor [Daniel Miessler](https://github.com/danielmiessler), MIT) — odatle dolaze vještine, kuke,
+učitavanje konteksta pri pokretanju i zamisao da pomoćnik bude infrastruktura koju držiš kod
+sebe, a ne usluga na koju se prijaviš. Opisano je u [REGOC/README.md](REGOC/README.md).
 
 Otkad su zadatke počeli otvarati i agenti, a ne samo ljudi, trebalo je ono što datoteke ne daju —
 istodobno pisanje bez sudara, red za izvršavanje, povijest svake promjene i upit koji vrati sve
