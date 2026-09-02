@@ -1,5 +1,3 @@
-import { TM_ROOT } from './paths'
-import os from 'os'
 /**
  * PauseControl — ručna kočnica nad radom REGOČ-a (TASK-3047).
  *
@@ -28,11 +26,11 @@ import os from 'os'
 import { existsSync, readFileSync, writeFileSync, renameSync, mkdirSync } from 'fs'
 import { dirname, join } from 'path'
 
-const HOME = process.env.HOME || os.homedir()
+const HOME = process.env.HOME || '/home/klaudio'
 
 /** Testni harnessi preusmjeravaju stanje da ne diraju živu kočnicu. */
 export const PAUSE_STATE_FILE =
-  process.env.REGOC_PAUSE_STATE || join(TM_ROOT, 'data/pause.state.json')
+  process.env.REGOC_PAUSE_STATE || join(HOME, '.claude/regoc/data/pause.state.json')
 
 export interface PauseState {
   paused: boolean

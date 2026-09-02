@@ -6,7 +6,7 @@
  * Provides collection listing, entry retrieval, and deletion for the RAG WebUI.
  *
  * Based on: ~/.claude/skills/CORE/Tools/lib/rag-memory.ts
- * ChromaDB: postavlja se preko TM_CHROMA_HOST / TM_CHROMA_PORT
+ * ChromaDB: 192.168.10.200:18765
  *
  * Author: Jelena Kovacevic (Engineer Agent)
  * Version: 1.0.0
@@ -41,9 +41,9 @@ import {
 // ============================================
 
 const DEFAULT_RAG_CONFIG: RAGConfig = {
-  chromaHost: process.env.TM_CHROMA_HOST || '127.0.0.1',
+  chromaHost: '192.168.10.200',
   chromaPort: 18765,
-  ollamaHost: process.env.TM_OLLAMA_URL || 'http://127.0.0.1:11434',
+  ollamaHost: 'http://192.168.10.4:11434',
   embedModel: 'qwen3-embedding:8b'
 }
 

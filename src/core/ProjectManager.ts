@@ -1,5 +1,4 @@
 #!/usr/bin/env bun
-import { TM_DB, TM_ROOT } from './paths'
 /**
  * REGOC ProjectManager
  *
@@ -34,14 +33,30 @@ import {
   type LinkRAGInput
 } from '../zod/schemas/project'
 import type { AgentId } from '../zod/schemas/task'
+// TASK-3516/TASK-3513: poredak projekata po zadnjem radu — jedna izvedba za oba zadatka.
+import { projectLastActivityExpr, projectsOrderBy, TASKS_ORDER_BY } from './ChronoOrder'
+
+/**
+ * Brojke zadataka po statusu za jedan projekt (TASK-3513: kućica projekta
+ * pokazuje u radu / na čekanju / blokirano / gotovo). `v_projects_summary` nosi
+ * samo ukupno i gotovo, pa ostala tri statusa dodajemo pri čitanju umjesto da
+ * mijenjamo pogled — pogled dijele i drugi potrošači (scheduler, izvještaji).
+ */
+function projectStatusCountsSelect(srcAlias: string): string {
+  const count = (status: string) =>
+    `(SELECT COUNT(*) FROM tasks t WHERE t.project_id = ${srcAlias}.id AND t.status = '${status}')`
+  return `${count('in_progress')} AS in_progress_task_count,
+      ${count('pending')} AS pending_task_count,
+      ${count('blocked')} AS blocked_task_count`
+}
 
 // ============================================
 // CONFIGURATION
 // ============================================
 
-const DB_PATH = TM_DB
-const PROJECTS_SCHEMA_PATH = join(TM_ROOT, 'data/projects-schema.sql')
-const MIGRATE_TASKS_PATH = join(TM_ROOT, 'data/migrate-tasks-project.sql')
+const DB_PATH = join(homedir(), '.claude/regoc/data/regoc.db')
+const PROJECTS_SCHEMA_PATH = join(homedir(), '.claude/regoc/data/projects-schema.sql')
+const MIGRATE_TASKS_PATH = join(homedir(), '.claude/regoc/data/migrate-tasks-project.sql')
 
 // ============================================
 // PROJECT MANAGER CLASS
@@ -157,7 +172,9 @@ export class ProjectManager {
    */
   getProject(id: string): Project | null {
     const row = this.db.query(`
-      SELECT * FROM v_projects_summary WHERE id = ?
+      SELECT v_projects_summary.*, ${projectLastActivityExpr('v_projects_summary')} AS last_activity_at,
+      ${projectStatusCountsSelect('v_projects_summary')}
+      FROM v_projects_summary WHERE id = ?
     `).get(id) as any
 
     if (!row) return null
@@ -171,7 +188,12 @@ export class ProjectManager {
   getProjects(filter?: ProjectFilter): Project[] {
     const validated = filter ? ProjectFilterSchema.parse(filter) : {}
 
-    let query = 'SELECT * FROM v_projects_summary WHERE 1=1'
+    // `last_activity_at` = vrijeme zadnjeg rada na projektu (najnovija promjena
+    // njegovih zadataka). Izlazi i u odgovoru, da ga ploča može prikazati bez
+    // drugog upita (TASK-3513).
+    let query = `SELECT v_projects_summary.*, ${projectLastActivityExpr('v_projects_summary')} AS last_activity_at,
+      ${projectStatusCountsSelect('v_projects_summary')}
+      FROM v_projects_summary WHERE 1=1`
     const params: any[] = []
 
     if (validated.status) {
@@ -205,7 +227,7 @@ export class ProjectManager {
       params.push(searchPattern, searchPattern)
     }
 
-    query += ' ORDER BY priority ASC, updated_at DESC'
+    query += projectsOrderBy('v_projects_summary')
 
     const rows = this.db.query(query).all(...params) as any[]
     return rows.map(row => this.rowToProject(row))
@@ -427,7 +449,8 @@ export class ProjectManager {
    */
   getProjectTasks(projectId: string): any[] {
     const rows = this.db.query(`
-      SELECT * FROM tasks WHERE project_id = ? ORDER BY priority ASC, updated_at DESC
+      SELECT * FROM tasks WHERE project_id = ?
+      ${TASKS_ORDER_BY}
     `).all(projectId) as any[]
 
     return rows.map(row => ({
@@ -540,8 +563,15 @@ export class ProjectManager {
       agent_count: row.agent_count,
       task_count: row.task_count,
       completed_task_count: row.completed_task_count,
+      // TASK-3513: brojke po statusu za kućicu projekta na ploči
+      in_progress_task_count: row.in_progress_task_count,
+      pending_task_count: row.pending_task_count,
+      blocked_task_count: row.blocked_task_count,
       calculated_progress: row.calculated_progress,
-      rag_entry_count: row.rag_entry_count
+      rag_entry_count: row.rag_entry_count,
+      // TASK-3516/3513: vrijeme zadnjeg rada na projektu — sada ga računaju
+      // i getProjects() i getProject(), pa je updated_at samo zaštitna mreža.
+      last_activity_at: row.last_activity_at ?? row.updated_at
     }
   }
 

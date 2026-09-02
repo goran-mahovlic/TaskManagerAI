@@ -66,8 +66,15 @@ export const ProjectSchema = z.object({
   agent_count: z.number().optional(),
   task_count: z.number().optional(),
   completed_task_count: z.number().optional(),
+  // TASK-3513: brojke po statusu (u radu / na čekanju / blokirano)
+  in_progress_task_count: z.number().optional(),
+  pending_task_count: z.number().optional(),
+  blocked_task_count: z.number().optional(),
   calculated_progress: z.number().optional(),
-  rag_entry_count: z.number().optional()
+  rag_entry_count: z.number().optional(),
+  // TASK-3516: vrijeme zadnjeg rada na projektu (max updated_at njegovih
+  // zadataka) — ključ po kojemu se projekti slažu, najnoviji prvi.
+  last_activity_at: z.string().nullable().optional()
 })
 
 // ============================================

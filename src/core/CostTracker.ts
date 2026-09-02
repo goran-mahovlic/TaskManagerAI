@@ -1,5 +1,4 @@
 #!/usr/bin/env bun
-import { TM_DB } from './paths'
 /**
  * REGOC CostTracker (F5.2, prošireno K7/TASK-2986)
  *
@@ -170,7 +169,7 @@ export class CostTracker {
   private db: Database
 
   constructor(dbPath?: string) {
-    const defaultPath = TM_DB
+    const defaultPath = join(process.env.HOME || '', '.claude/regoc/data/regoc.db')
     this.db = new Database(dbPath || defaultPath)
     this.db.exec("PRAGMA journal_mode = WAL"); this.db.exec("PRAGMA busy_timeout = 5000");
     this.db.exec('PRAGMA journal_mode = WAL')

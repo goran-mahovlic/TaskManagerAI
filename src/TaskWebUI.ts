@@ -1,6 +1,4 @@
 #!/usr/bin/env bun
-import { TM_ROOT } from './core/paths'
-import os from 'os'
 /**
  * Regoč TaskManagerMD - Task Web UI Server
  *
@@ -19,14 +17,21 @@ import os from 'os'
 
 import { watch, existsSync, readFileSync, readdirSync, statSync, writeFileSync, mkdirSync, rmSync } from 'fs'
 import { join, resolve } from 'path'
+import { hostname as osHostname, networkInterfaces as osNetworkInterfaces } from 'os'
 // SQL-Only TaskManager (v2.0) - replaces MD+SQLite dual-write
-import { getTaskManagerSQL } from './core/TaskManagerSQL'
+import { getTaskManagerSQL, INBOX_PROJECT_ID } from './core/TaskManagerSQL'
 // TASK-3047: ručna kočnica — globalna pauza dijeljena s RegocDaemonom preko datoteke stanja.
 import { readPauseState, writePauseState, describePause } from './core/PauseControl'
+// TASK-3461: stanje MJERILA potrošnje (razlikuje „čekam kvotu" od „mjerilo ne radi").
+import { readWaitingQueue } from './core/AutonomyQueue'
 import { formatLocalTime } from './core/QuotaWakeup'
+// T10/TASK-3575: ploča čita POSTOJEĆI trag vratara (data/critic_gate.jsonl) — druga bi
+// baza značila da ploča i vrata mogu tvrditi suprotno o istom zadatku.
+import { unverifiedBoardState } from './core/UnverifiedReport'
 import { getProjectManager } from './core/ProjectManager'
 import { getMessageQueue } from './core/MessageQueue'
 import { getRAGService } from './RAGService'
+import { tecajOdgovor } from './Tecaj'
 import type { Task, AgentId, TaskFilter } from './types/task-types'
 import { CreateTaskInputSchema, UpdateTaskInputSchema, TaskFilterSchema } from './zod/schemas/task'
 import { isRecycledAgentReport } from './core/DispatchGuard'
@@ -52,6 +57,14 @@ import { RAGFilterSchema, RAGDeleteRequestSchema } from './zod/schemas/rag'
 import { resolveSessionUsage, createDefaultDeps, type UsageState } from './SessionUsage'
 // TASK-2989/2991: traka više ne vjeruje status datoteci na riječ — stanje se izvodi.
 import { resolveDaemonLiveness, type LivenessDeps } from './DaemonLiveness'
+// TASK-3568 (T4): „Potrošnja zadatka" na kartici — poziva agent_telemetry.py (T2/T3).
+import { resolveTaskTelemetry, createTelemetryState, createTelemetryDeps } from './TaskTelemetry'
+// TASK-3569 (T5): kartica „Potrošnja" — tjedni pregled po projektu i agentu (mjera 6).
+// TASK-3572 (T8): „Potrošnja projekta" — isti pregled, filtriran na jedan projekt.
+import {
+  resolveTjedniPregled, createPregledState, createPregledDeps, parseBroj, parseProjekt,
+  DANA_MIN, DANA_MAX, ZADANO_DANA, NAJSKUPLJIH_MIN, NAJSKUPLJIH_MAX, ZADANO_NAJSKUPLJIH,
+} from './TjedniPregled'
 
 // ============================================
 // CONFIGURATION
@@ -60,41 +73,79 @@ import { resolveDaemonLiveness, type LivenessDeps } from './DaemonLiveness'
 // NOTE: Using reserved port 17781 which is mapped 1:1 in Docker
 // docker-compose.yml has: "17781:17781" (host:container same)
 // Old mapping 17779->3001 conflicts with Claude Code internal task server
-const EXTERNAL_PORT = Number(process.env.TM_EXTERNAL_PORT) || Number(process.env.TM_PORT) || 17781  // vrata koja korisnik otvara izvana
+// TM_PORT / TM_EXTERNAL_PORT / TM_TASKS_DIR: postavke portabilnog paketa (TaskManagerAI).
+// Dokumentacija ih je obećavala, a kod ih nije čitao — svjeza instalacija je zato uvijek
+// pokusavala 17781 i padala s EADDRINUSE (uhvaceno 02.09.2026. pri probnoj instalaciji).
+// U REGOC instalaciji nijedna nije postavljena, pa je ponasanje nepromijenjeno.
+const EXTERNAL_PORT = Number(process.env.TM_EXTERNAL_PORT) || Number(process.env.TM_PORT) || 17781
 // REGOC_TASKWEBUI_PORT: override SAMO za testove/alat (produkcija ga ne postavlja, pa je
 // ponašanje nepromijenjeno). Uz HOME override daje potpuno izoliranu instancu s vlastitom
 // bazom — E2E se tako vozi bez ijednog fixture-zapisa u živoj regoc.db (usp. TASK-2701).
-const PORT = Number(process.env.TM_PORT) || Number(process.env.REGOC_TASKWEBUI_PORT) || 17781  // vrata na kojima poslužitelj sluša
+const PORT = Number(process.env.REGOC_TASKWEBUI_PORT) || Number(process.env.TM_PORT) || 17781
 const HOST = '0.0.0.0'       // Bind to all interfaces for external access
-const TASKS_DIR = process.env.TM_TASKS_DIR || join(TM_ROOT, 'tasks')
+const TASKS_DIR = process.env.TM_TASKS_DIR
+  || join(process.env.HOME || '/home/klaudio', '.claude/tasks')
 const AGENTS_DIR = join(TASKS_DIR, 'agents')
 
 // Allowed hosts for external access (both internal and external ports)
 // Also allow old port 17779 for backwards compatibility during migration
-const ALLOWED_HOSTS = [
+//
+// TASK-3577: popis je bio tvrdo kodiran na dell-home adrese, a ISTU datoteku vrte i
+// cvorovi (node-A 192.168.10.20, node-B 192.168.10.11) — pa je svaki dolazak na
+// VLASTITU LAN adresu cvora zavrsavao s 403. Sada se popis slaze iz tri izvora:
+//   1. zadane vrijednosti (dell-home / localhost) — ponasanje na dell-home nepromijenjeno,
+//   2. TM_ALLOWED_HOSTS — zarezom odvojen popis (npr. "192.168.10.20,node-a"),
+//   3. vlastito ime i IPv4 adrese sucelja OVOG stroja (os.hostname / networkInterfaces),
+//      cime svaki cvor bez ikakve konfiguracije prihvaca vlastitu adresu.
+// Uz TM_ALLOW_PRIVATE_HOSTS=1 dodatno prolazi bilo koja privatna IPv4 adresa
+// (10./172.16-31./192.168.) — iskljucivo za zatvorene LAN-ove.
+const DEFAULT_ALLOWED_HOSTS = [
   'localhost',
   '127.0.0.1',
-  process.env.TM_EXTERNAL_HOST || 'localhost',
+  '192.168.10.200',
   'dell-home',
-  'dell-home.tailc98738.ts.net',
-  // Internal ports (inside Docker)
-  `localhost:${PORT}`,
-  `127.0.0.1:${PORT}`,
-  // External ports (from outside Docker)
-  `localhost:${EXTERNAL_PORT}`,
-  `127.0.0.1:${EXTERNAL_PORT}`,
-  `${process.env.TM_EXTERNAL_HOST || 'localhost'}:${EXTERNAL_PORT}`,
-  `dell-home:${EXTERNAL_PORT}`,
-  `dell-home.tailc98738.ts.net:${EXTERNAL_PORT}`,
+  'dell-home.tailc98738.ts.net'
+]
+
+/** 'ime' -> ['ime', 'ime:PORT', 'ime:EXTERNAL_PORT']; unos koji vec nosi port ide kakav jest. */
+function expandHostEntry(entry: string): string[] {
+  const bare = entry.trim()
+  if (!bare) return []
+  if (bare.includes(':')) return [bare]
+  return [bare, `${bare}:${PORT}`, `${bare}:${EXTERNAL_PORT}`]
+}
+
+/** Vlastito ime stroja + sve IPv4 adrese njegovih sucelja. */
+function localHostIdentities(): string[] {
+  const out: string[] = []
+  try { out.push(osHostname()) } catch {}
+  try {
+    for (const addrs of Object.values(osNetworkInterfaces())) {
+      for (const a of addrs || []) {
+        if (a && (a.family === 'IPv4' || a.family === 4)) out.push(a.address)
+      }
+    }
+  } catch {}
+  return out
+}
+
+const ALLOWED_HOSTS = [...new Set([
+  ...DEFAULT_ALLOWED_HOSTS.flatMap(expandHostEntry),
+  ...(process.env.TM_ALLOWED_HOSTS || '').split(',').flatMap(expandHostEntry),
+  ...localHostIdentities().flatMap(expandHostEntry),
   // Legacy port 17779 - will not work externally but allow for local testing
   'localhost:17779',
   '127.0.0.1:17779'
-]
+])]
+
+const ALLOW_PRIVATE_HOSTS = process.env.TM_ALLOW_PRIVATE_HOSTS === '1'
+const PRIVATE_IPV4_RE = /^(10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3})$/
 
 function isHostAllowed(req: Request): boolean {
   const host = req.headers.get('host') || ''
   const hostWithoutPort = host.split(':')[0]
-  return ALLOWED_HOSTS.includes(host) || ALLOWED_HOSTS.includes(hostWithoutPort)
+  if (ALLOWED_HOSTS.includes(host) || ALLOWED_HOSTS.includes(hostWithoutPort)) return true
+  return ALLOW_PRIVATE_HOSTS && PRIVATE_IPV4_RE.test(hostWithoutPort)
 }
 
 // WebSocket clients
@@ -114,7 +165,7 @@ const messageQueue = getMessageQueue()
 
 // Read-only DB for konzola streaming (MQ + event_log)
 import { Database } from 'bun:sqlite'
-const MESSAGES_DB_PATH = join(TM_ROOT, 'messages.db')
+const MESSAGES_DB_PATH = join(process.env.HOME || '/home/klaudio', '.claude/regoc/messages.db')
 let konzolaDb: Database | null = null
 try {
   konzolaDb = new Database(MESSAGES_DB_PATH, { readonly: true })
@@ -127,16 +178,16 @@ try {
 
 let konzolaMode: 'plan' | 'work' = 'plan'
 
-const DAEMON_LOG_FILE = join(process.env.HOME || os.homedir(), '.tmp/regoc_daemon.log')
-const STATUS_FILE = join(process.env.HOME || os.homedir(), '.tmp/regoc_status.json')
+const DAEMON_LOG_FILE = join(process.env.HOME || '/home/klaudio', '.tmp/regoc_daemon.log')
+const STATUS_FILE = join(process.env.HOME || '/home/klaudio', '.tmp/regoc_status.json')
 /** Zamrznut 23.02.2026. — od K7 samo fallback dok se `cost_log` ne napuni. */
-const STATS_CACHE_FILE = join(process.env.HOME || os.homedir(), '.claude/stats-cache.json')
+const STATS_CACHE_FILE = join(process.env.HOME || '/home/klaudio', '.claude/stats-cache.json')
 /** Prozor za prikaz potrošnje na ploči (dana). */
 const TOKEN_WINDOW_DAYS = 30
-const SCHEDULER_STATE_FILE = join(process.env.HOME || os.homedir(), '.tmp/regoc_scheduler_state.json')
-const REGOC_SERVICES_SCRIPT = join(process.env.HOME || os.homedir(), 'app/regoc_system/regoc-services.sh')
+const SCHEDULER_STATE_FILE = join(process.env.HOME || '/home/klaudio', '.tmp/regoc_scheduler_state.json')
+const REGOC_SERVICES_SCRIPT = join(process.env.HOME || '/home/klaudio', 'app/regoc_system/regoc-services.sh')
 /** PID koji piše RegocDaemon — tvrdi signal živosti uz (meku) starost status datoteke. */
-const DAEMON_PID_FILE = join(TM_ROOT, 'daemon.pid')
+const DAEMON_PID_FILE = join(process.env.HOME || '/home/klaudio', '.claude/regoc/daemon.pid')
 
 /**
  * Produkcijske ovisnosti za DaemonLiveness (TASK-2991). Sama logika resolvera je bez I/O
@@ -256,7 +307,7 @@ async function getCachedHealthCheck(): Promise<any> {
   try {
     const proc = Bun.spawn([REGOC_SERVICES_SCRIPT, 'health'], {
       stdout: 'pipe', stderr: 'pipe',
-      env: { HOME: process.env.HOME || os.homedir(), PATH: process.env.PATH || '/usr/local/bin:/usr/bin:/bin', USER: process.env.USER || 'taskmanager' }
+      env: { HOME: process.env.HOME || '/home/klaudio', PATH: process.env.PATH || '/usr/local/bin:/usr/bin:/bin', USER: process.env.USER || 'klaudio' }
     })
     const output = await new Response(proc.stdout).text()
     cachedHealth = JSON.parse(output)
@@ -275,6 +326,12 @@ let watcherReady = false
 
 function startFileWatcher() {
   try {
+    // Svjeza instalacija jos nema mapu agenata; to nije kvar nego pocetno stanje.
+    // Prije je svaki start ispisivao ENOENT gomilu i ostavljao dojam pada posluzitelja.
+    if (!existsSync(AGENTS_DIR)) {
+      console.log(`[FileWatcher] ${AGENTS_DIR} ne postoji — zivo pracenje datoteka iskljuceno`)
+      return null
+    }
     // Watch agents directory for changes
     const watcher = watch(AGENTS_DIR, { recursive: true }, (eventType, filename) => {
       if (!filename?.endsWith('.md')) return
@@ -581,23 +638,46 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       flex-wrap: wrap;
     }
 
+    /* Projekti su plocice u cetiri stupca (TASK-3513): citaju se s lijeva na
+       desno, pa je prva kucica (A1) projekt na kojemu se zadnje radilo.
+       Statusni stupci su maknuti jer su projekt razbijali po statusu. */
+    .projects-rows {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 0.75rem;
+      align-items: stretch;
+    }
+
+    @media (max-width: 1200px) { .projects-rows { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 700px)  { .projects-rows { grid-template-columns: 1fr; } }
+
     .project-card {
       background: var(--bg-tertiary);
       border-radius: 0.375rem;
       padding: 0.75rem;
-      margin-bottom: 0.5rem;
       cursor: pointer;
-      transition: transform 0.1s;
-      border-left: 3px solid var(--accent-blue);
+      transition: transform 0.1s, box-shadow 0.1s;
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+      /* Boja = STATUS projekta (nize .project-card.status-*), ne prioritet. */
+      border-left: 4px solid var(--text-secondary);
     }
 
-    .project-card:hover { transform: translateY(-2px); }
+    .project-card:hover { transform: translateY(-2px); box-shadow: 0 2px 8px rgba(0,0,0,0.25); }
 
-    .project-card.p1 { border-left-color: var(--accent-red); }
-    .project-card.p2 { border-left-color: var(--accent-yellow); }
-    .project-card.p3 { border-left-color: var(--accent-blue); }
-    .project-card.p4 { border-left-color: var(--accent-purple); }
-    .project-card.p5 { border-left-color: var(--text-secondary); }
+    /* STATUS BOJOM — iskljucivo postojeca paleta (TASK-3513) */
+    .project-card.status-completed { border-left-color: var(--accent-green); }
+    .project-card.status-archived  { border-left-color: var(--accent-blue); }
+    .project-card.status-on_hold   { border-left-color: var(--accent-red); }
+    .project-card.status-active    { border-left-color: var(--accent-yellow); }
+
+    .project-card-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 0.5rem;
+    }
 
     .project-id {
       font-size: 0.75rem;
@@ -605,17 +685,124 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       font-family: monospace;
     }
 
+    .project-status-badge {
+      font-size: 0.625rem;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      padding: 0.1rem 0.45rem;
+      border-radius: 1rem;
+      border: 1px solid currentColor;
+      white-space: nowrap;
+    }
+
+    .project-status-badge.status-completed { color: var(--accent-green); }
+    .project-status-badge.status-archived  { color: var(--accent-blue); }
+    .project-status-badge.status-on_hold   { color: var(--accent-red); }
+    .project-status-badge.status-active    { color: var(--accent-yellow); }
+
     .project-name {
       font-weight: 500;
-      margin: 0.25rem 0;
+      margin: 0;
+      line-height: 1.25;
+      overflow-wrap: anywhere;
     }
 
     .project-meta {
       display: flex;
       justify-content: space-between;
+      gap: 0.5rem;
       font-size: 0.75rem;
       color: var(--text-secondary);
     }
+
+    /* Brojke po statusu zadataka u kucici projekta */
+    .project-counts {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.25rem;
+      font-size: 0.625rem;
+    }
+
+    .project-count {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      padding: 0.1rem 0.4rem;
+      border-radius: 0.25rem;
+      background: var(--bg-secondary);
+      color: var(--text-secondary);
+    }
+
+    .project-count b { font-weight: 600; }
+    .project-count.c-in_progress b { color: var(--accent-blue); }
+    .project-count.c-pending b     { color: var(--accent-yellow); }
+    .project-count.c-blocked b     { color: var(--accent-red); }
+    .project-count.c-completed b   { color: var(--accent-green); }
+    .project-count.is-zero { opacity: 0.45; }
+
+    /* Trosak projekta u zadanom razdoblju (TASK-3572, T8). Namjerno u istom
+       redu s brojkama po statusu: skupi projekt se vidi bez otvaranja panela.
+       Nemjereno je "—" (klasa .is-prazna), nikad izmisljena nula. */
+    .project-count.c-trosak { background: rgba(59,130,246,0.12); }
+    .project-count.c-trosak b { color: var(--accent-blue); }
+    .project-count.c-trosak.is-prazna { opacity: 0.45; }
+    .project-count.c-trosak.is-racuna b { color: var(--text-secondary); font-weight: 400; }
+
+    /* Postotak dovrsenosti: traka + brojka */
+    .project-progress {
+      margin-top: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 0.2rem;
+    }
+
+    .project-progress-track {
+      height: 6px;
+      border-radius: 3px;
+      background: var(--bg-secondary);
+      overflow: hidden;
+    }
+
+    .project-progress-fill {
+      height: 100%;
+      background: var(--accent-green);
+      border-radius: 3px;
+      transition: width 0.2s;
+    }
+
+    .project-progress-label {
+      font-size: 0.625rem;
+      color: var(--text-secondary);
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .projects-legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      margin-bottom: 0.75rem;
+      font-size: 0.6875rem;
+      color: var(--text-secondary);
+    }
+
+    .projects-legend .legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+    }
+
+    .projects-legend .legend-dot {
+      width: 10px;
+      height: 3px;
+      border-radius: 2px;
+      display: inline-block;
+    }
+
+    .legend-dot.status-completed { background: var(--accent-green); }
+    .legend-dot.status-archived  { background: var(--accent-blue); }
+    .legend-dot.status-on_hold   { background: var(--accent-red); }
+    .legend-dot.status-active    { background: var(--accent-yellow); }
 
     .project-agents {
       display: flex;
@@ -632,11 +819,6 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       font-size: 0.625rem;
     }
 
-    /* Project columns */
-    .column.active-projects h2 { border-color: var(--accent-green); }
-    .column.on-hold h2 { border-color: var(--accent-yellow); }
-    .column.completed-projects h2 { border-color: var(--accent-blue); }
-    .column.archived h2 { border-color: var(--text-secondary); }
 
     /* ============================================ */
     /* RAG PAGE */
@@ -871,6 +1053,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       z-index: 1500;
       transition: right 0.3s ease;
       overflow-y: auto;
+      overflow-x: hidden;   /* višak ide u klizni okvir tablice, ne izvan panela */
       display: flex;
       flex-direction: column;
     }
@@ -961,6 +1144,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       z-index: 1500;
       transition: right 0.3s ease;
       overflow-y: auto;
+      overflow-x: hidden;   /* višak ide u klizni okvir tablice, ne izvan panela */
       display: flex;
       flex-direction: column;
     }
@@ -983,6 +1167,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     .detail-panel-body {
       padding: 1rem;
       flex: 1;
+      min-width: 0;   /* flex-dijete se inače ne smije stisnuti ispod min-content */
     }
 
     .detail-panel-footer {
@@ -1126,6 +1311,48 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       margin-top: 1rem;
     }
 
+    /* TASK-3568 (T4): odjeljak „Potrošnja zadatka" na kartici zadatka. */
+    .tel-box { font-size: 0.78rem; color: var(--text-primary); background: var(--bg-primary);
+               border-radius: 0.375rem; padding: 0.6rem; }
+    .tel-muted { color: var(--text-secondary); }
+    .tel-head { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: baseline;
+                color: var(--text-secondary); margin-bottom: 0.5rem; }
+    .tel-sec { margin-top: 0.6rem; min-width: 0; }
+    .tel-sec-title { font-weight: 600; color: var(--text-secondary); text-transform: uppercase;
+                     letter-spacing: 0.03em; font-size: 0.68rem; margin-bottom: 0.25rem; }
+    .tel-bar { display: flex; height: 10px; border-radius: 5px; overflow: hidden;
+               background: var(--bg-secondary); margin: 0.3rem 0; }
+    .tel-bar span { display: block; height: 100%; }
+    .tel-seg-model { background: var(--accent-blue); }
+    .tel-seg-alat { background: var(--accent-green); }
+    .tel-seg-covjek { background: var(--accent-yellow); }
+    .tel-seg-rezija { background: var(--text-secondary); }
+    .tel-legend { display: flex; flex-wrap: wrap; gap: 0.75rem; color: var(--text-secondary); }
+    .tel-legend i { display: inline-block; width: 8px; height: 8px; border-radius: 2px;
+                    margin-right: 0.25rem; font-style: normal; }
+    .tel-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(88px, 1fr)); gap: 0.4rem; }
+    .tel-cell { background: var(--bg-secondary); border-radius: 0.25rem; padding: 0.35rem 0.45rem; }
+    .tel-cell b { display: block; font-size: 0.9rem; font-weight: 600; }
+    .tel-cell span { color: var(--text-secondary); font-size: 0.68rem; }
+    /* Osam stupaca s nowrap ima min-content sirinu vecu od panela (400/480 px). Dok je
+       tablica bila display:table, width:100% je nije mogao stisnuti ispod te sirine, pa se
+       prelijevala IZVAN panela — a kako je panel prilijepljen desno, visak je strsio ulijevo
+       i bio odrezan (Goranova snimka 02.09.2026.). display:block pretvara samu tablicu u
+       klizni okvir: redci ostaju poravnati (anonimna tablica unutra), a visak se pomice
+       vodoravno umjesto da bjezi iz panela. */
+    .tel-table { width: 100%; max-width: 100%; border-collapse: collapse;
+                 display: block; overflow-x: auto; }
+    .tel-table td, .tel-table th { padding: 0.15rem 0.35rem; text-align: right; white-space: nowrap; }
+    .tel-table th { color: var(--text-secondary); font-weight: 500; font-size: 0.68rem; }
+    .tel-table td:first-child, .tel-table th:first-child { text-align: left; }
+    .tel-znacka { display: inline-block; padding: 0.05rem 0.4rem; border-radius: 0.75rem;
+                  font-size: 0.68rem; font-weight: 600; }
+    .tel-znacka.ok { background: rgba(34,197,94,0.15); color: var(--accent-green); }
+    .tel-znacka.upoz { background: rgba(234,179,8,0.15); color: var(--accent-yellow); }
+    .tel-znacka.loše { background: rgba(239,68,68,0.15); color: var(--accent-red); }
+    .tel-primjer { font-family: ui-monospace, monospace; font-size: 0.7rem; color: var(--text-secondary);
+                   word-break: break-all; }
+
     .timestamps div {
       margin-bottom: 0.25rem;
     }
@@ -1247,6 +1474,20 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     }
     .task-pause-btn:hover { border-color: var(--accent-yellow, #eab308); color: var(--accent-yellow, #eab308); }
     .task-pause-btn.resume { border-color: var(--accent-green, #22c55e); color: var(--accent-green, #22c55e); }
+    /* T10/TASK-3575: rezultat koji vratar NIJE mogao provjeriti. Nije greska (zato nije
+       crveno) nego izostanak dokaza — vizualno se mora razlikovati i od jednog i od drugog. */
+    .unverified-badge {
+      font-size: 0.68rem;
+      background: transparent;
+      color: var(--accent-yellow, #eab308);
+      border: 1px solid var(--accent-yellow, #eab308);
+      border-radius: 3px;
+      padding: 0 5px;
+      margin-left: 6px;
+      font-weight: 600;
+      cursor: help;
+    }
+
     .paused-badge {
       font-size: 0.68rem;
       background: var(--accent-yellow, #eab308);
@@ -1622,6 +1863,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         <button class="tab-btn" data-tab="projects">Projects</button>
         <button class="tab-btn" data-tab="rag">RAG</button>
         <button class="tab-btn" data-tab="konzola">Konzola</button>
+        <button class="tab-btn" data-tab="potrosnja">Potro&#353;nja</button>
         <button class="tab-btn" data-tab="status">Status</button>
         <button class="tab-btn" data-tab="info">Config</button>
       </div>
@@ -1641,6 +1883,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         <div class="stat"><div class="stat-value" id="blocked-count">-</div><div class="stat-label">Blocked</div></div>
         <div class="stat"><div class="stat-value" id="completed-count">-</div><div class="stat-label">Completed</div></div>
         <div class="stat"><div class="stat-value" id="cancelled-count">-</div><div class="stat-label">Cancelled</div></div>
+        <div class="stat" title="Zadaci koje je vratar danas propustio, a nije mogao ni jednu provjeru pokrenuti (izvor: data/critic_gate.jsonl)"><div class="stat-value" id="unverified-count">-</div><div class="stat-label">Danas neprovjereno</div></div>
         <div class="stat"><div class="stat-value" id="overall-progress">-</div><div class="stat-label">Overall Progress</div></div>
       </div>
 
@@ -1677,24 +1920,15 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         <button class="btn btn-primary" id="add-project-btn">+ New Project</button>
       </div>
 
-      <div class="grid">
-        <div class="column active-projects">
-          <h2>Active</h2>
-          <div id="active-projects"></div>
-        </div>
-        <div class="column on-hold">
-          <h2>On Hold</h2>
-          <div id="on-hold-projects"></div>
-        </div>
-        <div class="column completed-projects">
-          <h2>Completed</h2>
-          <div id="completed-projects"></div>
-        </div>
-        <div class="column archived">
-          <h2>Archived</h2>
-          <div id="archived-projects"></div>
-        </div>
+      <div class="projects-legend">
+        <span class="legend-item"><i class="legend-dot status-active"></i>Aktivan</span>
+        <span class="legend-item"><i class="legend-dot status-on_hold"></i>Na čekanju</span>
+        <span class="legend-item"><i class="legend-dot status-completed"></i>Dovršen</span>
+        <span class="legend-item"><i class="legend-dot status-archived"></i>Arhiviran</span>
+        <span class="legend-item">Poredak: zadnji rad na projektu — najnoviji prvi</span>
       </div>
+
+      <div class="projects-rows" id="projects-rows"></div>
     </div>
 
     <!-- RAG TAB -->
@@ -1775,6 +2009,28 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         <span class="konzola-prompt" id="konzola-prompt">regoc $</span>
         <input type="text" id="konzola-input" class="konzola-input" placeholder="Type a command..." autocomplete="off" spellcheck="false">
       </div>
+    </div>
+
+    <!-- POTROŠNJA TAB — TASK-3569 (T5), mjera 6: tjedni pregled po projektu i agentu.
+         Sve brojke dolaze s GET /api/pregled/tjedni, koji zove
+         ~/app/regoc_system/tools/tjedni_pregled.py nad run_log.jsonl i NAŠIM
+         transkriptima. Uz svaku agregaciju stoji IZ KOLIKO je izvođenja izračunata. -->
+    <div id="tab-potrosnja" class="tab-content">
+      <div class="status-header-bar">
+        <h2 style="margin:0;font-size:1.1rem;">Potro&#353;nja &mdash; tjedni pregled</h2>
+        <div style="display:flex;align-items:center;gap:0.75rem;">
+          <select id="potrosnja-dana" class="filter-select">
+            <option value="7" selected>zadnjih 7 dana</option>
+            <option value="14">zadnjih 14 dana</option>
+            <option value="30">zadnjih 30 dana</option>
+            <option value="90">zadnjih 90 dana</option>
+          </select>
+          <span id="potrosnja-izvor" style="color:var(--text-secondary);font-size:0.72rem;">&mdash;</span>
+          <button id="potrosnja-refresh-btn" class="konzola-mode-btn plan-mode"
+                  style="border-color:var(--accent-blue);color:var(--accent-blue);">Osvje&#382;i</button>
+        </div>
+      </div>
+      <div id="potrosnja-box" class="tel-box tel-muted">&hellip;</div>
     </div>
 
     <!-- STATUS TAB -->
@@ -1929,6 +2185,16 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
           </select>
         </div>
 
+        <!-- TASK-3512: projekt zadatka. Prije ovoga se projekt na ploči nije ni vidio ni
+             mijenjao — jedini put bio je ručni PUT /api/tasks/<ID> s poljem projectId. -->
+        <div class="detail-field">
+          <label>Projekt</label>
+          <select id="detail-project">
+            <option value="">— bez projekta —</option>
+          </select>
+          <div id="detail-project-current" style="margin-top:0.25rem;font-size:0.8rem;color:var(--text-secondary);"></div>
+        </div>
+
         <div class="detail-field">
           <label>Description</label>
           <textarea id="detail-description" placeholder="Task description (markdown supported)"></textarea>
@@ -1965,6 +2231,18 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         <div class="detail-field" id="detail-result-field" style="display:none;">
           <label>Rezultat / Odgovor agenta</label>
           <div id="detail-result-summary" class="progress-notes" style="white-space:pre-wrap;word-break:break-word;"></div>
+        </div>
+
+        <!-- TASK-3568 (T4): potrošnja zadatka iz naših transkripata (agent_telemetry.py).
+             Učitava se ASINKRONO, nakon što je kartica već iscrtana — ploča nikad ne
+             čeka python. -->
+        <div class="detail-field" id="detail-telemetry-field">
+          <label style="display:flex;align-items:center;gap:0.5rem;">
+            <span>Potrošnja zadatka</span>
+            <button class="btn btn-secondary" id="telemetry-refresh-btn"
+                    style="padding:0.1rem 0.5rem;font-size:0.7rem;" title="Ponovno izračunaj">Osvježi</button>
+          </label>
+          <div id="detail-telemetry" class="tel-box tel-muted">…</div>
         </div>
 
         <div class="timestamps" id="detail-timestamps"></div>
@@ -2144,6 +2422,26 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
           <textarea id="project-detail-description" placeholder="Project description"></textarea>
         </div>
 
+        <!-- POTROSNJA PROJEKTA — TASK-3572 (T8), mjera 6 suzena na ovaj projekt.
+             Brojke dolaze s GET /api/pregled/projekt/:id, koji zove
+             tools/tjedni_pregled.py --projekt <id>. Isti alat kao kartica
+             „Potrosnja" — drugog izracuna nema, pa se brojke ne mogu razici. -->
+        <div class="project-section">
+          <h4 style="display:flex;align-items:center;gap:0.5rem;">
+            <span>Potro&#353;nja projekta</span>
+            <select id="projekt-potrosnja-dana" class="filter-select"
+                    style="margin-left:auto;font-size:0.72rem;padding:0.1rem 0.3rem;">
+              <option value="7">zadnjih 7 dana</option>
+              <option value="30" selected>zadnjih 30 dana</option>
+              <option value="3650">svo vrijeme</option>
+            </select>
+            <span id="projekt-potrosnja-izvor" style="color:var(--text-secondary);font-size:0.68rem;font-weight:400;">&mdash;</span>
+            <button type="button" class="btn btn-secondary" id="projekt-potrosnja-refresh-btn"
+                    style="font-size:0.7rem;padding:0.15rem 0.5rem;">Osvje&#382;i</button>
+          </h4>
+          <div id="projekt-potrosnja-box" class="tel-box tel-muted">&hellip;</div>
+        </div>
+
         <!-- SPECIFIKACIJA + dispatch "Nadogradi po specifikacijama" -->
         <div class="project-section">
           <h4>Specifikacija</h4>
@@ -2231,6 +2529,33 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     let currentProjectFilter = '';
     let tasks = [];
     let projectsCache = [];
+    // T10/TASK-3575: zadnji sud vratara po zadatku + koliko ih je danas proslo neprovjereno.
+    let unverifiedCache = { day: '', todayCount: 0, tasks: {} };
+
+    // TASK-3516: NAJNOVIJE NA VRHU — isto pravilo kao na poslužitelju (ChronoOrder.ts).
+    // Popisi i padajuće liste na ploči već stižu poredani iz /api/tasks i
+    // /api/projects; ove dvije pomoćne funkcije služe mjestima koja skup
+    // zadataka prvo profiltriraju pa poredak treba potvrditi izrijekom.
+    function taskIdNumber(id) {
+      const n = parseInt(String(id || '').split('-').pop(), 10);
+      return isNaN(n) ? -1 : n;  // usporedba BROJA: 'TASK-999' < 'TASK-1000'
+    }
+
+    function taskActivityTs(t) {
+      // Dovršen zadatak nosi vrijeme dovršenja, ostali vrijeme zadnje promjene.
+      // Baza vraća dva zapisa vremena ('…T11:07:02.561Z' i '… 11:07:02') s istim
+      // satom — svodimo ih na isti oblik jer je 'T' > ' ' po znakovima.
+      const raw = (t.status === 'completed' || t.status === 'cancelled')
+        ? (t.completedAt || t.completed_at || t.updatedAt || t.updated_at || t.createdAt || t.created_at)
+        : (t.updatedAt || t.updated_at || t.createdAt || t.created_at);
+      return String(raw || '').replace('T', ' ').replace('Z', '');
+    }
+
+    function byNewestFirst(a, b) {
+      const ta = taskActivityTs(a), tb = taskActivityTs(b);
+      if (ta !== tb) return ta < tb ? 1 : -1;
+      return taskIdNumber(b.id) - taskIdNumber(a.id);
+    }
 
     function connect() {
       // TASK-3053: shema se izvodi iz stranice. Tvrdo kodiran ws:// na HTTPS stranici je
@@ -2284,11 +2609,34 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         }
         const response = await fetch(url);
         tasks = await response.json();
+        // Oznaka „NIJE PROVJERENO" mora stici PRIJE iscrtavanja, inace kartica prvo
+        // pokaze zadatak bez oznake pa je doda — a upravo taj trenutak je laz na ploci.
+        await fetchUnverified();
         renderTasks();
         updateStats();
         updateAgentFilter();
       } catch (err) {
         console.error('Failed to fetch tasks:', err);
+      }
+    }
+
+    // escapeHtml ide preko innerHTML i NE bjezi navodnik ("), pa je za vrijednost
+    // atributa nedovoljan — razlog vratara sadrzi navodnike i razbio bi title="...".
+    function escapeAttr(t) {
+      return String(t == null ? '' : t)
+        .replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+        .replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    async function fetchUnverified() {
+      try {
+        const r = await fetch('/api/critic/unverified');
+        if (!r.ok) return;
+        const d = await r.json();
+        if (d && d.tasks) unverifiedCache = d;
+      } catch (err) {
+        // Ploca ne smije ostati prazna zbog vratara — zadrzi zadnje poznato stanje.
+        console.error('Failed to fetch unverified state:', err);
       }
     }
 
@@ -2370,12 +2718,23 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         // stupcu (Pending/In Progress) — samo je vizualno prigušen i nosi gumb „Nastavi".
         if (task.paused) card.classList.add('paused');
         const pausedBadge = task.paused ? '<span class="paused-badge">&#9208; PAUZA</span>' : '';
+
+        // T10/TASK-3575: rezultat koji vratar NIJE mogao provjeriti. Tiho propustanje je
+        // upravo ono sto ova oznaka zatvara — na ploci se „proslo" i „nisam imao cime
+        // provjeriti" vise ne smiju vidjeti jednako.
+        const unv = unverifiedCache.tasks[task.id];
+        const unverifiedBadge = unv
+          ? '<span class="unverified-badge" title="' + escapeAttr(
+              'Vratar NIJE provjerio rezultat (' + unv.status + ', ' + (unv.ts || '') + ').\\n' +
+              (unv.reasons && unv.reasons.length ? unv.reasons.map(r => '• ' + r).join('\\n') : 'razlog nije zapisan')
+            ) + '">&#9888; NIJE PROVJERENO</span>'
+          : '';
         const pauseBtnHTML = task.paused
           ? \`<button class="task-pause-btn resume" data-pause-id="\${task.id}" data-pause-to="0" title="Nastavi rad na zadatku">&#9654; Nastavi</button>\`
           : \`<button class="task-pause-btn" data-pause-id="\${task.id}" data-pause-to="1" title="Pauziraj zadatak (prekida i agenta koji radi)">&#9208;</button>\`;
 
         card.innerHTML = \`
-          <div class="task-id">\${task.id}\${projectBadgeHTML}\${pausedBadge}</div>
+          <div class="task-id">\${task.id}\${projectBadgeHTML}\${pausedBadge}\${unverifiedBadge}</div>
           <div class="task-title">\${task.title}</div>
           \${progressHTML}
           <div class="task-meta">
@@ -2436,6 +2795,8 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       const cancelledTasks = tasks.filter(t => t.status === 'cancelled');
       const cc = document.getElementById('cancelled-count');
       if (cc) cc.textContent = cancelledTasks.length;
+      const uc = document.getElementById('unverified-count');
+      if (uc) uc.textContent = unverifiedCache.todayCount;
       document.getElementById('progress-count').textContent = tasks.filter(t => t.status === 'in_progress').length;
       document.getElementById('pending-count').textContent = tasks.filter(t => t.status === 'pending').length;
       document.getElementById('blocked-count').textContent = tasks.filter(t => t.status === 'blocked').length;
@@ -2809,6 +3170,11 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         if (!response.ok) throw new Error('Task not found');
 
         const task = await response.json();
+        // TASK-3512: bez popisa projekata izbornik bi bio prazan (npr. kad WS veza
+        // još nije stigla pozvati fetchProjectsForFilter). Dohvati ga na zahtjev.
+        if (!projectsCache.length) {
+          try { await fetchProjectsForFilter(); } catch (e) { console.error('Projekti nedostupni:', e); }
+        }
         selectedTaskId = taskId;
         selectedTaskData = task;
         editedBlockedBy = [...(task.blockedBy || [])];
@@ -2841,6 +3207,9 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       document.getElementById('detail-description').value = task.description || '';
       document.getElementById('detail-blocked-reason').value = task.blockedReason || '';
 
+      // TASK-3512: projekt — ime (ne šifra) + izbornik s trenutnim odabirom
+      renderProjectField(task);
+
       // Render blocked by list
       renderBlockedByList();
 
@@ -2872,6 +3241,72 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
 
       // Render timestamps
       renderTimestamps(task);
+
+      // TASK-3568 (T4): potrošnja se dohvaća TEK nakon što je kartica iscrtana,
+      // pa otvaranje kartice nikad ne čeka izračun telemetrije.
+      ucitajTelemetriju(task.id);
+    }
+
+    // TASK-3512: projekt zadatka — prikaz imena + izbornik za promjenu.
+    // Aktivni projekti idu u prvu skupinu, arhivirani u drugu (na dno), prazna
+    // vrijednost vraća zadatak u pretinac PRJ-033 (PUT šalje projectId:'' →
+    // TaskManagerSQL.updateTask upisuje pretinac, NIKAD NULL — TASK-3514).
+    function renderProjectField(task) {
+      const select = document.getElementById('detail-project');
+      const currentLabel = document.getElementById('detail-project-current');
+      if (!select) return;
+
+      const currentId = task.projectId || '';
+      const known = projectsCache.filter(function (p) { return p.status !== 'archived'; });
+      const archived = projectsCache.filter(function (p) { return p.status === 'archived'; });
+
+      select.innerHTML = '';
+      // TASK-3514: prazna vrijednost vise NE znaci NULL nego pretinac PRJ-033, pa i
+      // natpis mora govoriti istinu o tome gdje ce zadatak zavrsiti.
+      const none = document.createElement('option');
+      none.value = '';
+      none.textContent = '— Pretinac (bez projekta) —';
+      select.appendChild(none);
+
+      function addGroup(label, list) {
+        if (!list.length) return;
+        const group = document.createElement('optgroup');
+        group.label = label;
+        list.forEach(function (p) {
+          const option = document.createElement('option');
+          option.value = p.id;
+          option.textContent = p.name + ' (' + p.id + ')';
+          group.appendChild(option);
+        });
+        select.appendChild(group);
+      }
+
+      addGroup('Aktivni projekti', known);
+      addGroup('Arhivirani projekti', archived);
+
+      // Projekt zadatka koji nije u popisu (obrisan ili popis nije stigao) ne smije
+      // tiho nestati iz izbornika — inače bi ga prvo spremanje izbrisalo sa zadatka.
+      const inList = projectsCache.some(function (p) { return p.id === currentId; });
+      if (currentId && !inList) {
+        const orphan = document.createElement('option');
+        orphan.value = currentId;
+        orphan.textContent = currentId + ' (nepoznat projekt)';
+        select.appendChild(orphan);
+      }
+
+      select.value = currentId;
+
+      if (currentLabel) {
+        const project = projectsCache.find(function (p) { return p.id === currentId; });
+        if (!currentId) {
+          currentLabel.textContent = 'Trenutno: bez projekta';
+        } else if (project) {
+          currentLabel.textContent = 'Trenutno: ' + project.name + ' (' + project.id + ')'
+            + (project.status === 'archived' ? ' — arhiviran' : '');
+        } else {
+          currentLabel.textContent = 'Trenutno: ' + currentId + ' (projekt nije u popisu)';
+        }
+      }
     }
 
     // Render blocked by list
@@ -2888,11 +3323,13 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     // Populate blocked by select
     function populateBlockedBySelect() {
       const select = document.getElementById('detail-blocked-by-select');
+      // TASK-3516: padajuća lista ide kronološki, najnovije na vrhu — inače bi
+      // ostala u statusnim skupinama iz odgovora API-ja.
       const availableTasks = tasks.filter(t =>
         t.id !== selectedTaskId &&
         !editedBlockedBy.includes(t.id) &&
         t.status !== 'completed'
-      );
+      ).sort(byNewestFirst);
 
       select.innerHTML = '<option value="">+ Add blocking task...</option>' +
         availableTasks.map(t => \`<option value="\${t.id}">\${t.id} - \${t.title.substring(0, 30)}</option>\`).join('');
@@ -2980,6 +3417,734 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       \`;
     }
 
+    // ========================================================================
+    // TASK-3568 (T4) — odjeljak „Potrošnja zadatka"
+    //
+    // Podatci dolaze s GET /api/tasks/:id/telemetry, koji zove
+    // tools/agent_telemetry.py nad NAŠIM transkriptima. Prikazuju se mjere iz
+    // ISTRAZIVANJE_AGENTSIGHT §7: 1 razlaganje trajanja, 2 latencija modela,
+    // 3 top 5 alata, 4 trenje, 5 udio keša.
+    //
+    // Tri pravila prikaza:
+    //   • dohvat je asinkron i otkaziv (generacija + provjera selectedTaskId),
+    //     pa brzo prebacivanje između kartica ne može prikazati tuđe brojke;
+    //   • 202 „racuna" NIJE pogreška — pita se ponovno, ploča radi dalje;
+    //   • nema telemetrije (stari zadatak bez transkripta) → mirna poruka,
+    //     nikad crveni alert i nikad izmišljena nula.
+    // ========================================================================
+    var telemetrijaGen = 0;
+    var telemetrijaTimer = null;
+
+    function telEsc(t) {
+      return String(t === null || t === undefined ? '' : t)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    function telBroj(v, dec) {
+      if (v === null || v === undefined || !isFinite(v)) return '—';
+      var d = (dec === undefined) ? 1 : dec;
+      try {
+        return Number(v).toLocaleString('hr-HR', { minimumFractionDigits: d, maximumFractionDigits: d });
+      } catch (e) {
+        return Number(v).toFixed(d);
+      }
+    }
+
+    function telTrajanje(sec) {
+      if (sec === null || sec === undefined || !isFinite(sec)) return '—';
+      if (sec >= 3600) {
+        var h = Math.floor(sec / 3600);
+        var m = Math.round((sec - h * 3600) / 60);
+        return h + ' h ' + m + ' min';
+      }
+      if (sec >= 60) {
+        var mm = Math.floor(sec / 60);
+        var ss = Math.round(sec - mm * 60);
+        return mm + ' min ' + ss + ' s';
+      }
+      return telBroj(sec, 1) + ' s';
+    }
+
+    function telPostotak(u, dec) {
+      if (u === null || u === undefined || !isFinite(u)) return '—';
+      return telBroj(u * 100, dec === undefined ? 1 : dec) + ' %';
+    }
+
+    /* ── Trosak u eurima (TASK-3609) ──────────────────────────────────────────
+       Mjerenje ostaje u dolarima (run_log.jsonl.cost_usd — tako naplacuje dobavljac);
+       euro je stvar prikaza. Pretvorba je NA JEDNOM mjestu, a tecaj i njegov datum idu
+       u tooltip svakog iznosa, da se preracunata brojka moze provjeriti. */
+    var TECAJ = { tecaj: null, datum: '', izvor: '' };
+
+    function tecajOpis() {
+      if (TECAJ.tecaj === null) return 'tecaj jos nije ucitan';
+      var kako = TECAJ.izvor === 'ecb' ? 'ECB' : (TECAJ.izvor === 'kes' ? 'ECB (zadnji poznati)' : 'pretpostavka');
+      return '1 USD = ' + telBroj(TECAJ.tecaj, 5) + ' EUR · ' + kako + (TECAJ.datum ? ' · ' + TECAJ.datum : '');
+    }
+
+    /** USD → prikaz u eurima. Bez tecaja NE izmisljamo brojku — pise se crtica. */
+    function eur(usd, dec) {
+      if (usd === null || usd === undefined || !isFinite(usd)) return '—';
+      if (TECAJ.tecaj === null) return '—';
+      var d = (dec === undefined) ? 2 : dec;
+      return '<span title="' + telEsc(telBroj(usd, 2) + ' USD · ' + tecajOpis()) + '">'
+        + telBroj(usd * TECAJ.tecaj, d) + ' €</span>';
+    }
+
+    async function ucitajTecaj() {
+      try {
+        var r = await fetch('/api/tecaj');
+        if (!r.ok) return;
+        var d = await r.json();
+        if (d && isFinite(d.tecaj) && d.tecaj > 0) TECAJ = d;
+      } catch (e) { /* bez tecaja iznosi ostaju crtica, ne kriva brojka */ }
+    }
+
+    function telCelija(vrijednost, oznaka) {
+      return '<div class="tel-cell"><b>' + vrijednost + '</b><span>' + telEsc(oznaka) + '</span></div>';
+    }
+
+    function telPostavi(html) {
+      var box = document.getElementById('detail-telemetry');
+      if (box) box.innerHTML = html;
+    }
+
+    function telHtml(data) {
+      var t = data && data.telemetrija;
+      if (!t) return '<span class="tel-muted">Nema telemetrije za ovaj zadatak.</span>';
+      if (!t.imaPodatke) {
+        return '<span class="tel-muted">' + telEsc(t.razlog || 'Za ovaj zadatak nema zabilježenog izvođenja agenta.') + '</span>'
+          + '<div class="tel-muted" style="margin-top:0.35rem;font-size:0.7rem;">'
+          + 'Potrošnja se računa iz transkripta sesije; zadatci nastali prije uvođenja telemetrije nemaju taj zapis.</div>';
+      }
+
+      var h = [];
+
+      // Zaglavlje: tko je izvodio, čime i s kojim ishodom.
+      var glava = [];
+      if (t.zadatak.agent) glava.push(telEsc(t.zadatak.agent));
+      if (t.zadatak.model) glava.push(telEsc(t.zadatak.model));
+      if (t.zadatak.outcome) glava.push(telEsc(t.zadatak.outcome));
+      if (t.latencija.poziva !== null) glava.push(telBroj(t.latencija.poziva, 0) + ' poziva modela');
+      if (t.alati.poziva !== null) glava.push(telBroj(t.alati.poziva, 0) + ' poziva alata');
+      if (t.sesija.sessionId) glava.push('sesija ' + telEsc(t.sesija.sessionId.slice(0, 8)));
+      var izvor = data.izvor === 'kes'
+        ? 'iz keša' + (data.staroS !== null && data.staroS !== undefined ? ' (' + data.staroS + ' s)' : '')
+        : 'svježe izračunato';
+      h.push('<div class="tel-head"><span>' + glava.join(' · ') + '</span><span style="margin-left:auto;">' + izvor + '</span></div>');
+      if (data.poruka) {
+        h.push('<div class="tel-muted" style="margin-bottom:0.4rem;">' + telEsc(data.poruka) + '</div>');
+      }
+
+      // Mjera 1 — razlaganje trajanja.
+      var tr = t.trajanje;
+      var sirina = function (u) { return Math.max(0, Math.round((u || 0) * 1000) / 10); };
+      h.push('<div class="tel-sec"><div class="tel-sec-title">Razlaganje trajanja — ukupno ' + telTrajanje(tr.ukupnoS) + '</div>');
+      h.push('<div class="tel-bar">'
+        + '<span class="tel-seg-model" style="width:' + sirina(tr.udioModel) + '%"></span>'
+        + '<span class="tel-seg-alat" style="width:' + sirina(tr.udioAlat) + '%"></span>'
+        + '<span class="tel-seg-covjek" style="width:' + sirina(tr.udioCekanjeCovjeka) + '%"></span>'
+        + '<span class="tel-seg-rezija" style="width:' + sirina(tr.udioRezija) + '%"></span>'
+        + '</div>');
+      h.push('<div class="tel-legend">'
+        + '<span><i class="tel-seg-model"></i>model ' + telTrajanje(tr.modelS) + ' (' + telPostotak(tr.udioModel) + ')</span>'
+        + '<span><i class="tel-seg-alat"></i>alati ' + telTrajanje(tr.alatS) + ' (' + telPostotak(tr.udioAlat) + ')</span>'
+        + '<span><i class="tel-seg-covjek"></i>čekanje čovjeka ' + telTrajanje(tr.cekanjeCovjekaS) + '</span>'
+        + '<span><i class="tel-seg-rezija"></i>režija ' + telTrajanje(tr.rezijaS) + '</span>'
+        + '</div></div>');
+
+      // Mjera 2 — latencija modela.
+      var l = t.latencija;
+      h.push('<div class="tel-sec"><div class="tel-sec-title">Latencija modela</div><div class="tel-grid">'
+        + telCelija(telBroj(l.poziva, 0), 'poziva')
+        + telCelija(telBroj(l.prosjekS, 1) + ' s', 'prosjek')
+        + telCelija(telBroj(l.medijanS, 1) + ' s', 'medijan')
+        + telCelija(telBroj(l.p95S, 1) + ' s', 'p95')
+        + telCelija(telBroj(l.najvecaS, 1) + ' s', 'najveća')
+        + '</div></div>');
+
+      // Mjera 3 — top 5 alata.
+      var a = t.alati;
+      h.push('<div class="tel-sec"><div class="tel-sec-title">Alati — top 5 od ' + telBroj(a.poziva, 0)
+        + ' poziva (neuspjelih ' + telBroj(a.neuspjelih, 0) + ', ' + telPostotak(a.udioNeuspjelih) + ')</div>');
+      if (!a.top.length) {
+        h.push('<div class="tel-muted">Zadatak nije zvao nijedan alat.</div>');
+      } else {
+        var redci = ['<table class="tel-table"><tr><th>alat</th><th>poziva</th><th>udio</th><th>neuspj.</th><th>trajanje</th></tr>'];
+        a.top.forEach(function (x) {
+          redci.push('<tr><td>' + telEsc(x.ime) + '</td><td>' + telBroj(x.poziva, 0) + '</td><td>'
+            + telPostotak(x.udioPoziva, 0) + '</td><td>' + telBroj(x.neuspjelih, 0) + '</td><td>'
+            + telTrajanje(x.trajanjeZbrojS) + '</td></tr>');
+        });
+        redci.push('</table>');
+        h.push(redci.join(''));
+        if (a.ostalihAlata > 0) {
+          h.push('<div class="tel-muted" style="font-size:0.7rem;">+ još ' + a.ostalihAlata + ' vrsta alata</div>');
+        }
+      }
+      h.push('</div>');
+
+      // Mjera 5 — udio keša (+ trošak, koji dolazi iz run_log.jsonl).
+      var k = t.tokeni;
+      h.push('<div class="tel-sec"><div class="tel-sec-title">Tokeni i predmemorija</div><div class="tel-grid">'
+        + telCelija(telPostotak(k.udioKesa, 1), 'udio keša')
+        + telCelija(telBroj(k.ulazniKontekst, 0), 'ulazni kontekst')
+        + telCelija(telBroj(k.izlaz, 0), 'izlaz')
+        + telCelija(telBroj(k.kesPisanje, 0), 'pisanje keša')
+        + telCelija(eur(t.trosak.usd), 'trošak')
+        + '</div></div>');
+
+      // Mjera 4 — trenje.
+      var f = t.trenje;
+      h.push('<div class="tel-sec"><div class="tel-sec-title">Trenje (ponovljena naredba / neuspjeli izlaz / petlja)</div>');
+      if (!f) {
+        h.push('<div class="tel-muted">Nije izmjereno.</div>');
+      } else {
+        var razina = (f.ocjena || 0) >= 1 ? 'loše' : ((f.upozorenja || 0) >= 1 ? 'upoz' : 'ok');
+        var natpis = razina === 'ok' ? 'uredno' : (razina === 'upoz' ? 'upozorenje' : 'trenje');
+        h.push('<div><span class="tel-znacka ' + razina + '">' + natpis + '</span> '
+          + '<span class="tel-muted">ocjena ' + telBroj(f.ocjena, 0) + '/3 signala · upozorenja '
+          + telBroj(f.upozorenja, 0) + ' · označenih raspona ' + f.dogadjaja
+          + ' · izgubljeno do ' + telTrajanje(f.izgubljenoS) + ' (' + telPostotak(f.udioIzgubljenog) + ')</span></div>');
+        if (f.primjeri && f.primjeri.length) {
+          var pl = ['<div style="margin-top:0.3rem;">'];
+          f.primjeri.forEach(function (x) {
+            pl.push('<div class="tel-primjer">• ' + telEsc(x.signal) + ' ×' + telBroj(x.puta, 0) + ' '
+              + telEsc(x.razina) + (x.alat ? ' — ' + telEsc(x.alat) : '')
+              + (x.argument ? ': ' + telEsc(x.argument) : '') + '</div>');
+          });
+          pl.push('</div>');
+          h.push(pl.join(''));
+        }
+        h.push('<div class="tel-muted" style="font-size:0.68rem;margin-top:0.2rem;">'
+          + 'Trenje je oznaka za pregled, ne presuda o zadatku (ADR §7.4).</div>');
+      }
+      h.push('</div>');
+
+      return h.join('');
+    }
+
+    async function ucitajTelemetriju(taskId, opts) {
+      opts = opts || {};
+      var gen = ++telemetrijaGen;
+      if (telemetrijaTimer) { clearTimeout(telemetrijaTimer); telemetrijaTimer = null; }
+      telPostavi('<span class="tel-muted">Učitavam potrošnju…</span>');
+      var pokusaj = 0;
+
+      async function korak() {
+        if (gen !== telemetrijaGen || selectedTaskId !== taskId) return;
+        try {
+          var putanja = '/api/tasks/' + encodeURIComponent(taskId) + '/telemetry'
+            + (opts.force && pokusaj === 0 ? '?force=1' : '');
+          var res = await fetch(putanja);
+          var data = null;
+          try { data = await res.json(); } catch (e) { data = null; }
+          if (gen !== telemetrijaGen || selectedTaskId !== taskId) return;
+
+          if (res.status === 202) {
+            pokusaj++;
+            if (pokusaj > 6) {
+              telPostavi('<span class="tel-muted">Izračun traje dulje nego obično — pokušajte „Osvježi".</span>');
+              return;
+            }
+            telPostavi('<span class="tel-muted">Telemetrija se računa… (' + pokusaj + '/6)</span>');
+            telemetrijaTimer = setTimeout(korak, 1500);
+            return;
+          }
+          if (!res.ok || !data || data.stanje === 'greska') {
+            var zasto = data && data.poruka ? ': ' + telEsc(data.poruka) : '.';
+            telPostavi('<span class="tel-muted">Telemetrija trenutačno nije dostupna' + zasto + '</span>');
+            return;
+          }
+          telPostavi(telHtml(data));
+        } catch (err) {
+          if (gen !== telemetrijaGen) return;
+          telPostavi('<span class="tel-muted">Telemetrija trenutačno nije dostupna.</span>');
+        }
+      }
+
+      korak();
+    }
+
+    var telemetrijaBtn = document.getElementById('telemetry-refresh-btn');
+    if (telemetrijaBtn) {
+      telemetrijaBtn.addEventListener('click', function () {
+        if (selectedTaskId) ucitajTelemetriju(selectedTaskId, { force: true });
+      });
+    }
+
+    // ========================================================================
+    // TASK-3569 (T5) — kartica „Potrošnja": tjedni pregled (mjera 6)
+    //
+    // Podatci dolaze s GET /api/pregled/tjedni, koji zove
+    // tools/tjedni_pregled.py nad run_log.jsonl i NAŠIM transkriptima.
+    // Prikaz slijedi isto pravilo kao odjeljak na kartici zadatka:
+    //   • 202 „racuna" NIJE pogreška — pita se ponovno;
+    //   • uz SVAKU agregaciju piše iz koliko je izvođenja izračunata
+    //     („iz N"), jer brojka bez nazivnika nije provjerljiva;
+    //   • nedostajuća vrijednost je „—", nikad izmišljena nula.
+    // Pomoćnici za oblikovanje (telEsc/telBroj/telTrajanje/telPostotak/telCelija)
+    // su zajednički s T4 — namjerno se ne dupliciraju.
+    // ========================================================================
+    var potrosnjaGen = 0;
+    var potrosnjaTimer = null;
+
+    function potPostavi(html) {
+      var box = document.getElementById('potrosnja-box');
+      if (box) box.innerHTML = html;
+    }
+
+    function potIz(n) {
+      return '<span class="tel-muted" style="font-size:0.68rem;">iz ' + telBroj(n, 0) + '</span>';
+    }
+
+    /** Redak tablice skupine (projekt ili agent) — dvije linije: brojke + nazivnici. */
+    function potRedakSkupine(s, jeProjekt) {
+      var ime = telEsc(s.kljuc) + (jeProjekt && s.naziv ? ' <span class="tel-muted">' + telEsc(s.naziv) + '</span>' : '');
+      return '<tr>'
+        + '<td>' + ime + '</td>'
+        + '<td>' + telBroj(s.zadataka, 0) + '</td>'
+        + '<td>' + eur(s.trosak.usd) + ' ' + potIz(s.trosak.izZadataka) + '</td>'
+        + '<td>' + telBroj(s.tokeni.ulazniKontekst, 0) + ' ' + potIz(s.tokeni.izZadataka) + '</td>'
+        + '<td>' + telPostotak(s.tokeni.udioKesa) + '</td>'
+        + '<td>' + (s.latencija.prosjekS === null ? '—' : telBroj(s.latencija.prosjekS, 1) + ' s')
+                 + ' ' + potIz(s.latencija.izZadataka) + '</td>'
+        + '<td>' + telBroj(s.latencija.pozivaModela, 0) + '</td>'
+        + '<td>' + telTrajanje(s.trajanje.ukupnoS) + ' ' + potIz(s.trajanje.izZadataka) + '</td>'
+        + '</tr>';
+    }
+
+    function potTablica(naslov, redci, jeProjekt) {
+      if (!redci || !redci.length) {
+        return '<div class="tel-sec"><div class="tel-sec-title">' + telEsc(naslov) + '</div>'
+          + '<span class="tel-muted">Nema izvođenja u razdoblju.</span></div>';
+      }
+      var html = '<div class="tel-sec"><div class="tel-sec-title">' + telEsc(naslov)
+        + ' &mdash; ' + redci.length + (redci.length === 1 ? ' skupina' : ' skupina') + '</div>'
+        + '<table class="tel-table"><thead><tr>'
+        + '<th>' + (jeProjekt ? 'projekt' : 'agent') + '</th><th>izvo&#273;.</th><th>tro&#353;ak</th>'
+        + '<th>ulazni kontekst</th><th>ke&#353;</th><th>latencija &empty;</th>'
+        + '<th>poziva</th><th>trajanje</th>'
+        + '</tr></thead><tbody>';
+      for (var i = 0; i < redci.length; i++) html += potRedakSkupine(redci[i], jeProjekt);
+      return html + '</tbody></table></div>';
+    }
+
+    function potHtml(data) {
+      var p = data && data.pregled;
+      if (!p) return '<span class="tel-muted">Nema pregleda.</span>';
+      var u = p.ukupno;
+      var izv = p.izvor;
+
+      if (!u || !u.zadataka) {
+        return '<span class="tel-muted">U zadnjih ' + telBroj(p.dana, 0)
+          + ' dana nema nijednog zabilje&#382;enog izvo&#273;enja u run_log.jsonl.</span>';
+      }
+
+      var html = '<div class="tel-head">'
+        + '<b>zadnjih ' + telBroj(p.dana, 0) + ' dana</b>'
+        + '<span class="tel-muted">' + telEsc((p.od || '').slice(0, 10)) + ' &rarr; ' + telEsc((p.do || '').slice(0, 10)) + '</span>'
+        + '<span class="tel-muted">&middot; ' + telBroj(u.zadataka, 0) + ' izvo&#273;enja ('
+        + telBroj(u.razlicitihZadataka, 0) + ' razli&#269;itih zadataka)</span>'
+        + '<span class="tel-muted">&middot; s transkriptom ' + telBroj(u.sTranskriptom, 0) + '</span>'
+        + '</div>';
+
+      // UKUPNO — svaka ćelija nosi svoj nazivnik u oznaci
+      html += '<div class="tel-sec"><div class="tel-sec-title">Ukupno</div><div class="tel-grid">'
+        + telCelija(eur(u.trosak.usd),
+                    'trošak · iz ' + u.trosak.izZadataka)
+        + telCelija(eur(u.trosak.usdPoZadatku),
+                    'po izvođenju')
+        + telCelija(telBroj(u.tokeni.ulazniKontekst, 0), 'ulazni kontekst · iz ' + u.tokeni.izZadataka)
+        + telCelija(telBroj(u.tokeni.izlaz, 0), 'izlazni tokeni · iz ' + u.tokeni.izZadataka)
+        + telCelija(telPostotak(u.tokeni.udioKesa), 'udio keša · iz ' + u.tokeni.izZadataka)
+        + telCelija(telTrajanje(u.trajanje.ukupnoS), 'trajanje · iz ' + u.trajanje.izZadataka)
+        + '</div></div>';
+
+      html += '<div class="tel-sec"><div class="tel-sec-title">Latencija modela &mdash; iz '
+        + telBroj(u.latencija.izZadataka, 0) + ' izvo&#273;enja, ' + telBroj(u.latencija.izPoziva, 0)
+        + ' poziva</div><div class="tel-grid">'
+        + telCelija((u.latencija.prosjekS === null ? '—' : telBroj(u.latencija.prosjekS, 1) + ' s'), 'prosjek')
+        + telCelija((u.latencija.medijanS === null ? '—' : telBroj(u.latencija.medijanS, 1) + ' s'), 'medijan')
+        + telCelija((u.latencija.p95S === null ? '—' : telBroj(u.latencija.p95S, 1) + ' s'), 'p95')
+        + telCelija((u.latencija.najvecaS === null ? '—' : telBroj(u.latencija.najvecaS, 1) + ' s'), 'najveća')
+        + '</div></div>';
+
+      // Alati (mjera 3) i trenje (mjera 4) u razdoblju
+      var vrh = (u.alati.vrh || []).map(function (t) {
+        return telEsc(t.ime) + ' ' + telBroj(t.poziva, 0)
+          + (t.neuspjelih ? ' <span class="tel-znacka upoz">' + telBroj(t.neuspjelih, 0) + ' neuspj.</span>' : '');
+      }).join(' &middot; ') || '—';
+      html += '<div class="tel-sec"><div class="tel-sec-title">Alati i trenje &mdash; iz '
+        + telBroj(u.alati.izZadataka, 0) + ' izvo&#273;enja</div>'
+        + '<div>' + telBroj(u.alati.poziva, 0) + ' poziva, neuspjelih ' + telBroj(u.alati.neuspjelih, 0)
+        + ' (' + telPostotak(u.alati.udioNeuspjelih) + ') &middot; ' + vrh + '</div>'
+        + '<div class="tel-muted" style="margin-top:0.2rem;">trenje: '
+        + telBroj(u.trenje.zadatakaSTrenjem, 0) + ' izvo&#273;enja s trenjem (mjereno na '
+        + telBroj(u.trenje.izZadataka, 0) + ') &middot; izgubljeno do ' + telTrajanje(u.trenje.izgubljenoS)
+        + '</div></div>';
+
+      html += potTablica('Po projektu', p.poProjektu, true);
+      html += potTablica('Po agentu', p.poAgentu, false);
+
+      // Pet najskupljih zadataka
+      if (p.najskuplji && p.najskuplji.length) {
+        html += '<div class="tel-sec"><div class="tel-sec-title">Najskupljih ' + p.najskuplji.length
+          + '</div><table class="tel-table"><thead><tr>'
+          + '<th>zadatak</th><th>agent</th><th>projekt</th><th>tro&#353;ak</th>'
+          + '<th>trajanje</th><th>poziva</th><th>ke&#353;</th></tr></thead><tbody>';
+        for (var j = 0; j < p.najskuplji.length; j++) {
+          var z = p.najskuplji[j];
+          html += '<tr><td><b>' + telEsc(z.taskId) + '</b>'
+            + (z.naslov ? '<br><span class="tel-muted" style="font-size:0.68rem;">' + telEsc(z.naslov.slice(0, 70)) + '</span>' : '')
+            + '</td><td>' + telEsc(z.agent) + '</td><td>' + telEsc(z.projectId || '—') + '</td>'
+            + '<td>' + (z.trosakUsd === null ? '—' : telBroj(z.trosakUsd, 2) + ' $') + '</td>'
+            + '<td>' + telTrajanje(z.trajanjeS) + '</td>'
+            + '<td>' + telBroj(z.pozivaModela, 0) + '</td>'
+            + '<td>' + telPostotak(z.udioKesa) + '</td></tr>';
+        }
+        html += '</tbody></table></div>';
+      }
+
+      // Izvor i upozorenja — bez ovoga se brojke ne mogu provjeriti
+      html += '<div class="tel-sec"><div class="tel-sec-title">Izvor</div>'
+        + '<div class="tel-muted">' + telEsc(izv.runLog || 'run_log.jsonl') + ' &middot; '
+        + telBroj(izv.izvodjenjaURazdoblju, 0) + ' izvo&#273;enja u razdoblju (od '
+        + telBroj(izv.runLogRedakaUkupno, 0) + ' ukupno) &middot; s transkriptom '
+        + telBroj(izv.sTranskriptom, 0) + ' &middot; iz ke&#353;a ' + telBroj(izv.izKesa, 0)
+        + ', izra&#269;unato sada ' + telBroj(izv.izracunatoSada, 0) + '</div>';
+      if (p.upozorenja && p.upozorenja.length) {
+        html += '<ul class="tel-muted" style="margin:0.3rem 0 0 1rem;padding:0;">';
+        for (var w = 0; w < p.upozorenja.length; w++) html += '<li>' + telEsc(p.upozorenja[w]) + '</li>';
+        html += '</ul>';
+      }
+      html += '</div>';
+      return html;
+    }
+
+    async function ucitajPotrosnju(opts) {
+      opts = opts || {};
+      var gen = ++potrosnjaGen;
+      if (potrosnjaTimer) { clearTimeout(potrosnjaTimer); potrosnjaTimer = null; }
+      var izbor = document.getElementById('potrosnja-dana');
+      var dana = izbor ? izbor.value : '7';
+      var info = document.getElementById('potrosnja-izvor');
+      potPostavi('<span class="tel-muted">U&#269;itavam pregled&hellip;</span>');
+      if (info) info.textContent = '—';
+      var pokusaj = 0;
+
+      async function korak() {
+        if (gen !== potrosnjaGen) return;
+        try {
+          var putanja = '/api/pregled/tjedni?dana=' + encodeURIComponent(dana)
+            + (opts.force && pokusaj === 0 ? '&force=1' : '');
+          var res = await fetch(putanja);
+          var data = null;
+          try { data = await res.json(); } catch (e) { data = null; }
+          if (gen !== potrosnjaGen) return;
+
+          if (res.status === 202) {
+            pokusaj++;
+            if (pokusaj > 12) {
+              potPostavi('<span class="tel-muted">Izra&#269;un traje dulje nego obi&#269;no &mdash; poku&#353;ajte &bdquo;Osvje&#382;i&ldquo;.</span>');
+              return;
+            }
+            potPostavi('<span class="tel-muted">Pregled se ra&#269;una&hellip; (' + pokusaj + '/12)</span>');
+            potrosnjaTimer = setTimeout(korak, 1500);
+            return;
+          }
+          if (!res.ok || !data || data.stanje === 'greska') {
+            var zasto = data && data.poruka ? ': ' + telEsc(data.poruka) : '.';
+            potPostavi('<span class="tel-muted">Pregled trenuta&#269;no nije dostupan' + zasto + '</span>');
+            return;
+          }
+          potPostavi(potHtml(data));
+          if (info) {
+            info.textContent = (data.izvor === 'kes' ? 'iz keša' : 'svjež izračun')
+              + (data.staroS ? ' · star ' + data.staroS + ' s' : '');
+          }
+        } catch (err) {
+          if (gen !== potrosnjaGen) return;
+          potPostavi('<span class="tel-muted">Pregled trenuta&#269;no nije dostupan.</span>');
+        }
+      }
+
+      korak();
+    }
+
+    function initPotrosnja() { ucitajPotrosnju({}); }
+
+    var potrosnjaBtn = document.getElementById('potrosnja-refresh-btn');
+    if (potrosnjaBtn) {
+      potrosnjaBtn.addEventListener('click', function () { ucitajPotrosnju({ force: true }); });
+    }
+    var potrosnjaSelect = document.getElementById('potrosnja-dana');
+    if (potrosnjaSelect) {
+      potrosnjaSelect.addEventListener('change', function () { ucitajPotrosnju({}); });
+    }
+
+    // ========================================================================
+    // TASK-3572 (T8) — „Potrošnja projekta": isti pregled, sužen na jedan projekt.
+    //
+    // Dva mjesta, jedan izvor: odjeljak u panelu detalja projekta
+    // (GET /api/pregled/projekt/:id) i mala brojka troška na kartici u popisu
+    // (GET /api/pregled/tjedni → poProjektu, jedan poziv za sve kartice).
+    // Vrijede ista pravila kao T4/T5: 202 „racuna" nije pogreška, uz svaku
+    // agregaciju piše iz koliko je izvođenja izračunata, nedostajuće je „—".
+    // ========================================================================
+    var POPIS_TROSAK_DANA = 30;          // razdoblje brojke na kartici projekta
+    var POPIS_TROSAK_TTL_MS = 5 * 60000; // isto kao keš poslužitelja — bez bujice zahtjeva
+    var projektPotrosnjaGen = 0;
+    var projektPotrosnjaTimer = null;
+    var popisTrosak = null;              // { PRJ-x: {usd, izZadataka, zadataka} }
+    var popisTrosakTs = 0;
+    var popisTrosakUTijeku = false;
+
+    function projPostavi(html) {
+      var box = document.getElementById('projekt-potrosnja-box');
+      if (box) box.innerHTML = html;
+    }
+
+    function projIznos(usd) {
+      return eur(usd);
+    }
+
+    /** Odjeljak „Potrošnja projekta" — ukupno, latencija, trajanje, alati, najskuplji. */
+    function projHtml(data) {
+      var p = data && data.pregled;
+      if (!p) return '<span class="tel-muted">Nema pregleda.</span>';
+      var u = p.ukupno, izv = p.izvor || {};
+      var razdoblje = p.dana >= 3650 ? 'svo vrijeme' : ('zadnjih ' + telBroj(p.dana, 0) + ' dana');
+
+      if (!u || !u.zadataka) {
+        return '<span class="tel-muted">Za ' + telEsc(razdoblje) + ' ovaj projekt nema nijedno '
+          + 'zabilje&#382;eno izvo&#273;enje (razdoblje ih ukupno ima '
+          + telBroj(izv.izvodjenjaPrijeFiltra, 0) + ').</span>';
+      }
+
+      var html = '<div class="tel-head"><b>' + telEsc(razdoblje) + '</b>'
+        + '<span class="tel-muted">' + telEsc((p.od || '').slice(0, 10)) + ' &rarr; '
+        + telEsc((p.do || '').slice(0, 10)) + '</span>'
+        + '<span class="tel-muted">&middot; ' + telBroj(u.zadataka, 0) + ' izvo&#273;enja ('
+        + telBroj(u.razlicitihZadataka, 0) + ' razli&#269;itih zadataka, od '
+        + telBroj(izv.izvodjenjaPrijeFiltra, 0) + ' u razdoblju)</span>'
+        + '<span class="tel-muted">&middot; s transkriptom ' + telBroj(u.sTranskriptom, 0) + '</span>'
+        + '</div>';
+      if (data.poruka) {
+        html += '<div class="tel-muted" style="margin-bottom:0.4rem;">' + telEsc(data.poruka) + '</div>';
+      }
+
+      // Ukupno — svaka ćelija nosi svoj nazivnik
+      html += '<div class="tel-sec"><div class="tel-sec-title">Ukupno</div><div class="tel-grid">'
+        + telCelija(projIznos(u.trosak.usd), 'trošak · iz ' + u.trosak.izZadataka)
+        + telCelija(projIznos(u.trosak.usdPoZadatku), 'po izvođenju')
+        + telCelija(telBroj(u.tokeni.ulazniKontekst, 0), 'ulazni kontekst · iz ' + u.tokeni.izZadataka)
+        + telCelija(telBroj(u.tokeni.izlaz, 0), 'izlazni tokeni · iz ' + u.tokeni.izZadataka)
+        + telCelija(telPostotak(u.tokeni.udioKesa), 'udio keša · iz ' + u.tokeni.izZadataka)
+        + telCelija(telBroj(u.zadataka, 0), 'izvođenja')
+        + '</div></div>';
+
+      // Latencija — prosjek i medijan traženi izrijekom
+      html += '<div class="tel-sec"><div class="tel-sec-title">Latencija modela &mdash; iz '
+        + telBroj(u.latencija.izZadataka, 0) + ' izvo&#273;enja, ' + telBroj(u.latencija.izPoziva, 0)
+        + ' poziva</div><div class="tel-grid">'
+        + telCelija((u.latencija.prosjekS === null ? '—' : telBroj(u.latencija.prosjekS, 1) + ' s'), 'prosjek')
+        + telCelija((u.latencija.medijanS === null ? '—' : telBroj(u.latencija.medijanS, 1) + ' s'), 'medijan')
+        + telCelija((u.latencija.p95S === null ? '—' : telBroj(u.latencija.p95S, 1) + ' s'), 'p95')
+        + telCelija((u.latencija.najvecaS === null ? '—' : telBroj(u.latencija.najvecaS, 1) + ' s'), 'najveća')
+        + '</div></div>';
+
+      // Razlaganje trajanja (model / alati) — traka kao na kartici zadatka
+      var tr = u.trajanje;
+      var sirina = function (x) { return Math.max(0, Math.round((x || 0) * 1000) / 10); };
+      html += '<div class="tel-sec"><div class="tel-sec-title">Razlaganje trajanja &mdash; ukupno '
+        + telTrajanje(tr.ukupnoS) + ' (iz ' + telBroj(tr.izZadataka, 0) + ' izvo&#273;enja)</div>'
+        + '<div class="tel-bar">'
+        + '<span class="tel-seg-model" style="width:' + sirina(tr.udioModel) + '%"></span>'
+        + '<span class="tel-seg-alat" style="width:' + sirina(tr.udioAlat) + '%"></span>'
+        + '</div>'
+        + '<div class="tel-legend">'
+        + '<span><i class="tel-seg-model"></i>model ' + telTrajanje(tr.modelS) + ' (' + telPostotak(tr.udioModel) + ')</span>'
+        + '<span><i class="tel-seg-alat"></i>alati ' + telTrajanje(tr.alatS) + ' (' + telPostotak(tr.udioAlat) + ')</span>'
+        + '</div></div>';
+
+      // Alati i trenje
+      var vrh = (u.alati.vrh || []).map(function (t) {
+        return telEsc(t.ime) + ' ' + telBroj(t.poziva, 0);
+      }).join(' &middot; ') || '—';
+      html += '<div class="tel-sec"><div class="tel-sec-title">Alati i trenje &mdash; iz '
+        + telBroj(u.alati.izZadataka, 0) + ' izvo&#273;enja</div>'
+        + '<div>' + telBroj(u.alati.poziva, 0) + ' poziva, neuspjelih ' + telBroj(u.alati.neuspjelih, 0)
+        + ' (' + telPostotak(u.alati.udioNeuspjelih) + ') &middot; ' + vrh + '</div>'
+        + '<div class="tel-muted" style="margin-top:0.2rem;">trenje: '
+        + telBroj(u.trenje.zadatakaSTrenjem, 0) + ' izvo&#273;enja s trenjem (mjereno na '
+        + telBroj(u.trenje.izZadataka, 0) + ') &middot; izgubljeno do ' + telTrajanje(u.trenje.izgubljenoS)
+        + '</div></div>';
+
+      // Po agentu unutar projekta — tko je potrošio
+      if (p.poAgentu && p.poAgentu.length) {
+        html += potTablica('Po agentu u ovom projektu', p.poAgentu, false);
+      }
+
+      // Pet najskupljih zadataka TOG projekta
+      if (p.najskuplji && p.najskuplji.length) {
+        html += '<div class="tel-sec"><div class="tel-sec-title">Najskupljih ' + p.najskuplji.length
+          + ' zadataka</div><table class="tel-table"><thead><tr>'
+          + '<th>zadatak</th><th>agent</th><th>tro&#353;ak</th><th>trajanje</th>'
+          + '<th>poziva</th><th>ke&#353;</th></tr></thead><tbody>';
+        for (var j = 0; j < p.najskuplji.length; j++) {
+          var z = p.najskuplji[j];
+          html += '<tr><td><b>' + telEsc(z.taskId) + '</b>'
+            + (z.naslov ? '<br><span class="tel-muted" style="font-size:0.68rem;">' + telEsc(z.naslov.slice(0, 60)) + '</span>' : '')
+            + '</td><td>' + telEsc(z.agent) + '</td>'
+            + '<td>' + projIznos(z.trosakUsd) + '</td>'
+            + '<td>' + telTrajanje(z.trajanjeS) + '</td>'
+            + '<td>' + telBroj(z.pozivaModela, 0) + '</td>'
+            + '<td>' + telPostotak(z.udioKesa) + '</td></tr>';
+        }
+        html += '</tbody></table></div>';
+      }
+
+      // Izvor i upozorenja — bez toga se brojke ne mogu provjeriti
+      html += '<div class="tel-sec"><div class="tel-sec-title">Izvor</div>'
+        + '<div class="tel-muted">' + telEsc(izv.runLog || 'run_log.jsonl') + ' &middot; '
+        + telBroj(izv.izvodjenjaURazdoblju, 0) + ' izvo&#273;enja ovog projekta (od '
+        + telBroj(izv.izvodjenjaPrijeFiltra, 0) + ' u razdoblju, ' + telBroj(izv.runLogRedakaUkupno, 0)
+        + ' ukupno) &middot; iz ke&#353;a ' + telBroj(izv.izKesa, 0) + ', izra&#269;unato sada '
+        + telBroj(izv.izracunatoSada, 0) + '</div>';
+      if (p.upozorenja && p.upozorenja.length) {
+        html += '<ul class="tel-muted" style="margin:0.3rem 0 0 1rem;padding:0;">';
+        for (var w = 0; w < p.upozorenja.length; w++) html += '<li>' + telEsc(p.upozorenja[w]) + '</li>';
+        html += '</ul>';
+      }
+      html += '</div>';
+      return html;
+    }
+
+    async function ucitajPotrosnjuProjekta(projectId, opts) {
+      opts = opts || {};
+      var gen = ++projektPotrosnjaGen;
+      if (projektPotrosnjaTimer) { clearTimeout(projektPotrosnjaTimer); projektPotrosnjaTimer = null; }
+      if (!projectId) { projPostavi('<span class="tel-muted">&mdash;</span>'); return; }
+      var izbor = document.getElementById('projekt-potrosnja-dana');
+      var dana = izbor ? izbor.value : '30';
+      var info = document.getElementById('projekt-potrosnja-izvor');
+      projPostavi('<span class="tel-muted">U&#269;itavam potro&#353;nju&hellip;</span>');
+      if (info) info.textContent = '—';
+      var pokusaj = 0;
+
+      async function korak() {
+        // Panel je u međuvremenu zatvoren ili otvoren drugi projekt — odgovor se odbacuje.
+        if (gen !== projektPotrosnjaGen || selectedProjectId !== projectId) return;
+        try {
+          var putanja = '/api/pregled/projekt/' + encodeURIComponent(projectId)
+            + '?dana=' + encodeURIComponent(dana)
+            + (opts.force && pokusaj === 0 ? '&force=1' : '');
+          var res = await fetch(putanja);
+          var data = null;
+          try { data = await res.json(); } catch (e) { data = null; }
+          if (gen !== projektPotrosnjaGen || selectedProjectId !== projectId) return;
+
+          if (res.status === 202) {
+            pokusaj++;
+            if (pokusaj > 12) {
+              projPostavi('<span class="tel-muted">Izra&#269;un traje dulje nego obi&#269;no &mdash; poku&#353;ajte &bdquo;Osvje&#382;i&ldquo;.</span>');
+              return;
+            }
+            projPostavi('<span class="tel-muted">Potro&#353;nja se ra&#269;una&hellip; (' + pokusaj + '/12)</span>');
+            projektPotrosnjaTimer = setTimeout(korak, 1500);
+            return;
+          }
+          if (!res.ok || !data || data.stanje === 'greska') {
+            var zasto = data && data.poruka ? ': ' + telEsc(data.poruka) : '.';
+            projPostavi('<span class="tel-muted">Potro&#353;nja trenuta&#269;no nije dostupna' + zasto + '</span>');
+            return;
+          }
+          projPostavi(projHtml(data));
+          if (info) {
+            info.textContent = (data.izvor === 'kes' ? 'iz keša' : 'svjež izračun')
+              + (data.staroS ? ' · star ' + data.staroS + ' s' : '');
+          }
+        } catch (err) {
+          if (gen !== projektPotrosnjaGen) return;
+          projPostavi('<span class="tel-muted">Potro&#353;nja trenuta&#269;no nije dostupna.</span>');
+        }
+      }
+
+      korak();
+    }
+
+    var projektPotrosnjaBtn = document.getElementById('projekt-potrosnja-refresh-btn');
+    if (projektPotrosnjaBtn) {
+      projektPotrosnjaBtn.addEventListener('click', function () {
+        ucitajPotrosnjuProjekta(selectedProjectId, { force: true });
+      });
+    }
+    var projektPotrosnjaSelect = document.getElementById('projekt-potrosnja-dana');
+    if (projektPotrosnjaSelect) {
+      projektPotrosnjaSelect.addEventListener('change', function () {
+        ucitajPotrosnjuProjekta(selectedProjectId, {});
+      });
+    }
+
+    /**
+     * Trošak SVIH projekata u zadanom razdoblju, jednim pozivom tjednog pregleda.
+     * Kartica projekta ne smije zvati svoj izračun — 30 kartica značilo bi 30
+     * procesa. Dok brojka ne stigne, na kartici piše „…", a ne izmišljena nula.
+     */
+    async function ucitajTroskovePopisa(force) {
+      var sad = Date.now();
+      if (popisTrosakUTijeku) return;
+      if (!force && popisTrosak && (sad - popisTrosakTs) < POPIS_TROSAK_TTL_MS) return;
+      popisTrosakUTijeku = true;
+      try {
+        for (var pokusaj = 0; pokusaj < 8; pokusaj++) {
+          var res = await fetch('/api/pregled/tjedni?dana=' + POPIS_TROSAK_DANA);
+          if (res.status === 202) {
+            await new Promise(function (r) { setTimeout(r, 1500); });
+            continue;
+          }
+          if (!res.ok) return;
+          var data = await res.json();
+          var redci = data && data.pregled && data.pregled.poProjektu;
+          if (!redci) return;
+          var mapa = {};
+          for (var i = 0; i < redci.length; i++) {
+            mapa[redci[i].kljuc] = {
+              usd: redci[i].trosak.usd,
+              izZadataka: redci[i].trosak.izZadataka,
+              zadataka: redci[i].zadataka
+            };
+          }
+          popisTrosak = mapa;
+          popisTrosakTs = Date.now();
+          renderProjects();
+          return;
+        }
+      } catch (err) {
+        // Brojka troška je dodatak; njezin izostanak ne smije srušiti popis projekata.
+      } finally {
+        popisTrosakUTijeku = false;
+      }
+    }
+
+    /** Kućica troška na kartici projekta: „…" dok se računa, „—" kad nema mjerenja. */
+    function projectTrosakChip(projectId) {
+      var naslov = 'trošak zadnjih ' + POPIS_TROSAK_DANA + ' dana (tools/tjedni_pregled.py)';
+      if (!popisTrosak) {
+        return '<span class="project-count c-trosak is-racuna" title="' + naslov
+          + ' — računa se">&euro; <b>&hellip;</b></span>';
+      }
+      var z = popisTrosak[projectId];
+      if (!z || z.usd === null || z.usd === undefined) {
+        return '<span class="project-count c-trosak is-prazna" title="' + naslov
+          + ' — nema zabilježenog izvođenja">&euro; <b>&mdash;</b></span>';
+      }
+      return '<span class="project-count c-trosak" title="' + naslov + ' — iz '
+        + z.izZadataka + ' izvođenja">' + eur(z.usd) + '</span>';
+    }
+
     // Add progress note
     document.getElementById('add-note-btn').addEventListener('click', async () => {
       const input = document.getElementById('detail-new-note');
@@ -3018,6 +4183,9 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         blockedBy: editedBlockedBy,
         blockedReason: document.getElementById('detail-blocked-reason').value || undefined,
         tags: editedTags,
+        // TASK-3512: prazan izbor je VALJANA vrijednost (makni projekt), pa se šalje ''
+        // a ne undefined — poslužitelj '' pretvara u pretinac PRJ-033 (TASK-3514).
+        projectId: document.getElementById('detail-project').value,
         // CompletionGuard (TASK-2954): ovaj PUT dolazi od ČOVJEKA s ploče. Guard čuva
         // od agenata koji zatvaraju neizvršeno; ručna odluka je mjerodavna i loga se.
         force: true
@@ -3124,6 +4292,8 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         initRAGPage();
       } else if (tabId === 'konzola') {
         initKonzola();
+      } else if (tabId === 'potrosnja') {
+        initPotrosnja();
       } else if (tabId === 'status') {
         initStatus();
       } else if (tabId === 'info') {
@@ -3134,6 +4304,11 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       if (tabId !== 'konzola' && konzolaStatusInterval) { clearInterval(konzolaStatusInterval); konzolaStatusInterval = null; }
       if (tabId !== 'konzola' && sessionUsageInterval) { clearInterval(sessionUsageInterval); sessionUsageInterval = null; }
       if (tabId !== 'status' && statusRefreshInterval) { clearInterval(statusRefreshInterval); statusRefreshInterval = null; }
+      // TASK-3569: napuštena kartica „Potrošnja" ne smije nastaviti pitati za 202.
+      if (tabId !== 'potrosnja') {
+        potrosnjaGen++;
+        if (potrosnjaTimer) { clearTimeout(potrosnjaTimer); potrosnjaTimer = null; }
+      }
 
       // Update add button visibility
       const addTaskBtn = document.getElementById('add-task-btn');
@@ -3160,36 +4335,116 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         projects = await response.json();
         renderProjects();
         updateProjectsAgentFilter();
+        // Trošak po projektu (TASK-3572, T8) — jedan poziv za sve kartice, s
+        // vlastitim kešem; ne blokira ispis popisa i ne ponavlja se u bujici.
+        ucitajTroskovePopisa(false);
       } catch (err) {
         console.error('Failed to fetch projects:', err);
       }
     }
 
+    // Nazivi statusa projekta na hrvatskom (TASK-3513)
+    const PROJECT_STATUS_LABELS = {
+      active: 'Aktivan',
+      on_hold: 'Na čekanju',
+      completed: 'Dovršen',
+      archived: 'Arhiviran'
+    };
+
+    /**
+     * Vremenska oznaka iz baze u Date. Baza nosi dva zapisa ('2026-08-28 11:29:20'
+     * i '2026-08-28T11:29:20.000Z') koji oba znače ISTI, LOKALNI sat (v. ChronoOrder.ts),
+     * pa 'Z' odbacujemo — inače bi ISO zapis ispao pomaknut za razliku prema UTC-u.
+     */
+    function parseDbTs(ts) {
+      if (!ts) return null;
+      const norm = String(ts).replace('T', ' ').replace('Z', '').trim();
+      const d = new Date(norm.replace(' ', 'T'));
+      return isNaN(d.getTime()) ? null : d;
+    }
+
+    /** 'prije 5 min' / 'prije 3 h' / 'prije 2 d' — koliko je davno bio zadnji rad. */
+    function projectAgeText(ts) {
+      const d = parseDbTs(ts);
+      if (!d) return 'bez zapisa';
+      const min = Math.floor((Date.now() - d.getTime()) / 60000);
+      if (min < 1) return 'upravo sad';
+      if (min < 60) return 'prije ' + min + ' min';
+      const h = Math.floor(min / 60);
+      if (h < 24) return 'prije ' + h + ' h';
+      const dani = Math.floor(h / 24);
+      return 'prije ' + dani + ' d';
+    }
+
+    function projectCountChip(cssKey, label, value) {
+      const n = Number(value) || 0;
+      return '<span class="project-count c-' + cssKey + (n === 0 ? ' is-zero' : '') +
+             '" title="' + label + '">' + label + ' <b>' + n + '</b></span>';
+    }
+
+    /**
+     * Projekti u četiri stupca, bez statusnih stupaca (TASK-3513). Poredak dolazi
+     * s poslužitelja (ChronoOrder: zadnji rad silazno), ali ga ovdje potvrđujemo
+     * i na klijentu da filtriranje ili drugi izvor ne pomute redoslijed —
+     * prva kućica (A1) mora biti projekt na kojemu se zadnje radilo.
+     */
     function renderProjects() {
-      const filtered = projectsFilter === 'all' ? projects : projects.filter(p => p.lead_agent === projectsFilter);
+      const container = document.getElementById('projects-rows');
+      if (!container) return;
 
-      const containers = {
-        'active': document.getElementById('active-projects'),
-        'on_hold': document.getElementById('on-hold-projects'),
-        'completed': document.getElementById('completed-projects'),
-        'archived': document.getElementById('archived-projects')
-      };
+      const filtered = (projectsFilter === 'all'
+        ? projects.slice()
+        : projects.filter(p => p.lead_agent === projectsFilter))
+        .sort((a, b) => {
+          const ta = parseDbTs(a.last_activity_at || a.updated_at);
+          const tb = parseDbTs(b.last_activity_at || b.updated_at);
+          return (tb ? tb.getTime() : 0) - (ta ? ta.getTime() : 0);
+        });
 
-      Object.values(containers).forEach(c => c.innerHTML = '');
+      container.innerHTML = '';
+
+      if (filtered.length === 0) {
+        container.innerHTML = '<div class="empty">Nema projekata</div>';
+        return;
+      }
 
       filtered.forEach(project => {
-        const container = containers[project.status];
-        if (!container) return;
+        const status = project.status || 'active';
+        const total = Number(project.task_count) || 0;
+        const done = Number(project.completed_task_count) || 0;
+        const pct = total > 0
+          ? (project.calculated_progress != null ? Number(project.calculated_progress) : Math.round(done * 1000 / total) / 10)
+          : 0;
 
         const card = document.createElement('div');
-        card.className = 'project-card p' + project.priority;
+        card.className = 'project-card status-' + status;
+        card.title = 'Zadnji rad: ' + (project.last_activity_at || project.updated_at || '—');
 
         card.innerHTML = \`
-          <div class="project-id">\${project.id}</div>
+          <div class="project-card-top">
+            <span class="project-id">\${project.id}</span>
+            <span class="project-status-badge status-\${status}">\${PROJECT_STATUS_LABELS[status] || status}</span>
+          </div>
           <div class="project-name">\${project.name}</div>
           <div class="project-meta">
-            <span>\${project.lead_agent || 'No Lead'}</span>
-            <span>P\${project.priority}</span>
+            <span>\${project.lead_agent || 'bez vodstva'} · P\${project.priority}</span>
+            <span>\${projectAgeText(project.last_activity_at || project.updated_at)}</span>
+          </div>
+          <div class="project-counts">
+            \${projectCountChip('in_progress', 'u radu', project.in_progress_task_count)}
+            \${projectCountChip('pending', 'na čekanju', project.pending_task_count)}
+            \${projectCountChip('blocked', 'blokirano', project.blocked_task_count)}
+            \${projectCountChip('completed', 'gotovo', done)}
+            \${projectTrosakChip(project.id)}
+          </div>
+          <div class="project-progress">
+            <div class="project-progress-track">
+              <div class="project-progress-fill" style="width: \${Math.max(0, Math.min(100, pct))}%"></div>
+            </div>
+            <div class="project-progress-label">
+              <span>\${String(pct).replace('.', ',')} % dovršeno</span>
+              <span>\${done}/\${total} zadataka</span>
+            </div>
           </div>
         \`;
 
@@ -3198,12 +4453,6 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         card.addEventListener('click', () => {
           openProjectDetail(project.id);
         });
-      });
-
-      Object.entries(containers).forEach(([status, container]) => {
-        if (container.children.length === 0) {
-          container.innerHTML = '<div class="empty">No projects</div>';
-        }
       });
     }
 
@@ -3303,6 +4552,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
 
         renderProjectDetailPanel(project);
         projectDetailPanel.classList.add('open');
+        ucitajPotrosnjuProjekta(projectId, {});
       } catch (err) {
         console.error('Failed to load project:', err);
         alert('Failed to load project details');
@@ -3311,6 +4561,10 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
 
     function closeProjectDetailPanel() {
       projectDetailPanel.classList.remove('open');
+      // Odgođeni pokušaj za zatvoreni panel nema kome pisati.
+      projektPotrosnjaGen++;
+      if (projektPotrosnjaTimer) { clearTimeout(projektPotrosnjaTimer); projektPotrosnjaTimer = null; }
+      projPostavi('<span class="tel-muted">&hellip;</span>');
       selectedProjectId = null;
       selectedProjectData = null;
       projectAgents = [];
@@ -4010,14 +5264,27 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         const d = await r.json();
         const el = document.getElementById('konzola-session');
         if (!el) return;
-        if (d.session_percent == null) { el.textContent = 'n/a'; el.className = 'konzola-status-value s-warn'; el.title = d.error || 'nedostupno'; return; }
+        // TASK-3461: kvar MJERILA ima prednost nad brojkom. Brojka od 87 % koja je stara
+        // 139 min nije stanje sesije nego zamrznuta snimka, a razlika je odlučivala o tome
+        // stoji li autonomija do jutra a da nitko ne zna zašto.
+        const meterDown = d.meter_status === 'down';
+        const meterInfo = meterDown
+          ? 'MJERILO NE RADI' + (d.meter_down_min != null ? ' ' + d.meter_down_min + ' min' : '')
+            + (d.meter_error ? ' — ' + d.meter_error : '') + ' · autonomija stoji'
+          : '';
+        if (d.session_percent == null) {
+          el.textContent = meterDown ? 'mjerilo ⛔' : 'n/a';
+          el.className = 'konzola-status-value ' + (meterDown ? 's-error' : 's-warn');
+          el.title = meterInfo || d.error || 'nedostupno'; return;
+        }
         const sp = Math.round(d.session_percent), wp = (d.weekly_percent == null ? null : Math.round(d.weekly_percent));
-        el.textContent = sp + '%' + (wp != null ? ' · 7d ' + wp + '%' : '') + (d.stale ? ' ⚠' : '');
-        el.className = 'konzola-status-value' + (sp >= 90 ? ' s-error' : sp >= 75 ? ' s-warn' : '');
-        el.title = 'Sesija 5h: ' + sp + '% · Tjedan 7d: ' + (wp == null ? '?' : wp) + '%'
+        el.textContent = sp + '%' + (wp != null ? ' · 7d ' + wp + '%' : '') + (meterDown ? ' ⛔ mjerilo' : d.stale ? ' ⚠' : '');
+        el.className = 'konzola-status-value' + (meterDown || sp >= 90 ? ' s-error' : sp >= 75 ? ' s-warn' : '');
+        el.title = (meterDown ? meterInfo + ' · zadnja poznata brojka: ' : '')
+          + 'Sesija 5h: ' + sp + '% · Tjedan 7d: ' + (wp == null ? '?' : wp) + '%'
           + (d.session_reset_local ? ' · reset ' + d.session_reset_local : '')
           + (d.age_s != null ? ' · očitano prije ' + d.age_s + ' s' : '')
-          + (d.stale ? ' · ZASTARJELO: ' + (d.error || 'osvježavanje ne uspijeva') : '');
+          + (!meterDown && d.stale ? ' · ZASTARJELO: ' + (d.error || 'osvježavanje ne uspijeva') : '');
       } catch(e) {}
     }
     // Na I/O u konzoli osvježi, ali najviše svakih 5 s (da ne spama pri brzom logu).
@@ -4340,7 +5607,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
       return String(n);
     }
-    function fmtCost(usd) { return usd ? '$' + Number(usd).toFixed(2) : '$0.00'; }
+    function fmtCost(usd) { return eur(usd || 0); }
 
     async function fetchStatusDashboard() {
       try {
@@ -4684,7 +5951,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
           h += '<div style="display:flex;gap:0.6rem;flex-wrap:wrap;align-items:flex-end;font-size:0.72rem">';
           // Server IP:port samo za lokalne (Ollama)
           if (p.kind === 'local') {
-            h += '<div><div style="color:var(--text-secondary)">Server (IP:port)</div><input id="prov-' + p.id + '-url" value="' + (p.baseUrl || '') + '" placeholder="http://127.0.0.1:11434" style="width:230px;' + inpStyle + '"></div>';
+            h += '<div><div style="color:var(--text-secondary)">Server (IP:port)</div><input id="prov-' + p.id + '-url" value="' + (p.baseUrl || '') + '" placeholder="http://192.168.10.4:11434" style="width:230px;' + inpStyle + '"></div>';
           }
           // Ključ + 👁 prikaži (maskiran dok se ne stisne)
           h += '<div><div style="color:var(--text-secondary)">' + keyLabel + '</div>' +
@@ -4970,7 +6237,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       h += '<div class="info-kv"><span class="info-kv-label">In Progress</span><span class="info-kv-value">' + (t.inProgress||0) + '</span></div>';
       h += '<div class="info-kv"><span class="info-kv-label">Pending</span><span class="info-kv-value">' + (t.pending||0) + '</span></div>';
       var c = m.costs || {};
-      h += '<div class="info-kv" style="margin-top:0.5rem;border-top:1px solid var(--border-color);padding-top:0.3rem"><span class="info-kv-label">Cost Total</span><span class="info-kv-value">$' + Number(c.total||0).toFixed(2) + '</span></div>';
+      h += '<div class="info-kv" style="margin-top:0.5rem;border-top:1px solid var(--border-color);padding-top:0.3rem"><span class="info-kv-label">Trošak ukupno</span><span class="info-kv-value">' + eur(Number(c.total||0)) + '</span></div>';
       var o = m.observability || {};
       h += '<div class="info-kv"><span class="info-kv-label">Events Total</span><span class="info-kv-value">' + (o.totalEvents||0) + '</span></div>';
       h += '<div class="info-kv"><span class="info-kv-label">Events (24h)</span><span class="info-kv-value">' + (o.last24h||0) + '</span></div>';
@@ -4994,6 +6261,11 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     //
     // Zato: prvo dohvat, pa tek onda veza, i to u try — WebSocket je ubrzanje (zivo
     // osvjezavanje), nikad preduvjet za prikaz.
+    // TASK-3609: tečaj prije prvog iscrtavanja iznosa. Ne čekamo ga (ploča se ne smije
+    // zaustaviti na tuđem poslužitelju) — do dolaska iznosi pišu crticu, nikad krivu brojku.
+    ucitajTecaj();
+    setInterval(ucitajTecaj, 6 * 60 * 60 * 1000);
+
     fetchProjectsForFilter();
     fetchTasks();
     setInterval(fetchTasks, 30000); // Refresh every 30s — radi i bez WebSocketa
@@ -5042,7 +6314,7 @@ function getEffectiveModels(): typeof AVAILABLE_MODELS {
   const extra: typeof AVAILABLE_MODELS = []
   try {
     const H = process.env.HOME || ''
-    const _cf = join(TM_ROOT, 'credentials.env')
+    const _cf = join(H, '.claude/regoc/credentials.env')
     const _geminiKey = existsSync(_cf) && /^GEMINI_API_KEY=.+/m.test(readFileSync(_cf, 'utf-8'))
     if (existsSync(join(H, '.gemini/oauth_creds.json')) || _geminiKey) {
       extra.push(
@@ -5060,7 +6332,7 @@ function getEffectiveModels(): typeof AVAILABLE_MODELS {
 function loadAgentOverrides(HOME: string): Record<string, string> {
   const out: Record<string, string> = {}
   try {
-    const p = join(TM_ROOT, 'models/model-config.json')
+    const p = join(HOME, '.claude/regoc/models/model-config.json')
     if (existsSync(p)) {
       const mc = JSON.parse(readFileSync(p, 'utf-8'))
       const ov = mc.agentOverrides || {}
@@ -5101,10 +6373,10 @@ async function fetchOllamaModels(baseUrl: string, apiKey?: string): Promise<stri
 
 // Providers + živi popis modela — hrani i dropdown po agentu i setup panel.
 async function buildModelsAvailable(): Promise<{ providers: any[]; models: any[] }> {
-  const HOME = process.env.HOME || os.homedir()
+  const HOME = process.env.HOME || '/home/klaudio'
   let provCfg: Record<string, any> = {}
   try {
-    const mc = JSON.parse(readFileSync(join(TM_ROOT, 'models/model-config.json'), 'utf-8'))
+    const mc = JSON.parse(readFileSync(join(HOME, '.claude/regoc/models/model-config.json'), 'utf-8'))
     provCfg = mc.providers || {}
   } catch {}
 
@@ -5126,7 +6398,7 @@ async function buildModelsAvailable(): Promise<{ providers: any[]; models: any[]
   // Ollama — lokalno, treba IP:port (token opcijski, samo iza proxyja)
   const oCfg = provCfg.ollama || {}
   const oEnabled = oCfg.enabled !== false
-  const baseUrl = oCfg.baseUrl || process.env.TM_OLLAMA_URL || 'http://127.0.0.1:11434'
+  const baseUrl = oCfg.baseUrl || 'http://192.168.10.4:11434'
   const apiKey = typeof oCfg.apiKey === 'string' && oCfg.apiKey && !oCfg.apiKey.startsWith('env:') ? oCfg.apiKey : undefined
   const hasAuth = !!(oCfg.apiKey && oCfg.apiKey !== '')
   let oModels: any[] = []
@@ -5182,8 +6454,8 @@ async function handleSetProvider(providerId: string, req: Request): Promise<Resp
   }
   try {
     const body = (await req.json()) as { enabled?: boolean; baseUrl?: string; apiKey?: string }
-    const HOME = process.env.HOME || os.homedir()
-    const mcPath = join(TM_ROOT, 'models/model-config.json')
+    const HOME = process.env.HOME || '/home/klaudio'
+    const mcPath = join(HOME, '.claude/regoc/models/model-config.json')
     if (!existsSync(mcPath)) return json({ error: 'model-config.json not found' }, 500)
     const mc = JSON.parse(readFileSync(mcPath, 'utf-8'))
     if (!mc.providers) mc.providers = {}
@@ -5210,14 +6482,14 @@ async function handleSetProvider(providerId: string, req: Request): Promise<Resp
 }
 
 function buildInfoPayload(): Record<string, unknown> {
-  const HOME = process.env.HOME || os.homedir()
+  const HOME = process.env.HOME || '/home/klaudio'
   const agentOverrides = loadAgentOverrides(HOME)
 
   // Load agent registry
   let agents: Record<string, unknown>[] = []
   let agentCount = 0
   try {
-    const regPath = join(TM_ROOT, 'REGOC_AGENTS.json')
+    const regPath = join(HOME, '.claude/regoc/REGOC_AGENTS.json')
     if (existsSync(regPath)) {
       const reg = JSON.parse(readFileSync(regPath, 'utf-8'))
       const agentMap = reg.agents || {}
@@ -5270,7 +6542,7 @@ function buildInfoPayload(): Record<string, unknown> {
   let providers: Record<string, unknown>[] = []
   let providerCount = 0
   try {
-    const mcPath = join(TM_ROOT, 'models/model-config.json')
+    const mcPath = join(HOME, '.claude/regoc/models/model-config.json')
     if (existsSync(mcPath)) {
       const mc = JSON.parse(readFileSync(mcPath, 'utf-8'))
       const provs = mc.providers || {}
@@ -5316,7 +6588,7 @@ function buildInfoPayload(): Record<string, unknown> {
   let modules: Record<string, unknown>[] = []
   let modulesEnabled = 0
   try {
-    const modPath = join(TM_ROOT, 'modules/module-config.json')
+    const modPath = join(HOME, '.claude/regoc/modules/module-config.json')
     if (existsSync(modPath)) {
       const mc = JSON.parse(readFileSync(modPath, 'utf-8'))
       const mods = mc.modules || {}
@@ -5413,13 +6685,13 @@ function buildInfoPayload(): Record<string, unknown> {
       { name: 'TaskWebUI', endpoint: 'localhost:17781' },
       { name: 'VoiceServer', endpoint: 'localhost:8888' },
       { name: 'RegocPulse', endpoint: 'localhost:17780 (planned)' },
-      { name: 'ChromaDB', endpoint: (process.env.TM_CHROMA_HOST || '127.0.0.1') + ':' + (process.env.TM_CHROMA_PORT || '8000') },
-      { name: 'Ollama', endpoint: (process.env.TM_OLLAMA_URL || 'http://127.0.0.1:11434').replace(/^https?:\/\//, '') },
+      { name: 'ChromaDB', endpoint: '192.168.10.200:18765' },
+      { name: 'Ollama', endpoint: '192.168.10.4:11434' },
       { name: 'STT Server', endpoint: 'localhost:8787 (disabled)' },
     ],
     databases: [
       { name: 'messages.db', purpose: 'Inter-agent communication (MessageQueue)' },
-      { name: 'tasks.db', purpose: 'Zadatci, projekti, red izvrsavanja i graf znanja' },
+      { name: 'regoc.db', purpose: 'Task management (tasks, projects, queue, knowledge graph)' },
       { name: 'audit.db', purpose: 'Security audit log' },
     ],
     rules,
@@ -5454,6 +6726,10 @@ function buildInfoPayload(): Record<string, unknown> {
     skills: (() => {
       const skillsDir = join(HOME, '.claude/skills')
       try {
+        // TASK-3516: ovdje kronologija NEMA smisla — popis vještina je imenik, ne
+        // dnevnik, pa ostaje abecedno. `.sort()` bez usporedbe je ovdje ispravan
+        // jer se uspoređuju imena mapa; zamka „TASK-999 > TASK-1000" vrijedi samo
+        // gdje se sortira po ID-u zadatka.
         const dirs = readdirSync(skillsDir).filter(d => {
           try { return statSync(join(skillsDir, d)).isDirectory() && !d.startsWith('_') && !d.startsWith('.') } catch { return false }
         }).sort()
@@ -5511,8 +6787,8 @@ async function handleSetAgentModel(agentId: string, req: Request): Promise<Respo
       if (!known) return json({ error: `Unknown model spec '${raw}'` }, 400)
     }
 
-    const HOME = process.env.HOME || os.homedir()
-    const mcPath = join(TM_ROOT, 'models/model-config.json')
+    const HOME = process.env.HOME || '/home/klaudio'
+    const mcPath = join(HOME, '.claude/regoc/models/model-config.json')
     if (!existsSync(mcPath)) return json({ error: 'model-config.json not found' }, 500)
 
     const mc = JSON.parse(readFileSync(mcPath, 'utf-8'))
@@ -5627,6 +6903,46 @@ function warnCreateSwallowedFields(
   console.warn(`[API] ${outcome} POST /api/tasks — ${parts.join('; ')}`)
 }
 
+/**
+ * Vrata projekta na ulazu (TASK-3514).
+ *
+ * NALAZ (Goran, 28. i 29.08.2026.): „zadaci ne mogu biti bez projekta", a zadatci bez
+ * projekta su i dalje bili vidljivi na ploči. Pretinac PRJ-033 je bio zamišljen da
+ * propust učini VIDLJIVIM, ali dosad je propust bio vidljiv samo u bazi — POST je
+ * vraćao uredan 201 i nitko nije imao razloga išta ispraviti, pa je pretinac postao
+ * trajno odlagalište (96 zadataka).
+ *
+ * ZAŠTO PRESMJEROM, A NE ODBIJANJEM: stvaranje zadatka je životna funkcija ploče
+ * (daemon, UI, agenti, skripte, cron). Tvrdi 400 bi zaustavio dotok posla zbog polja
+ * koje većina pozivatelja nikad nije ni slala — isti razlog zbog kojeg ni nepoznata
+ * polja ne ruše POST. Zato: zadatak nastaje, ali u pretincu, a upozorenje putuje NAZAD
+ * pozivatelju u tijelu odgovora (`warnings.project`), ne samo u log koji nitko ne čita.
+ *
+ * Nepoznat `projectId` (tipfeler, obrisan projekt) tretira se isto: prije je takav
+ * zahtjev prolazio do FK greške i završavao s `project_id = NULL` — dakle nevidljiv.
+ */
+function resolveProjectForCreate(requested: string | undefined): { projectId: string; warning?: string } {
+  const wanted = (requested ?? '').trim()
+
+  if (!wanted) {
+    return {
+      projectId: INBOX_PROJECT_ID,
+      warning: `projectId nije poslan — zadatak je smješten u pretinac ${INBOX_PROJECT_ID} (zadatci bez projekta). ` +
+        `Pošalji projectId da zadatak dođe na svoj projekt.`,
+    }
+  }
+
+  if (!projectManager.getProject(wanted)) {
+    return {
+      projectId: INBOX_PROJECT_ID,
+      warning: `projectId='${wanted}' ne postoji u katalogu projekata — zadatak je smješten u pretinac ${INBOX_PROJECT_ID}. ` +
+        `Provjeri ID na GET /api/projects.`,
+    }
+  }
+
+  return { projectId: wanted }
+}
+
 async function handleCreateTask(req: Request): Promise<Response> {
   // Izvan try-a: catch mora znati što je progutano da se trag ne izgubi na iznimci.
   let createFields: { normalized: Record<string, unknown>; unknown: string[]; conflicts: string[] } | null = null
@@ -5676,6 +6992,12 @@ async function handleCreateTask(req: Request): Promise<Response> {
       })
     }
 
+    // Vrata projekta: nikad NULL, i nikad tiho (v. resolveProjectForCreate).
+    const projectGate = resolveProjectForCreate(validatedData.projectId)
+    if (projectGate.warning) {
+      console.warn(`[TaskWebUI] TASK-3514 POST /api/tasks — ${projectGate.warning} (naslov: "${(validatedData.title ?? '').slice(0, 80)}")`)
+    }
+
     // Map validated data to TaskManagerSQL input format
     const input = {
       title: validatedData.title,
@@ -5684,7 +7006,7 @@ async function handleCreateTask(req: Request): Promise<Response> {
       assignee: validatedData.assignee,
       blockedBy: validatedData.blockedBy,
       tags: validatedData.tags,
-      projectId: validatedData.projectId,
+      projectId: projectGate.projectId,
       // Stvaratelj se dosad tvrdo upisivao kao 'user' i tko god ga je poslao — nestao je.
       // Sad se poštuje ako je poslan (createdBy ili created_by), uz isti default.
       createdBy: typeof createFields.normalized.createdBy === 'string' && createFields.normalized.createdBy
@@ -5703,10 +7025,14 @@ async function handleCreateTask(req: Request): Promise<Response> {
       try { client.send(message) } catch { wsClients.delete(client) }
     })
 
+    // Upozorenja u tijelu: `ignoredFields` (progutana polja) i `project` (presmjeren
+    // projekt). Oba su tihi gubitci koje pozivatelj inace ne bi imao odakle vidjeti.
+    const warnings: Record<string, unknown> = {}
+    if (createFields.unknown.length > 0) warnings.ignoredFields = createFields.unknown
+    if (projectGate.warning) warnings.project = projectGate.warning
+
     return new Response(JSON.stringify(
-      createFields.unknown.length > 0
-        ? { ...task, warnings: { ignoredFields: createFields.unknown } }
-        : task
+      Object.keys(warnings).length > 0 ? { ...task, warnings } : task
     ), {
       status: 201,
       headers: { 'Content-Type': 'application/json' }
@@ -5753,12 +7079,12 @@ function loginBinPath(bin?: string): string | null {
 function loginCredsPresent(def: LoginProviderDef): boolean {
   try {
     if (def.kind === 'apikey') {
-      const f = loginHomeExpand(process.env.TM_CREDENTIALS_FILE || '~/.taskmanager/credentials.env')
+      const f = loginHomeExpand('~/.claude/regoc/credentials.env')
       return existsSync(f) && new RegExp('^' + def.envKey + '=.+', 'm').test(readFileSync(f, 'utf-8'))
     }
     // oauth-cli s envKey (npr. Gemini): smatra se konfiguriranim i ako je API ključ u credentials.env
     if (def.envKey) {
-      const f = loginHomeExpand(process.env.TM_CREDENTIALS_FILE || '~/.taskmanager/credentials.env')
+      const f = loginHomeExpand('~/.claude/regoc/credentials.env')
       if (existsSync(f) && new RegExp('^' + def.envKey + '=.+', 'm').test(readFileSync(f, 'utf-8'))) return true
     }
     const p = loginHomeExpand(def.creds)
@@ -5769,7 +7095,7 @@ function loginCredsPresent(def: LoginProviderDef): boolean {
 }
 function loginSetProviderEnabled(id: string, enabled: boolean): void {
   try {
-    const mcPath = loginHomeExpand(process.env.TM_MODEL_CONFIG || '~/.taskmanager/models/model-config.json')
+    const mcPath = loginHomeExpand('~/.claude/regoc/models/model-config.json')
     const mc = existsSync(mcPath) ? JSON.parse(readFileSync(mcPath, 'utf-8')) : {}
     mc.providers = mc.providers || {}
     mc.providers[id] = { ...(mc.providers[id] || {}), enabled }
@@ -5792,6 +7118,28 @@ function loginSpawnEnv(): Record<string, string> {
 const sessionUsageState: UsageState = {}
 const sessionUsageDeps = createDefaultDeps(sessionUsageState)
 
+/**
+ * T10/TASK-3575: stanje „neprovjereno" za plocu. Izvor je POSTOJECI trag vratara
+ * (data/critic_gate.jsonl) — nova baza bi znacila da ploca i vrata mogu tvrditi suprotno
+ * o istom zadatku. Keš je kratak jer se trag mijenja samo kad spawn zavrsi.
+ */
+let _unverifiedCache: { at: number; body: any } | null = null
+const UNVERIFIED_TTL_MS = 15_000
+
+function handleUnverified(): Response {
+  try {
+    const now = Date.now()
+    if (_unverifiedCache && now - _unverifiedCache.at < UNVERIFIED_TTL_MS) return json(_unverifiedCache.body)
+    const st = unverifiedBoardState(undefined, now)
+    const body = { day: st.day, todayCount: st.todayCount, tasks: st.tasks }
+    _unverifiedCache = { at: now, body }
+    return json(body)
+  } catch (e) {
+    // Vratar nikad ne smije srusiti plocu: prazno stanje = nijedna oznaka, ne greska.
+    return json({ day: '', todayCount: 0, tasks: {}, error: String(e) })
+  }
+}
+
 async function handleSessionUsage(req?: Request): Promise<Response> {
   // ?force=1 → I/O u konzoli; skraćuje prag svježine, ali probe i dalje ima donju branu.
   const force = req ? new URL(req.url).searchParams.get('force') === '1' : false
@@ -5804,6 +7152,10 @@ async function handleSessionUsage(req?: Request): Promise<Response> {
   try {
     if (u.sessionResetAt) resetLocal = formatLocalTime(u.sessionResetAt)
   } catch {}
+  // TASK-3461: presudu o mjerilu donosi daemon (on ga i pokreće) i zapisuje je u
+  // `data/autonomy_queue.json`. Ploča je ovdje samo čita — dvije neovisne procjene istog
+  // stanja značile bi da traka i dnevnik mogu tvrditi suprotno.
+  const q = readWaitingQueue()
   return json({
     session_percent: u.sessionPercent,
     weekly_percent: u.weeklyPercent,
@@ -5815,7 +7167,137 @@ async function handleSessionUsage(req?: Request): Promise<Response> {
     source: u.source,
     stale: u.stale,
     error: u.error,
+    meter_status: q?.meter_status ?? 'ok',
+    meter_down_min: q?.meter_down_min ?? null,
+    meter_error: q?.meter_error ?? null,
+    waiting_for: q?.waiting_for ?? null,
   })
+}
+
+// ============================================================================
+// TASK-3568 (T4): GET /api/tasks/:id/telemetry — „Potrošnja zadatka".
+// Izračun je u `~/app/regoc_system/tools/agent_telemetry.py` (kriške T2/T3) i čita
+// NAŠE transkripte; ploča ga samo poziva i keširaj. Zahtjev čeka najviše
+// TELEMETRY_WAIT_MS pa vraća 202 „racuna" — kartica se ne smije zaglaviti na
+// pythonu. Stari zadatci bez transkripta vraćaju 200 uz `imaPodatke:false`
+// (prazno stanje), jer nedostatak podataka nije pogreška.
+// ============================================================================
+const telemetryState = createTelemetryState()
+const telemetryDeps = createTelemetryDeps(telemetryState)
+
+async function handleTaskTelemetry(taskId: string, url: URL): Promise<Response> {
+  const force = url.searchParams.get('force') === '1'
+  try {
+    const r = await resolveTaskTelemetry(decodeURIComponent(taskId), { force }, telemetryDeps)
+    return json({
+      stanje: r.stanje,
+      taskId: r.taskId,
+      izvor: r.izvor,
+      staroS: r.staroMs === null ? null : Math.round(r.staroMs / 1000),
+      poruka: r.poruka,
+      telemetrija: r.telemetrija,
+    }, r.http)
+  } catch (err) {
+    // Nijedan kvar telemetrije ne smije srušiti karticu zadatka.
+    const poruka = err instanceof Error ? err.message : String(err)
+    return json({ stanje: 'greska', taskId, izvor: null, staroS: null, poruka, telemetrija: null }, 503)
+  }
+}
+
+// ============================================================================
+// TASK-3569 (T5): GET /api/pregled/tjedni — kartica „Potrošnja" (mjera 6).
+// Agregacija `run_log.jsonl` + telemetrije NAŠIH transkripata po projektu
+// (`tasks.project_id`) i po agentu za zadnjih N dana. Izračun je u
+// `~/app/regoc_system/tools/tjedni_pregled.py`; ploča ga samo poziva i keširaj.
+// Neispravan `dana`/`najskupljih` je 400 — python se ne pokreće s tuđim nizom.
+// ============================================================================
+const pregledState = createPregledState()
+const pregledDeps = createPregledDeps(pregledState)
+
+async function handleTjedniPregled(url: URL): Promise<Response> {
+  const dana = parseBroj(url.searchParams.get('dana'), ZADANO_DANA, DANA_MIN, DANA_MAX)
+  const najskupljih = parseBroj(
+    url.searchParams.get('najskupljih'), ZADANO_NAJSKUPLJIH, NAJSKUPLJIH_MIN, NAJSKUPLJIH_MAX)
+  if (dana === null || najskupljih === null) {
+    return json({
+      stanje: 'greska', izvor: null, staroS: null, pregled: null,
+      poruka: `Neispravni parametri: dana ${DANA_MIN}–${DANA_MAX}, ` +
+              `najskupljih ${NAJSKUPLJIH_MIN}–${NAJSKUPLJIH_MAX}.`,
+    }, 400)
+  }
+  const force = url.searchParams.get('force') === '1'
+  try {
+    const r = await resolveTjedniPregled({ dana, najskupljih, force }, pregledDeps)
+    return json({
+      stanje: r.stanje,
+      izvor: r.izvor,
+      staroS: r.staroMs === null ? null : Math.round(r.staroMs / 1000),
+      poruka: r.poruka,
+      pregled: r.pregled,
+    }, r.http)
+  } catch (err) {
+    // Nijedan kvar pregleda ne smije srušiti ploču.
+    const poruka = err instanceof Error ? err.message : String(err)
+    return json({ stanje: 'greska', izvor: null, staroS: null, poruka, pregled: null }, 503)
+  }
+}
+
+// ============================================================================
+// TASK-3572 (T8): GET /api/pregled/projekt/:id — „Potrošnja projekta" u panelu
+// detalja projekta i brojka na kartici u popisu.
+//
+// NAMJERNO ISTI ALAT: `tjedni_pregled.py --projekt <id>`. Trećeg izračuna nema,
+// pa se brojka pod projektom i brojka u tjednom pregledu ne mogu razići. Vrijede
+// ista tri pravila kao za T4/T5: izračun je asinkron i keširan, 202 „racuna" NIJE
+// pogreška, a uz svaku agregaciju ide nazivnik („iz N izvođenja").
+//
+// Nepoznat projekt je 404 PRIJE pokretanja pythona — inače bismo na svaku tipfelu
+// platili puni prolaz nad transkriptima da bismo dobili prazan pregled.
+// ============================================================================
+async function handleProjektPregled(projectIdSirovo: string, url: URL): Promise<Response> {
+  const dekodiran = (() => {
+    try { return decodeURIComponent(projectIdSirovo) } catch { return projectIdSirovo }
+  })()
+  const projekt = parseProjekt(dekodiran)
+  if (!projekt) {
+    return json({
+      stanje: 'greska', projekt: null, izvor: null, staroS: null, pregled: null,
+      poruka: 'Neispravan ključ projekta.',
+    }, 400)
+  }
+  if (!projectManager.getProject(projekt)) {
+    return json({
+      stanje: 'greska', projekt, izvor: null, staroS: null, pregled: null,
+      poruka: `Projekt ${projekt} ne postoji.`,
+    }, 404)
+  }
+
+  const dana = parseBroj(url.searchParams.get('dana'), ZADANO_DANA, DANA_MIN, DANA_MAX)
+  const najskupljih = parseBroj(
+    url.searchParams.get('najskupljih'), ZADANO_NAJSKUPLJIH, NAJSKUPLJIH_MIN, NAJSKUPLJIH_MAX)
+  if (dana === null || najskupljih === null) {
+    return json({
+      stanje: 'greska', projekt, izvor: null, staroS: null, pregled: null,
+      poruka: `Neispravni parametri: dana ${DANA_MIN}–${DANA_MAX}, ` +
+              `najskupljih ${NAJSKUPLJIH_MIN}–${NAJSKUPLJIH_MAX}.`,
+    }, 400)
+  }
+  const force = url.searchParams.get('force') === '1'
+  try {
+    const r = await resolveTjedniPregled({ dana, najskupljih, projekt, force }, pregledDeps)
+    return json({
+      stanje: r.stanje,
+      projekt,
+      izvor: r.izvor,
+      staroS: r.staroMs === null ? null : Math.round(r.staroMs / 1000),
+      poruka: r.poruka,
+      pregled: r.pregled,
+    }, r.http)
+  } catch (err) {
+    // Nijedan kvar potrošnje ne smije srušiti panel projekta.
+    const poruka = err instanceof Error ? err.message : String(err)
+    return json({ stanje: 'greska', projekt, izvor: null, staroS: null, poruka, pregled: null }, 503)
+  }
 }
 
 function handleLoginStatus(): Response {
@@ -5901,7 +7383,7 @@ async function handleLoginApikey(req: Request): Promise<Response> {
     const def = LOGIN_PROVIDERS.find(d => d.id === id)
     if (!def || !def.envKey) return json({ error: 'Provider ne podržava API ključ' }, 400)
     if (!key || !key.trim()) return json({ error: 'Prazan ključ' }, 400)
-    const f = loginHomeExpand(process.env.TM_CREDENTIALS_FILE || '~/.taskmanager/credentials.env')
+    const f = loginHomeExpand('~/.claude/regoc/credentials.env')
     let txt = existsSync(f) ? readFileSync(f, 'utf-8') : ''
     const line = `${def.envKey}=${key.trim()}`
     txt = new RegExp('^' + def.envKey + '=.*$', 'm').test(txt) ? txt.replace(new RegExp('^' + def.envKey + '=.*$', 'm'), line) : (txt.replace(/\s*$/, '') + '\n' + line + '\n')
@@ -6488,7 +7970,7 @@ async function handleUpdateProject(projectId: string, req: Request): Promise<Res
 // SPEC DISPATCH-UPGRADE + TEMPLATES
 // ============================================
 
-const TEMPLATES_DIR = join(TM_ROOT, 'templates')
+const TEMPLATES_DIR = join(process.env.HOME || '/home/klaudio', '.claude/regoc/templates')
 
 // Hardcoded fallback ako spec-upgrade.md fizički nestane (dispatch mora preživjeti).
 const FALLBACK_SPEC_TEMPLATE = '[[AGENT:$agent]]\nNadogradi projekt $projekt po specifikaciji:\n\n$spec'
@@ -6500,7 +7982,7 @@ const FALLBACK_SPEC_TEMPLATE = '[[AGENT:$agent]]\nNadogradi projekt $projekt po 
  */
 function loadKnownAgentIds(): Set<string> {
   try {
-    const regPath = join(TM_ROOT, 'REGOC_AGENTS.json')
+    const regPath = join(process.env.HOME || '/home/klaudio', '.claude/regoc/REGOC_AGENTS.json')
     const reg = JSON.parse(readFileSync(regPath, 'utf-8'))
     return new Set(Object.keys(reg.agents || {}))
   } catch {
@@ -6978,9 +8460,9 @@ async function handleKonzolaExec(req: Request): Promise<Response> {
 async function executeKonzolaCommand(cmdArgs: string[]): Promise<Response> {
   try {
     const proc = Bun.spawn(cmdArgs, {
-      cwd: process.env.TM_SERVICES_DIR || process.cwd(),
+      cwd: process.env.HOME ? join(process.env.HOME, 'app/regoc_system') : '/home/klaudio/app/regoc_system',
       stdout: 'pipe', stderr: 'pipe',
-      env: { HOME: process.env.HOME || os.homedir(), PATH: process.env.PATH || '/usr/local/bin:/usr/bin:/bin', USER: process.env.USER || 'taskmanager', LANG: 'en_US.UTF-8' }
+      env: { HOME: process.env.HOME || '/home/klaudio', PATH: process.env.PATH || '/usr/local/bin:/usr/bin:/bin', USER: process.env.USER || 'klaudio', LANG: 'en_US.UTF-8' }
     })
 
     const timeout = setTimeout(() => { try { proc.kill() } catch {} }, 30000)
@@ -7024,9 +8506,9 @@ async function handleKonzolaLogs(url: URL): Promise<Response> {
   const lines = parseInt(url.searchParams.get('lines') || '50')
   let logFile: string
   switch (source) {
-    case 'voiceserver': logFile = join(process.env.HOME || os.homedir(), '.tmp/regoc_logs/voiceserver.log'); break
-    case 'taskwebui': logFile = join(process.env.HOME || os.homedir(), '.tmp/regoc_logs/taskwebui.log'); break
-    case 'klaudio': logFile = join(process.env.HOME || os.homedir(), '.tmp/regoc_logs/klaudio.log'); break
+    case 'voiceserver': logFile = join(process.env.HOME || '/home/klaudio', '.tmp/regoc_logs/voiceserver.log'); break
+    case 'taskwebui': logFile = join(process.env.HOME || '/home/klaudio', '.tmp/regoc_logs/taskwebui.log'); break
+    case 'klaudio': logFile = join(process.env.HOME || '/home/klaudio', '.tmp/regoc_logs/klaudio.log'); break
     default: logFile = DAEMON_LOG_FILE
   }
   try {
@@ -7099,12 +8581,12 @@ async function handleKonzolaMessage(req: Request): Promise<Response> {
 // Track file positions per source
 const logSources: Record<string, { file: string, position: number }> = {
   daemon: { file: DAEMON_LOG_FILE, position: 0 },
-  klaudio: { file: join(process.env.HOME || os.homedir(), '.tmp/regoc_logs/klaudio.log'), position: 0 },
+  klaudio: { file: join(process.env.HOME || '/home/klaudio', '.tmp/regoc_logs/klaudio.log'), position: 0 },
   // TASK-3095: rad GLAVNE REGOC sesije (Claude Code) — dosad se u konzoli nije vidjelo
   // NISTA od onoga sto REGOC radi izmedju dvije poruke, jer on ne prolazi kroz daemon.
   // Puni ga hooks/RegocConsoleLog.hook.ts (PostToolUse).
-  regoc: { file: join(process.env.HOME || os.homedir(), '.tmp/regoc_logs/regoc.log'), position: 0 },
-  voiceserver: { file: join(process.env.HOME || os.homedir(), '.tmp/regoc_logs/voiceserver.log'), position: 0 },
+  regoc: { file: join(process.env.HOME || '/home/klaudio', '.tmp/regoc_logs/regoc.log'), position: 0 },
+  voiceserver: { file: join(process.env.HOME || '/home/klaudio', '.tmp/regoc_logs/voiceserver.log'), position: 0 },
 }
 
 // Dedup: track last N messages to suppress scheduler spam
@@ -7180,6 +8662,9 @@ function streamMessageQueue() {
     if (!db) return
 
     // Get new messages since last check
+    // TASK-3516: ASC je ovdje NAMJERAN i mora ostati — konzola je živi dnevnik
+    // koji se dopisuje na dno (appendToKonzolaLog), a `lastSeenMsgTimestamp` je
+    // pomični kursor. Silazni poredak bi ispreturao redoslijed događaja.
     const newMsgs = db.prepare(`
       SELECT id, from_agent, to_agent, substr(content, 1, 120) as content,
              message_type, priority, status, created_at, processed_at,
@@ -7225,6 +8710,8 @@ function streamEventLog() {
     const tableExists = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='event_log'").get()
     if (!tableExists) return
 
+    // TASK-3516: isto kao gore — dnevnik događaja se čita uzlazno preko kursora
+    // `lastSeenEventId` i dopisuje na dno konzole. ASC ostaje.
     const events = db.prepare(`
       SELECT id, event_type, agent_id, substr(details, 1, 150) as details, created_at
       FROM event_log
@@ -7314,7 +8801,7 @@ function formatObsEvent(ev: any) {
 }
 
 // --- Stream 5: Session JSONL watcher (agent reasoning/thinking) ---
-const CLAUDE_PROJECTS_DIR = join(process.env.HOME || os.homedir(), '.claude/projects')
+const CLAUDE_PROJECTS_DIR = join(process.env.HOME || '/home/klaudio', '.claude/projects')
 const sessionFilePositions: Record<string, number> = {}
 let activeSessionFiles: string[] = []
 let lastSessionScan = 0
@@ -7633,9 +9120,9 @@ async function handleStatusDashboard(): Promise<Response> {
 // ============================================
 
 function handleGetAgents(): Response {
-  const HOME = process.env.HOME || os.homedir()
+  const HOME = process.env.HOME || '/home/klaudio'
   try {
-    const regPath = join(TM_ROOT, 'REGOC_AGENTS.json')
+    const regPath = join(HOME, '.claude/regoc/REGOC_AGENTS.json')
     const tierMap: Record<string, string> = { opus: 'frontier', sonnet: 'strong', haiku: 'basic' }
     if (!existsSync(regPath)) {
       return new Response(JSON.stringify({ agents: [], totalAgents: 0, activeCount: 0 }), { headers: { 'Content-Type': 'application/json' } })
@@ -7705,9 +9192,9 @@ function handleGetAgents(): Response {
 // ============================================
 
 function handleGetModules(): Response {
-  const HOME = process.env.HOME || os.homedir()
+  const HOME = process.env.HOME || '/home/klaudio'
   try {
-    const modPath = join(TM_ROOT, 'modules/module-config.json')
+    const modPath = join(HOME, '.claude/regoc/modules/module-config.json')
     if (!existsSync(modPath)) {
       return new Response(JSON.stringify({ modules: [] }), { headers: { 'Content-Type': 'application/json' } })
     }
@@ -7771,7 +9258,7 @@ async function handleGetMetrics(): Promise<Response> {
   // Cost data
   let costs: any = { total: 0, byAgent: {}, byDay: [] }
   try {
-    const { getCostTracker } = await import('./core/CostTracker')
+    const { getCostTracker } = await import('/home/klaudio/.claude/regoc/CostTracker')
     const ct = getCostTracker()
     const stats = ct.getStats()
     costs = {
@@ -7784,7 +9271,7 @@ async function handleGetMetrics(): Promise<Response> {
   // Observability data
   let observability: any = { totalEvents: 0, byEvent: {}, last24h: 0 }
   try {
-    const { getObservabilityLogger } = await import(process.env.TM_OBSERVABILITY_MODULE || './core/__nema__')
+    const { getObservabilityLogger } = await import('/home/klaudio/.claude/regoc/ObservabilityLogger')
     const logger = getObservabilityLogger()
     observability = logger.getStats()
   } catch {}
@@ -7817,7 +9304,7 @@ async function handleGetSecurity(): Promise<Response> {
   // Audit log data
   let auditLog: any = { total: 0, bySeverity: {}, last24h: 0, recent: [] }
   try {
-    const { getAuditLogger } = await import(process.env.TM_AUDIT_MODULE || './core/__nema__')
+    const { getAuditLogger } = await import('/home/klaudio/.claude/regoc/security/AuditLogger')
     const audit = getAuditLogger()
     const stats = audit.getStats()
     auditLog = {
@@ -7831,14 +9318,14 @@ async function handleGetSecurity(): Promise<Response> {
   // PromptGuard availability
   let promptGuard = { available: false }
   try {
-    const pgPath = join(TM_ROOT, 'security/PromptGuard.ts')
+    const pgPath = join(process.env.HOME || '/home/klaudio', '.claude/regoc/security/PromptGuard.ts')
     promptGuard = { available: existsSync(pgPath) }
   } catch {}
 
   // SecurityPipeline availability
   let securityPipeline: any = { available: false, mode: 'unknown' }
   try {
-    const spPath = join(TM_ROOT, 'security/SecurityPipeline.ts')
+    const spPath = join(process.env.HOME || '/home/klaudio', '.claude/regoc/security/SecurityPipeline.ts')
     securityPipeline = { available: existsSync(spPath), mode: 'localSafe' }
   } catch {}
 
@@ -7854,9 +9341,9 @@ async function handleGetSecurity(): Promise<Response> {
 // TASK-623/624: SYSTEM MODE & PERSISTENT AGENTS API HANDLERS
 // ============================================
 
-const SYSTEM_MODE_FILE = join(process.env.HOME || os.homedir(), '.tmp/regoc_mode.json')
-const PERSISTENT_CONFIG_FILE = join(process.env.HOME || os.homedir(), '.tmp/regoc_persistent_config.json')
-const AGENTS_REGISTRY_FILE = join(TM_ROOT, 'REGOC_AGENTS.json')
+const SYSTEM_MODE_FILE = join(process.env.HOME || '/home/klaudio', '.tmp/regoc_mode.json')
+const PERSISTENT_CONFIG_FILE = join(process.env.HOME || '/home/klaudio', '.tmp/regoc_persistent_config.json')
+const AGENTS_REGISTRY_FILE = join(process.env.HOME || '/home/klaudio', '.claude/regoc/REGOC_AGENTS.json')
 
 function handleGetSystemMode(): Response {
   try {
@@ -7987,7 +9474,7 @@ async function handleToggleAgentPersistent(agentId: string, req: Request): Promi
 }
 
 function handleStopAgent(agentId: string): Response {
-  const signalFile = join(process.env.HOME || os.homedir(), `.tmp/agent_stop_${agentId}`)
+  const signalFile = join(process.env.HOME || '/home/klaudio', `.tmp/agent_stop_${agentId}`)
   try {
     const { writeFileSync: wfs } = require('fs')
     wfs(signalFile, '')
@@ -8125,7 +9612,11 @@ const server = Bun.serve({
     }
 
     // Login providers (prijava preko linka)
+    // TASK-3609: tečaj USD→EUR za prikaz troška (mjerenje ostaje u dolarima).
+    if (url.pathname === '/api/tecaj' && req.method === 'GET') return tecajOdgovor()
     if (url.pathname === '/api/session-usage' && req.method === 'GET') return handleSessionUsage(req)
+    // T10/TASK-3575: sto je vratar danas propustio, a nije mogao provjeriti.
+    if (url.pathname === '/api/critic/unverified' && req.method === 'GET') return handleUnverified()
     if (url.pathname === '/api/providers/login/status' && req.method === 'GET') return handleLoginStatus()
     if (url.pathname === '/api/providers/login/start' && req.method === 'POST') return handleLoginStart(req)
     if (url.pathname === '/api/providers/login/poll' && req.method === 'GET') return handleLoginPoll(url)
@@ -8145,6 +9636,22 @@ const server = Bun.serve({
     if (url.pathname.match(/^\/api\/tasks\/[^\/]+$/) && req.method === 'GET') {
       const taskId = url.pathname.split('/')[3]
       return handleGetTask(taskId)
+    }
+
+    // GET /api/tasks/:id/telemetry — „Potrošnja zadatka" (TASK-3568, T4)
+    if (url.pathname.match(/^\/api\/tasks\/[^\/]+\/telemetry$/) && req.method === 'GET') {
+      const taskId = url.pathname.split('/')[3]
+      return handleTaskTelemetry(taskId, url)
+    }
+
+    // GET /api/pregled/tjedni — kartica „Potrošnja", mjera 6 (TASK-3569, T5)
+    if (url.pathname === '/api/pregled/tjedni' && req.method === 'GET') {
+      return handleTjedniPregled(url)
+    }
+
+    // GET /api/pregled/projekt/:id — „Potrošnja projekta" (TASK-3572, T8)
+    if (url.pathname.match(/^\/api\/pregled\/projekt\/[^\/]+$/) && req.method === 'GET') {
+      return handleProjektPregled(url.pathname.split('/')[4], url)
     }
 
     // PUT /api/tasks/:id/progress - Update task progress
@@ -8401,7 +9908,7 @@ const server = Bun.serve({
     }
     if (wfGetMatch && req.method === 'GET') {
       const [, skill, name] = wfGetMatch
-      const _home = process.env.HOME || os.homedir()
+      const _home = process.env.HOME || '/home/klaudio'
       const wfPath = join(_home, '.claude/skills', skill, 'Workflows', name + '.md')
       if (!existsSync(wfPath)) {
         return new Response(JSON.stringify({ error: 'Workflow not found' }), { status: 404, headers: { 'Content-Type': 'application/json' } })
@@ -8421,7 +9928,7 @@ const server = Bun.serve({
     // PUT /api/workflow/:skill/:name — Save workflow markdown
     if (wfGetMatch && req.method === 'PUT') {
       const [, skill, name] = wfGetMatch
-      const _home2 = process.env.HOME || os.homedir()
+      const _home2 = process.env.HOME || '/home/klaudio'
       const wfPath = join(_home2, '.claude/skills', skill, 'Workflows', name + '.md')
       const wfDir = join(_home2, '.claude/skills', skill, 'Workflows')
       if (!existsSync(wfDir)) {
@@ -8511,7 +10018,7 @@ console.log(`
 ║  External:  :${EXTERNAL_PORT} (mapped by Docker)                               ║
 ╠───────────────────────────────────────────────────────────────────────────╣
 ║  Local:     http://localhost:${EXTERNAL_PORT}                                   ║
-║  LAN:       http://${process.env.TM_EXTERNAL_HOST || 'localhost'}:${EXTERNAL_PORT}                              ║
+║  LAN:       http://192.168.10.200:${EXTERNAL_PORT}                              ║
 ║  Tailscale: http://dell-home.tailc98738.ts.net:${EXTERNAL_PORT}                 ║
 ╠───────────────────────────────────────────────────────────────────────────╣
 ║  Tasks API:    /api/tasks                                                 ║

@@ -1,5 +1,3 @@
-import { TM_ROOT } from './paths'
-import os from 'os'
 /**
  * CompletionGuard — tvrdo pravilo za zatvaranje zadatka (TASK-2954 / nalaz D2).
  *
@@ -410,7 +408,7 @@ function gateConfigPath(): string {
   // REGOC_COMPLETION_GATE_CONFIG: override SAMO za testove/alat.
   return (
     process.env.REGOC_COMPLETION_GATE_CONFIG ||
-    `${TM_ROOT}/config/completion-gate.json`
+    `${process.env.HOME || '/home/klaudio'}/.claude/regoc/config/completion-gate.json`
   )
 }
 

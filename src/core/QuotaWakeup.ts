@@ -1,4 +1,3 @@
-import os from 'os'
 /**
  * QuotaWakeup — okidač na obnovu kvote (A7 / TASK-3006, DIO 1).
  *
@@ -40,7 +39,7 @@ import os from 'os'
 import { existsSync, readFileSync, writeFileSync, appendFileSync, mkdirSync, renameSync } from 'fs'
 import { dirname, join } from 'path'
 
-const HOME = process.env.HOME || os.homedir()
+const HOME = process.env.HOME || '/home/klaudio'
 const DATA_DIR = join(HOME, '.claude', 'regoc', 'data')
 
 /** Stanje okidača — mora preživjeti restart, inače svaki start izgleda kao prvi pokušaj. */

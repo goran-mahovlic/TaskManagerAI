@@ -1,5 +1,4 @@
 #!/usr/bin/env bun
-import { TM_ROOT } from './paths'
 /**
  * REGOČ Message Queue
  *
@@ -18,13 +17,13 @@ import { Database } from 'bun:sqlite'
 import { existsSync, readFileSync } from 'fs'
 import { join } from 'path'
 import { randomUUID } from 'crypto'
-import { AgentIdSchema, SendMessageInputSchema } from '../zod/schemas'
+import { AgentIdSchema, SendMessageInputSchema } from '../zod/schemas/index'
 
 // ============================================
 // Configuration
 // ============================================
 
-const REGOC_DIR = TM_ROOT
+const REGOC_DIR = join(process.env.HOME || '', '.claude/regoc')
 const DB_PATH = join(REGOC_DIR, 'messages.db')
 const SCHEMA_PATH = join(REGOC_DIR, 'schema.sql')
 

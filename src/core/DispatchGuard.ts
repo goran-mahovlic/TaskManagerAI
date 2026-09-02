@@ -50,6 +50,12 @@ const LIFECYCLE_PATTERNS: RegExp[] = [
   // TASK-2953: obavijest da je hook zaustavio spawn na ulazu. Sam tekst blokade
   // nosi razlog, ne specifikaciju — bez ovoga bi ga inbox potrošio kao "novi zadatak".
   /^\s*⛔\s*\*{0,2}[^\n*]+\*{0,2}\s*—\s*zadatak[^\n]*nije ni započet/u,
+  // TASK-3610: RegocDaemonova VLASTITA odbijenica (RegocDaemon.ts:4097). Guard je
+  // bio samohranjiv: regoc odbije poruku → pošalje ovu obavijest agentu → agentov
+  // inbox je NE prepoznaje → spawn → hook blokira ulaz → '❌ Agent neuspješan'
+  // natrag regoču → nova odbijenica. Mjereno 02.09.2026.: 683 spawna u 1 h 43 min
+  // (svakih ~9 s). Sidro je na početak da spec koji odbijenicu citira prođe.
+  /^\s*🛑\s*Poruka prepoznata kao završni izvještaj/u,
 ]
 
 /**
@@ -107,6 +113,50 @@ export function isRecycledAgentReport(content: string): boolean {
 }
 
 /**
+ * TASK-3605: markeri AGENTOVOG ZAVRŠNOG IZVJEŠTAJA koji NE koristi CORE format.
+ *
+ * `REPORT_MARKERS` gore hvata samo izvještaje pisane emoji-formatom
+ * (📋 SUMMARY / 📊 STATUS / 📋 REZULTAT …). Živi kvar 02.09.2026. 11:30:15:
+ * kosjenkin završni odgovor na TASK-3587 bio je OBIČAN engleski markdown
+ * ("Done. Summary of TASK-3587 …", "**Completed:**", numerirana lista) —
+ * nula emoji-markera → `isRecycledAgentReport` = false → RegocDaemon ga je
+ * klasificirao kao E5 i otvorio TASK-3605 nad vlastitim izvještajem.
+ * (daemon.log: "🎯 Delegating to kosjenka: Arhitektura: Done. Summary of TASK-3587…")
+ *
+ * Uzorci su SIDRENI (početak sadržaja ili početak retka) da specifikacija koja
+ * izvještaj samo CITIRA ili opisuje protokol ne padne pod filter — isti oprez
+ * kao kod LIFECYCLE_PATTERNS (usp. SPEC_QUOTING_STATUS u testovima).
+ */
+const COMPLETION_REPORT_MARKERS: RegExp[] = [
+  // Otvaranje porukom o dovršenosti: "Done.", "Gotovo —", "✅ Završeno:"
+  /^\s*(?:✅\s*)?\**(?:Done|Gotovo|Zavr[šs]eno|Completed)\**\s*[.!:—-]/u,
+  // Strojna deklaracija ishoda koju agent MORA ispisati na kraju odgovora
+  /^[ \t]*\**REGOC-STATUS:\**\s*(?:DONE|BLOCKED|NEEDS_CONTEXT)\b/mu,
+  // Naslov popisa isporučenog ("**Completed:**", "**Napravljeno:**")
+  /^[ \t]*\*{0,2}(?:Completed|Napravljeno|Isporu[čc]eno)\*{0,2}\s*:?\s*\*{0,2}[ \t]*$/miu,
+  // Referenca na izvještaj o KONKRETNOM zadatku ("Summary of TASK-3587")
+  /\b(?:Summary|Sa[žz]etak)\s+(?:of\s+)?TASK-\d+/iu,
+]
+
+/** Koliko sidrenih markera čini sadržaj završnim izvještajem (a ne specifikacijom). */
+export const COMPLETION_REPORT_MARKER_THRESHOLD = 2
+
+/**
+ * True kad je `content` agentov ZAVRŠNI IZVJEŠTAJ (bez CORE emoji-formata) —
+ * dakle zapis već obavljenog posla, ne specifikacija novog. Prag je 2 sidrena
+ * markera: jedan sam po sebi (npr. spec koji spominje REGOC-STATUS) ne blokira.
+ */
+export function isCompletionReport(content: string): boolean {
+  if (!content) return false
+  let hits = 0
+  for (const m of COMPLETION_REPORT_MARKERS) {
+    if (m.test(content)) hits++
+    if (hits >= COMPLETION_REPORT_MARKER_THRESHOLD) return true
+  }
+  return false
+}
+
+/**
  * True when `content` is a daemon lifecycle/system notice (agent started,
  * agent finished, delegation blocked) rather than a task specification.
  * A single pattern match is decisive.
@@ -116,9 +166,16 @@ export function isAgentLifecycleNotice(content: string): boolean {
   return LIFECYCLE_PATTERNS.some((p) => p.test(content))
 }
 
-/** Either a recycled report (≥3 format markers) or a lifecycle/system notice. */
+/**
+ * Either a recycled CORE-format report (≥3 emoji markers), a plain-text
+ * completion report (≥2 anchored markers, TASK-3605) or a lifecycle/system notice.
+ */
 export function isNonActionableMessage(content: string): boolean {
-  return isRecycledAgentReport(content) || isAgentLifecycleNotice(content)
+  return (
+    isRecycledAgentReport(content) ||
+    isCompletionReport(content) ||
+    isAgentLifecycleNotice(content)
+  )
 }
 
 /**
@@ -180,6 +237,15 @@ export function evaluateDispatch(
       code: 'recycled_report',
       reason:
         'Sadržaj zadatka je recikliran REGOČ izvještaj (≥3 format-markera), ne specifikacija — prazan liveness-link.',
+    }
+  }
+
+  if (isCompletionReport(content)) {
+    return {
+      block: true,
+      code: 'recycled_report',
+      reason:
+        'Sadržaj zadatka je agentov završni izvještaj (≥2 sidrena markera: "Done."/REGOC-STATUS/"**Completed:**"/"Summary of TASK-…"), ne specifikacija novog posla.',
     }
   }
 

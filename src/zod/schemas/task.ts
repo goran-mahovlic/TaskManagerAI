@@ -10,29 +10,12 @@ export const TaskPrioritySchema = z.union([
   z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)
 ])
 
-// Popis agenata koji smiju biti nositelji zadatka.
-//
-// Zadani popis je sastav tima s kojim je sustav nastao. Vlastiti se postavlja
-// varijablom okoline, imena odvojena zarezom:
-//
-//   TM_AGENTS=ana,ivan,marko,scheduler,user
-//
-// Vrijednosti `user` i `scheduler` uvijek se dodaju jer ih sustav koristi za
-// zadatke koje je stvorio čovjek, odnosno raspoređivač.
-const ZADANI_AGENTI = [
+// Agent IDs
+export const AgentIdSchema = z.enum([
   'regoc', 'klaudio', 'stribor', 'kosjenka', 'jelena',
-  'malik', 'manda', 'potjeh', 'dora', 'gita', 'grga', 'pai',
-] as const
-
-export const AGENT_IDS: string[] = Array.from(new Set([
-  ...(process.env.TM_AGENTS
-    ? process.env.TM_AGENTS.split(',').map(s => s.trim()).filter(Boolean)
-    : [...ZADANI_AGENTI]),
-  'user',
-  'scheduler',
-]))
-
-export const AgentIdSchema = z.enum(AGENT_IDS as [string, ...string[]])
+  'malik', 'manda', 'potjeh', 'dora', 'gita', 'grga',
+  'pai', 'user', 'scheduler'
+])
 
 // Progress note
 export const ProgressNoteSchema = z.object({

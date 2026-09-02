@@ -1,5 +1,3 @@
-import { TM_ROOT } from './core/paths'
-import os from 'os'
 /**
  * SessionUsage — potrošnja tekuće Claude sesije za konzolu TaskWebUI-ja (TASK-2694)
  *
@@ -14,9 +12,9 @@ import os from 'os'
  */
 import { join } from 'path'
 
-const HOME = process.env.HOME || os.homedir()
+const HOME = process.env.HOME || '/home/klaudio'
 
-export const SESSION_USAGE_CACHE_FILE = join(TM_ROOT, 'data/session_usage.cache.json')
+export const SESSION_USAGE_CACHE_FILE = join(HOME, '.claude/regoc/data/session_usage.cache.json')
 export const SESSION_USAGE_SCRIPT = join(HOME, 'app/regoc_system/tools/session_usage.py')
 
 /** Redovno osvježavanje: UI pita svakih 60 s, probe najviše jednom u minuti. */

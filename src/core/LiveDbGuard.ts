@@ -30,7 +30,7 @@ import * as os from 'os';
 import * as path from 'path';
 
 /** Relativna putanja produkcijske baze unutar korisnickog home-a. */
-const LIVE_DB_RELATIVE = ['.taskmanager', 'data', 'tasks.db'];
+const LIVE_DB_RELATIVE = ['.claude', 'regoc', 'data', 'regoc.db'];
 
 /** Izlaz za nuzdu: test koji SVJESNO smije dirati zivu bazu (npr. readonly probe). */
 const ESCAPE_HATCH_ENV = 'REGOC_ALLOW_LIVE_DB_IN_TEST';

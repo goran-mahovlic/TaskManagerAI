@@ -1,6 +1,4 @@
 #!/usr/bin/env bun
-import { TM_DB } from './paths'
-import os from 'os'
 /**
  * TaskManagerSQL - SQL-Only Task Manager for REGOČ
  *
@@ -16,6 +14,8 @@ import os from 'os'
 import Database, { type Statement } from "bun:sqlite";
 import { TaskIdAllocator } from "./TaskIdAllocator";
 import { assertNotLiveDbInTest } from "./LiveDbGuard";
+// TASK-3516: jedno pravilo poretka za cijeli TaskManager — najnovije na vrhu.
+import { TASKS_ORDER_BY } from "./ChronoOrder";
 
 // ============================================
 // TYPES & INTERFACES
@@ -163,8 +163,8 @@ const ValidStatusTransitions: Record<string, string[]> = {
 // DB PATH
 // ============================================
 
-const HOME = process.env.HOME || os.homedir();
-export const DB_PATH = TM_DB;
+const HOME = process.env.HOME || '/home/klaudio';
+export const DB_PATH = `${HOME}/.claude/regoc/data/regoc.db`;
 
 // ============================================
 // ROW → TASK MAPPER
@@ -254,16 +254,8 @@ export class TaskManagerSQL {
 
   private prepareStatements(): void {
     this.stmtGetAll = this.db.prepare(`
-      SELECT * FROM tasks ORDER BY
-        CASE status
-          WHEN 'in_progress' THEN 1
-          WHEN 'pending' THEN 2
-          WHEN 'blocked' THEN 3
-          WHEN 'completed' THEN 4
-          WHEN 'cancelled' THEN 5
-        END,
-        priority ASC,
-        created_at DESC
+      SELECT * FROM tasks
+      ${TASKS_ORDER_BY}
     `);
 
     this.stmtGetById = this.db.prepare("SELECT * FROM tasks WHERE id = ?");
@@ -432,16 +424,8 @@ export class TaskManagerSQL {
       }
 
       const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
-      const sql = `SELECT * FROM tasks ${whereClause} ORDER BY
-        CASE status
-          WHEN 'in_progress' THEN 1
-          WHEN 'pending' THEN 2
-          WHEN 'blocked' THEN 3
-          WHEN 'completed' THEN 4
-          WHEN 'cancelled' THEN 5
-        END,
-        priority ASC,
-        created_at DESC`;
+      const sql = `SELECT * FROM tasks ${whereClause}
+      ${TASKS_ORDER_BY}`;
 
       const rows = this.db.prepare(sql).all(...params) as any[];
       tasks = rows.map(rowToTask);
@@ -548,7 +532,9 @@ export class TaskManagerSQL {
     // TASK-3009: bez projekta -> pretinac, nikad NULL. Prazan string tretiramo kao
     // "nije zadano" jer ga HTTP sloj salje kad polje nije ispunjeno.
     const requestedProjectId = input.projectId?.trim() || '';
-    const projectId = requestedProjectId || INBOX_PROJECT_ID;
+    // Vraceni Task se na kraju cita iz baze (`getTask(id)`), pa FK fallback nize ne
+    // mora azurirati ovu varijablu — pozivatelj ionako dobiva ono STO JE UPISANO.
+    const projectId: string = requestedProjectId || INBOX_PROJECT_ID;
 
     const params = {
       $id: id,
@@ -566,7 +552,7 @@ export class TaskManagerSQL {
       $progress_notes: '[]',
       $progress_percent: null,
       $nextcloud_folder: null,
-      $project_id: projectId as string | null,
+      $project_id: projectId,
       $started_at: null,
       $completed_at: null,
       $blocked_reason: '',
@@ -582,16 +568,36 @@ export class TaskManagerSQL {
 
       // TASK-3009: FK fallback. `tasks` ima TOCNO JEDAN strani kljuc
       // (project_id -> projects.id, provjereno s PRAGMA foreign_key_list(tasks)),
-      // pa je svaka FK greska ovdje greska projekta. Ako netko obrise ili
-      // arhivira pretinac, stvaranje zadataka NE SMIJE stati — upisujemo NULL,
-      // vicemo u log i pustamo zadatak da nastane.
+      // pa je svaka FK greska ovdje greska projekta.
+      //
+      // TASK-3514 (29.08.2026.): prije se ovdje UVIJEK upisivao NULL — i onda kad je
+      // pretinac uredno postojao, a kriv je bio samo projekt IZ ZAHTJEVA (tipfeler,
+      // obrisan projekt). To je bila zadnja rupa kroz koju je zadatak i dalje mogao
+      // nastati nevidljiv. Sada se NULL upisuje SAMO ako ni pretinac ne postoji, jer
+      // tada doista nema kamo — i tek je to stanje vrijedno vike u logu.
       if (/FOREIGN KEY constraint failed/i.test(message)) {
-        console.warn(
-          `[TaskManagerSQL] WARN TASK-3009: project_id='${projectId}' ne postoji u tablici projects ` +
-          `(${requestedProjectId ? 'projekt zadan u zahtjevu' : `pretinac ${INBOX_PROJECT_ID} nedostaje/arhiviran`}). ` +
-          `Zadatak ${id} nastaje s project_id=NULL. Popravi redak projekta pa napravi backfill.`
-        );
-        this.stmtCreate.run({ ...params, $project_id: null });
+        if (projectId !== INBOX_PROJECT_ID) {
+          console.warn(
+            `[TaskManagerSQL] WARN TASK-3514: project_id='${projectId}' iz zahtjeva ne postoji u tablici ` +
+            `projects. Zadatak ${id} ide u pretinac ${INBOX_PROJECT_ID}, ne u NULL.`
+          );
+          try {
+            this.stmtCreate.run({ ...params, $project_id: INBOX_PROJECT_ID });
+          } catch (fallbackError: any) {
+            if (!/FOREIGN KEY constraint failed/i.test(fallbackError?.message ?? '')) throw fallbackError;
+            console.warn(
+              `[TaskManagerSQL] WARN TASK-3009: ni pretinac ${INBOX_PROJECT_ID} ne postoji ` +
+              `(obrisan/arhiviran). Zadatak ${id} nastaje s project_id=NULL. Popravi redak projekta pa napravi backfill.`
+            );
+            this.stmtCreate.run({ ...params, $project_id: null });
+          }
+        } else {
+          console.warn(
+            `[TaskManagerSQL] WARN TASK-3009: pretinac ${INBOX_PROJECT_ID} nedostaje/arhiviran. ` +
+            `Zadatak ${id} nastaje s project_id=NULL. Popravi redak projekta pa napravi backfill.`
+          );
+          this.stmtCreate.run({ ...params, $project_id: null });
+        }
       } else if (/UNIQUE|constraint/i.test(message)) {
         throw new Error(
           `[TaskManagerSQL] ID collision: ${id} already exists. Refusing to overwrite. ` +
@@ -683,7 +689,7 @@ export class TaskManagerSQL {
     }
 
     // Apply updates
-    this.stmtUpdate.run({
+    const updateParams = {
       $id: id,
       $title: updates.title ?? existing.title,
       $description: updates.description ?? existing.description,
@@ -697,13 +703,76 @@ export class TaskManagerSQL {
       $progress_notes: JSON.stringify(progressNotes),
       $progress_percent: updates.progressPercent !== undefined ? updates.progressPercent : (existing.progressPercent ?? null),
       $nextcloud_folder: updates.nextcloudFolder !== undefined ? (updates.nextcloudFolder || null) : (existing.nextcloudFolder || null),
-      $project_id: updates.projectId !== undefined ? (updates.projectId || null) : (existing.projectId || null),
+      // TASK-3514: „makni projekt" (prazan string s ploce ili iz skripte) NE znaci NULL
+      // nego povratak u pretinac. Zadatak bez projekta ispada iz izvjestaja i troska po
+      // projektu, pa je nevidljivost skuplja od pogresno pogodjenog projekta.
+      //
+      // Grana `else` NAMJERNO ostavlja zatecenu vrijednost (i NULL): svaki PUT dira
+      // desetak polja i vecina ih ne salje projekt. Kad bi i taj slucaj vukao pretinac,
+      // obican `status` PUT bi u bazi bez retka PRJ-033 pucao na stranom kljucu — to
+      // je bio kvar koji je oborio 15 postojecih testova (izolirane fixture baze).
+      $project_id: updates.projectId !== undefined
+        ? (updates.projectId.trim() || INBOX_PROJECT_ID)
+        : (existing.projectId || null),
       $started_at: startedAt || null,
       $completed_at: completedAt || null,
       $blocked_reason: updates.blockedReason !== undefined ? (updates.blockedReason || '') : (existing.blockedReason || ''),
       $due_date: updates.dueDate !== undefined ? (updates.dueDate || null) : (existing.dueDate || null),
       $result_summary: updates.resultSummary !== undefined ? (updates.resultSummary || '') : (existing.resultSummary || ''),
-    });
+    };
+
+    try {
+      this.stmtUpdate.run(updateParams);
+    } catch (error: any) {
+      // Isti razred kvara kao na INSERT-u: jedini strani kljuc u `tasks` je projekt.
+      // Ako je pretinac obrisan/arhiviran, „makni projekt" ne smije srusiti PUT koji je
+      // usput mijenjao status i biljeske — vrati se na NULL i vici u log.
+      const poruka: string = error?.message ?? '';
+      const trazioPretinac = updates.projectId !== undefined && !updates.projectId.trim();
+      if (!/FOREIGN KEY constraint failed/i.test(poruka) || !trazioPretinac) throw error;
+      console.warn(
+        `[TaskManagerSQL] WARN TASK-3514: pretinac ${INBOX_PROJECT_ID} ne postoji, ` +
+        `zadatak ${id} ostaje bez projekta (NULL). Popravi redak projekta pa napravi backfill.`
+      );
+      this.stmtUpdate.run({ ...updateParams, $project_id: null });
+    }
+
+    // TASK-3521: RECIPROCITET blockedBy <-> blocks pri izmjeni lanca.
+    //
+    // `createTask` je od pocetka upisivao dijete u `blocks` roditelja, ali `updateTask`
+    // nije — pisao je samo vlastiti stupac (`$blocks: existing.blocks`). Auto-unblock
+    // nize iterira `blocks` RODITELJA, pa je lanac slozen naknadno preko
+    // `PUT /api/tasks/<ID>` s `blockedBy` ostavljao roditelja s praznim `blocks` i
+    // dijete se nikad nije vratilo u `pending` (MUSZG red TASK-3503 -> TASK-3474,
+    // 28.08.2026. — reciprocitet je morao biti dopisan rucno u bazu).
+    //
+    // Radi se TEK NAKON glavnog UPDATE-a i samo kad je `blockedBy` STVARNO poslan:
+    // grana `else` u `$blocked_by` namjerno ostavlja zatecenu vrijednost, pa PUT koji
+    // dira samo status ne smije ni taknuti tudji `blocks`.
+    if (updates.blockedBy !== undefined) {
+      const stariRoditelji = existing.blockedBy;
+      // Samoblokada je mrtav zadatak — nikad je ne materijaliziraj u `blocks`.
+      const noviRoditelji = updates.blockedBy.filter(bid => bid !== id);
+
+      const uklonjeni = stariRoditelji.filter(bid => bid !== id && !noviRoditelji.includes(bid));
+      const dodani = noviRoditelji.filter(bid => !stariRoditelji.includes(bid));
+
+      for (const blockerId of uklonjeni) {
+        const blocker = this.getTask(blockerId);
+        if (!blocker || !blocker.blocks.includes(id)) continue;
+        this.db.prepare("UPDATE tasks SET blocks = ?, updated_at = ? WHERE id = ?")
+          .run(JSON.stringify(blocker.blocks.filter(bid => bid !== id)), now, blockerId);
+      }
+
+      for (const blockerId of dodani) {
+        const blocker = this.getTask(blockerId);
+        // Nepostojeci roditelj (tipfeler u ID-u) se preskace, ne rusi PUT — isto kao u
+        // `createTask`. `blocked_by` ostaje zapisan kakav je poslan, da se rupa vidi.
+        if (!blocker || blocker.blocks.includes(id)) continue;
+        this.db.prepare("UPDATE tasks SET blocks = ?, updated_at = ? WHERE id = ?")
+          .run(JSON.stringify([...blocker.blocks, id]), now, blockerId);
+      }
+    }
 
     // Handle completion: unblock waiting tasks
     if (updates.status === 'completed') {
