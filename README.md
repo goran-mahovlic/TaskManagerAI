@@ -112,3 +112,9 @@ koda. Ideja je ostala.
 
 MIT, ista kao u izvornom projektu. Autorska prava zadržavaju i Matheus Baldissara (Tasks.md,
 2023.) i Goran Mahovlić (TaskManagerAI, 2026.). Puni tekst je u [LICENSE](LICENSE).
+
+## Dalje od ploče
+
+`docs/SUSTAV.md` opisuje kako se od ovog paketa slaže sustav u kojem se zadatci sami odrađuju:
+agenti i njihov registar, znanje (RAG) i njegova zaštita, instalacija dodatnih vještina, ulazni
+kanali te kočnice i vratar dovršetka — redom, sa što se smije preskočiti i zašto.

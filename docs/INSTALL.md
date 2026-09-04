@@ -18,7 +18,23 @@ njih sve ostalo radi normalno, a ploča na tim mjestima pokazuje da je značajka
 ```bash
 git clone https://github.com/goran-mahovlic/TaskManagerAI.git
 cd TaskManagerAI
-bun install
+bash scripts/install.sh
+```
+
+Skripta provjeri (i po potrebi instalira) Bun, postavi ovisnosti, stvori bazu ako je nema i
+na kraju **stvarno podigne poslužitelj** da potvrdi da instalacija radi. Ako više voliš ručno,
+`bun install` i dalje radi.
+
+**Bez pristupa internetu.** `zod` je obavezan (sheme se provjeravaju pri svakom zahtjevu), a
+strojevi u zatvorenoj mreži ne dosežu npm — zato paket nosi vlastiti primjerak u
+`vendor/zod.tgz`. Instalacija pokušava redom: npm → `vendor/zod.tgz` → već postojeća
+instalacija na stroju, i staje s greškom ako ni jedno ne uspije.
+
+**Malo diska.** Na stroju gdje ovisnosti već postoje uz drugu instalaciju:
+
+```bash
+bash scripts/install.sh --posudi     # node_modules = veze na postojeće; zod se ipak instalira
+bash scripts/install.sh --bez-baze   # ne diraj postojeću bazu
 ```
 
 ## 3. Baza
