@@ -1,0 +1,89 @@
+{
+  "_meta": {
+    "opis": "Katalog alata koje agenti mogu dobiti. Paket ih NE nosi — nosi popis odakle se povlače i kako se provjeri rade li.",
+    "verzija": "1.0.0",
+    "kako_se_koristi": [
+      "bash scripts/install-agents.sh --alati          # ispiši što je instalirano, a što nedostaje",
+      "bash scripts/install-agents.sh --alati --instaliraj   # postavi ono što nedostaje (traži mrežu)"
+    ],
+    "napomena": "Alat koji nije naveden u koraku posla agent gotovo nikad ne posegne sam. Popis služi i ljudima i za `IdentityBlock` pri pokretanju agenta."
+  },
+  "alati": {
+    "serena": {
+      "naziv": "Serena MCP",
+      "svrha": "Semantičko čitanje i uređivanje koda po simbolima (jezični poslužitelj), umjesto grepanja po datotekama.",
+      "vrsta": "mcp",
+      "izvor": "https://github.com/oraios/serena",
+      "instalacija": "uvx --from git+https://github.com/oraios/serena serena start-mcp-server --context ide-assistant",
+      "registracija": "claude mcp add serena -- uvx --from git+https://github.com/oraios/serena serena start-mcp-server --context ide-assistant",
+      "provjera": "grep -o '\"serena\"' ~/.claude.json | head -1",
+      "preduvjeti": ["uv/uvx (https://docs.astral.sh/uv/)", "prijavljen Claude CLI"],
+      "za_agente": ["jelena", "kosjenka", "malik"],
+      "napomena": "Kod nas radi na oba čvora; bez prijavljenog CLI-ja je ožičena, ali neaktivna."
+    },
+    "chromadb": {
+      "naziv": "ChromaDB",
+      "svrha": "Vektorska baza za RAG — pamćenje između sjednica.",
+      "vrsta": "posluzitelj",
+      "izvor": "https://github.com/chroma-core/chroma",
+      "instalacija": "docker run -d -p 18765:8000 -v chroma:/chroma/chroma chromadb/chroma",
+      "provjera": "curl -s localhost:18765/api/v2/heartbeat",
+      "za_agente": ["svi"]
+    },
+    "ollama": {
+      "naziv": "Ollama",
+      "svrha": "Lokalni modeli i ugradnja teksta za RAG (nomic-embed-text).",
+      "vrsta": "posluzitelj",
+      "izvor": "https://ollama.com",
+      "instalacija": "curl -fsSL https://ollama.com/install.sh | sh && ollama pull nomic-embed-text",
+      "provjera": "curl -s localhost:11434/api/tags",
+      "za_agente": ["svi"]
+    },
+    "playwright": {
+      "naziv": "Playwright (Chromium)",
+      "svrha": "Provjera sučelja u pravom pregledniku: snimke zaslona, greške u konzoli, klikanje.",
+      "vrsta": "python",
+      "izvor": "https://playwright.dev/python/",
+      "instalacija": "pip install --user playwright && python3 -m playwright install chromium",
+      "provjera": "python3 -c 'import playwright; print(playwright.__version__)'",
+      "za_agente": ["grga", "potjeh", "jelena"],
+      "napomena": "Bez ovoga izraz „provjereno u pregledniku” znači „nagađam”."
+    },
+    "rag-alati": {
+      "naziv": "RAG alati (u paketu)",
+      "svrha": "Pregled, tipizacija, zaštita i arhiviranje znanja.",
+      "vrsta": "u-paketu",
+      "instalacija": "već su u tools/ (rag_audit.py, rag_tipovi.py, rag_archive.py, rag_izdvoji.py)",
+      "provjera": "python3 tools/rag_audit.py --pregled",
+      "za_agente": ["manda", "regoc"]
+    },
+    "mjerenja": {
+      "naziv": "Mjerenja potrošnje i vrijednosti (u paketu)",
+      "svrha": "Što je rad stajao (`run_tokens.py`, `tjedni_pregled.py`) i koliko je vrijedio (`vrijednost_inputa.py`).",
+      "vrsta": "u-paketu",
+      "instalacija": "već su u tools/",
+      "provjera": "python3 tools/vrijednost_inputa.py --json | head -5",
+      "za_agente": ["regoc"]
+    },
+    "pcbparts": {
+      "naziv": "pcbparts MCP",
+      "svrha": "Pretraga elektroničkih dijelova (JLCPCB/Mouser/DigiKey), referentne ploče, pravila dizajna.",
+      "vrsta": "mcp",
+      "izvor": "vlastiti MCP poslužitelj (nije javno objavljen)",
+      "instalacija": "claude mcp add pcbparts -- python3 /put/do/pcbparts/server.py",
+      "provjera": "u Claude CLI-ju: /mcp",
+      "za_agente": ["jelena", "manda"],
+      "napomena": "Neobavezno — samo za hardverske projekte."
+    },
+    "espacenet": {
+      "naziv": "Espacenet MCP (EPO OPS)",
+      "svrha": "Pretraga patenata EP/EU preko Open Patent Servicesa.",
+      "vrsta": "mcp",
+      "izvor": "vlastiti MCP poslužitelj; traži OPS ključ s developers.epo.org",
+      "instalacija": "claude mcp add espacenet -- python3 /put/do/espacenet-mcp/server.py",
+      "provjera": "u Claude CLI-ju: /mcp",
+      "za_agente": ["manda"],
+      "napomena": "Poštovati politiku pravične uporabe EPO-a (tjedna kvota)."
+    }
+  }
+}

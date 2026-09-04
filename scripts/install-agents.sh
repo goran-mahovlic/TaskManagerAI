@@ -25,10 +25,14 @@ VJESTINE_DIR="${TM_SKILLS_DIR:-$HOME/.claude/skills}"
 PAI_REPO="${PAI_REPO:-https://github.com/danielmiessler/PAI}"
 PAI_KOPIJA="${PAI_KOPIJA:-$HOME/.cache/pai-izvor}"
 INSTALIRAJ_VJESTINE=0
+PRIKAZI_ALATE=0
+INSTALIRAJ_ALATE=0
 
 for a in "$@"; do
   case "$a" in
     --vjestine) INSTALIRAJ_VJESTINE=1 ;;
+    --alati) PRIKAZI_ALATE=1 ;;
+    --instaliraj) INSTALIRAJ_ALATE=1 ;;
     --u) shift; ODREDISTE="${1:-$ODREDISTE}" ;;
     -h|--help) sed -n '2,20p' "$0"; exit 0 ;;
   esac
@@ -78,6 +82,56 @@ else
   mkdir -p "$(dirname "$ODREDISTE")"
   cp "$IZVOR" "$ODREDISTE"
   echo "  registar: $ODREDISTE (novi)"
+fi
+
+# ── 1b. Tijekovi rada i alati ─────────────────────────────────────────────────
+# Goran, 04.09.2026.: „htio bih da naši agenti koriste workflow po potrebi … isto tako, što je
+# s alatima? Moramo imati popis alata dostupnih koji se onda mogu povući."
+KATALOG_WF="$KORIJEN/agents/workflows.json"
+KATALOG_ALATA="$KORIJEN/agents/alati.json"
+
+if [ -f "$KATALOG_WF" ]; then
+  echo
+  echo "Tijekovi rada (agents/workflows.json) — odabir: python3 tools/odaberi_workflow.py --naslov '…'"
+  python3 - "$KATALOG_WF" <<'PYEOF'
+import json, sys
+d = json.load(open(sys.argv[1], encoding="utf-8"))
+for wid, w in d["workflows"].items():
+    koraci = " → ".join(s["agent"] for s in w["koraci"])
+    print(f"  {wid:20} od težine {w.get('najmanja_tezina', 0):>3}: {koraci}")
+PYEOF
+fi
+
+if [ "$PRIKAZI_ALATE" = "1" ] && [ -f "$KATALOG_ALATA" ]; then
+  echo
+  echo "Alati (agents/alati.json) — paket ih ne nosi, samo zna odakle dolaze:"
+  python3 - "$KATALOG_ALATA" "$INSTALIRAJ_ALATE" <<'PYEOF'
+import json, shlex, subprocess, sys
+d = json.load(open(sys.argv[1], encoding="utf-8"))
+instaliraj = sys.argv[2] == "1"
+for aid, a in d["alati"].items():
+    provjera = a.get("provjera")
+    ima = False
+    if provjera:
+        try:
+            ima = subprocess.run(provjera, shell=True, capture_output=True,
+                                 timeout=20).returncode == 0
+        except Exception:
+            ima = False
+    oznaka = "✓" if ima else "—"
+    print(f"  {oznaka} {a['naziv']:26} {a.get('vrsta',''):10} {a.get('svrha','')[:52]}")
+    if not ima:
+        print(f"      izvor:      {a.get('izvor','?')}")
+        print(f"      instalacija: {a.get('instalacija','?')}")
+        if instaliraj and a.get("vrsta") in ("mcp", "python", "posluzitelj"):
+            print("      pokrećem…")
+            try:
+                r = subprocess.run(a["instalacija"], shell=True, capture_output=True, timeout=600)
+                print("      " + ("u redu" if r.returncode == 0 else
+                                  f"nije uspjelo: {r.stderr.decode()[-160:].strip()}"))
+            except Exception as e:
+                print(f"      nije uspjelo: {e}")
+PYEOF
 fi
 
 # ── 2. Vještine — što nedostaje ───────────────────────────────────────────────

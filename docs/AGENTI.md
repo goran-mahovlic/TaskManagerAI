@@ -99,3 +99,66 @@ Vještina je mapa s `SKILL.md`; ništa se ne registrira:
 
 Zatim je dopiši u `skills` polje agenta. Detaljnije o slaganju cijelog sustava —
 znanje (RAG), ulazni kanali, kočnice — u `docs/SUSTAV.md`.
+
+---
+
+## Tijekovi rada (workflow)
+
+Neki poslovi traže više od jednog izvršitelja. Katalog je u `agents/workflows.json`, a odluku
+donosi `tools/odaberi_workflow.py` — **pri otvaranju zadatka**, deterministički:
+
+```bash
+python3 tools/odaberi_workflow.py --popis
+python3 tools/odaberi_workflow.py --naslov "Ne radi prijava na stranicu" --tezina 40
+```
+
+| Tijek | Od težine | Koraci |
+|---|---:|---|
+| `implement-feature` | 36 | Kosjenka [GrillWithDocs] → Jelena [TDD] → Potjeh → Malik |
+| `bug-fix` | 16 | Jelena [DiagnosingBugs] → Potjeh → Malik |
+| `research` | 36 | Manda [Research] → Dora [FirstPrinciples] → Kosjenka |
+| `security-audit` | 36 | Malik [RedTeam] → Potjeh → Kosjenka |
+| `prijava-natjecaj` | 61 | Manda → Kosjenka [GrillWithDocs] → Jelena → Dora |
+
+**Kako se odlučuje** (prvi uvjet koji se poklopi):
+
+1. izričita oznaka `workflow:<id>` na zadatku,
+2. oznaka `bez-workflowa` → nikad tijek,
+3. okidač iz kataloga **uz uvjet da je težina ≥ `najmanja_tezina`**,
+4. inače: bez tijeka, jedan izvršitelj.
+
+Zadnje je pravilo najvažnije: **neodlučeno je uvijek „bez tijeka”**. Tijek od četiri koraka za
+posao od deset minuta košta više nego što donosi, a promašeni tijek se plaća četiri puta.
+
+Odluka je namjerno bez modela. Izbor se donosi pri svakom otvaranju zadatka, a klasifikator na
+tako vrućem mjestu kod nas je već jednom promašio 92 % prometa; ovako je provjerljiv i
+besplatan. Svaki korak **imenuje vještinu** koju izvršitelj mora upotrijebiti — inače je neće
+ni dotaknuti.
+
+---
+
+## Alati
+
+Katalog je u `agents/alati.json`; paket ih ne nosi, nego zna odakle dolaze i kako se provjeri
+rade li:
+
+```bash
+bash scripts/install-agents.sh --alati                # što je instalirano, a što nedostaje
+bash scripts/install-agents.sh --alati --instaliraj   # postavi nedostajuće (treba mrežu)
+```
+
+| Alat | Čemu služi | Odakle |
+|---|---|---|
+| **Serena MCP** | semantičko čitanje i uređivanje koda po simbolima umjesto grepanja po datotekama | `github.com/oraios/serena` (preko `uvx`) |
+| **ChromaDB** | vektorska baza za RAG | `chromadb/chroma` (Docker) |
+| **Ollama** | lokalni modeli i ugradnja teksta | službena instalacijska skripta s `ollama.com` |
+| **Playwright** | provjera sučelja u pravom pregledniku (snimke, greške u konzoli) | `pip install playwright` + `playwright install chromium` |
+| RAG alati, mjerenja | pregled i zaštita znanja; trošak i vrijednost rada | već u `tools/` ovog paketa |
+| pcbparts, Espacenet | dijelovi za PCB, patenti EP/EU | vlastiti MCP poslužitelji (neobavezno) |
+
+Točne naredbe za svaki alat stoje u `agents/alati.json` (`instalacija`, `registracija`,
+`provjera`). Registracija MCP alata ide kroz `claude mcp add …`, a stanje se u Claude CLI-ju
+vidi s `/mcp`.
+
+**Serena** je izrijekom navedena jer je za rad na kodu najkorisnija: umjesto pretraživanja
+teksta radi po simbolima preko jezičnog poslužitelja. Dodijeljena je Jeleni, Kosjenki i Maliku.
