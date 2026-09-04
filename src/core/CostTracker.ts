@@ -41,7 +41,7 @@
  * i `logUsage` ga namjerno ignorira kad je `taskId` zadan.
  *
  * Usage:
- *   import { getCostTracker } from './CostTracker'
+ *   import { getCostTracker } from '~/.claude/regoc/CostTracker'
  *   const ct = getCostTracker()
  *   ct.logUsage({ agentId: 'jelena', taskId: 'TASK-100', model: 'opus', inputTokens: 5000, outputTokens: 2000, turns: 12 })
  *   ct.getCostByAgent()

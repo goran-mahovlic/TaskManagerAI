@@ -63,7 +63,17 @@ export const DANA_MIN = 1
  */
 export const DANA_MAX = 3650
 export const SVE_VRIJEME_DANA = 3650
-export const ZADANO_DANA = 7
+/**
+ * TASK-3691 (Goran, 04.09.2026.): „to se mora vući iz istog izvora! Ne smije biti razlike
+ * i sve mora biti uključeno."
+ *
+ * Kartica projekta pokazuje UKUPNU potrošnju, a pregled je zadano gledao zadnjih 7 dana —
+ * ista se brojka time razilazila (MUSZG: 316,79 € u pregledu, 1.388,83 € na kartici).
+ * Izvor je oba puta isti (`cost_log` odnosno `run_log.jsonl`, provjereno: razilaze se za
+ * 0,07 USD na 3 540, i to samo na 48 redaka bez `task_id`), pa je razlika bila ISKLJUČIVO
+ * razdoblje. Zadano je sada „svo vrijeme"; kraća razdoblja ostaju kao izbor.
+ */
+export const ZADANO_DANA = SVE_VRIJEME_DANA
 export const NAJSKUPLJIH_MIN = 1
 export const NAJSKUPLJIH_MAX = 50
 export const ZADANO_NAJSKUPLJIH = 5

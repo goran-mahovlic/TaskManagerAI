@@ -17,6 +17,19 @@ import { assertNotLiveDbInTest } from "./LiveDbGuard";
 // TASK-3516: jedno pravilo poretka za cijeli TaskManager — najnovije na vrhu.
 import { TASKS_ORDER_BY } from "./ChronoOrder";
 
+/**
+ * TASK-3599 (P5c): oznake koje znace „ovo ceka covjeka". Drzane usklađeno s
+ * `AutonomyQueue.DEFAULT_HUMAN_GATED_TAGS` (test to i provjerava). Namjerno se NE
+ * importaju odande — TaskManagerSQL je sloj ispod orkestracije i ne smije o njoj ovisiti.
+ */
+export const HUMAN_GATED_UNBLOCK_TAGS = ['no-autonomy', 'waiting-for-human', 'needs-decision', 'interactive'];
+
+/** Nosi li zadatak oznaku ljudske zadrske? */
+export function humanGatedTask(tags?: string[] | null): boolean {
+  if (!Array.isArray(tags)) return false;
+  return tags.some(t => HUMAN_GATED_UNBLOCK_TAGS.includes(String(t).trim().toLowerCase()));
+}
+
 // ============================================
 // TYPES & INTERFACES
 // ============================================
@@ -780,11 +793,22 @@ export class TaskManagerSQL {
         const waitingTask = this.getTask(waitingId);
         if (waitingTask) {
           const newBlockedBy = waitingTask.blockedBy.filter(bid => bid !== id);
-          const newStatus = (newBlockedBy.length === 0 && waitingTask.status === 'blocked') ? 'pending' : waitingTask.status;
+          // TASK-3599 (P5c): LJUDSKA ZADRSKA NADJACAVA AUTO-UNBLOCK.
+          // Kvar 02.09. u 10:09 i ponovljen u 21:22 na TASK-3630: korak iznad canary-stropa
+          // razlaganja stvoren je kao `blocked` s razlogom „canary-strop … ceka ljudsku potvrdu",
+          // ali cim su mu ovisnosti zavrsile, ovaj auto-unblock ga je prebacio u `pending` i
+          // obrisao razlog. Strop je tako cuvao samo pumpu (readySteps/maxWave), dok je zadatak
+          // na plocu izasao kao obican `pending` bez ijednog traga zasto ceka. Oznaka
+          // `waiting-for-human` (AutonomyQueue.DEFAULT_HUMAN_GATED_TAGS) je jedina brava koja
+          // drzi — pa je ovdje postujemo: ovisnost se skida, ali status i razlog ostaju.
+          const humanHeld = humanGatedTask(waitingTask.tags);
+          const newStatus = (!humanHeld && newBlockedBy.length === 0 && waitingTask.status === 'blocked') ? 'pending' : waitingTask.status;
           this.db.prepare("UPDATE tasks SET blocked_by = ?, status = ?, blocked_reason = CASE WHEN ? = 'pending' THEN '' ELSE blocked_reason END, updated_at = ? WHERE id = ?")
             .run(JSON.stringify(newBlockedBy), newStatus, newStatus, now, waitingId);
           if (newStatus !== waitingTask.status) {
             this.logChange(waitingId, 'status', waitingTask.status, newStatus, 'system');
+          } else if (humanHeld && newBlockedBy.length === 0 && waitingTask.status === 'blocked') {
+            this.logChange(waitingId, 'auto_unblock_held', id, `zadrzano: ${HUMAN_GATED_UNBLOCK_TAGS.filter(t => (waitingTask.tags || []).includes(t)).join(',')}`, 'system');
           }
         }
       }

@@ -14,18 +14,43 @@
  * Covers both the full English format (SUMMARY/ANALYSIS/...) and the shorter
  * Croatian REZULTAT/STATUS/SLJEDEĆI KORACI variant used in agent task replies. */
 const REPORT_MARKERS: RegExp[] = [
-  /📋\s*SUMMARY/u,
-  /🔍\s*ANALYSIS/u,
-  /⚡\s*ACTIONS/u,
-  /✅\s*RESULTS/u,
-  /📊\s*STATUS/u,
-  /📁\s*CAPTURE/u,
-  /➡️?\s*NEXT/u,
-  /📖\s*STORY\s*EXPLANATION/u,
-  /⭐\s*RATE/u,
-  /📋\s*REZULTAT/u,
-  /➡️?\s*SLJEDE[ĆC]I\s*KORAC/u,
+  /📋[\s*_]*SUMMARY/u,
+  /🔍[\s*_]*ANALYSIS/u,
+  /⚡[\s*_]*ACTIONS/u,
+  /✅[\s*_]*RESULTS/u,
+  /📊[\s*_]*STATUS/u,
+  /📁[\s*_]*CAPTURE/u,
+  /➡️?[\s*_]*NEXT/u,
+  /📖[\s*_]*STORY\s*EXPLANATION/u,
+  /⭐[\s*_]*RATE/u,
+  /📋[\s*_]*REZULTAT/u,
+  /➡️?[\s*_]*SLJEDE[ĆC]I\s*KORAC/u,
 ]
+
+/**
+ * TASK-3589: markeri MINIMALNOG CORE formata.
+ *
+ * Dvije neovisne rupe propustile su 02.09.2026. kosjenkin odgovor
+ * („📋 **SUMMARY:** Sesija je resumirana … 🗣️ **Kosjenka:** …") kroz ingress
+ * TaskWebUI-a i otvorile TASK-3589 → 3590 → 3619 nad vlastitim izvještajem:
+ *
+ *  (1) EMPHASIS: `REPORT_MARKERS` su dopuštali samo razmak između emojija i
+ *      ključne riječi (`📋\s*SUMMARY`), a agenti u praksi pišu podebljano
+ *      (`📋 **SUMMARY:**`). Mjereno u daemon.log 02.09.2026.: 16 podebljanih
+ *      naspram 5 običnih — promašivan je VEĆINSKI oblik. Zato `[\s*_]*` gore.
+ *
+ *  (2) PRAG: CORE „Minimal Format" (skills/CORE/SKILL.md) ima točno DVA retka —
+ *      `📋 SUMMARY:` i `🗣️ <Ime>:`. Uz prag od 3 markera takav izvještaj NIKAD
+ *      ne može biti prepoznat, koliko god markeri bili točni. Zato je par
+ *      SUMMARY+govorna-linija odlučan sam za sebe.
+ *
+ * Govorna linija (`🗣️ Ime:`) je potpis AGENTOVOG odgovora, ne specifikacije.
+ * Mjereno nad živom regoc.db (1349 zadataka): par se pojavljuje u 11 zapisa i
+ * svih 11 su poznati echo-artefakti (629/631/637, 2422–2427, 3589/3590/3619) —
+ * nula lažnih pozitiva; stari `isRecycledAgentReport` hvatao je samo 5 od 11.
+ */
+const CORE_SUMMARY_MARKER = /📋[\s*_]*(?:SUMMARY|REZULTAT)/u
+const CORE_SPOKEN_LINE_MARKER = /🗣️?[\s*_]*[^\n*:]{1,40}\**\s*:/u
 
 /**
  * Daemon lifecycle / system notices that are NEVER an actionable task spec.
@@ -82,14 +107,53 @@ const PLACEHOLDER_DESCRIPTION =
  * OBAVEZAN" ovime postaje strojno provedeno — takav task se NE dispatcha.
  */
 export function isEmptyOrFixtureTask(title?: string | null, description?: string | null): boolean {
+  return emptyOrFixtureReason(title, description) !== null
+}
+
+/**
+ * TASK-3627: strojni RAZLOG zbog kojeg zadatak nema izvrsivog sadrzaja, ili `null`
+ * kad ga ima. `isEmptyOrFixtureTask` je samo boolean projekcija ove funkcije —
+ * jedan izvor istine za DVA potrosaca:
+ *   - RegocDaemon (dispatch): zanima ga samo da/ne;
+ *   - TaskWebUI ingress (POST /api/tasks): mora VRATITI razlog u 422 tijelu, jer
+ *     onaj tko posalje prazan zadatak inace ne zna sto da popravi.
+ *
+ * Do 02.09.2026. vrata su stajala samo na dispatchu, pa je `POST /api/tasks` s
+ * `description: ""` vracao 201 (probni TASK-3620/3621) — pravilo „task description
+ * OBAVEZAN" (Goran, TASK-2406) nije bilo strojno provedeno na ULAZU, samo pri
+ * pokretanju agenta. Rupa je ista kao TASK-2701: prazan zapis kasnije spawna
+ * pravu Opus sesiju nad nicim.
+ */
+export type EmptyTaskReason =
+  | 'empty_title'
+  | 'empty_description'
+  | 'placeholder_description'
+  | 'fixture_title'
+  | 'disposable_title'
+
+export function emptyOrFixtureReason(
+  title?: string | null,
+  description?: string | null,
+): EmptyTaskReason | null {
   const t = (title || '').trim()
   const d = (description || '').trim()
-  if (!t) return true
-  if (!d) return true
-  if (PLACEHOLDER_DESCRIPTION.test(d)) return true
-  if (FIXTURE_TITLE.test(t)) return true
-  if (DISPOSABLE_TITLE.test(t)) return true
-  return false
+  if (!t) return 'empty_title'
+  if (!d) return 'empty_description'
+  if (PLACEHOLDER_DESCRIPTION.test(d)) return 'placeholder_description'
+  if (FIXTURE_TITLE.test(t)) return 'fixture_title'
+  if (DISPOSABLE_TITLE.test(t)) return 'disposable_title'
+  return null
+}
+
+/** Ljudsko objasnjenje razloga — ide u 422 tijelo, da posiljatelj zna sto ispraviti. */
+export const EMPTY_TASK_REASON_TEXT: Record<EmptyTaskReason, string> = {
+  empty_title: 'Zadatak nema naslov.',
+  empty_description:
+    'Zadatak nema opis. Pravilo „task description OBAVEZAN": posalji ŠTO / ZAŠTO / KOJI fajlovi / KRITERIJ za done. Naslov sam nije specifikacija — agent bi dobio zadatak bez sadrzaja.',
+  placeholder_description:
+    'Opis je rezervirano mjesto ("description", "TBD", "test", "-"), ne specifikacija.',
+  fixture_title: 'Naslov je doslovni test-fixture ("Task 1", "Critical Task", …), ne stvarni zadatak.',
+  disposable_title: 'Naslov je oznacen kao privremen ([TEST-…], (obrisati)).',
 }
 
 /** Number of distinct report markers above which content is treated as a recycled report. */
@@ -104,6 +168,8 @@ export const DISPATCH_DEDUP_WINDOW_MS = 15 * 60 * 1000 // 15 min
  */
 export function isRecycledAgentReport(content: string): boolean {
   if (!content) return false
+  // Minimalni CORE format (📋 SUMMARY + 🗣️ Ime:) je odlučan par — vidi TASK-3589.
+  if (CORE_SUMMARY_MARKER.test(content) && CORE_SPOKEN_LINE_MARKER.test(content)) return true
   let hits = 0
   for (const m of REPORT_MARKERS) {
     if (m.test(content)) hits++

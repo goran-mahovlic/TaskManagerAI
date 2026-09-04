@@ -15,6 +15,7 @@
 import {
   getChromaClient,
   listCollections as listCollectionsCore,
+  listDefaultSearchCollections,
   getCollection,
   collectionExists,
   getCollectionCount,
@@ -24,7 +25,7 @@ import {
   type RAGConfig,
   type MemoryResult,
   type DeleteMemoryResult
-} from './rag/rag-memory'
+} from '/home/klaudio/.claude/skills/CORE/Tools/lib/rag-memory'
 
 import {
   RAGFilterSchema,
@@ -33,8 +34,15 @@ import {
   type RAGCollection,
   type RAGFilter,
   type RAGDeleteRequest,
-  type RAGDeleteResult
+  type RAGDeleteResult,
+  type RAGProjectCounts
 } from './zod/schemas/rag'
+
+// R4/TASK-4311: broj dokumenata po projektu + Chroma `where` klauzula
+import {
+  buildProjectWhere,
+  countDocumentsByProject
+} from './RAGProjectStats'
 
 // ============================================
 // CONFIGURATION
@@ -119,21 +127,41 @@ export class RAGService {
   }> {
     const validated = filter ? RAGFilterSchema.parse(filter) : { limit: 50, offset: 0 }
 
-    // If no collection specified, get from all collections
+    // If no collection specified, get from default-search collections (R3, TASK-4310:
+    // pai_agent_Bash/Explore ostaju u Chromi, ali van zadanog "browse svih kolekcija"
+    // — i dalje dostupne eksplicitnim ?collection=)
     let collections: string[] = []
     if (validated.collection) {
       collections = [validated.collection]
-    } else {
+    } else if (validated.projectId || (validated as any).tip) {
+      // R4/TASK-4311: filtar po projektu je IZRIČITO suženje, ne "browse svega" —
+      // zato ide preko SVIH kolekcija, isto kao brojka na kartici projekta
+      // (getProjectDocCounts). Da ovdje stoji zadani skup, kartica bi mogla
+      // pokazati 12 dokumenata, a odabir projekta izlistati 3.
       collections = await listCollectionsCore(this.config)
+    } else {
+      collections = await listDefaultSearchCollections(this.config)
     }
 
     // Fetch entries from all relevant collections
     let allEntries: RAGEntry[] = []
 
+    // R4/TASK-4311: projekt se filtrira U CHROMI (`where {"project_id": ...}`), ne
+    // naknadnim prosijavanjem — inače bi se svaki put povuklo svih ~8900 dokumenata.
+    const projectWhere = buildProjectWhere(validated.projectId)
+    // Filtar po VRSTI dokumenta (`tip_regoc`): isti mehanizam kao projekt — suženje se
+    // radi u Chromi, ne naknadnim prosijavanjem. Kombinira se s projektom preko `$and`,
+    // jer Chroma ne prihvaća dva ključa na vrhu where-objekta.
+    const tipWhere = (validated as any).tip ? { tip_regoc: (validated as any).tip } : undefined
+    const where = projectWhere && tipWhere
+      ? { $and: [projectWhere, tipWhere] }
+      : (projectWhere || tipWhere)
+
     for (const collectionName of collections) {
       try {
         const memories = await getAllMemories({
           collectionName,
+          where,
           config: this.config
         })
 
@@ -233,6 +261,43 @@ export class RAGService {
       stored_at: memory.metadata.stored_at as string | undefined
     }
   }
+
+  // ============================================
+  // PROJECT DOCUMENT COUNTS (R4, TASK-4311)
+  // ============================================
+
+  /**
+   * Broj RAG dokumenata po projektu, s kratkim kešom — kartica projekta se
+   * osvježava u bujici, a puni prolaz po Chromi (svih 29 kolekcija, samo
+   * metapodatci) traje ~1,3 s i nema smisla ga ponavljati po svakom crtanju.
+   */
+  async getProjectDocCounts(options: {
+    projectIds?: string[]
+    refresh?: boolean
+    ttlMs?: number
+  } = {}): Promise<RAGProjectCounts> {
+    const { projectIds = [], refresh = false, ttlMs = 60_000 } = options
+    const now = Date.now()
+
+    if (!refresh && RAGService.projectCountsCache &&
+        now - RAGService.projectCountsCache.at < ttlMs) {
+      // Nule za projekte s ploče računamo iz keširanog zbroja, pa novi projekt
+      // odmah dobije svoju 0 bez ponovnog prolaza po Chromi.
+      const cached = RAGService.projectCountsCache.value
+      const counts = { ...cached.counts }
+      for (const id of projectIds) if (!(id in counts)) counts[id] = 0
+      return { ...cached, counts, cached: true }
+    }
+
+    const fresh = await countDocumentsByProject({
+      config: this.config,
+      projectIds
+    })
+    RAGService.projectCountsCache = { at: now, value: fresh }
+    return fresh
+  }
+
+  private static projectCountsCache: { at: number; value: RAGProjectCounts } | null = null
 
   // ============================================
   // DELETE OPERATIONS

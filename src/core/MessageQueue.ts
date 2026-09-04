@@ -8,7 +8,7 @@
  * Location: ~/.claude/regoc/ (PERSISTENT - survives container restart!)
  *
  * Usage:
- *   import { getMessageQueue } from './MessageQueue'
+ *   import { getMessageQueue } from '~/.claude/regoc/MessageQueue'
  *   const mq = getMessageQueue()
  *   mq.sendMessage('klaudio', 'stribor', 'Hello!')
  */

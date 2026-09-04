@@ -26,6 +26,23 @@ export const RAGCollectionSchema = z.object({
 })
 
 // ============================================
+// RAG PROJECT COUNTS SCHEMA (R4, TASK-4311)
+// ============================================
+
+/**
+ * Broj dokumenata po projektu. Projekt s ploče koji nema nijedan dokument MORA
+ * biti u `counts` s vrijednošću 0 — inače se rupa u znanju ne vidi (PRJ-041).
+ */
+export const RAGProjectCountsSchema = z.object({
+  counts: z.record(z.number().int().min(0)),
+  total: z.number().int().min(0),
+  withProject: z.number().int().min(0),
+  collections: z.array(z.string()),
+  fetchedAt: z.string(),
+  cached: z.boolean().default(false)
+})
+
+// ============================================
 // RAG FILTER SCHEMA
 // ============================================
 
@@ -33,6 +50,13 @@ export const RAGFilterSchema = z.object({
   collection: z.string().optional(),
   type: z.string().optional(),           // Filter by metadata.type
   agent: z.string().optional(),           // Filter by metadata.agent
+  // R4/TASK-4311: filtar po projektu ide u Chroma `where {"project_id": ...}`,
+  // ne u naknadno prosijavanje u memoriji.
+  projectId: z.string().min(1).optional(),
+  // Goran, 04.09.2026.: „treba paziti da se ne obrišu pravila i pogreške … počistiti i
+  // sortirati." Vrstu upisuje tools/rag_tipovi.py u `tip_regoc`; ovdje je filtar po njoj.
+  tip: z.enum(['pravilo', 'lekcija', 'pogreska', 'istrazivanje', 'spec',
+               'referenca', 'sjednica', 'izlaz-agenta', 'ocjena', 'ostalo']).optional(),
   dateFrom: z.string().optional(),        // ISO date string
   dateTo: z.string().optional(),          // ISO date string
   search: z.string().optional(),          // Text search in content
@@ -109,6 +133,7 @@ export const RAGHealthSchema = z.object({
 
 export type RAGEntry = z.infer<typeof RAGEntrySchema>
 export type RAGCollection = z.infer<typeof RAGCollectionSchema>
+export type RAGProjectCounts = z.infer<typeof RAGProjectCountsSchema>
 export type RAGFilter = z.infer<typeof RAGFilterSchema>
 export type RAGDeleteRequest = z.infer<typeof RAGDeleteRequestSchema>
 export type RAGQuery = z.infer<typeof RAGQuerySchema>

@@ -34,7 +34,7 @@ import { getRAGService } from './RAGService'
 import { tecajOdgovor } from './Tecaj'
 import type { Task, AgentId, TaskFilter } from './types/task-types'
 import { CreateTaskInputSchema, UpdateTaskInputSchema, TaskFilterSchema } from './zod/schemas/task'
-import { isRecycledAgentReport } from './core/DispatchGuard'
+import { isNonActionableMessage, emptyOrFixtureReason, EMPTY_TASK_REASON_TEXT } from './core/DispatchGuard'
 // K7/TASK-2986: potrošnja na ploči dolazi iz cost_loga koji puni svaki spawn.
 import { getCostTracker } from './core/CostTracker'
 import {
@@ -46,6 +46,12 @@ import {
 import {
   evaluateCompletion, formatVerdictLog, formatShadowLog, loadGateConfig, shouldEnforce,
 } from './core/CompletionGuard'
+// R2/TASK-4309: istraživanje mora završiti u RAG-u — zadatak s oznakom `istrazivanje`
+// ne prolazi u completed bez ID-a dokumenta u result_summary.
+import {
+  evaluateResearchClosure, formatResearchHint, formatResearchLog,
+  loadResearchGateConfig, ragStoreCommand, shouldEnforceResearch,
+} from './core/ResearchRagGate'
 import {
   CreateProjectInputSchema,
   UpdateProjectInputSchema,
@@ -743,10 +749,23 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     /* Trosak projekta u zadanom razdoblju (TASK-3572, T8). Namjerno u istom
        redu s brojkama po statusu: skupi projekt se vidi bez otvaranja panela.
        Nemjereno je "—" (klasa .is-prazna), nikad izmisljena nula. */
+    /* R4/TASK-4311: broj RAG dokumenata projekta — znanje uz trošak */
+    .project-count.c-rag { background: rgba(139,92,246,0.12); }
+    .project-count.c-rag b { color: #8b5cf6; }
+    .project-count.c-rag.is-zero b { color: var(--accent-red); }
+    .project-count.c-rag.is-racuna b { color: var(--text-secondary); font-weight: 400; }
     .project-count.c-trosak { background: rgba(59,130,246,0.12); }
     .project-count.c-trosak b { color: var(--accent-blue); }
     .project-count.c-trosak.is-prazna { opacity: 0.45; }
     .project-count.c-trosak.is-racuna b { color: var(--text-secondary); font-weight: 400; }
+    /* TASK-3691: vrijednost po cjeniku S1–S6 stoji uz trošak, ali drugom bojom —
+       da se na prvi pogled vidi da su to dvije različite brojke, a ne zbroj. */
+    .project-count.c-vrijednost { background: rgba(34,197,94,0.12); }
+    .project-count.c-vrijednost b { color: #22c55e; }
+    .project-count.c-vrijednost.is-prazna { opacity: 0.45; }
+    .project-count.c-vrijednost.is-racuna b { color: var(--text-secondary); font-weight: 400; }
+    .osoba-znacka { display: inline-block; margin-left: 0.25rem; padding: 0 0.3rem; border-radius: 3px;
+      background: rgba(148,163,184,0.18); color: var(--text-secondary); font-size: 0.66rem; }
 
     /* Postotak dovrsenosti: traka + brojka */
     .project-progress {
@@ -1917,6 +1936,18 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         <div class="projects-filter" id="projects-agent-filter">
           <button class="agent-btn active" data-agent="all">All Agents</button>
         </div>
+        <div style="display:flex;gap:0.35rem;align-items:center;margin-left:auto;">
+          <label for="projects-sort" style="font-size:0.78rem;color:var(--text-secondary);">Poredak:</label>
+          <select id="projects-sort" class="filter-select">
+            <option value="aktivnost" selected>zadnji rad</option>
+            <option value="cijena">potro&#353;nja</option>
+            <option value="ime">ime</option>
+            <option value="pocetak">po&#269;etak rada</option>
+            <option value="zadataka">broj zadataka</option>
+          </select>
+          <button id="projects-sort-smjer" class="btn btn-secondary" style="padding:0.15rem 0.5rem;"
+                  title="Obrni smjer">&#8595;</button>
+        </div>
         <button class="btn btn-primary" id="add-project-btn">+ New Project</button>
       </div>
 
@@ -1925,7 +1956,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         <span class="legend-item"><i class="legend-dot status-on_hold"></i>Na čekanju</span>
         <span class="legend-item"><i class="legend-dot status-completed"></i>Dovršen</span>
         <span class="legend-item"><i class="legend-dot status-archived"></i>Arhiviran</span>
-        <span class="legend-item">Poredak: zadnji rad na projektu — najnoviji prvi</span>
+        <span class="legend-item" id="projects-sort-opis">Poredak: zadnji rad na projektu — najnoviji prvi</span>
       </div>
 
       <div class="projects-rows" id="projects-rows"></div>
@@ -1939,6 +1970,22 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
           <input type="text" id="rag-search-input" placeholder="Pretraži RAG..." style="padding: 8px 12px; border: 1px solid var(--border-color); border-radius: 4px; font-size: 0.875rem; flex: 1; margin-right: 12px;">
           <select id="rag-collection-filter">
             <option value="">All Collections</option>
+          </select>
+          <select id="rag-project-filter" title="Filtar po projektu (Chroma where project_id)">
+            <option value="">Svi projekti</option>
+          </select>
+          <select id="rag-tip-filter" title="Filtar po vrsti dokumenta (tip_regoc)">
+            <option value="">Sve vrste</option>
+            <option value="pravilo">pravila (za&#353;ti&#263;eno)</option>
+            <option value="lekcija">lekcije (za&#353;ti&#263;eno)</option>
+            <option value="pogreska">pogre&#353;ke (za&#353;ti&#263;eno)</option>
+            <option value="istrazivanje">istra&#382;ivanja</option>
+            <option value="spec">specifikacije</option>
+            <option value="referenca">reference</option>
+            <option value="sjednica">sjednice</option>
+            <option value="izlaz-agenta">izlazi agenata</option>
+            <option value="ocjena">ocjene</option>
+            <option value="ostalo">ostalo</option>
           </select>
           <span id="rag-total-count" style="color: var(--text-secondary); font-size: 0.875rem;">Loading...</span>
         </div>
@@ -2007,7 +2054,9 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       </div>
       <div class="konzola-input-wrapper">
         <span class="konzola-prompt" id="konzola-prompt">regoc $</span>
-        <input type="text" id="konzola-input" class="konzola-input" placeholder="Type a command..." autocomplete="off" spellcheck="false">
+        <input type="text" id="konzola-input" class="konzola-input" placeholder="Type a command..."
+               name="regoc-konzola" autocomplete="off" spellcheck="false"
+               data-form-type="other" data-lpignore="true" data-1p-ignore data-bwignore>
       </div>
     </div>
 
@@ -2020,7 +2069,8 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         <h2 style="margin:0;font-size:1.1rem;">Potro&#353;nja &mdash; tjedni pregled</h2>
         <div style="display:flex;align-items:center;gap:0.75rem;">
           <select id="potrosnja-dana" class="filter-select">
-            <option value="7" selected>zadnjih 7 dana</option>
+            <option value="3650" selected>svo vrijeme</option>
+            <option value="7">zadnjih 7 dana</option>
             <option value="14">zadnjih 14 dana</option>
             <option value="30">zadnjih 30 dana</option>
             <option value="90">zadnjih 90 dana</option>
@@ -2031,6 +2081,17 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         </div>
       </div>
       <div id="potrosnja-box" class="tel-box tel-muted">&hellip;</div>
+
+      <!-- TASK-3691: vrijednost korisničkih upita po cjeniku S1-S6 (Goran, 04.09.2026.).
+           Ovo NIJE trošak modela nego procjena vrijednosti isporučenog rada; dvije brojke
+           stoje jedna uz drugu i namjerno se ne zbrajaju. -->
+      <div class="projects-header" style="margin-top:1.25rem;">
+        <h2 style="margin:0;font-size:1.05rem;">Vrijednost korisni&#269;kih upita &mdash; cjenik S1&ndash;S6</h2>
+        <button id="vrijednost-refresh-btn" class="konzola-mode-btn plan-mode"
+                style="border-color:var(--accent-blue);color:var(--accent-blue);margin-left:auto;">Osvje&#382;i</button>
+        <span id="vrijednost-izvor" style="color:var(--text-secondary);font-size:0.72rem;margin-left:0.5rem;">&mdash;</span>
+      </div>
+      <div id="vrijednost-box" class="tel-box tel-muted">&hellip;</div>
     </div>
 
     <!-- STATUS TAB -->
@@ -2432,8 +2493,8 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
             <select id="projekt-potrosnja-dana" class="filter-select"
                     style="margin-left:auto;font-size:0.72rem;padding:0.1rem 0.3rem;">
               <option value="7">zadnjih 7 dana</option>
-              <option value="30" selected>zadnjih 30 dana</option>
-              <option value="3650">svo vrijeme</option>
+              <option value="30">zadnjih 30 dana</option>
+              <option value="3650" selected>svo vrijeme</option>
             </select>
             <span id="projekt-potrosnja-izvor" style="color:var(--text-secondary);font-size:0.68rem;font-weight:400;">&mdash;</span>
             <button type="button" class="btn btn-secondary" id="projekt-potrosnja-refresh-btn"
@@ -3143,6 +3204,16 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
           modal.style.display = 'none';
           taskForm.reset();
           fetchTasks();
+        } else {
+          // TASK-3627: ingress sada odbija zadatak bez opisa (422). Bez ove grane
+          // forma bi na odbijenicu samo — nista: modal ostaje otvoren, korisnik
+          // misli da je aplikacija zamrznula. Odbijenica nosi polje reason, pokazi ga.
+          let msg = 'HTTP ' + response.status;
+          try {
+            const body = await response.json();
+            if (body && (body.reason || body.error)) msg = body.reason || body.error;
+          } catch (_) { /* tijelo nije JSON — ostaje status */ }
+          alert('Zadatak nije stvoren: ' + msg);
         }
       } catch (err) {
         console.error('Failed to create task:', err);
@@ -3861,8 +3932,17 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
           }
           potPostavi(potHtml(data));
           if (info) {
+            // TASK-3691: uz izvor ide i rezultat kontrole — pregled i kartica projekta
+            // moraju pokazivati isti novac; razilaženje se KAŽE, ne prešućuje.
+            var k = data.kontrola;
+            var kTekst = '';
+            if (k && k.slaze === true) {
+              kTekst = ' · ✔ slaže se s cost_logom';
+            } else if (k && k.slaze === false) {
+              kTekst = ' · ⚠ razlika prema cost_logu: ' + telBroj((k.razlikaUsd || 0) * (TECAJ.tecaj || 0), 2) + ' €';
+            }
             info.textContent = (data.izvor === 'kes' ? 'iz keša' : 'svjež izračun')
-              + (data.staroS ? ' · star ' + data.staroS + ' s' : '');
+              + (data.staroS ? ' · star ' + data.staroS + ' s' : '') + kTekst;
           }
         } catch (err) {
           if (gen !== potrosnjaGen) return;
@@ -3873,7 +3953,147 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       korak();
     }
 
-    function initPotrosnja() { ucitajPotrosnju({}); }
+    // ── TASK-3691: vrijednost korisničkih upita (cjenik S1–S6) ────────────────
+    var VRIJEDNOST_OPIS = {
+      S1: 'jednostavno pitanje / naredba', S2: 'poslovni ili informativni upit',
+      S3: 'tehnički problem koji traži razmišljanje', S4: 'analiza / debugging / odluka',
+      S5: 'istraživanje i usporedba izvora', S6: 'višekoračni rad na projektu'
+    };
+
+    /** „Goran 861,50 € (312) · Martina Sport 758,70 € (140)" — za hover i za popis. */
+    function osobeOpis(poKorisniku) {
+      if (!poKorisniku) return 'nema podataka o osobama';
+      var k = Object.keys(poKorisniku);
+      if (!k.length) return 'nema podataka o osobama';
+      k.sort(function (a, b) { return poKorisniku[b].eur - poKorisniku[a].eur; });
+      return 'Tko je radio: ' + k.map(function (ime) {
+        return ime + ' ' + telBroj(poKorisniku[ime].eur, 2) + ' € (' + poKorisniku[ime].upita + ' upita)';
+      }).join(' · ');
+    }
+
+    /** Sitne značke uz naziv projekta — inicijal osobe i njezin udio. */
+    function osobeZnacke(poKorisniku) {
+      if (!poKorisniku) return '';
+      var k = Object.keys(poKorisniku);
+      if (!k.length) return '';
+      k.sort(function (a, b) { return poKorisniku[b].eur - poKorisniku[a].eur; });
+      return ' ' + k.slice(0, 3).map(function (ime) {
+        return '<span class="osoba-znacka" title="' + telEsc(ime + ': ' + telBroj(poKorisniku[ime].eur, 2)
+          + ' € iz ' + poKorisniku[ime].upita + ' upita') + '">' + telEsc(ime.split(' ')[0]) + '</span>';
+      }).join('');
+    }
+
+    function vrijednostHtml(d) {
+      var cj = d.cjenik || {};
+      var razredi = Object.keys(cj);
+      var korisnici = Object.keys(d.poKorisniku || {});
+      korisnici.sort(function (a, b) { return (d.poKorisniku[b].eur || 0) - (d.poKorisniku[a].eur || 0); });
+      var h = '<table class="tel-table"><thead><tr><th>Korisnik</th>';
+      razredi.forEach(function (r) { h += '<th title="' + telEsc(VRIJEDNOST_OPIS[r] + ' · ' + cj[r] + ' €') + '">' + r + '</th>'; });
+      h += '<th>upita</th><th>vrijednost</th></tr></thead><tbody>';
+      var zbroj = {}, ukupnoUpita = 0, ukupnoEur = 0;
+      korisnici.forEach(function (k) {
+        var v = d.poKorisniku[k];
+        h += '<tr><td><strong>' + telEsc(k) + '</strong></td>';
+        razredi.forEach(function (r) {
+          var n = (v.razredi || {})[r] || 0;
+          zbroj[r] = (zbroj[r] || 0) + n;
+          h += '<td>' + telBroj(n, 0) + '</td>';
+        });
+        ukupnoUpita += v.upita || 0; ukupnoEur += v.eur || 0;
+        h += '<td>' + telBroj(v.upita || 0, 0) + '</td><td><strong>' + telBroj(v.eur || 0, 2) + ' €</strong></td></tr>';
+      });
+      h += '<tr><td><strong>UKUPNO</strong></td>';
+      razredi.forEach(function (r) { h += '<td><strong>' + telBroj(zbroj[r] || 0, 0) + '</strong></td>'; });
+      h += '<td><strong>' + telBroj(ukupnoUpita, 0) + '</strong></td><td><strong>'
+        + telBroj(ukupnoEur, 2) + ' €</strong></td></tr></tbody></table>';
+      var pp = d.poProjektu || {};
+      var pids = Object.keys(pp);
+      if (pids.length) {
+        pids.sort(function (a, b) { return pp[b].eur - pp[a].eur; });
+        h += '<div class="tel-head" style="margin-top:0.8rem;">Po projektu</div>';
+        h += '<table class="tel-table"><thead><tr><th>Projekt</th>';
+        razredi.forEach(function (r) { h += '<th>' + r + '</th>'; });
+        h += '<th>upita</th><th>vrijednost</th></tr></thead><tbody>';
+        pids.forEach(function (pid) {
+          var v = pp[pid];
+          // Ključ projekta sam po sebi ne kaže ništa (Goran): ide pun naziv, a ključ ostaje
+          // sitno uz njega jer se po njemu traži drugdje. Tko je radio — na hover.
+          var naziv = v.naziv && v.naziv !== pid ? v.naziv : pid;
+          h += '<tr><td title="' + telEsc(osobeOpis(v.poKorisniku)) + '">' + telEsc(naziv)
+            + ' <span class="tel-muted" style="font-size:0.7rem;">' + telEsc(pid) + '</span>'
+            + osobeZnacke(v.poKorisniku) + '</td>';
+          razredi.forEach(function (r) { h += '<td>' + telBroj((v.razredi || {})[r] || 0, 0) + '</td>'; });
+          h += '<td>' + telBroj(v.upita, 0) + '</td><td><strong>' + telBroj(v.eur, 2) + ' €</strong></td></tr>';
+        });
+        h += '</tbody></table>';
+      }
+      h += '<div class="tel-muted" style="margin-top:0.4rem;font-size:0.75rem;">'
+        + 'Razred se određuje iz zabilježenog rada po upitu (koraci, pozivi alata, vrsta alata), ne iz cijene modela. '
+        + 'Cjenik: ' + razredi.map(function (r) { return r + ' ' + cj[r] + ' €'; }).join(' · ')
+        + (d.razdoblje ? ' · razdoblje ' + d.razdoblje[0] + ' → ' + d.razdoblje[1] : '') + '</div>';
+      return h;
+    }
+
+    async function ucitajVrijednost(force) {
+      var box = document.getElementById('vrijednost-box');
+      var info = document.getElementById('vrijednost-izvor');
+      if (!box) return;
+      box.className = 'tel-box tel-muted';
+      box.innerHTML = 'Ra&#269;unam&hellip;';
+      try {
+        var r = await fetch('/api/vrijednost-inputa' + (force ? '?force=1' : ''));
+        var d = await r.json();
+        if (!r.ok || d.error) {
+          box.innerHTML = '<span class="tel-muted">Izra&#269;un nije dostupan' + (d.error ? ': ' + telEsc(d.error) : '.') + '</span>';
+          return;
+        }
+        box.className = 'tel-box';
+        box.innerHTML = vrijednostHtml(d);
+        if (info) info.textContent = (d.izvor === 'kes' ? 'iz keša' : 'svjež izračun')
+          + (d.staroS ? ' · star ' + d.staroS + ' s' : '') + ' · ' + (d.upita || 0) + ' upita';
+      } catch (e) {
+        box.innerHTML = '<span class="tel-muted">Izra&#269;un nije dostupan.</span>';
+      }
+    }
+
+    (function initVrijednost() {
+      var b = document.getElementById('vrijednost-refresh-btn');
+      if (b) b.addEventListener('click', function () { ucitajVrijednost(true); });
+    })();
+
+    function initPotrosnja() { ucitajPotrosnju({}); ucitajVrijednost(false); pokreniAutoPotrosnju(); }
+
+    /**
+     * TASK-3691 (Goran): „potrošnja se automatski mora osvježavati".
+     * Dosad se brojka računala samo pri otvaranju kartice i na klik „Osvježi", pa je
+     * ploča znala satima pokazivati stanje od jutros. Sada se kartica sama osvježava
+     * dok je otvorena; napuštena kartica gasi svoj interval (isti razlog kao potrosnjaGen —
+     * pozadinska kartica ne smije trošiti ni poslužitelj ni kvotu).
+     * Razmak je 120 s, a poslužiteljev keš je 300 s, pa većina prolaza ne pokreće python.
+     */
+    var AUTO_POTROSNJA_MS = 120000;
+    var AUTO_PROJEKTI_MS = 60000;
+    var autoPotrosnjaInterval = null;
+    var autoProjektiInterval = null;
+
+    function pokreniAutoPotrosnju() {
+      if (autoPotrosnjaInterval) return;
+      autoPotrosnjaInterval = setInterval(function () {
+        if (currentTab !== 'potrosnja') return;
+        if (document.hidden) return;   // skrivena kartica preglednika ne osvježava ništa
+        ucitajPotrosnju({});
+      }, AUTO_POTROSNJA_MS);
+    }
+
+    function pokreniAutoProjekte() {
+      if (autoProjektiInterval) return;
+      autoProjektiInterval = setInterval(function () {
+        if (currentTab !== 'projects') return;
+        if (document.hidden) return;
+        ucitajTroskovePopisa(true);
+      }, AUTO_PROJEKTI_MS);
+    }
 
     var potrosnjaBtn = document.getElementById('potrosnja-refresh-btn');
     if (potrosnjaBtn) {
@@ -3893,7 +4113,9 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     // Vrijede ista pravila kao T4/T5: 202 „racuna" nije pogreška, uz svaku
     // agregaciju piše iz koliko je izvođenja izračunata, nedostajuće je „—".
     // ========================================================================
-    var POPIS_TROSAK_DANA = 30;          // razdoblje brojke na kartici projekta
+    var POPIS_TROSAK_DANA = 30;          // prozor koji se prikazuje u opisu chipa
+    var popisTrosakOsvjezen = null;      // TASK-3691: kad je brojka zadnji put stvarno stigla
+    var popisVrijednost = null;          // TASK-3691: vrijednost upita (cjenik S1–S6) po projektu
     var POPIS_TROSAK_TTL_MS = 5 * 60000; // isto kao keš poslužitelja — bez bujice zahtjeva
     var projektPotrosnjaGen = 0;
     var projektPotrosnjaTimer = null;
@@ -3901,9 +4123,49 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     var popisTrosakTs = 0;
     var popisTrosakUTijeku = false;
 
+    // R4/TASK-4311: broj RAG dokumenata po projektu (/api/rag/projects).
+    // Znanje i trošak stoje na ISTOJ kartici — inače se ne vidi da projekt s
+    // najvećim troškom (PRJ-041) nema nijedan dokument.
+    var ragBrojDokumenata = null;        // { PRJ-x: broj }
+    var ragBrojUkupno = null;            // { total, withProject }
+    var ragBrojTs = 0;
+    var ragBrojUTijeku = false;
+    var RAG_BROJ_TTL_MS = 120000;
+
     function projPostavi(html) {
       var box = document.getElementById('projekt-potrosnja-box');
       if (box) box.innerHTML = html;
+    }
+
+    /** Popuni odjeljak „Tko je radio" u panelu projekta (vrijednost po cjeniku S1–S6). */
+    async function projOsobe(projectId) {
+      var el = document.getElementById('projekt-osobe');
+      if (!el) return;
+      try {
+        var r = await fetch('/api/vrijednost-inputa');
+        var d = await r.json();
+        var v = d && d.poProjektu && d.poProjektu[projectId];
+        if (!v || !v.poKorisniku || !Object.keys(v.poKorisniku).length) {
+          el.innerHTML = '<div class="tel-sec-title">Tko je radio</div>'
+            + '<div class="tel-muted">Nema zabilježenih korisničkih upita za ovaj projekt.</div>';
+          return;
+        }
+        var k = Object.keys(v.poKorisniku);
+        k.sort(function (a, b) { return v.poKorisniku[b].eur - v.poKorisniku[a].eur; });
+        var html = '<div class="tel-sec-title">Tko je radio</div><div class="tel-grid">';
+        k.forEach(function (ime) {
+          var o = v.poKorisniku[ime];
+          var udio = v.eur ? Math.round(1000 * o.eur / v.eur) / 10 : 0;
+          html += telCelija(telBroj(o.eur, 2) + ' €',
+            telEsc(ime) + ' · ' + o.upita + ' upita · ' + String(udio).replace('.', ',') + ' %');
+        });
+        html += '</div><div class="tel-muted" style="font-size:0.72rem;margin-top:0.3rem;">'
+          + 'Vrijednost po cjeniku S1–S6 (procjena isporučenog rada), ne trošak modela.</div>';
+        el.innerHTML = html;
+      } catch (e) {
+        el.innerHTML = '<div class="tel-sec-title">Tko je radio</div>'
+          + '<div class="tel-muted">Podatak trenutačno nije dostupan.</div>';
+      }
     }
 
     function projIznos(usd) {
@@ -3934,6 +4196,13 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       if (data.poruka) {
         html += '<div class="tel-muted" style="margin-bottom:0.4rem;">' + telEsc(data.poruka) + '</div>';
       }
+
+      // Goran, 04.09.2026.: „kada otvorim projekt ne vidi se koliko je od ljudi tko radio …
+      // kod pregleda projekta piše sada ukupno, ali trebalo bi dodati po osobama."
+      // Vrijednost po osobama dolazi iz drugog izvora (cjenik S1–S6 nad transkriptima),
+      // pa se puni asinkrono i ne zadržava crtanje ostatka panela.
+      html += '<div class="tel-sec" id="projekt-osobe"><div class="tel-sec-title">Tko je radio</div>'
+        + '<div class="tel-muted">učitavam…</div></div>';
 
       // Ukupno — svaka ćelija nosi svoj nazivnik
       html += '<div class="tel-sec"><div class="tel-sec-title">Ukupno</div><div class="tel-grid">'
@@ -4062,6 +4331,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
             return;
           }
           projPostavi(projHtml(data));
+          projOsobe(projectId);
           if (info) {
             info.textContent = (data.izvor === 'kes' ? 'iz keša' : 'svjež izračun')
               + (data.staroS ? ' · star ' + data.staroS + ' s' : '');
@@ -4099,29 +4369,37 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       if (!force && popisTrosak && (sad - popisTrosakTs) < POPIS_TROSAK_TTL_MS) return;
       popisTrosakUTijeku = true;
       try {
-        for (var pokusaj = 0; pokusaj < 8; pokusaj++) {
-          var res = await fetch('/api/pregled/tjedni?dana=' + POPIS_TROSAK_DANA);
-          if (res.status === 202) {
-            await new Promise(function (r) { setTimeout(r, 1500); });
-            continue;
-          }
-          if (!res.ok) return;
-          var data = await res.json();
-          var redci = data && data.pregled && data.pregled.poProjektu;
-          if (!redci) return;
-          var mapa = {};
-          for (var i = 0; i < redci.length; i++) {
-            mapa[redci[i].kljuc] = {
-              usd: redci[i].trosak.usd,
-              izZadataka: redci[i].trosak.izZadataka,
-              zadataka: redci[i].zadataka
-            };
-          }
-          popisTrosak = mapa;
-          popisTrosakTs = Date.now();
-          renderProjects();
-          return;
+        // TASK-3691: izvor je /api/projects/trosak (cost_log, UKUPNO po projektu), a ne
+        // tjedni pregled u prozoru od 30 dana. Projekt na kojem se radilo prije prozora
+        // više ne pokazuje „—", a upit je SQL pa nema 202 „računa se" ni pokretanja pythona.
+        var res = await fetch('/api/projects/trosak');
+        if (!res.ok) return;
+        var data = await res.json();
+        var po = data && data.poProjektu;
+        if (!po) return;
+        var mapa = {};
+        for (var pid in po) {
+          if (!Object.prototype.hasOwnProperty.call(po, pid)) continue;
+          mapa[pid] = {
+            usd: po[pid].usdUkupno,
+            usd30: po[pid].usd30,
+            izZadataka: po[pid].zapisaUkupno,
+            zadataka: po[pid].zapisa30,
+            zadnji: po[pid].zadnji,
+            prviZadatak: po[pid].prviZadatak,
+            zadnjiZadatak: po[pid].zadnjiZadatak
+          };
         }
+        popisTrosak = mapa;
+        popisTrosakTs = Date.now();
+        popisTrosakOsvjezen = new Date();
+        renderProjects();
+        // Vrijednost po cjeniku S1–S6 dolazi iz drugog izvora (transkripti, ne cost_log),
+        // pa se dohvaća zasebno i ne smije zadržati crtanje popisa ako izračun traje.
+        fetch('/api/vrijednost-inputa').then(function (r) { return r.json(); }).then(function (d) {
+          if (d && d.poProjektu) { popisVrijednost = d.poProjektu; renderProjects(); }
+        }).catch(function () { /* vrijednost je dodatak; njezin izostanak ne ruši popis */ });
+        return;
       } catch (err) {
         // Brojka troška je dodatak; njezin izostanak ne smije srušiti popis projekata.
       } finally {
@@ -4130,19 +4408,82 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     }
 
     /** Kućica troška na kartici projekta: „…" dok se računa, „—" kad nema mjerenja. */
+    function projectVrijednostChip(projectId) {
+      // Vrijednost isporučenog rada po Goranovu cjeniku S1–S6 — NIJE trošak modela.
+      // Dvije brojke stoje jedna uz drugu na kartici i namjerno se ne zbrajaju.
+      var naslov = 'vrijednost korisničkih upita po cjeniku S1–S6 (procjena isporučenog rada, ne trošak modela)';
+      if (!popisVrijednost) {
+        return '<span class="project-count c-vrijednost is-racuna" title="' + naslov + ' — računa se">&#8721; <b>&hellip;</b></span>';
+      }
+      var v = popisVrijednost[projectId];
+      if (!v) {
+        return '<span class="project-count c-vrijednost is-prazna" title="' + naslov + ' — nema upita">&#8721; <b>&mdash;</b></span>';
+      }
+      var razredi = Object.keys(v.razredi || {}).sort().map(function (r) { return r + ':' + v.razredi[r]; }).join(' ');
+      return '<span class="project-count c-vrijednost" title="'
+        + telEsc(naslov + ' — ' + v.upita + ' upita · ' + razredi + '; ' + osobeOpis(v.poKorisniku)) + '">'
+        + '&#8721; ' + telBroj(v.eur, 2) + ' €</span>';
+    }
+
     function projectTrosakChip(projectId) {
-      var naslov = 'trošak zadnjih ' + POPIS_TROSAK_DANA + ' dana (tools/tjedni_pregled.py)';
+      var naslov = 'ukupna potrošnja projekta (cost_log: agentski spawnovi + uvezeni telegramski zahtjevi)';
       if (!popisTrosak) {
         return '<span class="project-count c-trosak is-racuna" title="' + naslov
-          + ' — računa se">&euro; <b>&hellip;</b></span>';
+          + ' — učitava se">&euro; <b>&hellip;</b></span>';
       }
       var z = popisTrosak[projectId];
       if (!z || z.usd === null || z.usd === undefined) {
         return '<span class="project-count c-trosak is-prazna" title="' + naslov
-          + ' — nema zabilježenog izvođenja">&euro; <b>&mdash;</b></span>';
+          + ' — nema nijednog zabilježenog izvođenja">&euro; <b>&mdash;</b></span>';
       }
-      return '<span class="project-count c-trosak" title="' + naslov + ' — iz '
-        + z.izZadataka + ' izvođenja">' + eur(z.usd) + '</span>';
+      var opis = naslov + ' — iz ' + z.izZadataka + ' izvođenja'
+        + (z.usd30 !== null && z.usd30 !== undefined
+            ? '; zadnjih 30 dana ' + telBroj(z.usd30 * (TECAJ.tecaj || 0), 2) + ' € iz ' + z.zadataka + ' izvođenja'
+            : '; u zadnjih 30 dana ništa')
+        + (z.zadnji ? '; zadnje izvođenje ' + z.zadnji : '');
+      return '<span class="project-count c-trosak" title="' + telEsc(opis) + '">' + eur(z.usd) + '</span>';
+    }
+
+    /**
+     * Broj RAG dokumenata SVIH projekata jednim pozivom (R4, TASK-4311).
+     * Poslužitelj vraća i nule za projekte s ploče kojih u Chromi nema — upravo
+     * ta nula je nalaz (znanje ne postoji iako je trošak potrošen).
+     */
+    async function ucitajRagBrojeve(force) {
+      var sad = Date.now();
+      if (ragBrojUTijeku) return;
+      if (!force && ragBrojDokumenata && (sad - ragBrojTs) < RAG_BROJ_TTL_MS) return;
+      ragBrojUTijeku = true;
+      try {
+        var res = await fetch('/api/rag/projects' + (force ? '?refresh=1' : ''));
+        if (!res.ok) return;
+        var data = await res.json();
+        if (!data || !data.counts) return;
+        ragBrojDokumenata = data.counts;
+        ragBrojUkupno = { total: data.total, withProject: data.withProject };
+        ragBrojTs = Date.now();
+        renderProjects();
+        popuniRagProjectFilter();
+      } catch (err) {
+        // Brojka dokumenata je dodatak; njezin izostanak ne ruši popis projekata.
+      } finally {
+        ragBrojUTijeku = false;
+      }
+    }
+
+    /** Kućica „dokumenata" na kartici projekta: „…" dok se učitava, 0 kad ih nema. */
+    function projectRagChip(projectId) {
+      var naslov = 'RAG dokumenata s project_id = ' + projectId;
+      if (!ragBrojDokumenata) {
+        return '<span class="project-count c-rag is-racuna" title="' + naslov
+          + ' — učitava se">dokumenata <b>&hellip;</b></span>';
+      }
+      var n = Number(ragBrojDokumenata[projectId]) || 0;
+      var opis = n === 0
+        ? naslov + ' — NIJEDAN dokument nije pripisan ovom projektu'
+        : naslov;
+      return '<span class="project-count c-rag' + (n === 0 ? ' is-zero' : '') + '" title="'
+        + telEsc(opis) + '">dokumenata <b>' + n + '</b></span>';
     }
 
     // Add progress note
@@ -4288,6 +4629,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       // Load data for the tab
       if (tabId === 'projects') {
         fetchProjects();
+        pokreniAutoProjekte();
       } else if (tabId === 'rag') {
         initRAGPage();
       } else if (tabId === 'konzola') {
@@ -4308,6 +4650,11 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       if (tabId !== 'potrosnja') {
         potrosnjaGen++;
         if (potrosnjaTimer) { clearTimeout(potrosnjaTimer); potrosnjaTimer = null; }
+        if (autoPotrosnjaInterval) { clearInterval(autoPotrosnjaInterval); autoPotrosnjaInterval = null; }
+      }
+      // TASK-3691: isto vrijedi za automatsko osvježavanje troška na karticama projekata.
+      if (tabId !== 'projects' && autoProjektiInterval) {
+        clearInterval(autoProjektiInterval); autoProjektiInterval = null;
       }
 
       // Update add button visibility
@@ -4321,6 +4668,8 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
 
     let projects = [];
     let projectsFilter = 'all';
+    let projectsSort = 'aktivnost';   // TASK-3691: ključ poretka na popisu projekata
+    let projectsSortSmjer = 1;        // 1 = silazno (najnovije/najskuplje prvo), -1 = obrnuto
     let selectedProjectId = null;
     let selectedProjectData = null;
     let projectAgents = [];
@@ -4328,6 +4677,39 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     const projectDetailPanel = document.getElementById('project-detail-panel');
     const projectModal = document.getElementById('project-modal-overlay');
     const projectForm = document.getElementById('project-form');
+
+    const SORT_OPIS = {
+      aktivnost: ['zadnji rad na projektu — najnoviji prvi', 'zadnji rad na projektu — najstariji prvi'],
+      cijena: ['potrošnja — najskuplji prvi', 'potrošnja — najjeftiniji prvi'],
+      ime: ['ime projekta — A→Ž', 'ime projekta — Ž→A'],
+      pocetak: ['početak rada — najnoviji prvi', 'početak rada — najstariji prvi'],
+      zadataka: ['broj zadataka — najviše prvo', 'broj zadataka — najmanje prvo'],
+    };
+
+    function osvjeziSortOpis() {
+      const el = document.getElementById('projects-sort-opis');
+      if (el) el.textContent = 'Poredak: ' + SORT_OPIS[projectsSort][projectsSortSmjer === 1 ? 0 : 1];
+      const btn = document.getElementById('projects-sort-smjer');
+      if (btn) btn.innerHTML = projectsSortSmjer === 1 ? '&#8595;' : '&#8593;';
+    }
+
+    (function initProjectsSort() {
+      const sel = document.getElementById('projects-sort');
+      if (sel) sel.addEventListener('change', function () {
+        projectsSort = sel.value;
+        // Poredak po cijeni treba brojke; ako još nisu stigle, dohvati ih odmah.
+        if (projectsSort === 'cijena' && !popisTrosak) ucitajTroskovePopisa(true);
+        osvjeziSortOpis();
+        renderProjects();
+      });
+      const btn = document.getElementById('projects-sort-smjer');
+      if (btn) btn.addEventListener('click', function () {
+        projectsSortSmjer = -projectsSortSmjer;
+        osvjeziSortOpis();
+        renderProjects();
+      });
+      osvjeziSortOpis();
+    })();
 
     async function fetchProjects() {
       try {
@@ -4338,6 +4720,9 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         // Trošak po projektu (TASK-3572, T8) — jedan poziv za sve kartice, s
         // vlastitim kešem; ne blokira ispis popisa i ne ponavlja se u bujici.
         ucitajTroskovePopisa(false);
+        // R4/TASK-4311: broj dokumenata po projektu — ne blokira ispis kartica,
+        // kućice se dopune kad brojka stigne.
+        ucitajRagBrojeve(false);
       } catch (err) {
         console.error('Failed to fetch projects:', err);
       }
@@ -4392,13 +4777,35 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       const container = document.getElementById('projects-rows');
       if (!container) return;
 
+      // TASK-3691 (Goran): poredak po zadnjem radu, potrošnji, imenu, početku ili broju
+      // zadataka. Potrošnja i datumi rada dolaze iz popisTrosak (/api/projects/trosak),
+      // pa je poredak po cijeni moguć tek kad ta brojka stigne — do tada se pada natrag
+      // na zadnji rad umjesto da se popis prikaže u nasumičnom redu.
       const filtered = (projectsFilter === 'all'
         ? projects.slice()
         : projects.filter(p => p.lead_agent === projectsFilter))
         .sort((a, b) => {
-          const ta = parseDbTs(a.last_activity_at || a.updated_at);
-          const tb = parseDbTs(b.last_activity_at || b.updated_at);
-          return (tb ? tb.getTime() : 0) - (ta ? ta.getTime() : 0);
+          const smjer = projectsSortSmjer;
+          const ta = popisTrosak && popisTrosak[a.id];
+          const tb = popisTrosak && popisTrosak[b.id];
+          function vrijeme(v) { const d = parseDbTs(v); return d ? d.getTime() : 0; }
+          if (projectsSort === 'ime') {
+            return smjer * String(a.name || a.id).localeCompare(String(b.name || b.id), 'hr');
+          }
+          if (projectsSort === 'cijena' && popisTrosak) {
+            return smjer * (((tb && tb.usd) || 0) - ((ta && ta.usd) || 0));
+          }
+          if (projectsSort === 'zadataka') {
+            return smjer * ((Number(b.task_count) || 0) - (Number(a.task_count) || 0));
+          }
+          if (projectsSort === 'pocetak') {
+            const pa = vrijeme((ta && ta.prviZadatak) || a.created_at);
+            const pb = vrijeme((tb && tb.prviZadatak) || b.created_at);
+            return smjer * (pb - pa);
+          }
+          const za = Math.max(vrijeme(a.last_activity_at || a.updated_at), vrijeme(ta && ta.zadnjiZadatak));
+          const zb = Math.max(vrijeme(b.last_activity_at || b.updated_at), vrijeme(tb && tb.zadnjiZadatak));
+          return smjer * (zb - za);
         });
 
       container.innerHTML = '';
@@ -4436,6 +4843,8 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
             \${projectCountChip('blocked', 'blokirano', project.blocked_task_count)}
             \${projectCountChip('completed', 'gotovo', done)}
             \${projectTrosakChip(project.id)}
+            \${projectVrijednostChip(project.id)}
+            \${projectRagChip(project.id)}
           </div>
           <div class="project-progress">
             <div class="project-progress-track">
@@ -4862,6 +5271,10 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     let ragEntries = [];
     let ragCollections = [];
     let ragFilter = '';
+    // R4/TASK-4311: odabrani projekt ide na poslužitelj kao ?projectId= i tamo
+    // postaje Chroma where-klauzula po project_id.
+    let ragProjectFilter = '';
+    let ragTipFilter = '';   // TASK-3691: filtar po vrsti dokumenta (tip_regoc)
     let ragOffset = 0;
     const RAG_LIMIT = 50;
     let ragTotal = 0;
@@ -4871,6 +5284,8 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
 
     async function initRAGPage() {
       await fetchRAGCollections();
+      // Popis projekata s brojem dokumenata; ne čekamo ga da bi se popis otvorio.
+      ucitajRagBrojeve(false).then(popuniRagProjectFilter);
       ragOffset = 0;
       ragEntries = [];
       await fetchRAGEntries();
@@ -4889,12 +5304,36 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       }
     }
 
+    /**
+     * Padajući izbornik projekata u kartici RAG. Uz svaki projekt stoji broj
+     * dokumenata, pa se već iz izbornika vidi tko nema nijedan.
+     */
+    function popuniRagProjectFilter() {
+      const select = document.getElementById('rag-project-filter');
+      if (!select || !ragBrojDokumenata) return;
+      const ids = Object.keys(ragBrojDokumenata).sort(function (a, b) {
+        const d = (Number(ragBrojDokumenata[b]) || 0) - (Number(ragBrojDokumenata[a]) || 0);
+        return d !== 0 ? d : String(a).localeCompare(String(b), 'hr');
+      });
+      select.innerHTML = '<option value="">Svi projekti</option>' +
+        ids.map(id => \`<option value="\${id}">\${id} (\${Number(ragBrojDokumenata[id]) || 0})</option>\`).join('');
+      select.value = ragProjectFilter;
+    }
+
     async function fetchRAGEntries(append = false) {
       try {
         const params = new URLSearchParams({
           limit: RAG_LIMIT.toString(),
           offset: ragOffset.toString()
         });
+
+        if (ragProjectFilter) {
+          params.append('projectId', ragProjectFilter);
+        }
+
+        if (ragTipFilter) {
+          params.append('tip', ragTipFilter);
+        }
 
         if (ragFilter) {
           params.append('collection', ragFilter);
@@ -4981,6 +5420,20 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     }
 
     // Collection filter
+    document.getElementById('rag-project-filter').addEventListener('change', (e) => {
+      ragProjectFilter = e.target.value;
+      ragOffset = 0;
+      ragEntries = [];
+      fetchRAGEntries();
+    });
+
+    document.getElementById('rag-tip-filter').addEventListener('change', (e) => {
+      ragTipFilter = e.target.value;
+      ragOffset = 0;
+      ragEntries = [];
+      fetchRAGEntries();
+    });
+
     document.getElementById('rag-collection-filter').addEventListener('change', (e) => {
       ragFilter = e.target.value;
       ragOffset = 0;
@@ -5877,7 +6330,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       if (p.id==='geminicli') h += '<div style="font-size:.66rem;color:#f59e0b;margin-top:.3rem">Google je ukinuo besplatni OAuth (Code Assist) za CLI — koristi <b>API ključ</b> s aistudio.google.com/apikey (besplatan tier).</div>';
       if (p.apikey && !p.loggedIn) {
         var _ph = p.id==='geminicli' ? 'GEMINI_API_KEY (AIza...)' : 'API ključ (sk-or-...)';
-        h += '<div style="display:flex;gap:6px;margin-top:.4rem"><input id="login-key-'+p.id+'" type="password" placeholder="'+_ph+'" style="flex:1;font-size:.72rem;padding:3px 5px"><button onclick="doApikey(\\''+p.id+'\\')" style="font-size:.72rem;padding:4px 8px">Spremi ključ</button></div>';
+        h += '<div style="display:flex;gap:6px;margin-top:.4rem"><input id="login-key-'+p.id+'" type="password" autocomplete="new-password" data-form-type="other" data-lpignore="true" data-1p-ignore placeholder="'+_ph+'" style="flex:1;font-size:.72rem;padding:3px 5px"><button onclick="doApikey(\\''+p.id+'\\')" style="font-size:.72rem;padding:4px 8px">Spremi ključ</button></div>';
       }
       if (!p.installed && p.installCmd) h += '<div style="font-size:.66rem;color:var(--text-secondary);margin-top:.3rem">Nije instaliran. Instaliraj (Sigurnost→internet ON): <code>'+p.installCmd+'</code></div>';
       h += '</div>';
@@ -5901,7 +6354,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         h += '<a href="'+urlv+'" target="_blank" rel="noopener" style="font-size:.72rem;padding:4px 8px">Otvori</a></div>';
         h += '<div style="font-size:.66rem;color:var(--text-secondary);margin-top:.3rem">Otvori link na bilo kojem računalu i odobri. Ako CLI traži kod, zalijepi ga ispod.</div>';
       } else { h += '<div style="font-size:.7rem;color:var(--text-secondary)">Čekam link…</div>'; }
-      h += '<div style="display:flex;gap:6px;margin-top:.4rem"><input id="login-paste-'+id+'" placeholder="Zalijepi kod (ako login traži)" style="flex:1;font-size:.72rem;padding:3px 5px"><button onclick="doPaste(\\''+id+'\\')" style="font-size:.72rem;padding:4px 8px">Pošalji</button></div>';
+      h += '<div style="display:flex;gap:6px;margin-top:.4rem"><input id="login-paste-'+id+'" autocomplete="off" data-form-type="other" data-lpignore="true" data-1p-ignore placeholder="Zalijepi kod (ako login traži)" style="flex:1;font-size:.72rem;padding:3px 5px"><button onclick="doPaste(\\''+id+'\\')" style="font-size:.72rem;padding:4px 8px">Pošalji</button></div>';
       h += '<div id="login-status-'+id+'" style="font-size:.66rem;color:var(--text-secondary);margin-top:.3rem"></div>';
       body.innerHTML = h;
     }
@@ -5956,7 +6409,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
           // Ključ + 👁 prikaži (maskiran dok se ne stisne)
           h += '<div><div style="color:var(--text-secondary)">' + keyLabel + '</div>' +
             '<div style="display:flex;align-items:center;gap:4px">' +
-            '<input id="prov-' + p.id + '-key" type="password" autocomplete="off" placeholder="' + keyPh + '" style="width:' + (isCloud ? '250' : '170') + 'px;' + inpStyle + '">' +
+            '<input id="prov-' + p.id + '-key" type="password" autocomplete="new-password" data-form-type="other" data-lpignore="true" data-1p-ignore placeholder="' + keyPh + '" style="width:' + (isCloud ? '250' : '170') + 'px;' + inpStyle + '">' +
             '<button type="button" title="Prikaži/sakrij" onclick="toggleKeyVis(\\'' + p.id + '\\', this)" style="font-size:0.8rem;padding:2px 6px;border-radius:4px;cursor:pointer;background:var(--bg-primary,#111);border:1px solid var(--border-color,#333)">&#128065;</button>' +
             '</div></div>';
           h += '<button onclick="saveProvider(\\'' + p.id + '\\')" style="font-size:0.72rem;padding:5px 10px;border-radius:4px;cursor:pointer">Spremi' + (p.kind === 'local' ? ' + test' : '') + '</button>';
@@ -6697,31 +7150,39 @@ function buildInfoPayload(): Record<string, unknown> {
     rules,
     availableModels: getEffectiveModels(),
     coreComponents: [
+      // TASK-3670 (ADR-0004 O3): status je PROVJEREN, ne deklariran. Mjerilo je
+      // dosežnost iz živih ulaznih točaka (RegocDaemon.ts, AgentDaemon.ts, TaskWebUI.ts)
+      // po tranzitivnom grafu uvoza + provjera pokretača (shell/cron/hook/systemd).
+      //   active     = dosežan iz žive ulazne točke (naveden dokaz uvoza)
+      //   deprecated = napušten propisom, kod ostaje samo kao izvor teksta
+      //   inactive   = kod postoji, 0 živih pozivatelja i nema procesa
+      //   ondemand   = CLI koji se pokreće ručno, nije stalni servis
+      //   planned    = nije napisano
       { name: 'RegocDaemon', status: 'active', description: 'Main orchestration daemon — polls MessageQueue, spawns agents, watchdog' },
-      { name: 'UnifiedSpawnPipeline', status: 'active', description: 'Complete agent prompt builder — 7 sections (checkpoint, identity, awareness, knowledge, RAG, verification, task)' },
-      { name: 'SystemAwarenessBlock', status: 'active', description: 'Compact 450-token system context injected into every agent prompt' },
-      { name: 'ModelRouter', status: 'active', description: 'AI model-agnostic routing — 4 providera (Anthropic, OpenAI, Google, Ollama)' },
-      { name: 'ModuleRegistry', status: 'active', description: 'Plug & play module system s enable/disable i graceful degradation' },
-      { name: 'ModeClassifier', status: 'active', description: 'Effort tier routing (E1-E5) — rule-based, bez AI poziva' },
-      { name: 'MonitorLoop v4.0', status: 'active', description: '7-fazni execution loop: OBSERVE→THINK→PLAN→BUILD→EXECUTE→VERIFY→LEARN' },
-      { name: 'HelpPipeline', status: 'active', description: 'Agent-to-agent help requests — routing po tipu (decision/review/expertise/unblock)' },
-      { name: 'AgentSignals (BTW)', status: 'active', description: 'File-based signaling za slanje poruka running agentu (BTW/REDIRECT/STOP/CONTEXT)' },
-      { name: 'AgentCommunicationBridge', status: 'active', description: 'Bridges HelpPipeline responses → AgentSignals za live delivery' },
-      { name: 'AgentPool', status: 'active', description: 'Warm agent pool — persistent context za opus agente (max 3, 15min)' },
-      { name: 'AgentCheckpoint', status: 'active', description: 'CHECKPOINT block generator — peer message provjera od SVIH agenata' },
-      { name: 'AgentLogger', status: 'active', description: 'Unified JSONL logging — jedan log po agent spawnu, capture stdout' },
-      { name: 'SecurityPipeline', status: 'active', description: '3 inspektora (Pattern, Egress, Rules) na svaki tool poziv, localSafe mode' },
-      { name: 'PromptGuard', status: 'active', description: 'Prompt injection detekcija — 13 pattern rules, HR+EN, score 0-100' },
-      { name: 'AuditLogger', status: 'active', description: 'Centralizirani security audit log (SQLite, 90-day retention)' },
-      { name: 'ISAGenerator', status: 'active', description: 'Ideal State Artifact — strukturirani task format s effort tier prilagodbom' },
-      { name: 'KnowledgeGraph', status: 'active', description: 'SQLite relacijski graf znanja — 8 tipova relacija, BFS traversal' },
-      { name: 'WikilinkParser', status: 'active', description: '[[link]] resolution u memory fajlovima' },
-      { name: 'KnowledgeHarvester', status: 'active', description: 'Automatska ekstrakcija znanja iz sesija (lesson/decision/pattern/error)' },
-      { name: 'ObservabilityLogger', status: 'active', description: 'JSONL structured logging — tool calls, agent spawns, task updates' },
-      { name: 'CostTracker', status: 'active', description: 'API token usage i cost tracking per agent/task/model' },
-      { name: 'HealthSnapshot', status: 'active', description: 'Automatski health check svih servisa (5min interval)' },
+      { name: 'UnifiedSpawnPipeline', status: 'deprecated', description: 'NAPUŠTEN (ADR-0004 §5, odluka O3) — 0 pozivatelja iz daemona. Sastavljač verifikacijskog bloka prenesen u SpawnVerificationBlock.ts, koji vozi živi put (RegocDaemon.buildAgentPrompt + AgentDaemon.buildPrompt)' },
+      { name: 'SystemAwarenessBlock', status: 'inactive', description: '0 uvoznika — nijedan daemon ne ubacuje taj blok u prompt (grep "SystemAwarenessBlock" po .ts: samo vlastita datoteka i testovi)' },
+      { name: 'ModelRouter', status: 'active', description: 'AI model-agnostic routing — 4 providera (Anthropic, OpenAI, Google, Ollama). Dosežan: RegocDaemon.ts:22 → LocalOffload.ts:50' },
+      { name: 'ModuleRegistry', status: 'inactive', description: 'Sama klasa ima 0 uvoznika; modules/module-config.json čita izravno TaskWebUI (linije 6601 i 9253), pa registar nije u pogonu' },
+      { name: 'ModeClassifier', status: 'active', description: 'Effort tier routing (E1-E5) — rule-based, bez AI poziva. Dosežan: RegocDaemon.ts:55, AgentDaemon.ts:48' },
+      { name: 'MonitorLoop v4.0', status: 'inactive', description: '7-fazni loop (OBSERVE→…→LEARN) — 0 uvoznika, nije uvezen ni u RegocDaemon ni u AgentDaemon i nema živog procesa (pgrep -af MonitorLoop prazan)' },
+      { name: 'HelpPipeline', status: 'inactive', description: 'Agent-to-agent help requests — jedini uvoznik je MonitorLoop.ts:16, koji je i sam bez pozivatelja. Živa zamjena je tools/consult-potjeh.ts (upućuje se agentima iz RegocDaemon.ts:2344)' },
+      { name: 'AgentSignals (BTW)', status: 'inactive', description: 'File-based signaling — uvoznici su AgentCommunicationBridge.ts:23 i AgentMonitor.ts:39, oba bez pozivatelja; ~/.tmp/agent_signals je prazan od 19.05.2026.' },
+      { name: 'AgentCommunicationBridge', status: 'inactive', description: 'Most HelpPipeline → AgentSignals — 0 uvoznika; oba kraja mosta su također neaktivna' },
+      { name: 'AgentPool', status: 'inactive', description: 'Warm agent pool — 0 uvoznika; u daemonima nema koda za pool (grep "agentPool|warm.?pool" po RegocDaemon.ts i AgentDaemon.ts: 0 pogodaka)' },
+      { name: 'AgentCheckpoint', status: 'inactive', description: 'CHECKPOINT blok s peer porukama — 0 uvoznika. AgentDaemon ima VLASTITI, drugi mehanizam (SQLite checkpoint tablica + AgentResume.ts:41), to nije ovaj modul' },
+      { name: 'AgentLogger', status: 'inactive', description: 'Unified JSONL logging — jedini uvoznik je AgentMonitor.ts:37, koji je bez pozivatelja' },
+      { name: 'SecurityPipeline', status: 'inactive', description: '3 inspektora na tool poziv — 0 uvoznika iz koda i iz hookova. Živi L1 je ~/.claude/hooks/SecurityValidator.hook.ts (settings.json: PreToolUse + UserPromptSubmit), koji NE koristi ovaj modul' },
+      { name: 'PromptGuard', status: 'inactive', description: 'Prompt injection detekcija (13 pravila) — 0 uvoznika izvan vlastite datoteke i testova' },
+      { name: 'AuditLogger', status: 'active', description: 'Centralizirani security audit log (SQLite, 90-day retention). Dosežan: TaskWebUI.ts:9363 (dinamički import)' },
+      { name: 'ISAGenerator', status: 'inactive', description: 'Ideal State Artifact — 0 pozivatelja; jedina pojava izvan testova je komentar u CriticGate.ts:302' },
+      { name: 'KnowledgeGraph', status: 'inactive', description: 'SQLite relacijski graf znanja — jedini uvoznik je KnowledgeHarvester.ts:8, koji je i sam bez pozivatelja' },
+      { name: 'WikilinkParser', status: 'inactive', description: '[[link]] resolution — 0 uvoznika; setup/regoc-setup.ts:83 ga samo spominje u komentaru' },
+      { name: 'KnowledgeHarvester', status: 'inactive', description: 'Ekstrakcija znanja iz sesija — 0 pozivatelja izvan vlastite datoteke i testova' },
+      { name: 'ObservabilityLogger', status: 'active', description: 'JSONL structured logging — tool calls, agent spawns, task updates. Dosežan: TaskWebUI.ts:9330 (dinamički import)' },
+      { name: 'CostTracker', status: 'active', description: 'API token usage i cost tracking per agent/task/model. Dosežan: TaskWebUI.ts:39' },
+      { name: 'HealthSnapshot', status: 'inactive', description: '0 pozivatelja — obećanog "5min intervala" nema; nitko ne zove takeSnapshot() (jedina druga pojava imena bio je ovaj redak)' },
       { name: 'RegocPulse', status: 'planned', description: 'Unified service manager — health check, auto-restart, circuit breaker (port 17780)' },
-      { name: 'Installer Wizard', status: 'active', description: '10-step interactive CLI setup wizard za modularnu instalaciju' },
+      { name: 'Installer Wizard', status: 'ondemand', description: '10-step interactive CLI setup wizard (setup/regoc-setup.ts, 497 redaka) — pokreće se ručno, nije stalni servis' },
     ],
     skills: (() => {
       const skillsDir = join(HOME, '.claude/skills')
@@ -6827,6 +7288,8 @@ function handleGetTasks(url: URL): Response {
   if (tag) rawFilter.tag = tag
   if (search) rawFilter.search = search
   if (projectId) rawFilter.projectId = projectId
+  const tip = url.searchParams.get('tip')
+  if (tip) rawFilter.tip = tip
 
   // Validate with Zod
   const parseResult = TaskFilterSchema.safeParse(rawFilter)
@@ -6979,13 +7442,51 @@ async function handleCreateTask(req: Request): Promise<Response> {
     // produces another stand-down report. See DispatchGuard.ts + memory
     // [[regoc-claude-print-delegation-loop]]. Single ingress chokepoint — every
     // creator (HTTP UI, RegocDaemon, agents) POSTs through here.
-    if (isRecycledAgentReport(`${validatedData.title ?? ''}\n${validatedData.description ?? ''}`)) {
+    // TASK-3589: ista vrata, ali ŠIRI test. Dosad se zvao samo `isRecycledAgentReport`,
+    // pa su kroz ingress prolazili (a) lifecycle-obavijesti kao "spec" (TASK-2428
+    // „✅ Kosjenka završio zadatak") i (b) obični završni izvještaji bez emojija
+    // (TASK-3605 „Done. Summary of TASK-3587"). Opis se provjerava i SAM za sebe jer
+    // su LIFECYCLE/COMPLETION uzorci sidreni na početak stringa — prefiks naslova bi
+    // im razbio sidro. Mjereno nad 1349 zadataka u živoj regoc.db: 13 pogodaka,
+    // svih 13 su poznati echo-artefakti, nula pravih zadataka.
+    const echoProbeDesc = validatedData.description ?? ''
+    const echoProbeFull = `${validatedData.title ?? ''}\n${echoProbeDesc}`
+    if (isNonActionableMessage(echoProbeDesc) || isNonActionableMessage(echoProbeFull)) {
       console.warn(`[TaskWebUI] BLOCKED recycled-report task creation (anti-echo guard): "${(validatedData.title ?? '').slice(0, 80)}"`)
       warnCreateSwallowedFields(createFields, 'ODBIJEN(422 recycled_report)')
       return new Response(JSON.stringify({
         error: 'Recycled agent report rejected',
         code: 'recycled_report',
-        reason: 'Sadržaj zadatka je recikliran REGOČ izvještaj (≥3 format-markera: 📋 SUMMARY / 🔍 ANALYSIS / ⚡ ACTIONS ...), ne specifikacija. Pošalji pravu spec: ŠTO / ZAŠTO / KOJI fajlovi / KRITERIJ za done.',
+        reason: 'Sadržaj zadatka je agentov izvještaj ili sistemska obavijest (CORE format-markeri, „📋 SUMMARY + 🗣️ Ime:", „Done./REGOC-STATUS" ili lifecycle-poruka), ne specifikacija. Pošalji pravu spec: ŠTO / ZAŠTO / KOJI fajlovi / KRITERIJ za done.',
+      }), {
+        status: 422,
+        headers: { 'Content-Type': 'application/json' }
+      })
+    }
+
+    // TASK-3627: druga polovica istih vrata — zadatak BEZ IZVRSIVOG SADRZAJA.
+    // `isEmptyOrFixtureTask` je od TASK-2701 stajao samo na DISPATCHU (RegocDaemon),
+    // pa je ingress i dalje primao `description: ""` s HTTP 201 (mjereno 02.09.2026.
+    // 19:06 — probni TASK-3620/3621). Posljedica je ista kao kod fixtura: prazan
+    // zapis dobije assignee-a i kasnije spawna pravu Opus sesiju nad nicim.
+    // Vrata su ovdje, a ne (samo) na dispatchu, jer je ovo JEDINI ingress —
+    // web forma, agentov curl i RegocDaemon svi prolaze kroz `handleCreateTask`.
+    // Mjereno nad zivom regoc.db (1357 zadataka, mjerenje u
+    // regoc/CHECKPOINT_TASK-3627_ingress.md): 92 pogotka; 37 doslovnih test-fixtura
+    // (svi `cancelled`) i 55 s praznim opisom, od kojih su 3 fixture, a 52 povijesni
+    // zadaci u kojima je specifikaciju nosio samo NASLOV — tocno ono sto pravilo
+    // „task description OBAVEZAN" zabranjuje. Zadnji takav je 2026-08-23; nijedan
+    // aktivni put ih vise ne stvara (RegocDaemon uvijek salje `fullDescription`).
+    // Odbijenica NOSI razlog da posiljatelj zna sto da popravi i ponovi POST.
+    const emptyReason = emptyOrFixtureReason(validatedData.title, validatedData.description)
+    if (emptyReason) {
+      console.warn(`[TaskWebUI] BLOCKED empty/fixture task creation (${emptyReason}): "${(validatedData.title ?? '').slice(0, 80)}"`)
+      warnCreateSwallowedFields(createFields, `ODBIJEN(422 ${emptyReason})`)
+      return new Response(JSON.stringify({
+        error: 'Task without actionable content rejected',
+        code: 'empty_or_fixture_task',
+        reason: EMPTY_TASK_REASON_TEXT[emptyReason],
+        detail: emptyReason,
       }), {
         status: 422,
         headers: { 'Content-Type': 'application/json' }
@@ -7214,6 +7715,45 @@ async function handleTaskTelemetry(taskId: string, url: URL): Promise<Response> 
 const pregledState = createPregledState()
 const pregledDeps = createPregledDeps(pregledState)
 
+/**
+ * TASK-3691: kontrolni zbroj troška iz `cost_log` za isto razdoblje (i isti projekt).
+ *
+ * Goran, 04.09.2026.: „to se mora vući iz istog izvora! Ne smije biti razlike."
+ * Pregled zbraja `cost_usd` iz `run_log.jsonl`, kartica projekta iz `cost_log`. Oba zapisa
+ * piše isti `SpawnTelemetry.recordSpawn()`, pa se moraju poklapati — izmjereno 04.09.:
+ * 3 539,93 vs 3 540,00 USD, i tih 0,07 dolazi od 48 redaka bez `task_id`. Umjesto da se
+ * na to oslanjamo, svaka odgovor nosi kontrolu: ako se izvori raziđu za više od 1 %,
+ * ploča to KAŽE umjesto da tiho prikaže jedan od dva broja.
+ */
+function kontrolaTroska(dana: number, projekt: string | null): {
+  costLogUsd: number | null; razlikaUsd: number | null; slaze: boolean | null
+} {
+  const db = getTrosakDb()
+  if (!db) return { costLogUsd: null, razlikaUsd: null, slaze: null }
+  try {
+    const uvjetProjekt = projekt ? " AND COALESCE(project_id, '(bez projekta)') = ?" : ''
+    const sql = `SELECT COALESCE(SUM(cost_usd), 0) AS usd FROM cost_log
+                  WHERE timestamp > datetime('now', ?)${uvjetProjekt}`
+    const args: any[] = [`-${dana} days`]
+    if (projekt) args.push(projekt)
+    const r = db.query(sql).get(...args) as any
+    return { costLogUsd: Math.round((r?.usd || 0) * 10000) / 10000, razlikaUsd: null, slaze: null }
+  } catch {
+    return { costLogUsd: null, razlikaUsd: null, slaze: null }
+  }
+}
+
+/** Usporedi brojku pregleda s kontrolnim zbrojem; prag razilaženja je 1 %. */
+function dopuniKontrolu(pregled: any, dana: number, projekt: string | null) {
+  const k = kontrolaTroska(dana, projekt)
+  if (k.costLogUsd === null) return k
+  const izPregleda = pregled?.ukupno?.trosak?.usd
+  if (typeof izPregleda !== 'number') return k
+  const razlika = Math.round((izPregleda - k.costLogUsd) * 10000) / 10000
+  const nazivnik = Math.max(Math.abs(k.costLogUsd), 0.01)
+  return { ...k, razlikaUsd: razlika, slaze: Math.abs(razlika) / nazivnik <= 0.01 }
+}
+
 async function handleTjedniPregled(url: URL): Promise<Response> {
   const dana = parseBroj(url.searchParams.get('dana'), ZADANO_DANA, DANA_MIN, DANA_MAX)
   const najskupljih = parseBroj(
@@ -7234,6 +7774,7 @@ async function handleTjedniPregled(url: URL): Promise<Response> {
       staroS: r.staroMs === null ? null : Math.round(r.staroMs / 1000),
       poruka: r.poruka,
       pregled: r.pregled,
+      kontrola: r.pregled ? dopuniKontrolu(r.pregled, dana, null) : null,
     }, r.http)
   } catch (err) {
     // Nijedan kvar pregleda ne smije srušiti ploču.
@@ -7553,6 +8094,39 @@ async function handleUpdateTask(taskId: string, req: Request): Promise<Response>
       }
     }
 
+    // ─── ResearchRagGate (R2 / TASK-4309) ──────────────────────────────────
+    // Istraživački zadatak (oznaka `istrazivanje`) ne smije u `completed` bez ID-a
+    // dokumenta u result_summary. Razlog: nalaz koji živi samo u transkriptu nestane
+    // za ~30 dana — PRJ-041 (najskuplji projekt) tako nema nijedan dokument u RAG-u.
+    // Doseg je namjerno uzak (samo označeni zadaci) i sud je deterministički (postoji
+    // li ID), pa smije biti live odmah, za razliku od CompletionGuarda koji sudi prozu.
+    // Rollback bez restarta: config/research-rag-gate.json → live/enabled false.
+    if (updates.status === 'completed') {
+      const rcfg = loadResearchGateConfig()
+      if (rcfg.enabled) {
+        const rt = taskManager.getTask(taskId)
+        const effTags = validatedData.tags !== undefined ? validatedData.tags : (rt?.tags || [])
+        const effSummary = rs !== undefined ? String(rs) : (rt?.resultSummary || '')
+        const effProject = (updates as any).projectId || rt?.projectId || null
+        const rv = evaluateResearchClosure({ tags: effTags, resultSummary: effSummary, taskId, projectId: effProject })
+        const rForced = (validatedData as any).force === true
+        const rEnforce = shouldEnforceResearch(rv, rcfg) && !rForced
+        if (rv.research) {
+          console.warn(`[API] ${formatResearchLog(taskId, rv)}` +
+            (rv.accept ? '' : (rEnforce ? ' — BLOKIRAM' : ' — SHADOW')) + (rForced ? ' (FORCED)' : ''))
+        }
+        if (!rv.accept && rEnforce) {
+          return new Response(JSON.stringify({
+            error: 'Research not stored in RAG',
+            code: rv.code,
+            details: rv.reason,
+            command: ragStoreCommand(taskId, effProject),
+            hint: formatResearchHint({ taskId, projectId: effProject }),
+          }), { status: 400, headers: { 'Content-Type': 'application/json' } })
+        }
+      }
+    }
+
     const task = taskManager.updateTask(taskId, updates as any)
 
     if (!task) {
@@ -7829,6 +8403,128 @@ function handleHealthCheck(): Response {
 // ============================================
 // PROJECT API HANDLERS
 // ============================================
+
+/**
+ * TASK-3691 (Goran, 04.09.2026.): „pod projects moraju biti izlistani svi projekti i mora se
+ * vidjeti potrošnja po projektu".
+ *
+ * Zašto zaseban izvor, a ne tjedni pregled: kartica projekta je dosad brojku vukla iz
+ * `tools/tjedni_pregled.py` za prozor od 30 dana, pa je projekt bez izvođenja u tom prozoru
+ * pokazivao „—" iako je na njemu potrošeno stotine eura. `cost_log` nosi SVE — i agentske
+ * spawnove (SpawnTelemetry) i naknadno uvezene telegramske zahtjeve — pa daje UKUPNO po
+ * projektu bez pokretanja pythona (upit traje milisekunde, kartica se smije osvježavati sama).
+ *
+ * Prozor od 30 dana ostaje uz ukupno, da se vidi je li projekt živ ili samo skup.
+ */
+let trosakDb: Database | null = null
+function getTrosakDb(): Database | null {
+  if (trosakDb) return trosakDb
+  try {
+    trosakDb = new Database(join(process.env.HOME || '/home/klaudio', '.claude/regoc/data/regoc.db'), { readonly: true })
+  } catch {
+    trosakDb = null
+  }
+  return trosakDb
+}
+
+/**
+ * TASK-3691 (Goran, 04.09.2026.): „napravi izračun koliko se novaca potrošilo na user input …
+ * podijeljeno po korisnicima."
+ *
+ * VRIJEDNOST rada po cjeniku S1–S6, ne trošak modela — te dvije brojke stoje jedna uz drugu
+ * i namjerno se ne zbrajaju. Izračun radi `tools/vrijednost_inputa.py` nad transkriptima
+ * (živi + arhiv); traje ~6 s, pa se drži u kešu 10 minuta i ploča ga ne čeka pri svakom crtanju.
+ */
+const VRIJEDNOST_TTL_MS = 10 * 60_000
+let vrijednostKes: { u: number; podatci: any } | null = null
+
+async function handleVrijednostInputa(url: URL): Promise<Response> {
+  const force = url.searchParams.get('force') === '1'
+  if (!force && vrijednostKes && Date.now() - vrijednostKes.u < VRIJEDNOST_TTL_MS) {
+    return json({ ...vrijednostKes.podatci, izvor: 'kes',
+                  staroS: Math.round((Date.now() - vrijednostKes.u) / 1000) })
+  }
+  const alat = join(process.env.HOME || '/home/klaudio', 'app/regoc_system/tools/vrijednost_inputa.py')
+  if (!existsSync(alat)) return json({ error: 'alat nije pronađen', put: alat }, 503)
+  try {
+    const proc = Bun.spawn(['python3', alat, '--json'], { stdout: 'pipe', stderr: 'pipe' })
+    const izlaz = await new Response(proc.stdout).text()
+    const kod = await proc.exited
+    if (kod !== 0) {
+      const greska = await new Response(proc.stderr).text()
+      return json({ error: 'izračun nije uspio', detalj: greska.slice(-400) }, 500)
+    }
+    const podatci = JSON.parse(izlaz)
+    vrijednostKes = { u: Date.now(), podatci }
+    return json({ ...podatci, izvor: 'izracun', staroS: 0 })
+  } catch (e) {
+    return json({ error: String(e) }, 500)
+  }
+}
+
+function handleGetProjectsTrosak(): Response {
+  const db = getTrosakDb()
+  if (!db) {
+    return new Response(JSON.stringify({ error: 'baza nedostupna' }), {
+      status: 503, headers: { 'Content-Type': 'application/json' },
+    })
+  }
+  try {
+    const ukupno = db.query(`
+      SELECT COALESCE(project_id, '(bez projekta)') AS pid,
+             ROUND(SUM(cost_usd), 4) AS usd,
+             COUNT(*)               AS zapisa,
+             MAX(timestamp)         AS zadnji
+        FROM cost_log
+       GROUP BY pid
+    `).all() as any[]
+    // TASK-3691 (sort na popisu projekata): „datum početka" NIJE `projects.created_at` —
+    // projekt se često otvori naknadno (PRJ-041 otvoren 25.08., a rad počeo ranije). Zato
+    // se početak čita iz PRVOG zadatka, a zadnji rad iz najnovijeg traga na zadatku.
+    const razdoblje = db.query(`
+      SELECT project_id AS pid,
+             MIN(created_at) AS prvi,
+             MAX(COALESCE(completed_at, updated_at, created_at)) AS zadnji
+        FROM tasks WHERE project_id IS NOT NULL
+       GROUP BY project_id
+    `).all() as any[]
+    const zadnjih30 = db.query(`
+      SELECT COALESCE(project_id, '(bez projekta)') AS pid,
+             ROUND(SUM(cost_usd), 4) AS usd,
+             COUNT(*)               AS zapisa
+        FROM cost_log
+       WHERE timestamp > datetime('now', '-30 days')
+       GROUP BY pid
+    `).all() as any[]
+
+    const po: Record<string, any> = {}
+    for (const r of ukupno) {
+      po[r.pid] = { usdUkupno: r.usd ?? 0, zapisaUkupno: r.zapisa ?? 0, zadnji: r.zadnji ?? null, usd30: null, zapisa30: 0 }
+    }
+    for (const r of zadnjih30) {
+      if (!po[r.pid]) po[r.pid] = { usdUkupno: 0, zapisaUkupno: 0, zadnji: null, usd30: null, zapisa30: 0 }
+      po[r.pid].usd30 = r.usd ?? 0
+      po[r.pid].zapisa30 = r.zapisa ?? 0
+    }
+    for (const r of razdoblje) {
+      if (!po[r.pid]) po[r.pid] = { usdUkupno: 0, zapisaUkupno: 0, zadnji: null, usd30: null, zapisa30: 0 }
+      po[r.pid].prviZadatak = r.prvi ?? null
+      po[r.pid].zadnjiZadatak = r.zadnji ?? null
+    }
+    const zbroj = ukupno.reduce((a, r) => a + (r.usd || 0), 0)
+    return new Response(JSON.stringify({
+      izracunatoU: new Date().toISOString(),
+      izvor: 'cost_log',
+      ukupnoUsd: Math.round(zbroj * 10000) / 10000,
+      projekata: Object.keys(po).length,
+      poProjektu: po,
+    }), { headers: { 'Content-Type': 'application/json' } })
+  } catch (e) {
+    return new Response(JSON.stringify({ error: String(e) }), {
+      status: 500, headers: { 'Content-Type': 'application/json' },
+    })
+  }
+}
 
 function handleGetProjects(url: URL): Response {
   const rawFilter: Record<string, unknown> = {}
@@ -8249,6 +8945,41 @@ async function handleGetRAGCollections(): Promise<Response> {
   }
 }
 
+/**
+ * GET /api/rag/projects — broj RAG dokumenata po projektu (R4, TASK-4311).
+ *
+ * Popis projekata dolazi s ploče da bi projekt BEZ ijednog dokumenta dobio
+ * izričitu 0: PRJ-041 je imao 1613 USD troška i nijedan zapis, a to se dotad
+ * nigdje nije vidjelo jer ga Chroma jednostavno nije spominjala.
+ */
+async function handleGetRAGProjectCounts(url: URL): Promise<Response> {
+  try {
+    let projectIds: string[] = []
+    try {
+      projectIds = projectManager.getProjects({}).map((p: any) => String(p.id))
+    } catch (error) {
+      console.error('[RAG] popis projekata s ploče nije dostupan:', error)
+    }
+
+    const result = await ragService.getProjectDocCounts({
+      projectIds,
+      refresh: url.searchParams.get('refresh') === '1'
+    })
+
+    return new Response(JSON.stringify(result), {
+      headers: { 'Content-Type': 'application/json' }
+    })
+  } catch (error) {
+    return new Response(JSON.stringify({
+      error: 'Failed to count project documents',
+      details: error instanceof Error ? error.message : String(error)
+    }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' }
+    })
+  }
+}
+
 async function handleGetRAGEntries(url: URL): Promise<Response> {
   try {
     const rawFilter: Record<string, unknown> = {}
@@ -8256,6 +8987,7 @@ async function handleGetRAGEntries(url: URL): Promise<Response> {
     const collection = url.searchParams.get('collection')
     const type = url.searchParams.get('type')
     const agent = url.searchParams.get('agent')
+    const projectId = url.searchParams.get('projectId')
     const dateFrom = url.searchParams.get('dateFrom')
     const dateTo = url.searchParams.get('dateTo')
     const search = url.searchParams.get('search')
@@ -8265,6 +8997,9 @@ async function handleGetRAGEntries(url: URL): Promise<Response> {
     if (collection) rawFilter.collection = collection
     if (type) rawFilter.type = type
     if (agent) rawFilter.agent = agent
+    if (projectId) rawFilter.projectId = projectId
+    const tip = url.searchParams.get('tip')
+    if (tip) rawFilter.tip = tip
     if (dateFrom) rawFilter.dateFrom = dateFrom
     if (dateTo) rawFilter.dateTo = dateTo
     if (search) rawFilter.search = search
@@ -9168,7 +9903,9 @@ function handleGetAgents(): Response {
       model: a.model || 'unknown',
       tier: tierMap[a.model] || 'strong',
       status: isAgentAlive(id) ? 'alive' : 'idle',
-      tools: a.tools?.core_skills || [],
+      // TASK-3671 (ADR-0004 O4): `tools` je od registra v1.8.0 ravan niz za svih 12 agenata.
+      // Stari oblik (`regoc.tools.core_skills`) ostaje pokriven da ploca ne oslijepi na starom registru.
+      tools: Array.isArray(a.tools) ? a.tools : (a.tools?.core_skills || []),
       skills: a.skills || [],
       // TASK-624: persistent status
       persistent: getAgentMode(id) === 'persistent',
@@ -9258,7 +9995,7 @@ async function handleGetMetrics(): Promise<Response> {
   // Cost data
   let costs: any = { total: 0, byAgent: {}, byDay: [] }
   try {
-    const { getCostTracker } = await import('/home/klaudio/.claude/regoc/CostTracker')
+    const { getCostTracker } = await import('./core/CostTracker')
     const ct = getCostTracker()
     const stats = ct.getStats()
     costs = {
@@ -9271,7 +10008,7 @@ async function handleGetMetrics(): Promise<Response> {
   // Observability data
   let observability: any = { totalEvents: 0, byEvent: {}, last24h: 0 }
   try {
-    const { getObservabilityLogger } = await import('/home/klaudio/.claude/regoc/ObservabilityLogger')
+    const { getObservabilityLogger } = await import('./core/ObservabilityLogger')
     const logger = getObservabilityLogger()
     observability = logger.getStats()
   } catch {}
@@ -9304,7 +10041,7 @@ async function handleGetSecurity(): Promise<Response> {
   // Audit log data
   let auditLog: any = { total: 0, bySeverity: {}, last24h: 0, recent: [] }
   try {
-    const { getAuditLogger } = await import('/home/klaudio/.claude/regoc/security/AuditLogger')
+    const { getAuditLogger } = await import('./core/AuditLogger')
     const audit = getAuditLogger()
     const stats = audit.getStats()
     auditLog = {
@@ -9700,6 +10437,17 @@ const server = Bun.serve({
       return handleCreateProject(req)
     }
 
+    // TASK-3691: GET /api/vrijednost-inputa — vrijednost korisničkih upita po cjeniku S1–S6.
+    if (url.pathname === '/api/vrijednost-inputa' && req.method === 'GET') {
+      return handleVrijednostInputa(url)
+    }
+
+    // TASK-3691: GET /api/projects/trosak — ukupna potrošnja po projektu iz cost_loga.
+    // MORA stajati prije /api/projects/:id, inače bi ga ruta za pojedini projekt progutala.
+    if (url.pathname === '/api/projects/trosak' && req.method === 'GET') {
+      return handleGetProjectsTrosak()
+    }
+
     // GET /api/projects/:id - Get project
     if (url.pathname.match(/^\/api\/projects\/[^\/]+$/) && req.method === 'GET') {
       const projectId = decodeURIComponent(url.pathname.split('/')[3])
@@ -9766,6 +10514,11 @@ const server = Bun.serve({
     // GET /api/rag/collections - List collections
     if (url.pathname === '/api/rag/collections' && req.method === 'GET') {
       return handleGetRAGCollections()
+    }
+
+    // GET /api/rag/projects - Broj dokumenata po projektu (R4, TASK-4311)
+    if (url.pathname === '/api/rag/projects' && req.method === 'GET') {
+      return handleGetRAGProjectCounts(url)
     }
 
     // GET /api/rag/entries - List entries with filters
