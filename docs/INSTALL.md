@@ -168,3 +168,25 @@ dogodi.
 | ploča prazna, `/health` odgovara | baza je prazna — otvori prvi zadatak preko API-ja |
 | `unable to open database file` | mapa iz `TM_HOME` ne postoji ili nema prava pisanja |
 | `database is locked` | netko je bazu otvorio bez WAL-a; pokreni `bun run init` da ga vrati |
+
+## Pristup izvana (i zašto zna vratiti „Forbidden")
+
+Ploča odbija zahtjeve čije `Host` zaglavlje ne prepoznaje — odgovori s
+**`403 Forbidden - Host not allowed`**. Sama zna svoje ime i adrese svojih sučelja, ali to
+nije dovoljno kad se do nje dolazi preko adrese koju stroj **ne vidi**:
+
+- virtualni stroj iza NAT-a: iznutra se javlja kao `10.0.2.15`, a dostupan je na
+  `192.168.10.11` preko preusmjerenja vrata s domaćina;
+- obrnuti posrednik ili tunel (Tailscale, nginx) koji prosljeđuje drugo ime;
+- pristup preko DNS imena koje stroj ne poznaje.
+
+Rješenje je nabrojati imena:
+
+```bash
+cp config/postavke.env.primjer config/postavke.env
+$EDITOR config/postavke.env      # TM_ALLOWED_HOSTS=192.168.10.11,taskmanager.lokalno
+bash scripts/start.sh            # ispisuje koja su imena dopuštena
+```
+
+Za zatvoren LAN postoji i `TM_ALLOW_PRIVATE_HOSTS=1` (propušta svaku privatnu IPv4 adresu);
+ne koristiti na stroju izloženom internetu.
