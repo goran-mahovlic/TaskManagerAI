@@ -37,7 +37,26 @@ bash scripts/install.sh --posudi     # node_modules = veze na postojeće; zod se
 bash scripts/install.sh --bez-baze   # ne diraj postojeću bazu
 ```
 
-## 3. Baza
+## 3. Agenti i vještine (neobavezno, ali to je ono što ploču čini sustavom)
+
+Paket ne nosi vještine ni alate — nosi popis agenata i zna odakle se vještine dohvaćaju:
+
+```bash
+bash scripts/install-agents.sh              # upiše zadani tim, ispiše koje vještine nedostaju
+bash scripts/install-agents.sh --vjestine   # + dohvati PAI i instalira nedostajuće
+```
+
+Zadani tim su REGOČ, Kosjenka, Jelena, Malik, Manda, Dora, Gita, Grga i Potjeh. Vještine
+(CORE, System, Development, TDD, DiagnosingBugs, OSINT, Recon, RedTeam, Council,
+FirstPrinciples, Art, Excalidraw, AlgorithmicArt, FrontendDesign, Browser, GrillWithDocs,
+CreateCLI, Agents) dolaze iz **[PAI](https://github.com/danielmiessler/PAI)**; dodatne se
+mogu uzeti iz repozitorija zajednice (npr. [mattpocock/skills](https://github.com/mattpocock/skills))
+ili napisati same.
+
+Postojeći registar agenata se ne pregazi — dodaju se samo oni kojih nema, uz pričuvu.
+Detalji: `docs/AGENTI.md`.
+
+## 4. Baza
 
 ```bash
 bun run init
@@ -55,7 +74,7 @@ Drugo mjesto za bazu:
 TM_HOME=/var/lib/taskmanager bun run init
 ```
 
-## 4. Pokretanje
+## 5. Pokretanje
 
 ```bash
 bun run start

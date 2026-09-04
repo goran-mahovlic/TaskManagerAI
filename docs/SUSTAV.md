@@ -125,6 +125,12 @@ description: Disciplinirani šestofazni postupak otklanjanja kvarova. USE WHEN d
 1. REPRODUCIRAJ …
 ```
 
+Zadani tim i njegove vještine postavlja jedna naredba (detalji u `docs/AGENTI.md`):
+
+```bash
+bash scripts/install-agents.sh --vjestine
+```
+
 Instalacija dodatnih vještina — tri načina:
 
 ```bash

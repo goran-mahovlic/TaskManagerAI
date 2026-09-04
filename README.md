@@ -113,6 +113,17 @@ koda. Ideja je ostala.
 MIT, ista kao u izvornom projektu. Autorska prava zadržavaju i Matheus Baldissara (Tasks.md,
 2023.) i Goran Mahovlić (TaskManagerAI, 2026.). Puni tekst je u [LICENSE](LICENSE).
 
+## Agenti i vještine
+
+Paket namjerno **ne nosi vještine ni alate** — oni žive u [PAI](https://github.com/danielmiessler/PAI)
+i drugim repozitorijima koji ih održavaju. Ovdje je samo popis tko su agenti i što im treba:
+
+```bash
+bash scripts/install-agents.sh --vjestine   # zadani tim + dohvat vještina iz PAI-ja
+```
+
+Zadani tim: REGOČ, Kosjenka, Jelena, Malik, Manda, Dora, Gita, Grga, Potjeh (`docs/AGENTI.md`).
+
 ## Dalje od ploče
 
 `docs/SUSTAV.md` opisuje kako se od ovog paketa slaže sustav u kojem se zadatci sami odrađuju:
