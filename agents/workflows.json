@@ -8,7 +8,22 @@
       "3. Ako ništa ne odgovara ILI je posao manji od `najmanja_tezina`, zadatak ide BEZ tijeka — jedan izvršitelj.",
       "4. Neodlučeno je uvijek 'bez tijeka'. Tijek od četiri koraka za posao od deset minuta košta više nego što donosi."
     ],
-    "napomena_za_agente": "Vještinu i tijek treba IMENOVATI u opisu koraka. Mjereno u našem radu: agenti ih sami gotovo nikad ne biraju (od 11 poziva vještina u 124 sjednice svi su bili naručeni)."
+    "napomena_za_agente": "Vještinu i tijek treba IMENOVATI u opisu koraka. Mjereno u našem radu: agenti ih sami gotovo nikad ne biraju (od 11 poziva vještina u 124 sjednice svi su bili naručeni).",
+    "prekidac": {
+      "opis": "Cijeli mehanizam ima prekidač, i to na tri razine — da se može isprobati bez rizika i ugasiti bez izmjene koda.",
+      "razine": {
+        "globalno": "config/workflow-gate.json → nacin: 'off' | 'shadow' | 'on'",
+        "po_tijeku": "polje `enabled` na svakom tijeku (ovdje niže)",
+        "po_zadatku": "oznaka `bez-workflowa` na zadatku uvijek pobjeđuje"
+      },
+      "zadano": "shadow — odluka se izračuna i zapiše, ali se ništa ne materijalizira"
+    },
+    "agent_agnosticnost": [
+      "Korak imenuje ULOGU (agent) i VJEŠTINU, nikad model — model bira TaskTier po težini.",
+      "Korak deklarira što traži (`treba`): alate, web, dug kontekst, pisanje po disku.",
+      "Ako izvršitelj to ne može (lokalni model bez tool-petlje, kratak kontekst), koristi se `zamjena` — jednostavniji oblik istog koraka. Bez zamjene korak ide jačem izvršitelju.",
+      "Mjereno kod nas: lokalni Ollama agenti su jedan chat bez petlje alata i sami ne pozovu alat; zato slabom izvršitelju kontekst treba PRED-UBACITI, a ne očekivati da ga dohvati."
+    ]
   },
   "workflows": {
     "implement-feature": {
@@ -16,62 +31,244 @@
       "naziv": "Izrada značajke",
       "opis": "Puni put nove značajke: dizajn → izvedba → provjera → sigurnosni pregled.",
       "najmanja_tezina": 36,
-      "okidaci": ["dodaj (značajku|mogućnost)", "implementiraj", "nova značajka", "napravi (modul|sučelje|ekran)", "prepravi arhitekturu"],
+      "okidaci": [
+        "dodaj (značajku|mogućnost)",
+        "implementiraj",
+        "nova značajka",
+        "napravi (modul|sučelje|ekran)",
+        "prepravi arhitekturu"
+      ],
       "koraci": [
-        { "agent": "kosjenka", "uloga": "design", "vjestina": "GrillWithDocs", "opis": "Zaoštri zahtjev, zapiši ADR i rječnik pojmova; izlaz: plan s ulazima i izlazima." },
-        { "agent": "jelena", "uloga": "implement", "vjestina": "TDD", "opis": "Izvedba po planu, test prije koda; git grana zadatak/TASK-####, commit po koraku." },
-        { "agent": "potjeh", "uloga": "test", "opis": "Neovisna provjera: pokreni, izmjeri, prijavi što ne radi." },
-        { "agent": "malik", "uloga": "review", "opis": "Sigurnosni pregled izmjena prije spajanja." }
-      ]
+        {
+          "agent": "kosjenka",
+          "uloga": "design",
+          "vjestina": "GrillWithDocs",
+          "opis": "Zaoštri zahtjev, zapiši ADR i rječnik pojmova; izlaz: plan s ulazima i izlazima.",
+          "treba": [
+            "dug-kontekst"
+          ],
+          "zamjena": "Bez GrillWithDocs: napiši plan u pet natuknica — što je gotovo, što je izvan opsega, po čemu se zna da je gotovo."
+        },
+        {
+          "agent": "jelena",
+          "uloga": "implement",
+          "vjestina": "TDD",
+          "opis": "Izvedba po planu, test prije koda; git grana zadatak/TASK-####, commit po koraku.",
+          "treba": [
+            "alate",
+            "pisanje"
+          ],
+          "zamjena": "Bez TDD-a: napravi izmjenu i uz nju bar jednu naredbu koja dokazuje da radi."
+        },
+        {
+          "agent": "potjeh",
+          "uloga": "test",
+          "opis": "Neovisna provjera: pokreni, izmjeri, prijavi što ne radi.",
+          "treba": [
+            "alate"
+          ]
+        },
+        {
+          "agent": "malik",
+          "uloga": "review",
+          "opis": "Sigurnosni pregled izmjena prije spajanja.",
+          "treba": [
+            "alate"
+          ]
+        }
+      ],
+      "enabled": true
     },
     "bug-fix": {
       "id": "bug-fix",
       "naziv": "Otklanjanje kvara",
       "opis": "Dijagnoza uzroka → popravak s regresijskim testom → provjera.",
       "najmanja_tezina": 16,
-      "okidaci": ["ne radi", "puca", "pada", "greška", "pogreška", "kvar", "bug", "regresij", "zašto .* (ne radi|pada)"],
+      "okidaci": [
+        "ne radi",
+        "puca",
+        "pada",
+        "greška",
+        "pogreška",
+        "kvar",
+        "bug",
+        "regresij",
+        "zašto .* (ne radi|pada)"
+      ],
       "koraci": [
-        { "agent": "jelena", "uloga": "fix", "vjestina": "DiagnosingBugs", "opis": "Reproduciraj, izoliraj, postavi hipotezu, dokaži je, popravi, dodaj regresijski test." },
-        { "agent": "potjeh", "uloga": "test", "opis": "Potvrdi da je kvar nestao i da ništa drugo nije puklo." },
-        { "agent": "malik", "uloga": "review", "opis": "Provjeri da popravak nije otvorio sigurnosnu rupu." }
-      ]
+        {
+          "agent": "jelena",
+          "uloga": "fix",
+          "vjestina": "DiagnosingBugs",
+          "opis": "Reproduciraj, izoliraj, postavi hipotezu, dokaži je, popravi, dodaj regresijski test.",
+          "treba": [
+            "alate",
+            "pisanje"
+          ],
+          "zamjena": "Bez DiagnosingBugs: opiši kako se kvar ponavlja, što si promijenio i koja naredba to dokazuje."
+        },
+        {
+          "agent": "potjeh",
+          "uloga": "test",
+          "opis": "Potvrdi da je kvar nestao i da ništa drugo nije puklo.",
+          "treba": [
+            "alate"
+          ]
+        },
+        {
+          "agent": "malik",
+          "uloga": "review",
+          "opis": "Provjeri da popravak nije otvorio sigurnosnu rupu.",
+          "treba": [
+            "alate"
+          ]
+        }
+      ],
+      "enabled": true
     },
     "research": {
       "id": "research",
       "naziv": "Istraživanje",
       "opis": "Prikupljanje izvora → analiza → sinteza sa zaključkom i preporukom.",
       "najmanja_tezina": 36,
-      "okidaci": ["istraž", "prouči", "usporedi", "koje su opcije", "analiziraj tržište", "napravi pregled", "koji .* odabrati"],
+      "okidaci": [
+        "istraž",
+        "prouči",
+        "usporedi",
+        "koje su opcije",
+        "analiziraj tržište",
+        "napravi pregled",
+        "koji .* odabrati"
+      ],
       "koraci": [
-        { "agent": "manda", "uloga": "research", "vjestina": "Research", "opis": "Prikupi izvore (RAG, web, dokumentacija); svaki nalaz s poveznicom." },
-        { "agent": "dora", "uloga": "analyze", "vjestina": "FirstPrinciples", "opis": "Razloži na temeljne činjenice, odvoji dokazano od pretpostavljenog." },
-        { "agent": "kosjenka", "uloga": "synthesize", "opis": "Zaključak i preporuka s obrazloženjem; izlaz obavezno u RAG (tip=istrazivanje)." }
-      ]
+        {
+          "agent": "manda",
+          "uloga": "research",
+          "vjestina": "Research",
+          "opis": "Prikupi izvore (RAG, web, dokumentacija); svaki nalaz s poveznicom.",
+          "treba": [
+            "web",
+            "rag"
+          ],
+          "zamjena": "Bez weba: pretraži samo RAG i postojeće dokumente; izostanak izvora izrijekom navedi."
+        },
+        {
+          "agent": "dora",
+          "uloga": "analyze",
+          "vjestina": "FirstPrinciples",
+          "opis": "Razloži na temeljne činjenice, odvoji dokazano od pretpostavljenog.",
+          "treba": [
+            "dug-kontekst"
+          ],
+          "zamjena": "Bez FirstPrinciples: nabroji tri činjenice za i tri protiv, bez razrade."
+        },
+        {
+          "agent": "kosjenka",
+          "uloga": "synthesize",
+          "opis": "Zaključak i preporuka s obrazloženjem; izlaz obavezno u RAG (tip=istrazivanje).",
+          "treba": [
+            "dug-kontekst"
+          ]
+        }
+      ],
+      "enabled": true
     },
     "security-audit": {
       "id": "security-audit",
       "naziv": "Sigurnosna revizija",
       "opis": "Revizija → provjera nalaza → preporuke.",
       "najmanja_tezina": 36,
-      "okidaci": ["sigurnos", "ranjivost", "napad", "audit", "penetracij", "tajne? u kodu", "ovlasti"],
+      "okidaci": [
+        "sigurnos",
+        "ranjivost",
+        "napad",
+        "audit",
+        "penetracij",
+        "tajne? u kodu",
+        "ovlasti"
+      ],
       "koraci": [
-        { "agent": "malik", "uloga": "audit", "vjestina": "RedTeam", "opis": "Pregled koda i površine napada; svaki nalaz s dokazom." },
-        { "agent": "potjeh", "uloga": "verify", "opis": "Provjeri nalaze — koji su stvarni, koji su lažna uzbuna." },
-        { "agent": "kosjenka", "uloga": "recommend", "opis": "Preporuke po prioritetu, s procjenom truda." }
-      ]
+        {
+          "agent": "malik",
+          "uloga": "audit",
+          "vjestina": "RedTeam",
+          "opis": "Pregled koda i površine napada; svaki nalaz s dokazom.",
+          "treba": [
+            "alate"
+          ],
+          "zamjena": "Bez RedTeama: prođi popis provjera i za svaku napiši nalaz ili „uredno”."
+        },
+        {
+          "agent": "potjeh",
+          "uloga": "verify",
+          "opis": "Provjeri nalaze — koji su stvarni, koji su lažna uzbuna.",
+          "treba": [
+            "alate"
+          ]
+        },
+        {
+          "agent": "kosjenka",
+          "uloga": "recommend",
+          "opis": "Preporuke po prioritetu, s procjenom truda.",
+          "treba": [
+            "dug-kontekst"
+          ]
+        }
+      ],
+      "enabled": true
     },
     "prijava-natjecaj": {
       "id": "prijava-natjecaj",
       "naziv": "Prijava na natječaj",
       "opis": "Čitanje uvjeta → koncept → proračun i obrasci → stroga evaluacija prije predaje.",
       "najmanja_tezina": 61,
-      "okidaci": ["natječaj", "javni poziv", "prijav\\w* projekt", "obrazac \\d", "proračun projekta", "eu prijav"],
+      "okidaci": [
+        "natječaj",
+        "javni poziv",
+        "prijav\\w* projekt",
+        "obrazac \\d",
+        "proračun projekta",
+        "eu prijav"
+      ],
       "koraci": [
-        { "agent": "manda", "uloga": "research", "opis": "Uvjeti poziva, rokovi, prihvatljivi troškovi, obavezni prilozi — svaki s izvorom." },
-        { "agent": "kosjenka", "uloga": "design", "vjestina": "GrillWithDocs", "opis": "Koncept projekta i logika intervencije; otvorena pitanja za naručitelja." },
-        { "agent": "jelena", "uloga": "implement", "opis": "Ispuni obrasce i proračun; svaka brojka mora imati izvor." },
-        { "agent": "dora", "uloga": "verify", "opis": "Evaluacija po kriterijima poziva, strogo — kao vanjski ocjenjivač." }
-      ]
+        {
+          "agent": "manda",
+          "uloga": "research",
+          "opis": "Uvjeti poziva, rokovi, prihvatljivi troškovi, obavezni prilozi — svaki s izvorom.",
+          "treba": [
+            "web",
+            "rag"
+          ],
+          "zamjena": "Bez weba: koristi priloženu natječajnu dokumentaciju."
+        },
+        {
+          "agent": "kosjenka",
+          "uloga": "design",
+          "vjestina": "GrillWithDocs",
+          "opis": "Koncept projekta i logika intervencije; otvorena pitanja za naručitelja.",
+          "treba": [
+            "dug-kontekst"
+          ]
+        },
+        {
+          "agent": "jelena",
+          "uloga": "implement",
+          "opis": "Ispuni obrasce i proračun; svaka brojka mora imati izvor.",
+          "treba": [
+            "alate",
+            "pisanje"
+          ]
+        },
+        {
+          "agent": "dora",
+          "uloga": "verify",
+          "opis": "Evaluacija po kriterijima poziva, strogo — kao vanjski ocjenjivač.",
+          "treba": [
+            "dug-kontekst"
+          ]
+        }
+      ],
+      "enabled": true
     }
   }
 }
