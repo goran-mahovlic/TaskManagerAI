@@ -241,6 +241,63 @@ export async function listCollections(
   });
 }
 
+/**
+ * Kolekcije isključene iz ZADANE (automatske, bez eksplicitnog -c/--collection) pretrage
+ * — R3, TASK-4310 (docs/RAG-2026-09-04_pregled_i_prijedlog.md).
+ *
+ * Ne diraju se: `test`, `regoc_seedtest_2620` i `pai_agent_unknown` su izvezene u
+ * ~/.claude/regoc/data/rag_arhiv/ i UKLONJENE iz Chrome (tools/rag_archive.py --drop).
+ * `pai_agent_Bash`/`pai_agent_Explore` su izvezene ali OSTAJU u Chromi — samo se
+ * isključuju iz automatskog fan-outa (rag-router klasifikacija, board "browse svih
+ * kolekcija") jer su naslijeđeni PAI izlazi bez `project_id` koji razrjeđuju pogotke.
+ * I dalje su dostupne eksplicitnim `-c pai_agent_Bash` (rag-query.ts) ili `?collection=`.
+ */
+export const DEFAULT_SEARCH_EXCLUDED_COLLECTIONS = [
+  "pai_agent_Bash",
+  "pai_agent_Explore",
+  // Goran, 04.09.2026.: „pai_agent_general — možeš odvojiti po prijedlogu."
+  // PRIJE isključenja je 321 dokument sa stvarnim znanjem (FPGA/ULX3S/PDP-1 istraživanja,
+  // arhitektura agenata, SERENA/ZOD/RAG) preseljen u kolekciju `regoc_znanje`, koja OSTAJE
+  // u zadanoj pretrazi (tools/rag_izdvoji.py). Ostatak su rutinski izlazi podagenata
+  // („conversion complete…") bez `project_id`. Izvornik je izvezen u
+  // ~/.claude/regoc/data/rag_arhiv/ i ostaje u Chromi — dostupan s `-c pai_agent_general-purpose`.
+  "pai_agent_general-purpose",
+];
+
+/**
+ * Kolekcije koje se ČITAJU PRI POKRETANJU SJEDNICE (LoadContext.hook.ts, LoadDomainContext,
+ * START.md/CLAUDE.md) i time drže kontinuitet znanja između sjednica.
+ *
+ * Goran, 04.09.2026.: „to se pozivalo na inicijalnom sessionu — to ne smije nestati."
+ * Ni jedna od njih ne smije se isključiti iz pretrage ni obrisati bez izričite odluke;
+ * `tools/rag_archive.py --drop` ih odbija ukloniti.
+ */
+export const STARTUP_COLLECTIONS = [
+  "pai_sessions",          // LoadContext.hook.ts — sažetci prethodnih sjednica
+  "pai_learning_system",   // LoadContext + LoadDomainContext + START.md/CLAUDE.md („RAG-FIRST")
+  "pai_agent_Explore",     // LoadContext — obrasci uporabe alata (TOOL_PATTERNS_COLLECTION)
+  "hrvatski_pravopis",     // CLAUDE.md pravilo 13 — jezična referenca
+  "regoc_znanje",          // izdvojeno znanje o sustavu, agentima i ranim istraživanjima
+];
+
+export function isStartupCollection(collectionName: string): boolean {
+  return STARTUP_COLLECTIONS.includes(collectionName);
+}
+
+export function isExcludedFromDefaultSearch(collectionName: string): boolean {
+  return DEFAULT_SEARCH_EXCLUDED_COLLECTIONS.includes(collectionName);
+}
+
+/** listCollections() minus DEFAULT_SEARCH_EXCLUDED_COLLECTIONS — koristi je svaki "search svih
+ *  kolekcija bez eksplicitnog -c" pozivatelj (rag-router.ts, RAGService.getEntries). Inventar/stats
+ *  alati (rag-list.ts, rag-stats.ts) i dalje zovu listCollections() izravno — oni popisuju, ne pretražuju. */
+export async function listDefaultSearchCollections(
+  config: RAGConfig = DEFAULT_CONFIG
+): Promise<string[]> {
+  const all = await listCollections(config);
+  return all.filter(name => !isExcludedFromDefaultSearch(name));
+}
+
 export async function deleteCollection(
   collectionName: string,
   config: RAGConfig = DEFAULT_CONFIG

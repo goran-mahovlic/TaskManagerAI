@@ -25,7 +25,7 @@ import {
   type RAGConfig,
   type MemoryResult,
   type DeleteMemoryResult
-} from '/home/klaudio/.claude/skills/CORE/Tools/lib/rag-memory'
+} from './rag/rag-memory'
 
 import {
   RAGFilterSchema,

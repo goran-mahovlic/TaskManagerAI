@@ -37,6 +37,16 @@ for f in TaskManagerSQL ProjectManager MessageQueue PauseControl AutonomyQueue Q
   echo "  src/core/$f.ts"
 done
 
+# 2b) RAG biblioteka (PAI): paket je nosi u `src/rag/` jer izvan REGOČ instalacije
+#     `~/.claude/skills/...` ne postoji. Bez ovoga paket ostane na staroj inačici i
+#     poslužitelj padne na prvom uvozu koji je u međuvremenu dodan.
+mkdir -p "$PAKET/src/rag"
+for f in rag-memory.ts memory-config.ts; do
+  [ -f "$HOME/.claude/skills/CORE/Tools/lib/$f" ] || continue
+  cp "$HOME/.claude/skills/CORE/Tools/lib/$f" "$PAKET/src/rag/$f"
+  echo "  src/rag/$f"
+done
+
 # 3) Zod sheme.
 mkdir -p "$PAKET/src/zod/schemas"
 cp "$REGOC"/zod/schemas/*.ts "$PAKET/src/zod/schemas/" 2>/dev/null && echo "  src/zod/schemas/*"
@@ -61,6 +71,8 @@ import glob
 import re
 
 REGOC = "/home/klaudio/.claude/regoc/"
+# PAI biblioteke (RAG) žive izvan REGOČ mape; paket ih nosi u `src/rag/`.
+SKILLS = "/home/klaudio/.claude/skills/CORE/Tools/lib/"
 
 def prepisi(putanja: str, u_jezgri: bool) -> None:
     s = open(putanja, encoding="utf-8").read()
@@ -72,6 +84,8 @@ def prepisi(putanja: str, u_jezgri: bool) -> None:
     s = s.replace(f"'{REGOC}security/AuditLogger'", f"'{jezgra}AuditLogger'")
     s = s.replace(f"'{REGOC}security/", f"'{jezgra}")
     s = s.replace(f"'{REGOC}", f"'{jezgra}")
+    rag = "../rag/" if u_jezgri else "./rag/"
+    s = s.replace(f"'{SKILLS}", f"'{rag}")
     if u_jezgri:
         # Unutar ~/.claude/regoc/ sheme su podmapa, u paketu su kat iznad jezgre.
         s = s.replace("'./zod/schemas'", "'../zod/schemas/index'")

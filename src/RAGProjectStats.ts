@@ -19,7 +19,7 @@ import {
   listDefaultSearchCollections,
   sanitizeCollectionName,
   type RAGConfig,
-} from '/home/klaudio/.claude/skills/CORE/Tools/lib/rag-memory'
+} from './rag/rag-memory'
 
 // ============================================
 // ČISTE FUNKCIJE

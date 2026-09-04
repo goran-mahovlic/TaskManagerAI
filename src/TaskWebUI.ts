@@ -8444,8 +8444,15 @@ async function handleVrijednostInputa(url: URL): Promise<Response> {
     return json({ ...vrijednostKes.podatci, izvor: 'kes',
                   staroS: Math.round((Date.now() - vrijednostKes.u) / 1000) })
   }
-  const alat = join(process.env.HOME || '/home/klaudio', 'app/regoc_system/tools/vrijednost_inputa.py')
-  if (!existsSync(alat)) return json({ error: 'alat nije pronađen', put: alat }, 503)
+  // Alat se traži prvo UZ PAKET (samostalna instalacija na nodu), pa u REGOČ instalaciji —
+  // isti redoslijed kao TjedniPregled.prviPostojeci. Bez toga je ruta na nodovima vraćala
+  // 503 jer ondje `~/app/regoc_system` ne postoji.
+  const kandidati = [
+    join(import.meta.dir, '..', 'tools', 'vrijednost_inputa.py'),
+    join(process.env.HOME || '/home/klaudio', 'app/regoc_system/tools/vrijednost_inputa.py'),
+  ]
+  const alat = kandidati.find(p => existsSync(p))
+  if (!alat) return json({ error: 'alat nije pronađen', trazeno: kandidati }, 503)
   try {
     const proc = Bun.spawn(['python3', alat, '--json'], { stdout: 'pipe', stderr: 'pipe' })
     const izlaz = await new Response(proc.stdout).text()
