@@ -54,6 +54,14 @@ import {
   evaluateResearchClosure, formatResearchHint, formatResearchLog,
   loadResearchGateConfig, ragStoreCommand, shouldEnforceResearch,
 } from './core/ResearchRagGate'
+// U4/TASK-4264: zadatak otvoren po predlošku lanca (oznaka `lanac`) ne prolazi u completed
+// bez ijednog commita — osim ako je u koraku 4 označen kao „samo-tekst".
+import {
+  evaluateCommitClosure, findTaskCommits, formatCommitHint, formatCommitLog,
+  loadGitCommitGateConfig, shouldEnforceCommit,
+} from './core/GitCommitGate'
+// U4/TASK-4264: niz zadataka daje JEDNU poruku korisniku — pometnja zadataka dojave.
+import { sweepReportBack } from './core/ReportBackSweepLive'
 import {
   CreateProjectInputSchema,
   UpdateProjectInputSchema,
@@ -68,6 +76,12 @@ import {
   DEZURNI_CONFIG_PATH, GRANICE, PODRZANI_PROVIDERI,
   loadDezurniConfig, saveDezurniConfig, validateDezurniPatch,
 } from './DezurniConfig'
+// U1/TASK-4261: ulazna vrata za Telegram — prekidač po grupi (off/shadow/on) + pragovi.
+import {
+  INGEST_GATE_CONFIG_PATH, NACINI, POZNATE_GRUPE,
+  GRANICE as GRANICE_ULAZ,
+  loadIngestGateConfig, saveIngestGateConfig, validateIngestGatePatch,
+} from './IngestGateConfig'
 // TASK-2989/2991: traka više ne vjeruje status datoteci na riječ — stanje se izvodi.
 import { resolveDaemonLiveness, type LivenessDeps } from './DaemonLiveness'
 // TASK-3568 (T4): „Potrošnja zadatka" na kartici — poziva agent_telemetry.py (T2/T3).
@@ -1921,7 +1935,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       padding:2px 7px; border-radius:3px; letter-spacing:0.5px; }
     .odluke-glava strong { color:#e8c65a; }
     .odluke-opis { color:#9a8c60; font-size:12px; }
-    .odluke-toggle { margin-left:auto; background:#3d3419; color:#e8c65a; border:1px solid #6b5b2a;
+    .odluke-toggle { margin-left:10px; background:#3d3419; color:#e8c65a; border:1px solid #6b5b2a;
       border-radius:4px; padding:3px 12px; cursor:pointer; font-size:12px; }
     .odluke-toggle:hover { background:#4d421f; }
     .odluke-popis { margin-top:12px; display:flex; flex-direction:column; gap:10px; }
@@ -1958,6 +1972,10 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     .odluc-glavni { background:#2d6a2d; color:#d8f0d8; border-color:#3f8f3f; }
     .odluc-glavni:hover { background:#377f37; }
     .odluc-poruka { font-size:11.5px; color:#9a8c60; }
+  
+    .odluke-tko { margin-left:auto; font-size:11.5px; padding:2px 9px; border-radius:3px;
+      border:1px solid #5a4d28; color:#c9b87a; }
+    .odluke-tko.aktivan { background:#2d4a2d; border-color:#3f8f3f; color:#a8e0a8; }
   </style>
 </head>
 <body>
@@ -2001,8 +2019,9 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       <div id="odluke-traka" class="odluke-traka" style="display:none">
         <div class="odluke-glava">
           <span class="odluke-znak" data-i18n="ceka">ČEKA</span>
-          <strong id="odluke-naslov" data-i18n="ceka_tvoju_odluku">Čeka tvoju odluku</strong>
+          <strong id="odluke-naslov">Čeka tvoju odluku</strong>
           <span class="odluke-opis" data-i18n="stroj_ih_namjerno_ne_dira_dok_ne_odlucis">stroj ih namjerno ne dira dok ne odlučiš</span>
+          <span id="odluke-tko" class="odluke-tko"></span>
           <button id="odluke-toggle" class="odluke-toggle" data-i18n="prikazi">prikaži</button>
         </div>
         <div id="odluke-odlucitelj" class="odluke-odlucitelj">
@@ -2288,6 +2307,10 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         <div class="info-card info-full" id="info-dezurni-card">
           <div class="info-card-title"><span class="icon">&#9873;</span> De&#382;urni &mdash; rezervni model kad primarni padne</div>
           <div id="info-dezurni-content"><div class="empty" data-i18n="loading">Loading...</div></div>
+        </div>
+        <div class="info-card info-full" id="info-ulaz-card">
+          <div class="info-card-title"><span class="icon">&#9094;</span> Ulazna vrata &mdash; kako telegramska poruka ulazi u plo&#269;u</div>
+          <div id="info-ulaz-content"><div class="empty" data-i18n="loading">Loading...</div></div>
         </div>
         <div class="info-card info-full" id="info-modules-card">
           <div class="info-card-title"><span class="icon">&#9670;</span> Modules</div>
@@ -3235,6 +3258,8 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         JEZIK = kod;
         localStorage.setItem('tm_jezik', kod);
         primijeniJezik();
+        if (typeof ucitajOdluke === 'function') ucitajOdluke();
+        if (typeof ucitajOdlucitelja === 'function') ucitajOdlucitelja();
         return true;
       } catch (e) { console.error('[jezik]', e); return false; }
     }
@@ -3306,6 +3331,17 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
           por.textContent = (d.postavke.ukljucen ? 'uključen' : 'isključen — odlučuješ ti')
             + ' · ' + d.postavke.provider + ' · ' + koliko + ' modela';
         }
+        // Tko odlučuje mora se vidjeti i kad je popis zatvoren — inače se stanje prekidača
+        // sazna tek otvaranjem, a to je upravo pitanje koje korisnik postavlja izvana.
+        const tko = document.getElementById('odluke-tko');
+        if (tko) {
+          const on = !!d.postavke.ukljucen;
+          tko.className = 'odluke-tko' + (on ? ' aktivan' : '');
+          const rj2 = (k, zad) => (RJECNIK && RJECNIK[k] != null) ? RJECNIK[k] : zad;
+          tko.textContent = on
+            ? rj2('odlucuje_model', 'odlučuje model') + ': ' + d.postavke.model
+            : rj2('odlucujes_ti', 'odlučuješ ti');
+        }
       } catch (e) { console.error('[odlucitelj]', e); }
     }
 
@@ -3367,8 +3403,15 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         if (!traka) return;
         if (!d.ukupno) { traka.style.display = 'none'; return; }
         traka.style.display = 'block';
+        const sprem = d.spremni != null ? d.spremni : d.ukupno;
+        const blok = d.blokirani || 0;
+        // Naslov govori o onome što odluka doista pušta u rad; blokirani se navode odvojeno,
+        // jer njih ni odluka ne pokreće dok se ne dovrši zadatak koji ih drži.
+        const rj = (k, zad) => (RJECNIK && RJECNIK[k] != null) ? RJECNIK[k] : zad;
         document.getElementById('odluke-naslov').textContent =
-          d.ukupno + (d.ukupno === 1 ? ' zadatak čeka tvoju odluku' : ' zadataka čeka tvoju odluku');
+          sprem + ' ' + rj(sprem === 1 ? 'zadatak_ceka_odluku' : 'zadataka_ceka_odluku',
+                           sprem === 1 ? 'zadatak čeka tvoju odluku' : 'zadataka čeka tvoju odluku')
+          + (blok ? '  ·  ' + blok + ' ' + rj('blokirano_drugim', 'blokirano drugim zadatkom') : '');
         const popis = document.getElementById('odluke-popis');
         popis.style.display = odlukeOtvoreno ? 'flex' : 'none';
         const redOdl = document.getElementById('odluke-odlucitelj');
@@ -6633,6 +6676,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         renderModelSetup(modelsData);
         loadLoginProviders();
         loadDezurni();
+        loadUlaznaVrata();
         renderInfoModules(d);
         renderInfoInfra(d);
         renderInfoDatabases(d);
@@ -6824,6 +6868,154 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         // (Backtick u komentaru ovdje zatvara predlozak u kojem cijela ploca zivi.)
         await loadDezurni();
         var svjeza = document.getElementById('dez-poruka');
+        if (svjeza) svjeza.innerHTML = '<span style="color:var(--accent-green,#22c55e)">Spremljeno — vrijedi odmah, bez restarta (' + new Date().toLocaleTimeString() + ')</span>';
+      } catch(e) {
+        if (poruka) poruka.innerHTML = '<span style="color:var(--accent-red,#ef4444)">Nije spremljeno: ' + _dezEsc(e.message) + '</span>';
+        if (el) el.disabled = false;
+      }
+    }
+
+    // ── Ulazna vrata (U1/TASK-4261) — prekidač po grupi s TRI položaja ──────────────────
+    // Kvačica ne pokriva uvođenje: "sjena" znači da poruka ide kao danas, ali se zapisuje
+    // što bi se otvorilo. Zato radio-skupina od tri, a ne checkbox.
+    async function loadUlaznaVrata() {
+      var el = document.getElementById('info-ulaz-content');
+      if (!el) return;
+      try {
+        var d = await (await fetch('/api/ingest-gate')).json();
+        if (d.error) throw new Error(d.error);
+        el.innerHTML = renderUlaznaVrata(d);
+      } catch(e) {
+        el.innerHTML = '<div class="empty">Greška pri čitanju ulaznih vrata: ' + _dezEsc(e.message) + '</div>';
+      }
+    }
+
+    function _ulazOpisNacina(n) {
+      if (n === 'off') return 'kao danas — poruka ide izravno u claude -p, ploča se ne dira';
+      if (n === 'shadow') return 'sjena — poruka ide kao danas, ali se zapisuje što bi se otvorilo';
+      return 'uključeno — poruka ide kroz ploču: zadatak → projekt → izvršitelj → trošak';
+    }
+
+    function _ulazPrekidac(chat, trenutni, ugasen) {
+      var nazivi = { off: 'isključeno', shadow: 'sjena', on: 'uključeno' };
+      var h = '<span style="display:inline-flex;gap:2px;border:1px solid var(--border-color,#333);border-radius:6px;padding:2px">';
+      ['off','shadow','on'].forEach(function(n) {
+        var sel = (trenutni === n);
+        var boja = sel ? (n === 'on' ? '#22c55e' : (n === 'shadow' ? '#f59e0b' : '#64748b')) : 'transparent';
+        h += '<label title="' + _dezEsc(_ulazOpisNacina(n)) + '" style="cursor:pointer;font-size:.68rem;padding:2px 8px;border-radius:4px;background:' + boja +
+          ';color:' + (sel ? '#0b1720' : 'var(--text-secondary,#8aa0b2)') + (sel ? ';font-weight:700' : '') + (ugasen ? ';opacity:.55' : '') + '">' +
+          '<input type="radio" style="display:none" name="ulaz-' + _dezEsc(chat) + '" data-chat="' + _dezEsc(chat) + '" value="' + n + '"' +
+          (sel ? ' checked' : '') + ' onchange="spremiUlazNacin(this)">' + nazivi[n] + '</label>';
+      });
+      return h + '</span>';
+    }
+
+    function renderUlaznaVrata(d) {
+      var p = d.postavke || {};
+      var grupe = d.grupe || {};
+      var perGroup = p.perGroup || {};
+      var projPoGrupi = p.projectByGroup || {};
+      var g = d.granice || { pragA:{min:1,max:100}, pragB:{min:1,max:100}, pragC:{min:1,max:100} };
+      var ugasen = !p.enabled;
+
+      var kljucevi = Object.keys(perGroup);
+      Object.keys(projPoGrupi).forEach(function(k) { if (kljucevi.indexOf(k) < 0) kljucevi.push(k); });
+      Object.keys(grupe).forEach(function(k) { if (kljucevi.indexOf(k) < 0) kljucevi.push(k); });
+
+      var h = '<div style="font-size:0.72rem;color:var(--text-secondary);margin-bottom:0.5rem">' +
+        'Kako telegramska poruka ulazi u ploču — <strong>po grupi, tri položaja</strong> (isključeno / sjena / uključeno). ' +
+        'Postavke se spremaju u <code>' + _dezEsc(d.putanja) + '</code> i <strong>vrijede odmah, bez ponovnog pokretanja</strong> — ' +
+        'i most i ploča čitaju datoteku pri svakom prolazu. Ručna kočnica (pravilo 17) i dalje zaustavlja sve. ' +
+        (ugasen
+          ? '<span class="info-badge disabled" title="Globalna sklopka je isključena — sve grupe se ponašaju kao isključene.">globalno isključeno</span>'
+          : '<span class="info-badge enabled">globalno uključeno</span>') +
+        '</div>';
+
+      h += '<table class="info-table"><tbody>';
+      h += _dezRed('Ulazna vrata uključena',
+        '<input type="checkbox"' + (p.enabled ? ' checked' : '') + ' onchange="spremiUlaz({enabled:this.checked}, this)">',
+        'Isključeno: sve grupe rade kao danas, bez obzira na položaj prekidača ispod.');
+      h += '</tbody></table>';
+
+      h += '<table class="info-table" style="margin-top:.4rem"><thead><tr>' +
+        '<th style="text-align:left;font-size:.68rem;width:215px">Grupa</th>' +
+        '<th style="text-align:left;font-size:.68rem;width:290px">Prekidač</th>' +
+        '<th style="text-align:left;font-size:.68rem">Zadani projekt grupe</th></tr></thead><tbody>';
+      kljucevi.forEach(function(chat) {
+        var naziv = grupe[chat] ? grupe[chat] : 'grupa';
+        var nacin = perGroup[chat] || 'off';
+        h += '<tr><td><strong>' + _dezEsc(naziv) + '</strong><br><span style="font-size:.66rem;color:var(--text-secondary)">' + _dezEsc(chat) + '</span></td>' +
+          '<td>' + _ulazPrekidac(chat, nacin, ugasen) + '</td>' +
+          '<td>' + _ulazProjektIzbor(chat, projPoGrupi[chat] || '', d.projekti || []) + '</td></tr>';
+      });
+      h += '</tbody></table>';
+
+      h += '<div style="margin-top:.5rem;display:flex;gap:6px;align-items:center;flex-wrap:wrap">' +
+        '<input id="ulaz-nova-grupa" placeholder="chatId nove grupe (npr. -5245252755)" style="' + _dezStil() + ';width:230px">' +
+        '<button style="font-size:.72rem;padding:3px 8px" onclick="dodajUlazGrupu(this)">Dodaj grupu</button>' +
+        '<span style="font-size:.66rem;color:var(--text-secondary)">Nova grupa kreće na <b>isključeno</b> — nikad sama.</span></div>';
+
+      h += '<table class="info-table" style="margin-top:.5rem"><tbody>';
+      h += _dezRed('Prag A — otvara se zadatak',
+        '<input type="number" min="' + g.pragA.min + '" max="' + g.pragA.max + '" value="' + p.pragA + '" style="' + _dezStil() + ';width:70px" onchange="spremiUlaz({pragA:Number(this.value)}, this)">',
+        'Ispod praga (pozdrav, pitanje) odgovor ide odmah i ploča ostaje čista. Zadano 16 (E2).');
+      h += _dezRed('Prag B — puni lanac',
+        '<input type="number" min="' + g.pragB.min + '" max="' + g.pragB.max + '" value="' + p.pragB + '" style="' + _dezStil() + ';width:70px" onchange="spremiUlaz({pragB:Number(this.value)}, this)">',
+        'Ispod praga zadatak dobiva jednog izvršitelja; iznad ide istraživanje → plan → izvedba → provjera. Zadano 36 (E3).');
+      h += _dezRed('Prag C — potvrda plana',
+        '<input type="number" min="' + g.pragC.min + '" max="' + g.pragC.max + '" value="' + p.pragC + '" style="' + _dezStil() + ';width:70px" onchange="spremiUlaz({pragC:Number(this.value)}, this)">',
+        'Iznad praga plan se šalje na odobrenje, zadatci se otvaraju tek na approve. Zadano 81 (E5).');
+      h += '</tbody></table>';
+      h += '<div style="font-size:.66rem;color:var(--text-secondary);margin-top:.3rem">Pragovi moraju rasti: A ≤ B ≤ C.</div>';
+      h += '<div id="ulaz-poruka" style="font-size:.7rem;margin-top:.4rem;min-height:1em"></div>';
+      return h;
+    }
+
+    function _ulazProjektIzbor(chat, trenutni, projekti) {
+      var opts = '<option value=""' + (trenutni ? '' : ' selected') + '>&mdash; bez zadanog (pretinac PRJ-033)</option>';
+      var popis = projekti.slice();
+      if (trenutni && popis.indexOf(trenutni) < 0) popis.unshift(trenutni);
+      popis.forEach(function(pid) {
+        opts += '<option value="' + _dezEsc(pid) + '"' + (pid === trenutni ? ' selected' : '') + '>' + _dezEsc(pid) + '</option>';
+      });
+      return '<select data-chat="' + _dezEsc(chat) + '" style="' + _dezStil() + ';min-width:220px" onchange="spremiUlazProjekt(this)">' + opts + '</select>';
+    }
+
+    // chatId ide kroz data-atribut, ne kroz onclick argument — tako u predlošku nema
+    // ugniježđenih navodnika koje bi minus u chatId-u ionako preživio, ali čitatelj ne bi.
+    function spremiUlazNacin(el) {
+      var m = {}; m[el.getAttribute('data-chat')] = el.value;
+      spremiUlaz({ perGroup: m }, el);
+    }
+    function spremiUlazProjekt(el) {
+      var m = {}; m[el.getAttribute('data-chat')] = el.value === '' ? null : el.value;
+      spremiUlaz({ projectByGroup: m }, el);
+    }
+    function dodajUlazGrupu(btn) {
+      var polje = document.getElementById('ulaz-nova-grupa');
+      var chat = polje ? String(polje.value || '').trim() : '';
+      if (!/^-?[0-9]{5,20}$/.test(chat)) {
+        var pk = document.getElementById('ulaz-poruka');
+        if (pk) pk.innerHTML = '<span style="color:var(--accent-red,#ef4444)">chatId mora biti broj (npr. -5245252755)</span>';
+        return;
+      }
+      var m = {}; m[chat] = 'off';
+      spremiUlaz({ perGroup: m }, btn);
+    }
+
+    async function spremiUlaz(zakrpa, el) {
+      var poruka = document.getElementById('ulaz-poruka');
+      if (el) el.disabled = true;
+      try {
+        var res = await fetch('/api/ingest-gate', {
+          method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(zakrpa)
+        });
+        var d = await res.json();
+        if (!res.ok || d.error) throw new Error(d.error || 'spremanje nije uspjelo');
+        // Potvrda se ispisuje TEK nakon ponovnog iscrtavanja — loadUlaznaVrata mijenja
+        // innerHTML cijele kartice, pa bi ranija poruka nestala u istom dahu.
+        await loadUlaznaVrata();
+        var svjeza = document.getElementById('ulaz-poruka');
         if (svjeza) svjeza.innerHTML = '<span style="color:var(--accent-green,#22c55e)">Spremljeno — vrijedi odmah, bez restarta (' + new Date().toLocaleTimeString() + ')</span>';
       } catch(e) {
         if (poruka) poruka.innerHTML = '<span style="color:var(--accent-red,#ef4444)">Nije spremljeno: ' + _dezEsc(e.message) + '</span>';
@@ -7254,6 +7446,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     });
     ucitajOdluke();
     setInterval(ucitajOdluke, 30000);
+    setInterval(ucitajOdlucitelja, 30000);
 
     postaviIzbornikJezika();
 
@@ -7511,6 +7704,58 @@ async function handleDezurniConfigPut(req: Request): Promise<Response> {
   try {
     const postavke = saveDezurniConfig(provjera.zakrpa)
     console.log(`[DEZURNI] postavke promijenjene s ploče: ${JSON.stringify(provjera.zakrpa)}`)
+    return json({ ok: true, postavke })
+  } catch (err) {
+    return json({ error: String(err) }, 500)
+  }
+}
+
+// ── Ulazna vrata za Telegram — U1 / TASK-4261 ─────────────────────────────────────────────
+// Prekidač po grupi s TRI položaja (off/shadow/on) + zadani projekt po grupi + pragovi A/B/C.
+// Razrada §1: kvačica ne pokriva uvođenje u sjeni, pa je ovo prekidač, ne boolean.
+// Bez restarta: i most (`telegram_agent.ts`) i ploča čitaju datoteku pri svakom prolazu.
+
+function handleIngestGateGet(): Response {
+  const json = (o: unknown, s = 200) =>
+    new Response(JSON.stringify(o), { status: s, headers: { 'Content-Type': 'application/json' } })
+  try {
+    const postavke = loadIngestGateConfig()
+    // Popis projekata služi padajućem izborniku „zadani projekt grupe" — ploča ne smije
+    // nuditi projekt koji u bazi ne postoji, jer bi zadatci padali u pretinac PRJ-033.
+    let projekti: string[] = []
+    try {
+      projekti = projectManager.getProjects({}).map((p: any) => String(p.id)).filter(Boolean)
+    } catch { /* popis je pomoć, ne uvjet — ploča radi i bez njega */ }
+    for (const p of Object.values(postavke.projectByGroup)) {
+      if (p && !projekti.includes(p)) projekti.unshift(p)
+    }
+    return json({
+      postavke, projekti,
+      nacini: NACINI,
+      grupe: POZNATE_GRUPE,
+      granice: GRANICE_ULAZ,
+      putanja: INGEST_GATE_CONFIG_PATH,
+    })
+  } catch (err) {
+    return json({ error: String(err) }, 500)
+  }
+}
+
+async function handleIngestGatePut(req: Request): Promise<Response> {
+  const json = (o: unknown, s = 200) =>
+    new Response(JSON.stringify(o), { status: s, headers: { 'Content-Type': 'application/json' } })
+  let tijelo: unknown
+  try {
+    tijelo = await req.json()
+  } catch {
+    return json({ error: 'Neispravan JSON' }, 400)
+  }
+  // Poredak pragova se provjerava prema onome što JE na disku — ploča šalje jedno polje.
+  const provjera = validateIngestGatePatch(tijelo, loadIngestGateConfig())
+  if (!provjera.ok) return json({ error: provjera.greske.join('; '), greske: provjera.greske }, 400)
+  try {
+    const postavke = saveIngestGateConfig(provjera.zakrpa)
+    console.log(`[ULAZNA-VRATA] postavke promijenjene s ploče: ${JSON.stringify(provjera.zakrpa)}`)
     return json({ ok: true, postavke })
   } catch (err) {
     return json({ error: String(err) }, 500)
@@ -8792,6 +9037,43 @@ async function handleUpdateTask(taskId: string, req: Request): Promise<Response>
       }
     }
 
+    // ─── GitCommitGate (U4 / TASK-4264) ────────────────────────────────────
+    // Zadatak otvoren po predlošku lanca (oznaka `lanac`) mora ostaviti trag u gitu:
+    // rad koji nije commitan nestaje s radnim stablom, a ploča i dalje pokazuje ✅.
+    // Doseg je namjerno uzak — samo zadaci kojima git obveza PIŠE u opisu (kažnjava se
+    // pravilo koje je izvršitelj vidio). Izuzeće: oznaka `samo-tekst` iz koraka 4.
+    // Rollback bez restarta: config/git-commit-gate.json → live/enabled false.
+    if (updates.status === 'completed') {
+      const gcfg = loadGitCommitGateConfig()
+      if (gcfg.enabled) {
+        const gt = taskManager.getTask(taskId)
+        const gTags = validatedData.tags !== undefined ? validatedData.tags : (gt?.tags || [])
+        const gSummary = rs !== undefined ? String(rs) : (gt?.resultSummary || '')
+        const gUlaz = { taskId, tags: gTags, resultSummary: gSummary, scopeTags: gcfg.scopeTags }
+        // `git log` po repozitoriju je jedini skup dio ovog vratara, pa se pokreće TEK
+        // kad je zadatak u dosegu i nema dokaza u tekstu — inače bi svaki PUT plaćao
+        // proces po repozitoriju.
+        const gBezGita = evaluateCommitClosure(gUlaz)
+        const gv = gBezGita.code === 'no_commit'
+          ? evaluateCommitClosure({ ...gUlaz, gitProof: findTaskCommits(taskId, gcfg) })
+          : gBezGita
+        const gForced = (validatedData as any).force === true
+        const gEnforce = shouldEnforceCommit(gv, gcfg) && !gForced
+        if (gv.inScope) {
+          console.warn(`[API] ${formatCommitLog(taskId, gv)}` +
+            (gv.accept ? '' : (gEnforce ? ' — BLOKIRAM' : ' — SHADOW')) + (gForced ? ' (FORCED)' : ''))
+        }
+        if (!gv.accept && gEnforce) {
+          return new Response(JSON.stringify({
+            error: 'No commit for chain task',
+            code: gv.code,
+            details: gv.reason,
+            hint: formatCommitHint(taskId),
+          }), { status: 400, headers: { 'Content-Type': 'application/json' } })
+        }
+      }
+    }
+
     const task = taskManager.updateTask(taskId, updates as any)
 
     if (!task) {
@@ -8825,6 +9107,20 @@ async function handleUpdateTask(taskId: string, req: Request): Promise<Response>
     }
 
     console.log(`[API] Task ${taskId} updated successfully. New priority: ${task.priority}`)
+
+    // ─── Pometnja dojava (U4 / TASK-4264) ──────────────────────────────────
+    // Okidač je zatvaranje ZADATKA NIZA, ne mjerač vremena: dojava ide u istoj sekundi
+    // u kojoj je pao zadnji zadatak. Zadatak dojave šalje JEDNU poruku za cijeli niz —
+    // dok je i jedan zadatak otvoren, ne šalje se ništa.
+    // Pometnja nikad ne ruši PUT (vlastiti try/catch u `sweepReportBack`), a zaostatak
+    // (zadatak zatvoren mimo ovog puta) pokupi `tools/lanac-otvori.ts --provjeri`.
+    if (task.status === 'completed' || task.status === 'cancelled') {
+      const rez = sweepReportBack(taskManager as any, { log: m => console.warn(`[API] report-back: ${m}`) })
+      for (const f of rez.fired) console.warn(`[API] report-back: SENT ${f.id} → ${f.code} (${f.reason})`)
+      // I zadržane dojave idu u dnevnik: „zašto korisnik nije ništa dobio" mora imati
+      // odgovor na jednom mjestu, inače se šutnja sustava ne da razlikovati od kvara.
+      for (const h of rez.held) console.warn(`[API] report-back: HELD ${h.id} ${h.code} — ${h.reason}`)
+    }
 
     // Broadcast to WebSocket clients
     const message = JSON.stringify({ type: 'task_updated', task })
@@ -9290,9 +9586,12 @@ function handleGetOdluke(): Response {
       cekaSati: Math.round((Date.now() - new Date(t.createdAt ?? t.created_at ?? Date.now()).getTime()) / 36e5),
     }))
     .sort((a, b) => (a.priority ?? 9) - (b.priority ?? 9) || b.cekaSati - a.cekaSati)
-  return new Response(JSON.stringify({ ukupno: cekaju.length, zadatci: cekaju }), {
-    headers: { 'Content-Type': 'application/json' },
-  })
+  // Blokiran zadatak treba odluku, ali ni nakon nje ne kreće dok se ne dovrši onaj koji ga
+  // blokira. Zato dvije brojke, ne jedna: „spremno" je ono što odluka doista pušta u rad.
+  const spremni = cekaju.filter(t => String(t.status) === 'pending').length
+  return new Response(JSON.stringify({
+    ukupno: cekaju.length, spremni, blokirani: cekaju.length - spremni, zadatci: cekaju,
+  }), { headers: { 'Content-Type': 'application/json' } })
 }
 
 function handleTaskOdluka(taskId: string, req: Request): Promise<Response> {
@@ -11672,6 +11971,16 @@ const server = Bun.serve({
     // PUT /api/dezurni/config — izbor modela i ostale postavke dežurnog (D4)
     if (url.pathname === '/api/dezurni/config' && req.method === 'PUT') {
       return handleDezurniConfigPut(req)
+    }
+
+    // GET /api/ingest-gate — ulazna vrata za Telegram: prekidač po grupi + pragovi (U1)
+    if (url.pathname === '/api/ingest-gate' && req.method === 'GET') {
+      return handleIngestGateGet()
+    }
+
+    // PUT /api/ingest-gate — promjena položaja prekidača, zadanog projekta ili praga (U1)
+    if (url.pathname === '/api/ingest-gate' && req.method === 'PUT') {
+      return handleIngestGatePut(req)
     }
 
     // ============================================
