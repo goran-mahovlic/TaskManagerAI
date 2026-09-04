@@ -28,14 +28,74 @@ for f in TaskWebUI.ts RAGService.ts TaskTelemetry.ts TjedniPregled.ts Tecaj.ts \
   echo "  src/$f"
 done
 
-# 2) Jezgra (REGOČ moduli koje ploča uvozi).
-for f in TaskManagerSQL ProjectManager MessageQueue PauseControl AutonomyQueue QuotaWakeup \
-         UnverifiedReport CompletionGuard CostTracker DispatchGuard TaskFieldAliases \
-         ChronoOrder LiveDbGuard TaskIdAllocator CriticGate ResearchRagGate; do
-  [ -f "$REGOC/$f.ts" ] || continue
-  cp "$REGOC/$f.ts" "$PAKET/src/core/$f.ts"
-  echo "  src/core/$f.ts"
+# 1b) Rječnici sučelja. Bez njih paket pokaže samo ključeve, pa idu uz TaskWebUI.ts.
+#     Postojeći `config/jezik.json` se NE prepisuje — to je izbor instalacije, ne kod.
+mkdir -p "$PAKET/locales" "$PAKET/config"
+for f in "$REGOC/TaskManagerMD/locales/"*.json; do
+  [ -e "$f" ] || continue
+  cp "$f" "$PAKET/locales/$(basename "$f")"
+  echo "  locales/$(basename "$f")"
 done
+[ -f "$PAKET/config/jezik.json" ] || echo '{"zadani":"en"}' > "$PAKET/config/jezik.json"
+
+# 1c) Alati koje ploča poziva kao vanjske procese (odlučitelj, dežurni).
+mkdir -p "$PAKET/tools"
+for f in odlucitelj.py dezurni.py; do
+  for izvor in "$HOME/app/regoc_system/tools/$f" "$REGOC/tools/$f"; do
+    [ -f "$izvor" ] || continue
+    cp "$izvor" "$PAKET/tools/$f"; echo "  tools/$f"; break
+  done
+done
+
+# 2) Jezgra: moduli se OTKRIVAJU iz uvoza, ne održavaju ručnim popisom.
+#
+#    Ručni popis je 04.09.2026. slomio paket: agent je u živu instalaciju dodao
+#    `TaskCreateBreaker`, skripta ga nije poznavala, i paket se prestao pokretati s
+#    „Cannot find module". Sada se prolazi kroz uvoze, pa i kroz uvoze tih modula
+#    (tranzitivno) — novi modul se povuče sam.
+python3 - "$REGOC" "$PAKET" <<'PY'
+import pathlib, re, shutil, sys
+
+regoc, paket = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
+(paket / "src/core").mkdir(parents=True, exist_ok=True)
+UI = regoc / "TaskManagerMD/src"
+
+# Tri oblika uvoza koja se pojavljuju: './core/X', './X' (uz ploču) i puna REGOČ putanja.
+UVOZ = re.compile(r"""from\s+['"](?:\./core/|\./|[^'"]*\.claude/regoc/)([A-Za-z0-9_]+)['"]""")
+
+def uvozi(tekst):
+    return set(UVOZ.findall(tekst))
+
+def nadji(ime):
+    """Modul može živjeti uz ploču ili u korijenu REGOČ instalacije."""
+    for kandidat in (UI / f"{ime}.ts", regoc / f"{ime}.ts"):
+        if kandidat.exists():
+            return kandidat
+    return None
+
+red, vidjeni, preneseno = set(), set(), []
+for f in (paket / "src").glob("*.ts"):
+    red |= uvozi(f.read_text(encoding="utf-8", errors="replace"))
+
+while red:
+    ime = red.pop()
+    if ime in vidjeni:
+        continue
+    vidjeni.add(ime)
+    izvor = nadji(ime)
+    if not izvor:
+        continue
+    tekst = izvor.read_text(encoding="utf-8", errors="replace")
+    # Modul uz ploču ostaje uz ploču; ostalo ide u jezgru.
+    cilj = (paket / "src" / f"{ime}.ts") if izvor.parent == UI else (paket / "src/core" / f"{ime}.ts")
+    shutil.copyfile(izvor, cilj)
+    preneseno.append(str(cilj.relative_to(paket)))
+    red |= uvozi(tekst) - vidjeni
+
+for put in sorted(preneseno):
+    print(f"  {put}")
+print(f"  ({len(preneseno)} modula otkriveno iz uvoza)")
+PY
 
 # 2b) RAG biblioteka (PAI): paket je nosi u `src/rag/` jer izvan REGOČ instalacije
 #     `~/.claude/skills/...` ne postoji. Bez ovoga paket ostane na staroj inačici i

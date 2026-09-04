@@ -101,6 +101,13 @@ export interface Skupina {
   razlicitihZadataka: number
   sTranskriptom: number
   ishodi: Record<string, number>
+  /**
+   * M3/TASK-4625: tri stupca koja ploča prikazuje — `completed` (isporučeno),
+   * `blocked_ok` (agent je SAM stao pred preprekom) i `failed` (kvar). `ishodi` iznad
+   * ostaje puna raščlamba po sirovoj vrijednosti, pa se zbroj može provjeriti.
+   * Preslikavanje radi `tjedni_pregled.py:stupac_ishoda`; SSOT je `RunOutcome.ts`.
+   */
+  ishodiStupci: { completed: number; blocked_ok: number; failed: number }
   trosak: { usd: number | null; izZadataka: number; usdPoZadatku: number | null }
   tokeni: {
     ulaz: number | null
@@ -250,6 +257,30 @@ function cijeli(v: unknown): number {
   return typeof v === 'number' && Number.isFinite(v) ? Math.trunc(v) : 0
 }
 
+/**
+ * `ishodi_stupci` iz alata; ako ih nema (keš zapisan prije M3/TASK-4625), izvede ih iz
+ * pune raščlambe `ishodi` istim pravilom: sve što nije `completed`/`blocked_ok` je kvar.
+ */
+function stupciIzOdgovora(s: Record<string, any>): { completed: number; blocked_ok: number; failed: number } {
+  const iz = s.ishodi_stupci
+  if (iz && typeof iz === 'object') {
+    return {
+      completed: cijeli(iz.completed),
+      blocked_ok: cijeli(iz.blocked_ok),
+      failed: cijeli(iz.failed),
+    }
+  }
+  const out = { completed: 0, blocked_ok: 0, failed: 0 }
+  const ishodi = (s.ishodi && typeof s.ishodi === 'object') ? s.ishodi as Record<string, any> : {}
+  for (const [k, v] of Object.entries(ishodi)) {
+    const n = cijeli(v)
+    if (k === 'completed') out.completed += n
+    else if (k === 'blocked_ok') out.blocked_ok += n
+    else out.failed += n
+  }
+  return out
+}
+
 function tekst(v: unknown): string | null {
   return typeof v === 'string' && v.length > 0 ? v : null
 }
@@ -273,6 +304,9 @@ export function sazmiSkupinu(sirovo: unknown, kljucPolje: 'project_id' | 'agent'
     razlicitihZadataka: cijeli(s.razlicitih_zadataka),
     sTranskriptom: cijeli(s.s_transkriptom),
     ishodi: (s.ishodi && typeof s.ishodi === 'object') ? (s.ishodi as Record<string, number>) : {},
+    // Stariji keš pregleda (prije M3) nema `ishodi_stupci` — tada se stupci izvedu iz
+    // `ishodi`, da ploča ne pokazuje tri nule dok se keš ne osvježi.
+    ishodiStupci: stupciIzOdgovora(s),
     trosak: {
       usd: broj(trosak.usd),
       izZadataka: cijeli(trosak.iz_zadataka),

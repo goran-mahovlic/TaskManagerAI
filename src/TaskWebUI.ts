@@ -35,6 +35,8 @@ import { tecajOdgovor } from './Tecaj'
 import type { Task, AgentId, TaskFilter } from './types/task-types'
 import { CreateTaskInputSchema, UpdateTaskInputSchema, TaskFilterSchema } from './zod/schemas/task'
 import { isNonActionableMessage, emptyOrFixtureReason, EMPTY_TASK_REASON_TEXT } from './core/DispatchGuard'
+// M2/TASK-4628: strop stvaranja zadataka po izvoru (rafal 02.09. = 686 zadataka u 2 h).
+import { TaskCreateBreaker, formatTaskCreateAlarm } from './core/TaskCreateBreaker'
 // K7/TASK-2986: potrošnja na ploči dolazi iz cost_loga koji puni svaki spawn.
 import { getCostTracker } from './core/CostTracker'
 import {
@@ -61,6 +63,11 @@ import {
 } from './zod/schemas/project'
 import { RAGFilterSchema, RAGDeleteRequestSchema } from './zod/schemas/rag'
 import { resolveSessionUsage, createDefaultDeps, type UsageState } from './SessionUsage'
+// D4/TASK-4633: postavke dežurnog (rezervnog modela) — izbor modela s ploče, bez restarta.
+import {
+  DEZURNI_CONFIG_PATH, GRANICE, PODRZANI_PROVIDERI,
+  loadDezurniConfig, saveDezurniConfig, validateDezurniPatch,
+} from './DezurniConfig'
 // TASK-2989/2991: traka više ne vjeruje status datoteci na riječ — stanje se izvodi.
 import { resolveDaemonLiveness, type LivenessDeps } from './DaemonLiveness'
 // TASK-3568 (T4): „Potrošnja zadatka" na kartici — poziva agent_telemetry.py (T2/T3).
@@ -177,6 +184,45 @@ try {
   konzolaDb = new Database(MESSAGES_DB_PATH, { readonly: true })
   konzolaDb.exec('PRAGMA journal_mode = WAL')
 } catch { konzolaDb = null }
+
+// ============================================
+// M2 / TASK-4628 — OSIGURAČ NA STVARANJU ZADATAKA
+// ============================================
+// Ovo je JEDINI ingress zadataka (web forma, agentov curl, RegocDaemon, cron — svi
+// prolaze kroz `handleCreateTask`), pa vrata stoje ovdje. Stanje ide u `messages.db`,
+// NE u `regoc.db`: brojač osigurača nije podatak o poslu i ne smije se miješati u bazu
+// koju čita ploča (isti razlog kao kod SpawnBreakera i SendBreakera).
+let taskBreakerDb: Database | null = null
+let taskCreateBreaker: TaskCreateBreaker | null = null
+function getTaskCreateBreaker(): TaskCreateBreaker | null {
+  if (taskCreateBreaker) return taskCreateBreaker
+  try {
+    taskBreakerDb = new Database(MESSAGES_DB_PATH, { create: true })
+    taskBreakerDb.exec('PRAGMA journal_mode = WAL')
+    taskCreateBreaker = new TaskCreateBreaker(taskBreakerDb, {
+      logger: (m) => console.warn(`[TaskWebUI] ${m}`),
+    })
+  } catch (e) {
+    // Osigurač koji ruši ingress bio bi gori od rafala — fail-open uz glasan zapis.
+    console.warn(`[TaskWebUI] TASK-4628: osigurač stvaranja zadataka nedostupan (${String(e).slice(0, 120)}) — vrata propuštaju`)
+    taskCreateBreaker = null
+  }
+  return taskCreateBreaker
+}
+
+/**
+ * Dojava Goranu — JEDNA po epizodi rafala, ne po zadatku (686 poruka je isti kvar).
+ * Redak u dnevniku ide UVIJEK i prvi: Telegram je najslabija karika (token, mreža,
+ * skripta koje u izoliranom HOME-u nema), a zapis mora ostati i kad poruka ne prođe.
+ */
+function notifyGoranTaskBurst(text: string): void {
+  console.warn(`[TaskWebUI] TASK-4628 DOJAVA:\n${text}`)
+  try {
+    const script = join(process.env.HOME || '/home/klaudio', '.tmp/agent_telegram_send.sh')
+    if (!existsSync(script)) return
+    Bun.spawn(['bash', script, text.slice(0, 4000), 'regoc'], { stdout: 'ignore', stderr: 'ignore' })
+  } catch { /* dojava nije kritični put — zapis je već otišao */ }
+}
 
 // ============================================
 // KONZOLA STATE
@@ -379,7 +425,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Regoč TaskManagerMD</title>
+  <title data-i18n="regoc_taskmanagermd">Regoč TaskManagerMD</title>
   <style>
     :root {
       --bg-primary: #0f172a;
@@ -1369,6 +1415,13 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     .tel-znacka.ok { background: rgba(34,197,94,0.15); color: var(--accent-green); }
     .tel-znacka.upoz { background: rgba(234,179,8,0.15); color: var(--accent-yellow); }
     .tel-znacka.loše { background: rgba(239,68,68,0.15); color: var(--accent-red); }
+    /* M3/TASK-4625: tri ishoda izvođenja. Boja nosi značenje: zeleno = isporučeno,
+       žuto = agent je UREDNO stao (nije kvar), crveno = pad. */
+    .tel-ishod { display: inline-block; padding: 0.05rem 0.35rem; border-radius: 0.75rem;
+                 font-size: 0.68rem; font-weight: 600; }
+    .tel-ishod.ok { background: rgba(34,197,94,0.15); color: var(--accent-green); }
+    .tel-ishod.zastoj { background: rgba(234,179,8,0.15); color: var(--accent-yellow); }
+    .tel-ishod.pad { background: rgba(239,68,68,0.15); color: var(--accent-red); }
     .tel-primjer { font-family: ui-monospace, monospace; font-size: 0.7rem; color: var(--text-secondary);
                    word-break: break-all; }
 
@@ -1859,72 +1912,145 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     .wf-item { padding: 0.35rem 0.5rem; cursor: pointer; border-radius: 4px; font-size: 0.8rem; display: flex; justify-content: space-between; }
     .wf-item:hover { background: rgba(59,130,246,0.1); }
     .wf-item .wf-skill { color: var(--text-secondary); font-size: 0.7rem; }
+  
+    /* Ceka odluku */
+    .odluke-traka { background:#2a2416; border:1px solid #6b5b2a; border-left:4px solid #d4a017;
+      border-radius:6px; padding:10px 14px; margin-bottom:14px; }
+    .odluke-glava { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+    .odluke-znak { background:#d4a017; color:#1a1608; font-size:10.5px; font-weight:700;
+      padding:2px 7px; border-radius:3px; letter-spacing:0.5px; }
+    .odluke-glava strong { color:#e8c65a; }
+    .odluke-opis { color:#9a8c60; font-size:12px; }
+    .odluke-toggle { margin-left:auto; background:#3d3419; color:#e8c65a; border:1px solid #6b5b2a;
+      border-radius:4px; padding:3px 12px; cursor:pointer; font-size:12px; }
+    .odluke-toggle:hover { background:#4d421f; }
+    .odluke-popis { margin-top:12px; display:flex; flex-direction:column; gap:10px; }
+    .odluka-stavka { background:#1e1a10; border:1px solid #4a4020; border-radius:5px; padding:10px 12px; }
+    .odluka-naslov { color:#e0d5b0; font-size:13px; margin-bottom:3px; }
+    .odluka-meta { color:#8a7d55; font-size:11px; margin-bottom:8px; }
+    .odluka-opis { color:#a89b70; font-size:11.5px; margin-bottom:8px; white-space:pre-wrap;
+      max-height:74px; overflow:auto; }
+    .odluka-red { display:flex; gap:8px; align-items:stretch; }
+    .odluka-unos { flex:1; background:#12100a; color:#e0d5b0; border:1px solid #5a4d28;
+      border-radius:4px; padding:7px 10px; font-size:12.5px; font-family:inherit; resize:vertical;
+      min-height:36px; }
+    .odluka-unos:focus { outline:none; border-color:#d4a017; }
+    .odluka-nastavi { background:#2d6a2d; color:#d8f0d8; border:1px solid #3f8f3f; border-radius:4px;
+      padding:7px 18px; cursor:pointer; font-size:12.5px; white-space:nowrap; }
+    .odluka-nastavi:hover { background:#377f37; }
+    .odluka-nastavi:disabled { background:#3a3a3a; color:#777; border-color:#4a4a4a; cursor:default; }
+    .odluka-poruka { font-size:11.5px; margin-top:6px; }
+  
+    .izbor-jezika { background:#1e2530; color:#9fb3c8; border:1px solid #33415c; border-radius:4px;
+      padding:4px 8px; font-size:12px; margin-right:8px; cursor:pointer; }
+    .izbor-jezika:hover { border-color:#4a5f80; color:#cfe0f0; }
+  
+    .odluke-odlucitelj { display:none; align-items:center; gap:10px; flex-wrap:wrap;
+      margin-top:10px; padding-top:10px; border-top:1px solid #4a4020; }
+    .odluc-prekidac { display:flex; align-items:center; gap:6px; color:#c9b87a; font-size:12px;
+      cursor:pointer; }
+    .odluc-model { background:#12100a; color:#e0d5b0; border:1px solid #5a4d28; border-radius:4px;
+      padding:4px 8px; font-size:12px; }
+    .odluc-gumb { background:#3d3419; color:#e8c65a; border:1px solid #6b5b2a; border-radius:4px;
+      padding:4px 12px; cursor:pointer; font-size:12px; }
+    .odluc-gumb:hover { background:#4d421f; }
+    .odluc-gumb:disabled { background:#2a2a2a; color:#777; border-color:#444; cursor:default; }
+    .odluc-glavni { background:#2d6a2d; color:#d8f0d8; border-color:#3f8f3f; }
+    .odluc-glavni:hover { background:#377f37; }
+    .odluc-poruka { font-size:11.5px; color:#9a8c60; }
   </style>
 </head>
 <body>
   <div class="container">
     <header>
-      <h1>Regoč TaskManagerMD</h1>
+      <h1 data-i18n="regoc_taskmanagermd">Regoč TaskManagerMD</h1>
       <div class="status">
         <!-- TASK-3047: ručna kočnica. Stoji u zaglavlju jer mora biti dohvatljiva s bilo
              kojeg taba — kad nešto krene po zlu, ne traži se gumb po karticama. -->
-        <button id="global-pause-btn" class="global-pause-btn" title="Zaustavi sav automatski rad">&#9208; Pauza</button>
+        <select id="izbor-jezika" class="izbor-jezika" title="Jezik sučelja"></select>
+        <button id="global-pause-btn" class="global-pause-btn" title="Zaustavi sav automatski rad" data-i18n-title="zaustavi_sav_automatski_rad" data-i18n="pauza">&#9208; Pauza</button>
         <span id="global-pause-info" class="global-pause-info"></span>
         <span id="connection-status" class="status-dot"></span>
-        <span id="status-text">Connecting...</span>
+        <span id="status-text" data-i18n="connecting">Connecting...</span>
       </div>
     </header>
 
     <!-- Tab Navigation -->
     <nav class="tab-nav">
       <div class="tab-nav-left">
-        <button class="tab-btn active" data-tab="tasks">Tasks</button>
-        <button class="tab-btn" data-tab="projects">Projects</button>
+        <button class="tab-btn active" data-tab="tasks" data-i18n="tasks">Tasks</button>
+        <button class="tab-btn" data-tab="projects" data-i18n="projects">Projects</button>
         <button class="tab-btn" data-tab="rag">RAG</button>
-        <button class="tab-btn" data-tab="konzola">Konzola</button>
-        <button class="tab-btn" data-tab="potrosnja">Potro&#353;nja</button>
-        <button class="tab-btn" data-tab="status">Status</button>
-        <button class="tab-btn" data-tab="info">Config</button>
+        <button class="tab-btn" data-tab="konzola" data-i18n="konzola">Konzola</button>
+        <button class="tab-btn" data-tab="potrosnja" data-i18n="potro_nja">Potro&#353;nja</button>
+        <button class="tab-btn" data-tab="status" data-i18n="status">Status</button>
+        <button class="tab-btn" data-tab="info" data-i18n="config">Config</button>
       </div>
       <div class="tab-nav-right">
         <select id="tasks-project-filter" class="filter-select">
-          <option value="">All Projects</option>
+          <option value="" data-i18n="all_projects">All Projects</option>
         </select>
       </div>
     </nav>
 
     <!-- TASKS TAB -->
     <div id="tab-tasks" class="tab-content active">
+      <!-- Ceka odluku: oznaka needs-decision je ispravan mehanizam, ali je do 04.09.2026.
+           bila nevidljiva — devet zadataka stajalo je 1,5 h a nigdje se nije vidjelo da
+           cekaju. Traka se prikazuje SAMO kad ima takvih zadataka. -->
+      <div id="odluke-traka" class="odluke-traka" style="display:none">
+        <div class="odluke-glava">
+          <span class="odluke-znak" data-i18n="ceka">ČEKA</span>
+          <strong id="odluke-naslov" data-i18n="ceka_tvoju_odluku">Čeka tvoju odluku</strong>
+          <span class="odluke-opis" data-i18n="stroj_ih_namjerno_ne_dira_dok_ne_odlucis">stroj ih namjerno ne dira dok ne odlučiš</span>
+          <button id="odluke-toggle" class="odluke-toggle" data-i18n="prikazi">prikaži</button>
+        </div>
+        <div id="odluke-odlucitelj" class="odluke-odlucitelj">
+          <label class="odluc-prekidac">
+            <input type="checkbox" id="odluc-ukljucen">
+            <span data-i18n="neka_model_odluci">Neka model odluči umjesto mene</span>
+          </label>
+          <select id="odluc-provider" class="odluc-model"
+                  data-i18n-title="davatelj_modela" title="Davatelj"></select>
+          <select id="odluc-model" class="odluc-model" data-i18n-title="model_koji_odlucuje"
+                  title="Model koji odlučuje"></select>
+          <button id="odluc-proba" class="odluc-gumb" data-i18n="probaj_bez_upisa">Probaj (bez upisa)</button>
+          <button id="odluc-izvrsi" class="odluc-gumb odluc-glavni" data-i18n="odluci_sada">Odluči sada</button>
+          <span id="odluc-poruka" class="odluc-poruka"></span>
+        </div>
+        <div id="odluke-popis" class="odluke-popis" style="display:none"></div>
+      </div>
+
       <div class="stats" id="stats">
-        <div class="stat"><div class="stat-value" id="total-count">-</div><div class="stat-label">Total</div></div>
-        <div class="stat"><div class="stat-value" id="progress-count">-</div><div class="stat-label">In Progress</div></div>
-        <div class="stat"><div class="stat-value" id="pending-count">-</div><div class="stat-label">Pending</div></div>
-        <div class="stat"><div class="stat-value" id="blocked-count">-</div><div class="stat-label">Blocked</div></div>
-        <div class="stat"><div class="stat-value" id="completed-count">-</div><div class="stat-label">Completed</div></div>
-        <div class="stat"><div class="stat-value" id="cancelled-count">-</div><div class="stat-label">Cancelled</div></div>
-        <div class="stat" title="Zadaci koje je vratar danas propustio, a nije mogao ni jednu provjeru pokrenuti (izvor: data/critic_gate.jsonl)"><div class="stat-value" id="unverified-count">-</div><div class="stat-label">Danas neprovjereno</div></div>
-        <div class="stat"><div class="stat-value" id="overall-progress">-</div><div class="stat-label">Overall Progress</div></div>
+        <div class="stat"><div class="stat-value" id="total-count">-</div><div class="stat-label" data-i18n="total">Total</div></div>
+        <div class="stat"><div class="stat-value" id="progress-count">-</div><div class="stat-label" data-i18n="in_progress">In Progress</div></div>
+        <div class="stat"><div class="stat-value" id="pending-count">-</div><div class="stat-label" data-i18n="pending">Pending</div></div>
+        <div class="stat"><div class="stat-value" id="blocked-count">-</div><div class="stat-label" data-i18n="blocked">Blocked</div></div>
+        <div class="stat"><div class="stat-value" id="completed-count">-</div><div class="stat-label" data-i18n="completed">Completed</div></div>
+        <div class="stat"><div class="stat-value" id="cancelled-count">-</div><div class="stat-label" data-i18n="cancelled">Cancelled</div></div>
+        <div class="stat" title="Zadaci koje je vratar danas propustio, a nije mogao ni jednu provjeru pokrenuti (izvor: data/critic_gate.jsonl)" data-i18n-title="zadaci_koje_je_vratar_danas_propustio_a_nije"><div class="stat-value" id="unverified-count">-</div><div class="stat-label" data-i18n="danas_neprovjereno">Danas neprovjereno</div></div>
+        <div class="stat"><div class="stat-value" id="overall-progress">-</div><div class="stat-label" data-i18n="overall_progress">Overall Progress</div></div>
       </div>
 
       <div class="agent-filter" id="agent-filter">
-        <button class="agent-btn active" data-agent="all">All Agents</button>
+        <button class="agent-btn active" data-agent="all" data-i18n="all_agents">All Agents</button>
       </div>
 
       <div class="grid">
         <div class="column in-progress">
-          <h2>In Progress</h2>
+          <h2 data-i18n="in_progress">In Progress</h2>
           <div id="in-progress-tasks"></div>
         </div>
         <div class="column pending">
-          <h2>Pending</h2>
+          <h2 data-i18n="pending">Pending</h2>
           <div id="pending-tasks"></div>
         </div>
         <div class="column blocked">
-          <h2>Blocked</h2>
+          <h2 data-i18n="blocked">Blocked</h2>
           <div id="blocked-tasks"></div>
         </div>
         <div class="column completed">
-          <h2>Completed (Recent)</h2>
+          <h2 data-i18n="completed_recent">Completed (Recent)</h2>
           <div id="completed-tasks"></div>
         </div>
       </div>
@@ -1934,21 +2060,21 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     <div id="tab-projects" class="tab-content">
       <div class="projects-header">
         <div class="projects-filter" id="projects-agent-filter">
-          <button class="agent-btn active" data-agent="all">All Agents</button>
+          <button class="agent-btn active" data-agent="all" data-i18n="all_agents">All Agents</button>
         </div>
         <div style="display:flex;gap:0.35rem;align-items:center;margin-left:auto;">
-          <label for="projects-sort" style="font-size:0.78rem;color:var(--text-secondary);">Poredak:</label>
+          <label for="projects-sort" style="font-size:0.78rem;color:var(--text-secondary);" data-i18n="poredak">Poredak:</label>
           <select id="projects-sort" class="filter-select">
-            <option value="aktivnost" selected>zadnji rad</option>
-            <option value="cijena">potro&#353;nja</option>
-            <option value="ime">ime</option>
-            <option value="pocetak">po&#269;etak rada</option>
-            <option value="zadataka">broj zadataka</option>
+            <option value="aktivnost" selected data-i18n="zadnji_rad">zadnji rad</option>
+            <option value="cijena" data-i18n="potro_nja_2">potro&#353;nja</option>
+            <option value="ime" data-i18n="ime">ime</option>
+            <option value="pocetak" data-i18n="po_etak_rada">po&#269;etak rada</option>
+            <option value="zadataka" data-i18n="broj_zadataka">broj zadataka</option>
           </select>
           <button id="projects-sort-smjer" class="btn btn-secondary" style="padding:0.15rem 0.5rem;"
-                  title="Obrni smjer">&#8595;</button>
+                  title="Obrni smjer" data-i18n-title="obrni_smjer">&#8595;</button>
         </div>
-        <button class="btn btn-primary" id="add-project-btn">+ New Project</button>
+        <button class="btn btn-primary" id="add-project-btn" data-i18n="new_project">+ New Project</button>
       </div>
 
       <div class="projects-legend">
@@ -1956,7 +2082,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         <span class="legend-item"><i class="legend-dot status-on_hold"></i>Na čekanju</span>
         <span class="legend-item"><i class="legend-dot status-completed"></i>Dovršen</span>
         <span class="legend-item"><i class="legend-dot status-archived"></i>Arhiviran</span>
-        <span class="legend-item" id="projects-sort-opis">Poredak: zadnji rad na projektu — najnoviji prvi</span>
+        <span class="legend-item" id="projects-sort-opis" data-i18n="poredak_zadnji_rad_na_projektu_najnoviji_prv">Poredak: zadnji rad na projektu — najnoviji prvi</span>
       </div>
 
       <div class="projects-rows" id="projects-rows"></div>
@@ -1965,96 +2091,96 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     <!-- RAG TAB -->
     <div id="tab-rag" class="tab-content">
       <div class="rag-header">
-        <h2>RAG Entries</h2>
+        <h2 data-i18n="rag_entries">RAG Entries</h2>
         <div class="rag-filters">
-          <input type="text" id="rag-search-input" placeholder="Pretraži RAG..." style="padding: 8px 12px; border: 1px solid var(--border-color); border-radius: 4px; font-size: 0.875rem; flex: 1; margin-right: 12px;">
+          <input type="text" id="rag-search-input" placeholder="Pretraži RAG..." data-i18n-placeholder="pretrazi_rag" style="padding: 8px 12px; border: 1px solid var(--border-color); border-radius: 4px; font-size: 0.875rem; flex: 1; margin-right: 12px;">
           <select id="rag-collection-filter">
-            <option value="">All Collections</option>
+            <option value="" data-i18n="all_collections">All Collections</option>
           </select>
-          <select id="rag-project-filter" title="Filtar po projektu (Chroma where project_id)">
-            <option value="">Svi projekti</option>
+          <select id="rag-project-filter" title="Filtar po projektu (Chroma where project_id)" data-i18n-title="filtar_po_projektu_chroma_where_project_id">
+            <option value="" data-i18n="svi_projekti">Svi projekti</option>
           </select>
-          <select id="rag-tip-filter" title="Filtar po vrsti dokumenta (tip_regoc)">
-            <option value="">Sve vrste</option>
-            <option value="pravilo">pravila (za&#353;ti&#263;eno)</option>
-            <option value="lekcija">lekcije (za&#353;ti&#263;eno)</option>
-            <option value="pogreska">pogre&#353;ke (za&#353;ti&#263;eno)</option>
-            <option value="istrazivanje">istra&#382;ivanja</option>
-            <option value="spec">specifikacije</option>
-            <option value="referenca">reference</option>
-            <option value="sjednica">sjednice</option>
-            <option value="izlaz-agenta">izlazi agenata</option>
-            <option value="ocjena">ocjene</option>
-            <option value="ostalo">ostalo</option>
+          <select id="rag-tip-filter" title="Filtar po vrsti dokumenta (tip_regoc)" data-i18n-title="filtar_po_vrsti_dokumenta_tip_regoc">
+            <option value="" data-i18n="sve_vrste">Sve vrste</option>
+            <option value="pravilo" data-i18n="pravila_za_ti_eno">pravila (za&#353;ti&#263;eno)</option>
+            <option value="lekcija" data-i18n="lekcije_za_ti_eno">lekcije (za&#353;ti&#263;eno)</option>
+            <option value="pogreska" data-i18n="pogre_ke_za_ti_eno">pogre&#353;ke (za&#353;ti&#263;eno)</option>
+            <option value="istrazivanje" data-i18n="istra_ivanja">istra&#382;ivanja</option>
+            <option value="spec" data-i18n="specifikacije">specifikacije</option>
+            <option value="referenca" data-i18n="reference">reference</option>
+            <option value="sjednica" data-i18n="sjednice">sjednice</option>
+            <option value="izlaz-agenta" data-i18n="izlazi_agenata">izlazi agenata</option>
+            <option value="ocjena" data-i18n="ocjene">ocjene</option>
+            <option value="ostalo" data-i18n="ostalo">ostalo</option>
           </select>
-          <span id="rag-total-count" style="color: var(--text-secondary); font-size: 0.875rem;">Loading...</span>
+          <span id="rag-total-count" style="color: var(--text-secondary); font-size: 0.875rem;" data-i18n="loading">Loading...</span>
         </div>
       </div>
 
       <div class="rag-list" id="rag-list">
-        <div class="empty">Loading RAG entries...</div>
+        <div class="empty" data-i18n="loading_rag_entries">Loading RAG entries...</div>
       </div>
 
-      <button class="load-more-btn" id="rag-load-more" style="display: none;">Load More</button>
+      <button class="load-more-btn" id="rag-load-more" style="display: none;" data-i18n="load_more">Load More</button>
     </div>
 
     <!-- KONZOLA TAB -->
     <div id="tab-konzola" class="tab-content">
       <div class="konzola-status-bar" id="konzola-status-bar">
         <div class="konzola-status-item">
-          <span class="konzola-status-label">Daemon:</span>
+          <span class="konzola-status-label" data-i18n="daemon">Daemon:</span>
           <span id="konzola-daemon-status" class="konzola-status-value">--</span>
         </div>
         <div class="konzola-status-item">
-          <span class="konzola-status-label">Uptime:</span>
+          <span class="konzola-status-label" data-i18n="uptime">Uptime:</span>
           <span id="konzola-uptime" class="konzola-status-value">--</span>
         </div>
         <div class="konzola-status-item">
-          <span class="konzola-status-label">Task:</span>
+          <span class="konzola-status-label" data-i18n="task">Task:</span>
           <span id="konzola-current-task" class="konzola-status-value" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">--</span>
         </div>
         <div class="konzola-status-item">
-          <span class="konzola-status-label">Pending:</span>
+          <span class="konzola-status-label" data-i18n="pending_2">Pending:</span>
           <span id="konzola-pending" class="konzola-status-value">--</span>
         </div>
         <div class="konzola-status-item">
-          <span class="konzola-status-label">Processed:</span>
+          <span class="konzola-status-label" data-i18n="processed">Processed:</span>
           <span id="konzola-processed" class="konzola-status-value">--</span>
         </div>
         <div class="konzola-status-item">
-          <span class="konzola-status-label">Context:</span>
+          <span class="konzola-status-label" data-i18n="context">Context:</span>
           <span id="konzola-context" class="konzola-status-value">--</span>
         </div>
         <div class="konzola-status-item">
-          <span class="konzola-status-label">Services:</span>
+          <span class="konzola-status-label" data-i18n="services">Services:</span>
           <span id="konzola-services" class="konzola-status-value">--</span>
         </div>
-        <div class="konzola-status-item" title="Potrošnja trenutne Claude sesije (5h prozor) / tjedna (7d)">
-          <span class="konzola-status-label">Sesija:</span>
+        <div class="konzola-status-item" title="Potrošnja trenutne Claude sesije (5h prozor) / tjedna (7d)" data-i18n-title="potrosnja_trenutne_claude_sesije_5h_prozor_t">
+          <span class="konzola-status-label" data-i18n="sesija">Sesija:</span>
           <span id="konzola-session" class="konzola-status-value">--</span>
         </div>
         <div class="konzola-status-item konzola-mode-toggle">
-          <button id="konzola-mode-btn" class="konzola-mode-btn plan-mode">PLAN</button>
-          <button id="persistent-btn" class="konzola-mode-btn" style="border-color:#6b7280;color:#6b7280;margin-left:4px" title="Persistent agents config">AGENTS</button>
+          <button id="konzola-mode-btn" class="konzola-mode-btn plan-mode" data-i18n="plan">PLAN</button>
+          <button id="persistent-btn" class="konzola-mode-btn" style="border-color:#6b7280;color:#6b7280;margin-left:4px" title="Persistent agents config" data-i18n-title="persistent_agents_config" data-i18n="agents">AGENTS</button>
         </div>
         <!-- Persistent agents panel (hidden by default) -->
         <div id="persistent-panel" style="display:none;background:#0d1117;border:1px solid #1e293b;border-radius:0.5rem;padding:0.75rem;margin:0.5rem 0;font-family:monospace;font-size:0.8rem">
-          <div style="color:#93c5fd;margin-bottom:0.5rem;font-weight:700">PERSISTENT AGENTS</div>
+          <div style="color:#93c5fd;margin-bottom:0.5rem;font-weight:700" data-i18n="persistent_agents">PERSISTENT AGENTS</div>
           <div id="persistent-agent-list" style="color:#c8d6e5"></div>
           <div style="margin-top:0.5rem;display:flex;gap:4px">
-            <button id="persistent-all-btn" class="konzola-mode-btn" style="border-color:#22c55e;color:#22c55e;font-size:0.7rem">ALL ON</button>
-            <button id="persistent-off-btn" class="konzola-mode-btn" style="border-color:#ef4444;color:#ef4444;font-size:0.7rem">ALL OFF</button>
+            <button id="persistent-all-btn" class="konzola-mode-btn" style="border-color:#22c55e;color:#22c55e;font-size:0.7rem" data-i18n="all_on">ALL ON</button>
+            <button id="persistent-off-btn" class="konzola-mode-btn" style="border-color:#ef4444;color:#ef4444;font-size:0.7rem" data-i18n="all_off">ALL OFF</button>
           </div>
         </div>
       </div>
       <div class="konzola-output-wrapper">
         <div class="konzola-output" id="konzola-output">
-          <div class="konzola-welcome">Konzola ready. Type 'help' for commands.</div>
+          <div class="konzola-welcome" data-i18n="konzola_ready_type_help_for_commands">Konzola ready. Type 'help' for commands.</div>
         </div>
       </div>
       <div class="konzola-input-wrapper">
         <span class="konzola-prompt" id="konzola-prompt">regoc $</span>
-        <input type="text" id="konzola-input" class="konzola-input" placeholder="Type a command..."
+        <input type="text" id="konzola-input" class="konzola-input" placeholder="Type a command..." data-i18n-placeholder="type_a_command"
                name="regoc-konzola" autocomplete="off" spellcheck="false"
                data-form-type="other" data-lpignore="true" data-1p-ignore data-bwignore>
       </div>
@@ -2066,68 +2192,68 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
          transkriptima. Uz svaku agregaciju stoji IZ KOLIKO je izvođenja izračunata. -->
     <div id="tab-potrosnja" class="tab-content">
       <div class="status-header-bar">
-        <h2 style="margin:0;font-size:1.1rem;">Potro&#353;nja &mdash; tjedni pregled</h2>
+        <h2 style="margin:0;font-size:1.1rem;" data-i18n="potro_nja_tjedni_pregled">Potro&#353;nja &mdash; tjedni pregled</h2>
         <div style="display:flex;align-items:center;gap:0.75rem;">
           <select id="potrosnja-dana" class="filter-select">
-            <option value="3650" selected>svo vrijeme</option>
-            <option value="7">zadnjih 7 dana</option>
-            <option value="14">zadnjih 14 dana</option>
-            <option value="30">zadnjih 30 dana</option>
-            <option value="90">zadnjih 90 dana</option>
+            <option value="3650" selected data-i18n="svo_vrijeme">svo vrijeme</option>
+            <option value="7" data-i18n="zadnjih_7_dana">zadnjih 7 dana</option>
+            <option value="14" data-i18n="zadnjih_14_dana">zadnjih 14 dana</option>
+            <option value="30" data-i18n="zadnjih_30_dana">zadnjih 30 dana</option>
+            <option value="90" data-i18n="zadnjih_90_dana">zadnjih 90 dana</option>
           </select>
-          <span id="potrosnja-izvor" style="color:var(--text-secondary);font-size:0.72rem;">&mdash;</span>
+          <span id="potrosnja-izvor" style="color:var(--text-secondary);font-size:0.72rem;" data-i18n="x">&mdash;</span>
           <button id="potrosnja-refresh-btn" class="konzola-mode-btn plan-mode"
-                  style="border-color:var(--accent-blue);color:var(--accent-blue);">Osvje&#382;i</button>
+                  style="border-color:var(--accent-blue);color:var(--accent-blue);" data-i18n="osvje_i">Osvje&#382;i</button>
         </div>
       </div>
-      <div id="potrosnja-box" class="tel-box tel-muted">&hellip;</div>
+      <div id="potrosnja-box" class="tel-box tel-muted" data-i18n="x_2">&hellip;</div>
 
       <!-- TASK-3691: vrijednost korisničkih upita po cjeniku S1-S6 (Goran, 04.09.2026.).
            Ovo NIJE trošak modela nego procjena vrijednosti isporučenog rada; dvije brojke
            stoje jedna uz drugu i namjerno se ne zbrajaju. -->
       <div class="projects-header" style="margin-top:1.25rem;">
-        <h2 style="margin:0;font-size:1.05rem;">Vrijednost korisni&#269;kih upita &mdash; cjenik S1&ndash;S6</h2>
+        <h2 style="margin:0;font-size:1.05rem;" data-i18n="vrijednost_korisni_kih_upita_cjenik_s1_s6">Vrijednost korisni&#269;kih upita &mdash; cjenik S1&ndash;S6</h2>
         <button id="vrijednost-refresh-btn" class="konzola-mode-btn plan-mode"
-                style="border-color:var(--accent-blue);color:var(--accent-blue);margin-left:auto;">Osvje&#382;i</button>
-        <span id="vrijednost-izvor" style="color:var(--text-secondary);font-size:0.72rem;margin-left:0.5rem;">&mdash;</span>
+                style="border-color:var(--accent-blue);color:var(--accent-blue);margin-left:auto;" data-i18n="osvje_i">Osvje&#382;i</button>
+        <span id="vrijednost-izvor" style="color:var(--text-secondary);font-size:0.72rem;margin-left:0.5rem;" data-i18n="x">&mdash;</span>
       </div>
-      <div id="vrijednost-box" class="tel-box tel-muted">&hellip;</div>
+      <div id="vrijednost-box" class="tel-box tel-muted" data-i18n="x_2">&hellip;</div>
     </div>
 
     <!-- STATUS TAB -->
     <div id="tab-status" class="tab-content">
       <div class="status-header-bar">
-        <h2 style="margin:0;font-size:1.1rem;">System Status</h2>
+        <h2 style="margin:0;font-size:1.1rem;" data-i18n="system_status">System Status</h2>
         <div style="display:flex;align-items:center;gap:0.75rem;">
           <span id="status-last-updated" style="color:var(--text-secondary);font-size:0.75rem;">--</span>
-          <button id="status-refresh-btn" class="konzola-mode-btn plan-mode" style="border-color:var(--accent-blue);color:var(--accent-blue);">Refresh</button>
+          <button id="status-refresh-btn" class="konzola-mode-btn plan-mode" style="border-color:var(--accent-blue);color:var(--accent-blue);" data-i18n="refresh">Refresh</button>
         </div>
       </div>
 
       <div class="status-section" id="status-services-section">
-        <div class="status-section-title">Service Health</div>
+        <div class="status-section-title" data-i18n="service_health">Service Health</div>
         <div class="service-grid" id="status-service-grid">
-          <div class="empty">Loading...</div>
+          <div class="empty" data-i18n="loading">Loading...</div>
         </div>
       </div>
 
       <div class="status-section" id="status-overview-section">
-        <div class="status-section-title">System Overview</div>
+        <div class="status-section-title" data-i18n="system_overview">System Overview</div>
         <div class="stat-grid" id="status-overview-grid"></div>
       </div>
 
       <div class="status-section" id="status-tokens-section">
-        <div class="status-section-title">Token Usage</div>
+        <div class="status-section-title" data-i18n="token_usage">Token Usage</div>
         <div id="status-token-content"></div>
       </div>
 
       <div class="status-section" id="status-projects-section">
-        <div class="status-section-title">Projects &amp; Tasks</div>
+        <div class="status-section-title" data-i18n="projects_tasks">Projects &amp; Tasks</div>
         <div id="status-projects-content"></div>
       </div>
 
       <div class="status-section" id="status-queue-section">
-        <div class="status-section-title">Scheduler &amp; Queue</div>
+        <div class="status-section-title" data-i18n="scheduler_queue">Scheduler &amp; Queue</div>
         <div id="status-queue-content"></div>
       </div>
     </div>
@@ -2135,103 +2261,107 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     <!-- INFO TAB -->
     <div id="tab-info" class="tab-content">
       <div class="status-header-bar">
-        <h2 style="margin:0;font-size:1.1rem;">REGO&#268; Config</h2>
-        <button id="info-refresh-btn" class="konzola-mode-btn plan-mode" style="border-color:var(--accent-blue);color:var(--accent-blue);">Refresh</button>
+        <h2 style="margin:0;font-size:1.1rem;" data-i18n="rego_config">REGO&#268; Config</h2>
+        <button id="info-refresh-btn" class="konzola-mode-btn plan-mode" style="border-color:var(--accent-blue);color:var(--accent-blue);" data-i18n="refresh">Refresh</button>
       </div>
       <div class="info-grid" id="info-grid">
         <div class="info-card" id="info-system-card">
           <div class="info-card-title"><span class="icon">&#9646;</span> System</div>
-          <div id="info-system-content"><div class="empty">Loading...</div></div>
+          <div id="info-system-content"><div class="empty" data-i18n="loading">Loading...</div></div>
         </div>
         <div class="info-card" id="info-providers-card">
           <div class="info-card-title"><span class="icon">&#9881;</span> AI Providers</div>
-          <div id="info-providers-content"><div class="empty">Loading...</div></div>
+          <div id="info-providers-content"><div class="empty" data-i18n="loading">Loading...</div></div>
         </div>
         <div class="info-card info-full" id="info-agents-card">
           <div class="info-card-title"><span class="icon">&#9733;</span> Agents &amp; Model Requirements</div>
-          <div id="info-agents-content"><div class="empty">Loading...</div></div>
+          <div id="info-agents-content"><div class="empty" data-i18n="loading">Loading...</div></div>
         </div>
         <div class="info-card info-full" id="info-login-card">
           <div class="info-card-title"><span class="icon">&#128273;</span> Prijave (login preko linka)</div>
-          <div id="info-login-content"><div class="empty">Loading...</div></div>
+          <div id="info-login-content"><div class="empty" data-i18n="loading">Loading...</div></div>
         </div>
         <div class="info-card info-full" id="info-modelsetup-card">
           <div class="info-card-title"><span class="icon">&#9881;</span> Podržani modeli &amp; postavke providera</div>
-          <div id="info-modelsetup-content"><div class="empty">Loading...</div></div>
+          <div id="info-modelsetup-content"><div class="empty" data-i18n="loading">Loading...</div></div>
+        </div>
+        <div class="info-card info-full" id="info-dezurni-card">
+          <div class="info-card-title"><span class="icon">&#9873;</span> De&#382;urni &mdash; rezervni model kad primarni padne</div>
+          <div id="info-dezurni-content"><div class="empty" data-i18n="loading">Loading...</div></div>
         </div>
         <div class="info-card info-full" id="info-modules-card">
           <div class="info-card-title"><span class="icon">&#9670;</span> Modules</div>
-          <div id="info-modules-content"><div class="empty">Loading...</div></div>
+          <div id="info-modules-content"><div class="empty" data-i18n="loading">Loading...</div></div>
         </div>
         <div class="info-card" id="info-infra-card">
           <div class="info-card-title"><span class="icon">&#9729;</span> Infrastructure</div>
-          <div id="info-infra-content"><div class="empty">Loading...</div></div>
+          <div id="info-infra-content"><div class="empty" data-i18n="loading">Loading...</div></div>
         </div>
         <div class="info-card" id="info-databases-card">
           <div class="info-card-title"><span class="icon">&#9744;</span> Databases</div>
-          <div id="info-databases-content"><div class="empty">Loading...</div></div>
+          <div id="info-databases-content"><div class="empty" data-i18n="loading">Loading...</div></div>
         </div>
         <div class="info-card" id="info-metrics-card">
           <div class="info-card-title"><span class="icon">&#9776;</span> Metrics Summary</div>
-          <div id="info-metrics-content"><div class="empty">Loading...</div></div>
+          <div id="info-metrics-content"><div class="empty" data-i18n="loading">Loading...</div></div>
         </div>
         <div class="info-card info-full" id="info-components-card">
           <div class="info-card-title"><span class="icon">&#9881;</span> Core Components (v4.4.0)</div>
-          <div id="info-components-content"><div class="empty">Loading...</div></div>
+          <div id="info-components-content"><div class="empty" data-i18n="loading">Loading...</div></div>
         </div>
         <div class="info-card info-full" id="info-skills-card">
           <div class="info-card-title"><span class="icon">&#9733;</span> Skills &amp; Workflows</div>
-          <div id="info-skills-content"><div class="empty">Loading...</div></div>
+          <div id="info-skills-content"><div class="empty" data-i18n="loading">Loading...</div></div>
         </div>
         <div class="info-card info-full" id="info-rules-card">
           <div class="info-card-title"><span class="icon">&#9888;</span> Critical Rules (27)</div>
-          <div id="info-rules-content"><div class="empty">Loading...</div></div>
+          <div id="info-rules-content"><div class="empty" data-i18n="loading">Loading...</div></div>
         </div>
       </div>
     </div>
 
     <!-- Add Task Button -->
-    <button class="add-task-btn" id="add-task-btn" title="Create New Task">+</button>
+    <button class="add-task-btn" id="add-task-btn" title="Create New Task" data-i18n-title="create_new_task">+</button>
 
     <!-- Task Detail Panel -->
     <div id="detail-panel" class="detail-panel">
       <div class="detail-panel-header">
         <span id="detail-task-id" style="font-family: monospace; color: var(--text-secondary);"></span>
-        <button class="close-btn" id="close-detail-btn">&times;</button>
+        <button class="close-btn" id="close-detail-btn" data-i18n="x_3">&times;</button>
       </div>
 
       <div class="detail-panel-body">
         <div class="detail-field">
-          <label>Title</label>
-          <input type="text" id="detail-title" placeholder="Task title">
+          <label data-i18n="title">Title</label>
+          <input type="text" id="detail-title" placeholder="Task title" data-i18n-placeholder="task_title">
         </div>
 
         <div class="detail-field">
-          <label>Status</label>
+          <label data-i18n="status">Status</label>
           <select id="detail-status">
-            <option value="pending">Pending</option>
-            <option value="in_progress">In Progress</option>
-            <option value="blocked">Blocked</option>
-            <option value="completed">Completed</option>
-            <option value="cancelled">Cancelled</option>
+            <option value="pending" data-i18n="pending">Pending</option>
+            <option value="in_progress" data-i18n="in_progress">In Progress</option>
+            <option value="blocked" data-i18n="blocked">Blocked</option>
+            <option value="completed" data-i18n="completed">Completed</option>
+            <option value="cancelled" data-i18n="cancelled">Cancelled</option>
           </select>
         </div>
 
         <div class="detail-field">
-          <label>Priority</label>
+          <label data-i18n="priority">Priority</label>
           <select id="detail-priority">
-            <option value="1">P1 - Critical</option>
-            <option value="2">P2 - High</option>
-            <option value="3">P3 - Normal</option>
-            <option value="4">P4 - Low</option>
-            <option value="5">P5 - Backlog</option>
+            <option value="1" data-i18n="p1_critical">P1 - Critical</option>
+            <option value="2" data-i18n="p2_high">P2 - High</option>
+            <option value="3" data-i18n="p3_normal">P3 - Normal</option>
+            <option value="4" data-i18n="p4_low">P4 - Low</option>
+            <option value="5" data-i18n="p5_backlog">P5 - Backlog</option>
           </select>
         </div>
 
         <div class="detail-field">
-          <label>Assignee</label>
+          <label data-i18n="assignee">Assignee</label>
           <select id="detail-assignee">
-            <option value="">Unassigned</option>
+            <option value="" data-i18n="unassigned">Unassigned</option>
             <option value="regoc">regoc</option>
             <option value="klaudio">klaudio</option>
             <option value="stribor">stribor</option>
@@ -2249,48 +2379,48 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         <!-- TASK-3512: projekt zadatka. Prije ovoga se projekt na ploči nije ni vidio ni
              mijenjao — jedini put bio je ručni PUT /api/tasks/<ID> s poljem projectId. -->
         <div class="detail-field">
-          <label>Projekt</label>
+          <label data-i18n="projekt">Projekt</label>
           <select id="detail-project">
-            <option value="">— bez projekta —</option>
+            <option value="" data-i18n="bez_projekta">— bez projekta —</option>
           </select>
           <div id="detail-project-current" style="margin-top:0.25rem;font-size:0.8rem;color:var(--text-secondary);"></div>
         </div>
 
         <div class="detail-field">
-          <label>Description</label>
-          <textarea id="detail-description" placeholder="Task description (markdown supported)"></textarea>
+          <label data-i18n="description">Description</label>
+          <textarea id="detail-description" placeholder="Task description (markdown supported)" data-i18n-placeholder="task_description_markdown_supported"></textarea>
         </div>
 
         <div class="detail-field">
-          <label>Blocked By</label>
+          <label data-i18n="blocked_by">Blocked By</label>
           <select id="detail-blocked-by-select">
-            <option value="">+ Add blocking task...</option>
+            <option value="" data-i18n="add_blocking_task">+ Add blocking task...</option>
           </select>
           <div id="detail-blocked-by-list" class="blocked-by-list"></div>
         </div>
 
         <div class="detail-field">
-          <label>Blocked Reason</label>
-          <input type="text" id="detail-blocked-reason" placeholder="Why is this blocked?">
+          <label data-i18n="blocked_reason">Blocked Reason</label>
+          <input type="text" id="detail-blocked-reason" placeholder="Why is this blocked?" data-i18n-placeholder="why_is_this_blocked">
         </div>
 
         <div class="detail-field">
-          <label>Tags</label>
+          <label data-i18n="tags">Tags</label>
           <div id="detail-tags" class="tags-container"></div>
-          <input type="text" id="detail-tag-input" placeholder="Add tag (press Enter)" style="margin-top: 0.25rem;">
+          <input type="text" id="detail-tag-input" placeholder="Add tag (press Enter)" data-i18n-placeholder="add_tag_press_enter" style="margin-top: 0.25rem;">
         </div>
 
         <div class="detail-field">
-          <label>Progress Notes</label>
+          <label data-i18n="progress_notes">Progress Notes</label>
           <div id="detail-progress-notes" class="progress-notes"></div>
           <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
-            <input type="text" id="detail-new-note" placeholder="Add progress note..." style="flex: 1;">
-            <button class="btn btn-secondary" id="add-note-btn">Add</button>
+            <input type="text" id="detail-new-note" placeholder="Add progress note..." data-i18n-placeholder="add_progress_note" style="flex: 1;">
+            <button class="btn btn-secondary" id="add-note-btn" data-i18n="add">Add</button>
           </div>
         </div>
 
         <div class="detail-field" id="detail-result-field" style="display:none;">
-          <label>Rezultat / Odgovor agenta</label>
+          <label data-i18n="rezultat_odgovor_agenta">Rezultat / Odgovor agenta</label>
           <div id="detail-result-summary" class="progress-notes" style="white-space:pre-wrap;word-break:break-word;"></div>
         </div>
 
@@ -2299,9 +2429,9 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
              čeka python. -->
         <div class="detail-field" id="detail-telemetry-field">
           <label style="display:flex;align-items:center;gap:0.5rem;">
-            <span>Potrošnja zadatka</span>
+            <span data-i18n="potrosnja_zadatka">Potrošnja zadatka</span>
             <button class="btn btn-secondary" id="telemetry-refresh-btn"
-                    style="padding:0.1rem 0.5rem;font-size:0.7rem;" title="Ponovno izračunaj">Osvježi</button>
+                    style="padding:0.1rem 0.5rem;font-size:0.7rem;" title="Ponovno izračunaj" data-i18n-title="ponovno_izracunaj" data-i18n="osvjezi">Osvježi</button>
           </label>
           <div id="detail-telemetry" class="tel-box tel-muted">…</div>
         </div>
@@ -2310,37 +2440,37 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       </div>
 
       <div class="detail-panel-footer">
-        <button class="btn btn-secondary" id="delete-task-btn" style="margin-right: auto; background: var(--accent-red);">Delete</button>
-        <button class="btn btn-secondary" id="cancel-edit-btn">Cancel</button>
-        <button class="btn btn-primary" id="save-task-btn">Save Changes</button>
+        <button class="btn btn-secondary" id="delete-task-btn" style="margin-right: auto; background: var(--accent-red);" data-i18n="delete">Delete</button>
+        <button class="btn btn-secondary" id="cancel-edit-btn" data-i18n="cancel">Cancel</button>
+        <button class="btn btn-primary" id="save-task-btn" data-i18n="save_changes">Save Changes</button>
       </div>
     </div>
 
     <!-- Modal for Creating Task -->
     <div id="modal-overlay" class="modal-overlay" style="display: none;">
       <div class="modal">
-        <h3>Create New Task</h3>
+        <h3 data-i18n="create_new_task">Create New Task</h3>
         <form id="task-form">
           <div class="form-group">
-            <label for="task-title">Title *</label>
-            <input type="text" id="task-title" required placeholder="Task title">
+            <label for="task-title" data-i18n="title_2">Title *</label>
+            <input type="text" id="task-title" required placeholder="Task title" data-i18n-placeholder="task_title">
           </div>
           <div class="form-group">
-            <label for="task-description">Description</label>
-            <textarea id="task-description" placeholder="Task description (optional)"></textarea>
+            <label for="task-description" data-i18n="description">Description</label>
+            <textarea id="task-description" placeholder="Task description (optional)" data-i18n-placeholder="task_description_optional"></textarea>
           </div>
           <div class="form-group">
-            <label for="task-priority">Priority</label>
+            <label for="task-priority" data-i18n="priority">Priority</label>
             <select id="task-priority">
-              <option value="1">P1 - High (Red)</option>
-              <option value="2" selected>P2 - Medium (Yellow)</option>
-              <option value="3">P3 - Low (Blue)</option>
+              <option value="1" data-i18n="p1_high_red">P1 - High (Red)</option>
+              <option value="2" selected data-i18n="p2_medium_yellow">P2 - Medium (Yellow)</option>
+              <option value="3" data-i18n="p3_low_blue">P3 - Low (Blue)</option>
             </select>
           </div>
           <div class="form-group">
-            <label for="task-assignee">Assignee</label>
+            <label for="task-assignee" data-i18n="assignee">Assignee</label>
             <select id="task-assignee">
-              <option value="">Unassigned</option>
+              <option value="" data-i18n="unassigned">Unassigned</option>
               <option value="regoc">regoc</option>
               <option value="klaudio">klaudio</option>
               <option value="stribor">stribor</option>
@@ -2355,14 +2485,14 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
             </select>
           </div>
           <div class="form-group">
-            <label for="new-task-project">Project (optional)</label>
+            <label for="new-task-project" data-i18n="project_optional">Project (optional)</label>
             <select id="new-task-project" class="form-select">
-              <option value="">No Project</option>
+              <option value="" data-i18n="no_project">No Project</option>
             </select>
           </div>
           <div class="modal-actions">
-            <button type="button" class="btn btn-secondary" id="cancel-btn">Cancel</button>
-            <button type="submit" class="btn btn-primary">Create Task</button>
+            <button type="button" class="btn btn-secondary" id="cancel-btn" data-i18n="cancel">Cancel</button>
+            <button type="submit" class="btn btn-primary" data-i18n="create_task">Create Task</button>
           </div>
         </form>
       </div>
@@ -2371,40 +2501,40 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     <!-- Modal for Creating Project -->
     <div id="project-modal-overlay" class="modal-overlay" style="display: none;">
       <div class="modal">
-        <h3 id="project-modal-title">Create New Project</h3>
+        <h3 id="project-modal-title" data-i18n="create_new_project">Create New Project</h3>
         <form id="project-form">
           <input type="hidden" id="project-edit-id">
           <div class="form-group">
-            <label for="project-name">Name *</label>
-            <input type="text" id="project-name" required placeholder="Project name">
+            <label for="project-name" data-i18n="name">Name *</label>
+            <input type="text" id="project-name" required placeholder="Project name" data-i18n-placeholder="project_name">
           </div>
           <div class="form-group">
-            <label for="project-description">Description</label>
-            <textarea id="project-description" placeholder="Project description (optional)"></textarea>
+            <label for="project-description" data-i18n="description">Description</label>
+            <textarea id="project-description" placeholder="Project description (optional)" data-i18n-placeholder="project_description_optional"></textarea>
           </div>
           <div class="form-group">
-            <label for="project-status">Status</label>
+            <label for="project-status" data-i18n="status">Status</label>
             <select id="project-status">
-              <option value="active">Active</option>
-              <option value="on_hold">On Hold</option>
-              <option value="completed">Completed</option>
-              <option value="archived">Archived</option>
+              <option value="active" data-i18n="active">Active</option>
+              <option value="on_hold" data-i18n="on_hold">On Hold</option>
+              <option value="completed" data-i18n="completed">Completed</option>
+              <option value="archived" data-i18n="archived">Archived</option>
             </select>
           </div>
           <div class="form-group">
-            <label for="project-priority">Priority</label>
+            <label for="project-priority" data-i18n="priority">Priority</label>
             <select id="project-priority">
-              <option value="1">P1 - Critical</option>
-              <option value="2">P2 - High</option>
-              <option value="3" selected>P3 - Normal</option>
-              <option value="4">P4 - Low</option>
-              <option value="5">P5 - Backlog</option>
+              <option value="1" data-i18n="p1_critical">P1 - Critical</option>
+              <option value="2" data-i18n="p2_high">P2 - High</option>
+              <option value="3" selected data-i18n="p3_normal">P3 - Normal</option>
+              <option value="4" data-i18n="p4_low">P4 - Low</option>
+              <option value="5" data-i18n="p5_backlog">P5 - Backlog</option>
             </select>
           </div>
           <div class="form-group">
-            <label for="project-lead">Lead Agent</label>
+            <label for="project-lead" data-i18n="lead_agent">Lead Agent</label>
             <select id="project-lead">
-              <option value="">No Lead</option>
+              <option value="" data-i18n="no_lead">No Lead</option>
               <option value="regoc">regoc</option>
               <option value="klaudio">klaudio</option>
               <option value="stribor">stribor</option>
@@ -2419,8 +2549,8 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
             </select>
           </div>
           <div class="modal-actions">
-            <button type="button" class="btn btn-secondary" id="project-cancel-btn">Cancel</button>
-            <button type="submit" class="btn btn-primary" id="project-submit-btn">Create Project</button>
+            <button type="button" class="btn btn-secondary" id="project-cancel-btn" data-i18n="cancel">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="project-submit-btn" data-i18n="create_project">Create Project</button>
           </div>
         </form>
       </div>
@@ -2430,40 +2560,40 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     <div id="project-detail-panel" class="project-detail-panel">
       <div class="detail-panel-header">
         <span id="project-detail-id" style="font-family: monospace; color: var(--text-secondary);"></span>
-        <button class="close-btn" id="close-project-detail-btn">&times;</button>
+        <button class="close-btn" id="close-project-detail-btn" data-i18n="x_3">&times;</button>
       </div>
 
       <div class="detail-panel-body">
         <div class="detail-field">
-          <label>Name</label>
-          <input type="text" id="project-detail-name" placeholder="Project name">
+          <label data-i18n="name_2">Name</label>
+          <input type="text" id="project-detail-name" placeholder="Project name" data-i18n-placeholder="project_name">
         </div>
 
         <div class="detail-field">
-          <label>Status</label>
+          <label data-i18n="status">Status</label>
           <select id="project-detail-status">
-            <option value="active">Active</option>
-            <option value="on_hold">On Hold</option>
-            <option value="completed">Completed</option>
-            <option value="archived">Archived</option>
+            <option value="active" data-i18n="active">Active</option>
+            <option value="on_hold" data-i18n="on_hold">On Hold</option>
+            <option value="completed" data-i18n="completed">Completed</option>
+            <option value="archived" data-i18n="archived">Archived</option>
           </select>
         </div>
 
         <div class="detail-field">
-          <label>Priority</label>
+          <label data-i18n="priority">Priority</label>
           <select id="project-detail-priority">
-            <option value="1">P1 - Critical</option>
-            <option value="2">P2 - High</option>
-            <option value="3">P3 - Normal</option>
-            <option value="4">P4 - Low</option>
-            <option value="5">P5 - Backlog</option>
+            <option value="1" data-i18n="p1_critical">P1 - Critical</option>
+            <option value="2" data-i18n="p2_high">P2 - High</option>
+            <option value="3" data-i18n="p3_normal">P3 - Normal</option>
+            <option value="4" data-i18n="p4_low">P4 - Low</option>
+            <option value="5" data-i18n="p5_backlog">P5 - Backlog</option>
           </select>
         </div>
 
         <div class="detail-field">
-          <label>Lead Agent</label>
+          <label data-i18n="lead_agent">Lead Agent</label>
           <select id="project-detail-lead">
-            <option value="">No Lead</option>
+            <option value="" data-i18n="no_lead">No Lead</option>
             <option value="regoc">regoc</option>
             <option value="klaudio">klaudio</option>
             <option value="stribor">stribor</option>
@@ -2479,8 +2609,8 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         </div>
 
         <div class="detail-field">
-          <label>Description</label>
-          <textarea id="project-detail-description" placeholder="Project description"></textarea>
+          <label data-i18n="description">Description</label>
+          <textarea id="project-detail-description" placeholder="Project description" data-i18n-placeholder="project_description"></textarea>
         </div>
 
         <!-- POTROSNJA PROJEKTA — TASK-3572 (T8), mjera 6 suzena na ovaj projekt.
@@ -2489,47 +2619,47 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
              „Potrosnja" — drugog izracuna nema, pa se brojke ne mogu razici. -->
         <div class="project-section">
           <h4 style="display:flex;align-items:center;gap:0.5rem;">
-            <span>Potro&#353;nja projekta</span>
+            <span data-i18n="potro_nja_projekta">Potro&#353;nja projekta</span>
             <select id="projekt-potrosnja-dana" class="filter-select"
                     style="margin-left:auto;font-size:0.72rem;padding:0.1rem 0.3rem;">
-              <option value="7">zadnjih 7 dana</option>
-              <option value="30">zadnjih 30 dana</option>
-              <option value="3650" selected>svo vrijeme</option>
+              <option value="7" data-i18n="zadnjih_7_dana">zadnjih 7 dana</option>
+              <option value="30" data-i18n="zadnjih_30_dana">zadnjih 30 dana</option>
+              <option value="3650" selected data-i18n="svo_vrijeme">svo vrijeme</option>
             </select>
-            <span id="projekt-potrosnja-izvor" style="color:var(--text-secondary);font-size:0.68rem;font-weight:400;">&mdash;</span>
+            <span id="projekt-potrosnja-izvor" style="color:var(--text-secondary);font-size:0.68rem;font-weight:400;" data-i18n="x">&mdash;</span>
             <button type="button" class="btn btn-secondary" id="projekt-potrosnja-refresh-btn"
-                    style="font-size:0.7rem;padding:0.15rem 0.5rem;">Osvje&#382;i</button>
+                    style="font-size:0.7rem;padding:0.15rem 0.5rem;" data-i18n="osvje_i">Osvje&#382;i</button>
           </h4>
-          <div id="projekt-potrosnja-box" class="tel-box tel-muted">&hellip;</div>
+          <div id="projekt-potrosnja-box" class="tel-box tel-muted" data-i18n="x_2">&hellip;</div>
         </div>
 
         <!-- SPECIFIKACIJA + dispatch "Nadogradi po specifikacijama" -->
         <div class="project-section">
-          <h4>Specifikacija</h4>
+          <h4 data-i18n="specifikacija">Specifikacija</h4>
           <div class="detail-field">
-            <textarea id="project-detail-spec" placeholder="Što treba isporučiti, zašto, koji fajlovi, kriterij za done..." style="min-height: 180px; font-family: monospace; font-size: 0.85rem;"></textarea>
+            <textarea id="project-detail-spec" placeholder="Što treba isporučiti, zašto, koji fajlovi, kriterij za done..." data-i18n-placeholder="sto_treba_isporuciti_zasto_koji_fajlovi_krit" style="min-height: 180px; font-family: monospace; font-size: 0.85rem;"></textarea>
           </div>
           <div style="display: flex; gap: 0.5rem; align-items: center; margin-top: 0.5rem;">
             <select id="spec-upgrade-agent" style="flex: 1;">
-              <option value="">Odaberi agenta...</option>
+              <option value="" data-i18n="odaberi_agenta">Odaberi agenta...</option>
             </select>
-            <button class="btn btn-primary" id="spec-upgrade-btn" disabled title="Odaberi agenta i upiši specifikaciju">⟳ Nadogradi po specifikacijama</button>
+            <button class="btn btn-primary" id="spec-upgrade-btn" disabled title="Odaberi agenta i upiši specifikaciju" data-i18n-title="odaberi_agenta_i_upisi_specifikaciju" data-i18n="nadogradi_po_specifikacijama">⟳ Nadogradi po specifikacijama</button>
           </div>
           <div style="margin-top: 0.5rem;">
-            <a href="#" id="spec-template-toggle" style="font-size: 0.8rem; color: var(--text-secondary);">▸ Template poruke</a>
+            <a href="#" id="spec-template-toggle" style="font-size: 0.8rem; color: var(--text-secondary);" data-i18n="template_poruke">▸ Template poruke</a>
             <div id="spec-template-editor" style="display: none; margin-top: 0.5rem;">
               <textarea id="spec-template-content" style="min-height: 140px; font-family: monospace; font-size: 0.8rem; width: 100%;"></textarea>
-              <div style="font-size: 0.75rem; color: var(--text-secondary); margin: 0.25rem 0;">Placeholderi: <code>$agent</code> <code>$projekt</code> <code>$spec</code></div>
-              <button class="btn btn-secondary" id="spec-template-save-btn" style="font-size: 0.8rem;">Spremi template</button>
+              <div style="font-size: 0.75rem; color: var(--text-secondary); margin: 0.25rem 0;" data-i18n="placeholderi">Placeholderi: <code>$agent</code> <code>$projekt</code> <code>$spec</code></div>
+              <button class="btn btn-secondary" id="spec-template-save-btn" style="font-size: 0.8rem;" data-i18n="spremi_template">Spremi template</button>
             </div>
           </div>
         </div>
 
         <div class="project-section">
-          <h4>Team Agents</h4>
+          <h4 data-i18n="team_agents">Team Agents</h4>
           <div id="project-detail-agents" class="agents-grid"></div>
           <select id="project-add-agent-select" style="margin-top: 0.5rem; width: 100%;">
-            <option value="">+ Add agent to project...</option>
+            <option value="" data-i18n="add_agent_to_project">+ Add agent to project...</option>
             <option value="regoc">regoc</option>
             <option value="klaudio">klaudio</option>
             <option value="stribor">stribor</option>
@@ -2545,9 +2675,9 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         </div>
 
         <div class="project-section">
-          <h4>Linked Tasks</h4>
+          <h4 data-i18n="linked_tasks">Linked Tasks</h4>
           <div id="project-detail-tasks" class="task-list-compact">
-            <div class="empty">No tasks linked</div>
+            <div class="empty" data-i18n="no_tasks_linked">No tasks linked</div>
           </div>
         </div>
 
@@ -2555,9 +2685,9 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       </div>
 
       <div class="detail-panel-footer">
-        <button class="btn btn-secondary" id="delete-project-btn" style="margin-right: auto; background: var(--accent-red);">Delete</button>
-        <button class="btn btn-secondary" id="cancel-project-edit-btn">Cancel</button>
-        <button class="btn btn-primary" id="save-project-btn">Save Changes</button>
+        <button class="btn btn-secondary" id="delete-project-btn" style="margin-right: auto; background: var(--accent-red);" data-i18n="delete">Delete</button>
+        <button class="btn btn-secondary" id="cancel-project-edit-btn" data-i18n="cancel">Cancel</button>
+        <button class="btn btn-primary" id="save-project-btn" data-i18n="save_changes">Save Changes</button>
       </div>
     </div>
 
@@ -2571,14 +2701,14 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
             <span id="rag-modal-type" class="rag-entry-type"></span>
             <span id="rag-modal-date" class="rag-entry-date"></span>
           </div>
-          <button class="close-btn" id="close-rag-modal-btn">&times;</button>
+          <button class="close-btn" id="close-rag-modal-btn" data-i18n="x_3">&times;</button>
         </div>
         <div class="rag-modal-content" id="rag-modal-content">
           Loading...
         </div>
         <div class="rag-modal-footer">
-          <button class="btn btn-danger" id="rag-modal-delete-btn">Delete Entry</button>
-          <button class="btn btn-secondary" id="rag-modal-close-btn">Close</button>
+          <button class="btn btn-danger" id="rag-modal-delete-btn" data-i18n="delete_entry">Delete Entry</button>
+          <button class="btn btn-secondary" id="rag-modal-close-btn" data-i18n="close">Close</button>
         </div>
       </div>
     </div>
@@ -2898,7 +3028,8 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     function updateAgentFilter() {
       const agents = [...new Set(tasks.map(t => t.assignee).filter(Boolean))];
       const container = document.getElementById('agent-filter');
-      container.innerHTML = '<button class="agent-btn active" data-agent="all">All Agents</button>';
+      container.innerHTML = '<button class="agent-btn active" data-agent="all" data-i18n="all_agents">'
+        + (RJECNIK['all_agents'] || 'All Agents') + '</button>';
 
       agents.forEach(agent => {
         const btn = document.createElement('button');
@@ -2940,7 +3071,8 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       // Preserve current selection
       const currentValue = select.value;
 
-      select.innerHTML = '<option value="">All Projects</option>';
+      select.innerHTML = '<option value="" data-i18n="all_projects">'
+        + (RJECNIK['all_projects'] || 'All Projects') + '</option>';
       projectsCache.forEach(project => {
         const option = document.createElement('option');
         option.value = project.id;
@@ -3069,6 +3201,240 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       } catch (err) {
         console.error('[Priority Update] Error:', err);
       }
+    }
+
+
+
+    // ─── Jezik sučelja (Goran, 04.09.2026.) ───────────────────────────────────
+    // Prevodi se SAMO sučelje. Naslovi, opisi i bilješke zadataka su podatci i kroz ovo
+    // nikad ne prolaze — zamjenjuju se iskljucivo elementi koje je posluzitelj oznacio
+    // atributom data-i18n, a njih ima samo u statickom okviru ploce.
+    let RJECNIK = {};
+    let JEZIK = localStorage.getItem('tm_jezik') || null;
+
+    function prevediElement(el) {
+      const k = el.getAttribute('data-i18n');
+      if (k && RJECNIK[k] != null) el.textContent = RJECNIK[k];
+      const kp = el.getAttribute('data-i18n-placeholder');
+      if (kp && RJECNIK[kp] != null) el.setAttribute('placeholder', RJECNIK[kp]);
+      const kt = el.getAttribute('data-i18n-title');
+      if (kt && RJECNIK[kt] != null) el.setAttribute('title', RJECNIK[kt]);
+    }
+
+    function primijeniJezik() {
+      document.querySelectorAll('[data-i18n], [data-i18n-placeholder], [data-i18n-title]')
+        .forEach(prevediElement);
+      document.documentElement.lang = JEZIK || 'hr';
+    }
+
+    async function ucitajJezik(kod) {
+      try {
+        const r = await fetch('/api/jezik/' + kod);
+        if (!r.ok) return false;
+        RJECNIK = await r.json();
+        JEZIK = kod;
+        localStorage.setItem('tm_jezik', kod);
+        primijeniJezik();
+        return true;
+      } catch (e) { console.error('[jezik]', e); return false; }
+    }
+
+    async function postaviIzbornikJezika() {
+      let podatci;
+      try { podatci = await (await fetch('/api/jezici')).json(); }
+      catch { return; }                       // bez popisa ploca radi na zatecenom jeziku
+      const izbor = document.getElementById('izbor-jezika');
+      if (!izbor) return;
+      izbor.innerHTML = podatci.jezici
+        .map(j => '<option value="' + j.kod + '">' + j.naziv + '</option>').join('');
+      // Izbor korisnika ima prednost pred posluziteljevim zadanim; ako je jezik u
+      // meduvremenu uklonjen iz mape locales, pada se na zadani.
+      const kodovi = podatci.jezici.map(j => j.kod);
+      const pocetni = (JEZIK && kodovi.includes(JEZIK)) ? JEZIK : podatci.zadani;
+      izbor.value = pocetni;
+      await ucitajJezik(pocetni);
+      izbor.addEventListener('change', function () { ucitajJezik(this.value); });
+    }
+
+
+    // ─── Odlučitelj: model odlučuje umjesto korisnika ─────────────────────────
+    // Goran, 04.09.2026. Prekidač stoji uz sam popis, a ne u Configu, jer se odluka donosi
+    // ovdje — postavka koja se tiče ovog reda treba biti na dohvat ruke.
+    async function ucitajOdlucitelja() {
+      try {
+        const d = await (await fetch('/api/odlucitelj/config')).json();
+        const red = document.getElementById('odluke-odlucitelj');
+        if (!red) return;
+        red.style.display = odlukeOtvoreno ? 'flex' : 'none';
+        document.getElementById('odluc-ukljucen').checked = !!d.postavke.ukljucen;
+
+        // Davatelji se NE skrivaju kad nemaju ključ — pokazuju se s razlogom zašto ne rade.
+        // Skriveni izbor bi izgledao kao da ih sustav nema, a ima ih; samo nisu spremni.
+        const selP = document.getElementById('odluc-provider');
+        const dav = d.davatelji || {};
+        selP.innerHTML = Object.keys(dav).map(function (ime) {
+          const v = dav[ime];
+          const oznaka = v.spreman ? ime : ime + ' (' + v.zasto + ')';
+          return '<option value="' + ime + '"' + (v.spreman ? '' : ' disabled') + '>'
+                 + oznaka + '</option>';
+        }).join('');
+        selP.value = d.postavke.provider;
+
+        const sel = document.getElementById('odluc-model');
+        sel.innerHTML = (d.modeli || []).map(function (m) {
+          return '<option value="' + m + '">' + m + '</option>';
+        }).join('');
+        // Promjena davatelja obriše model (qwen3:8b ne postoji na Anthropicu). Sučelje tada
+        // uzme prvi iz novog popisa i odmah ga spremi — inače bi ostalo prazno polje i
+        // odlučitelj bi zvao davatelja bez imena modela.
+        if (!d.postavke.model && (d.modeli || []).length) {
+          sel.value = d.modeli[0];
+          spremiOdlucitelja({ model: d.modeli[0] });
+          return;
+        }
+        sel.value = d.postavke.model;
+        const por = document.getElementById('odluc-poruka');
+        if (!d.dostupno) {
+          por.style.color = '#d98c3a';
+          por.textContent = 'Ollama nije dostupna (' + (d.greska || '') + ') — model ne može odlučivati.';
+        } else if (!d.alat) {
+          por.style.color = '#d98c3a';
+          por.textContent = 'Alat odlucitelj.py nije nađen na ovom stroju.';
+        } else {
+          por.style.color = '#9a8c60';
+          const koliko = (d.modeli || []).length;
+          por.textContent = (d.postavke.ukljucen ? 'uključen' : 'isključen — odlučuješ ti')
+            + ' · ' + d.postavke.provider + ' · ' + koliko + ' modela';
+        }
+      } catch (e) { console.error('[odlucitelj]', e); }
+    }
+
+    async function spremiOdlucitelja(promjene) {
+      try {
+        const r = await fetch('/api/odlucitelj/config', {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(promjene),
+        });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.error || ('HTTP ' + r.status));
+        ucitajOdlucitelja();
+      } catch (e) {
+        const por = document.getElementById('odluc-poruka');
+        por.style.color = '#d96a6a'; por.textContent = 'Nije spremljeno: ' + e.message;
+      }
+    }
+
+    async function pokreniOdlucitelja(proba) {
+      const por = document.getElementById('odluc-poruka');
+      const gumbi = [document.getElementById('odluc-proba'), document.getElementById('odluc-izvrsi')];
+      gumbi.forEach(function (g) { g.disabled = true; });
+      por.style.color = '#9a8c60';
+      por.textContent = proba ? 'pitam model…' : 'odlučujem…';
+      try {
+        const r = await fetch('/api/odlucitelj/pokreni', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ proba: proba }),
+        });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.error || ('HTTP ' + r.status));
+        const i = d.ishodi || [];
+        const brojKreni = i.filter(function (x) { return x.rijec === 'kreni'; }).length;
+        const brojCovjek = i.filter(function (x) { return x.rijec === 'covjek'; }).length;
+        por.style.color = '#6fbf6f';
+        por.textContent = (proba ? 'proba: ' : 'odlučeno: ') + brojKreni + ' kreni, '
+          + (i.length - brojKreni - brojCovjek) + ' odgodi, ' + brojCovjek + ' ostaje tebi';
+        if (!proba) { setTimeout(function () { ucitajOdluke(); fetchTasks(); }, 1200); }
+      } catch (e) {
+        por.style.color = '#d96a6a'; por.textContent = 'Nije prošlo: ' + e.message;
+      } finally {
+        gumbi.forEach(function (g) { g.disabled = false; });
+      }
+    }
+
+    // ─── Čeka odluku (Goran, 04.09.2026.) ─────────────────────────────────────
+    // "taj needs-decision je ok, ali onda mi to napravi da je vidljivo i dodaj polje gdje ću
+    // upisati odluku i stisnuti nastavi."
+    // Traka je skrivena kad nema takvih zadataka — inače bi postala šum koji se prestane
+    // gledati, a upravo je nevidljivost bila izvorni kvar.
+    let odlukeOtvoreno = false;
+
+    async function ucitajOdluke() {
+      try {
+        const r = await fetch('/api/odluke');
+        if (!r.ok) return;
+        const d = await r.json();
+        const traka = document.getElementById('odluke-traka');
+        if (!traka) return;
+        if (!d.ukupno) { traka.style.display = 'none'; return; }
+        traka.style.display = 'block';
+        document.getElementById('odluke-naslov').textContent =
+          d.ukupno + (d.ukupno === 1 ? ' zadatak čeka tvoju odluku' : ' zadataka čeka tvoju odluku');
+        const popis = document.getElementById('odluke-popis');
+        popis.style.display = odlukeOtvoreno ? 'flex' : 'none';
+        const redOdl = document.getElementById('odluke-odlucitelj');
+        if (redOdl) redOdl.style.display = odlukeOtvoreno ? 'flex' : 'none';
+        document.getElementById('odluke-toggle').textContent = odlukeOtvoreno ? 'sakrij' : 'prikaži';
+        popis.innerHTML = d.zadatci.map(function (t) {
+          const ceka = t.cekaSati >= 24
+            ? Math.floor(t.cekaSati / 24) + ' d'
+            : (t.cekaSati > 0 ? t.cekaSati + ' h' : '<1 h');
+          return '<div class="odluka-stavka" data-id="' + t.id + '">' +
+            '<div class="odluka-naslov"><strong>' + t.id + '</strong> · ' + esc(t.title) + '</div>' +
+            '<div class="odluka-meta">P' + (t.priority ?? '?') + ' · ' + esc(t.assignee || 'bez izvršitelja') +
+              ' · čeka ' + ceka + ' · ' + esc((t.oznake || []).join(', ')) + '</div>' +
+            '<div class="odluka-opis">' + esc(String(t.description || '').slice(0, 420)) + '</div>' +
+            '<div class="odluka-red">' +
+              '<textarea class="odluka-unos" rows="1" placeholder="Upiši odluku, npr. može kreni — ili: odgodi, treba mi još podataka"></textarea>' +
+              '<button class="odluka-nastavi">Nastavi</button>' +
+            '</div><div class="odluka-poruka"></div></div>';
+        }).join('');
+        popis.querySelectorAll('.odluka-stavka').forEach(function (el) {
+          const gumb = el.querySelector('.odluka-nastavi');
+          const unos = el.querySelector('.odluka-unos');
+          gumb.addEventListener('click', function () { posaljiOdluku(el); });
+          // Ctrl+Enter šalje — polje je višeredno, pa sam Enter mora ostati novi redak.
+          unos.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) posaljiOdluku(el);
+          });
+        });
+      } catch (e) { console.error('[odluke]', e); }
+    }
+
+    async function posaljiOdluku(el) {
+      const id = el.dataset.id;
+      const unos = el.querySelector('.odluka-unos');
+      const gumb = el.querySelector('.odluka-nastavi');
+      const poruka = el.querySelector('.odluka-poruka');
+      const odluka = (unos.value || '').trim();
+      if (!odluka) {
+        poruka.style.color = '#d98c3a';
+        poruka.textContent = 'Upiši odluku prije nego nastaviš — ostaje zapisana uz zadatak.';
+        unos.focus();
+        return;
+      }
+      gumb.disabled = true; gumb.textContent = 'šaljem…';
+      try {
+        const r = await fetch('/api/tasks/' + id + '/odluka', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ odluka: odluka, by: 'goran' }),
+        });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.error || ('HTTP ' + r.status));
+        poruka.style.color = '#6fbf6f';
+        poruka.textContent = 'Odluka zapisana, zadatak je vraćen u red.';
+        gumb.textContent = 'gotovo';
+        setTimeout(function () { ucitajOdluke(); fetchTasks(); }, 1200);
+      } catch (e) {
+        poruka.style.color = '#d96a6a';
+        poruka.textContent = 'Nije prošlo: ' + e.message;
+        gumb.disabled = false; gumb.textContent = 'Nastavi';
+      }
+    }
+
+    function esc(t) {
+      return String(t == null ? '' : t).replace(/[&<>"]/g, function (c) {
+        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+      });
     }
 
     // ─── Ručna kočnica (TASK-3047) ────────────────────────────────────────────
@@ -3770,12 +4136,56 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       return '<span class="tel-muted" style="font-size:0.68rem;">iz ' + telBroj(n, 0) + '</span>';
     }
 
+    /*
+     * M3/TASK-4625 — tri ishoda izvođenja: completed / blocked_ok / failed.
+     *
+     * blocked_ok je agent koji je SAM deklarirao BLOCKED ili NEEDS_CONTEXT (čeka odluku,
+     * nema mrežne rute, treba restart). To NIJE kvar i namjerno stoji odvojeno: dok se
+     * brojalo zajedno s padovima, izmjerena „neuspješnost" bila je 81 %, a prava
+     * tehnička 24/202 ≈ 12 % — pa se nije znalo što popravljati.
+     * (docs/ISTRAZIVANJE-neuspjesi-i-greske.md §2 i §4/M3)
+     */
+    function potStupci(u) {
+      var st = (u && u.ishodiStupci) || { completed: 0, blocked_ok: 0, failed: 0 };
+      st.ukupno = st.completed + st.blocked_ok + st.failed;
+      return st;
+    }
+
+    /** Tri značke u jednoj ćeliji tablice. */
+    function potIshodi(st) {
+      if (!st) return '—';
+      return '<span class="tel-ishod ok" title="completed &mdash; isporu&#269;eno i prihva&#263;eno">' + telBroj(st.completed, 0) + '</span>'
+        + ' <span class="tel-ishod zastoj" title="blocked_ok &mdash; agent je sam stao pred preprekom, nije kvar">' + telBroj(st.blocked_ok, 0) + '</span>'
+        + ' <span class="tel-ishod pad" title="failed &mdash; spawn ili rezultat odbijen, ili je proces pao">' + telBroj(st.failed, 0) + '</span>';
+    }
+
+    /** Odjeljak „Ishodi izvođenja" — isti na kartici Potrošnja i na kartici projekta. */
+    function potIshodiOdjeljak(u) {
+      var st = potStupci(u);
+      var udio = function (x) { return st.ukupno > 0 ? telPostotak(x / st.ukupno) : '—'; };
+      var mali = function (x) { return ' <span class="tel-muted" style="font-size:0.7rem;">' + udio(x) + '</span>'; };
+      var ishodi = u && u.ishodi ? u.ishodi : {};
+      var razlomljeno = Object.keys(ishodi).map(function (k) { return k + ' ' + ishodi[k]; }).join(' \u00B7 ') || '—';
+      return '<div class="tel-sec"><div class="tel-sec-title">Ishodi izvo&#273;enja &mdash; iz '
+        + telBroj(st.ukupno, 0) + ' izvo&#273;enja</div><div class="tel-grid">'
+        + telCelija(telBroj(st.completed, 0) + mali(st.completed), 'completed · isporučeno')
+        + telCelija(telBroj(st.blocked_ok, 0) + mali(st.blocked_ok), 'blocked_ok · agent uredno stao')
+        + telCelija(telBroj(st.failed, 0) + mali(st.failed), 'failed · spawn/rezultat pao')
+        + '</div>'
+        + '<div class="tel-muted" style="margin-top:0.25rem;font-size:0.7rem;">'
+        + '<b>blocked_ok</b> = agent je SAM deklarirao BLOCKED/NEEDS_CONTEXT (&#269;eka odluku, nema mre&#382;ne '
+        + 'rute, treba restart). To nije kvar &mdash; ve&#263;ina tih zadataka poslije bude completed. '
+        + 'Ra&#269;lamba po sirovom ishodu: ' + telEsc(razlomljeno)
+        + '</div></div>';
+    }
+
     /** Redak tablice skupine (projekt ili agent) — dvije linije: brojke + nazivnici. */
     function potRedakSkupine(s, jeProjekt) {
       var ime = telEsc(s.kljuc) + (jeProjekt && s.naziv ? ' <span class="tel-muted">' + telEsc(s.naziv) + '</span>' : '');
       return '<tr>'
         + '<td>' + ime + '</td>'
         + '<td>' + telBroj(s.zadataka, 0) + '</td>'
+        + '<td style="white-space:nowrap;">' + potIshodi(s.ishodiStupci) + '</td>'
         + '<td>' + eur(s.trosak.usd) + ' ' + potIz(s.trosak.izZadataka) + '</td>'
         + '<td>' + telBroj(s.tokeni.ulazniKontekst, 0) + ' ' + potIz(s.tokeni.izZadataka) + '</td>'
         + '<td>' + telPostotak(s.tokeni.udioKesa) + '</td>'
@@ -3794,7 +4204,8 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       var html = '<div class="tel-sec"><div class="tel-sec-title">' + telEsc(naslov)
         + ' &mdash; ' + redci.length + (redci.length === 1 ? ' skupina' : ' skupina') + '</div>'
         + '<table class="tel-table"><thead><tr>'
-        + '<th>' + (jeProjekt ? 'projekt' : 'agent') + '</th><th>izvo&#273;.</th><th>tro&#353;ak</th>'
+        + '<th>' + (jeProjekt ? 'projekt' : 'agent') + '</th><th>izvo&#273;.</th>'
+        + '<th title="completed &middot; blocked_ok (uredan zastoj) &middot; failed">ishodi</th><th>tro&#353;ak</th>'
         + '<th>ulazni kontekst</th><th>ke&#353;</th><th>latencija &empty;</th>'
         + '<th>poziva</th><th>trajanje</th>'
         + '</tr></thead><tbody>';
@@ -3832,6 +4243,8 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         + telCelija(telPostotak(u.tokeni.udioKesa), 'udio keša · iz ' + u.tokeni.izZadataka)
         + telCelija(telTrajanje(u.trajanje.ukupnoS), 'trajanje · iz ' + u.trajanje.izZadataka)
         + '</div></div>';
+
+      html += potIshodiOdjeljak(u);
 
       html += '<div class="tel-sec"><div class="tel-sec-title">Latencija modela &mdash; iz '
         + telBroj(u.latencija.izZadataka, 0) + ' izvo&#273;enja, ' + telBroj(u.latencija.izPoziva, 0)
@@ -4215,6 +4628,8 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         + '</div></div>';
 
       // Latencija — prosjek i medijan traženi izrijekom
+      html += potIshodiOdjeljak(u);
+
       html += '<div class="tel-sec"><div class="tel-sec-title">Latencija modela &mdash; iz '
         + telBroj(u.latencija.izZadataka, 0) + ' izvo&#273;enja, ' + telBroj(u.latencija.izPoziva, 0)
         + ' poziva</div><div class="tel-grid">'
@@ -4868,7 +5283,8 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     function updateProjectsAgentFilter() {
       const agents = [...new Set(projects.map(p => p.lead_agent).filter(Boolean))];
       const container = document.getElementById('projects-agent-filter');
-      container.innerHTML = '<button class="agent-btn active" data-agent="all">All Agents</button>';
+      container.innerHTML = '<button class="agent-btn active" data-agent="all" data-i18n="all_agents">'
+        + (RJECNIK['all_agents'] || 'All Agents') + '</button>';
 
       agents.forEach(agent => {
         const btn = document.createElement('button');
@@ -6216,6 +6632,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         renderInfoAgents(d, modelsData);
         renderModelSetup(modelsData);
         loadLoginProviders();
+        loadDezurni();
         renderInfoModules(d);
         renderInfoInfra(d);
         renderInfoDatabases(d);
@@ -6306,6 +6723,110 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         fetchInfoData();
       } catch(e) {
         alert('Greska pri spremanju modela: ' + e.message);
+        if (el) el.disabled = false;
+      }
+    }
+
+    // ── Dežurni (D4/TASK-4633) — model se bira ovdje, ne uređivanjem dezurni.json ────────
+    var _dezurniGranice = null;
+
+    async function loadDezurni() {
+      var el = document.getElementById('info-dezurni-content');
+      if (!el) return;
+      try {
+        var d = await (await fetch('/api/dezurni/config')).json();
+        if (d.error) throw new Error(d.error);
+        _dezurniGranice = d.granice || null;
+        el.innerHTML = renderDezurni(d);
+      } catch(e) {
+        el.innerHTML = '<div class="empty">Greška pri čitanju postavki dežurnog: ' + _dezEsc(e.message) + '</div>';
+      }
+    }
+
+    function renderDezurni(d) {
+      var p = d.postavke || {};
+      var st = d.stanje || {};
+      var g = d.granice || { okidac_uzastopnih_gresaka: { min:1, max:10 }, razmak_straze_min: { min:5, max:240 } };
+      var znacka = st.dezurstvo
+        ? '<span class="info-badge disabled" title="Primarni model ne radi; dežurni odgovara na Telegramu.">dežurstvo AKTIVNO' + (st.od ? ' od ' + String(st.od).replace('T',' ').slice(0,16) : '') + '</span>'
+        : '<span class="info-badge enabled" title="Primarni put radi; dežurni čeka.">u pripravnosti</span>';
+      var ukljucenZnacka = p.ukljucen
+        ? '' : ' <span class="info-badge disabled" title="Okidač je isključen — dežurstvo se neće podići ni nakon praga grešaka.">isključen</span>';
+
+      var opts = (d.modeli || []).map(function(m) {
+        return '<option value="' + _dezEsc(m) + '"' + (m === p.model ? ' selected' : '') + '>' + _dezEsc(m) + '</option>';
+      }).join('');
+      var izvor = d.dostupno
+        ? '<span style="color:var(--text-secondary)">živi popis s ' + _dezEsc(p.baseUrl) + ' (' + (d.modeli||[]).length + ' modela)</span>'
+        : '<span style="color:#f59e0b" title="' + _dezEsc(d.greska) + '">poslužitelj nedostupan — prikazan je samo trenutačno postavljen model</span>';
+
+      var h = '<div style="font-size:0.72rem;color:var(--text-secondary);margin-bottom:0.5rem">' +
+        'Kad <code>claude -p</code> padne ' + (p.okidac_uzastopnih_gresaka||2) + ' puta zaredom, dežurni preuzima odgovaranje na Telegramu ' +
+        'i javlja čim se primarni put vrati. Postavke se spremaju u <code>' + _dezEsc(d.putanja) + '</code> i ' +
+        '<strong>vrijede odmah, bez ponovnog pokretanja</strong> — most i alat citaju datoteku pri svakom pozivu. ' +
+        znacka + ukljucenZnacka + '</div>';
+
+      h += '<table class="info-table"><tbody>';
+      h += _dezRed('Model dežurnog',
+        '<select style="' + _dezStil() + ';min-width:220px" onchange="spremiDezurni({model:this.value}, this)">' + opts + '</select>',
+        izvor);
+      h += _dezRed('Davatelj',
+        '<span style="font-size:0.72rem;color:#8aa0b2;border:1px dashed #3a4a55;border-radius:4px;padding:2px 8px;background:#12283a">' + _dezEsc(p.provider||'ollama') + ' &mdash; fiksno</span>',
+        'Most prema dežurnom zna govoriti samo Ollamin <code>/api/chat</code>; drugi davatelj traži novi pozivatelj.');
+      h += _dezRed('Ollama poslužitelj',
+        '<input id="dez-baseurl" value="' + _dezEsc(p.baseUrl) + '" style="' + _dezStil() + ';min-width:220px">' +
+        ' <button style="font-size:.72rem;padding:3px 8px" onclick="spremiDezurni({baseUrl:document.getElementById(\\'dez-baseurl\\').value}, this)">Spremi</button>',
+        'Odakle se vuče popis modela i kamo idu pitanja dežurnog.');
+      h += _dezRed('Dežurstvo uključeno',
+        '<input type="checkbox"' + (p.ukljucen ? ' checked' : '') + ' onchange="spremiDezurni({ukljucen:this.checked}, this)">',
+        'Isključeno: greške se prijavljuju kao i prije, dežurni se ne javlja.');
+      h += _dezRed('Smije podići servise',
+        '<input type="checkbox"' + (p.smije_podici ? ' checked' : '') + ' onchange="spremiDezurni({smije_podici:this.checked}, this)">',
+        'Jedina radnja dežurnog s posljedicom. Isključeno: tipka <code>podigni</code> odbija restart i to kaže.');
+      h += _dezRed('Prag uzastopnih grešaka',
+        '<input type="number" min="' + g.okidac_uzastopnih_gresaka.min + '" max="' + g.okidac_uzastopnih_gresaka.max + '" value="' + (p.okidac_uzastopnih_gresaka||2) + '" style="' + _dezStil() + ';width:70px" onchange="spremiDezurni({okidac_uzastopnih_gresaka:Number(this.value)}, this)">',
+        'Jedna prolazna greška ne diže dežurstvo; ' + g.okidac_uzastopnih_gresaka.min + '–' + g.okidac_uzastopnih_gresaka.max + '.');
+      h += _dezRed('Razmak straže (min)',
+        '<input type="number" min="' + g.razmak_straze_min.min + '" max="' + g.razmak_straze_min.max + '" value="' + (p.razmak_straze_min||30) + '" style="' + _dezStil() + ';width:70px" onchange="spremiDezurni({razmak_straze_min:Number(this.value)}, this)">',
+        'Koliko često straža provjerava je li se primarni put vratio.');
+      h += '</tbody></table><div id="dez-poruka" style="font-size:.7rem;margin-top:.4rem;min-height:1em"></div>';
+      return h;
+    }
+
+    // Vrijednosti idu u atribute (value="…") — model i baseUrl dolaze iz datoteke i s
+    // Ollame, pa jedan navodnik ne smije razvaliti oznake.
+    function _dezEsc(v) {
+      return String(v == null ? '' : v)
+        .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+        .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+    }
+
+    function _dezStil() {
+      return 'font-size:0.72rem;padding:2px 4px;border-radius:4px;background:var(--bg-primary,#111);color:var(--text-primary,#ddd);border:1px solid var(--border-color,#333)';
+    }
+    function _dezRed(naziv, kontrola, opis) {
+      return '<tr><td style="width:215px"><strong>' + naziv + '</strong></td>' +
+        '<td style="width:290px">' + kontrola + '</td>' +
+        '<td style="font-size:0.7rem;color:var(--text-secondary)">' + opis + '</td></tr>';
+    }
+
+    async function spremiDezurni(zakrpa, el) {
+      var poruka = document.getElementById('dez-poruka');
+      if (el) el.disabled = true;
+      try {
+        var res = await fetch('/api/dezurni/config', {
+          method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(zakrpa)
+        });
+        var d = await res.json();
+        if (!res.ok || d.error) throw new Error(d.error || 'spremanje nije uspjelo');
+        // Potvrda se pise TEK nakon ponovnog iscrtavanja: loadDezurni mijenja innerHTML
+        // cijele kartice, pa bi poruka ispisana prije toga nestala u istom dahu.
+        // (Backtick u komentaru ovdje zatvara predlozak u kojem cijela ploca zivi.)
+        await loadDezurni();
+        var svjeza = document.getElementById('dez-poruka');
+        if (svjeza) svjeza.innerHTML = '<span style="color:var(--accent-green,#22c55e)">Spremljeno — vrijedi odmah, bez restarta (' + new Date().toLocaleTimeString() + ')</span>';
+      } catch(e) {
+        if (poruka) poruka.innerHTML = '<span style="color:var(--accent-red,#ef4444)">Nije spremljeno: ' + _dezEsc(e.message) + '</span>';
         if (el) el.disabled = false;
       }
     }
@@ -6723,6 +7244,34 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     fetchTasks();
     setInterval(fetchTasks, 30000); // Refresh every 30s — radi i bez WebSocketa
 
+    // Zadatci koji čekaju odluku: uz isti ritam kao ploča. Prekidač „prikaži" pamti stanje
+    // unutar sjednice, pa se otvoreni popis ne zatvara sam pri osvježavanju.
+    document.getElementById('odluke-toggle')?.addEventListener('click', function () {
+      odlukeOtvoreno = !odlukeOtvoreno;
+      document.getElementById('odluke-popis').style.display = odlukeOtvoreno ? 'flex' : 'none';
+      document.getElementById('odluke-odlucitelj').style.display = odlukeOtvoreno ? 'flex' : 'none';
+      this.textContent = odlukeOtvoreno ? 'sakrij' : 'prikaži';
+    });
+    ucitajOdluke();
+    setInterval(ucitajOdluke, 30000);
+
+    postaviIzbornikJezika();
+
+    document.getElementById('odluc-ukljucen')?.addEventListener('change', function () {
+      spremiOdlucitelja({ ukljucen: this.checked });
+    });
+    document.getElementById('odluc-provider')?.addEventListener('change', function () {
+      // Model prethodnog davatelja ne vrijedi kod novoga, pa se šalje samo davatelj;
+      // poslužitelj vrati njegov popis, a prvi model postaje odabran.
+      spremiOdlucitelja({ provider: this.value });
+    });
+    document.getElementById('odluc-model')?.addEventListener('change', function () {
+      spremiOdlucitelja({ model: this.value });
+    });
+    document.getElementById('odluc-proba')?.addEventListener('click', function () { pokreniOdlucitelja(true); });
+    document.getElementById('odluc-izvrsi')?.addEventListener('click', function () { pokreniOdlucitelja(false); });
+    ucitajOdlucitelja();
+
     try {
       connect();
     } catch (e) {
@@ -6896,6 +7445,76 @@ async function buildModelsAvailable(): Promise<{ providers: any[]; models: any[]
   if (orEnabled) models.push(...OR_CURATED)
 
   return { providers, models }
+}
+
+// ── Dežurni (rezervni model) — D4 / TASK-4633 ─────────────────────────────────────────────
+// Model se dosad mijenjao ručnim uređivanjem `config/dezurni.json`. Ploča sada nudi izbor iz
+// ŽIVOG popisa modela s Ollame koju dežurni doista zove (njegov `baseUrl`, ne onaj iz
+// model-config.json) — popis koji laže gori je od nikakvog popisa.
+// Bez restarta: i `dezurni.py` i `dezurni.ts` čitaju datoteku pri svakom pozivu.
+
+async function handleDezurniConfigGet(): Promise<Response> {
+  const json = (o: unknown, s = 200) =>
+    new Response(JSON.stringify(o), { status: s, headers: { 'Content-Type': 'application/json' } })
+  try {
+    const postavke = loadDezurniConfig()
+    let modeli: string[] = []
+    let dostupno = false
+    let greska: string | null = null
+    try {
+      modeli = await fetchOllamaModels(String(postavke.baseUrl))
+      dostupno = true
+    } catch (e: any) {
+      greska = String(e && e.message ? e.message : e)
+    }
+    // Trenutačni model mora ostati u popisu i kad je poslužitelj nedostupan — inače bi
+    // dropdown pri prvom otvaranju tiho pokazao tuđu vrijednost.
+    if (postavke.model && !modeli.includes(String(postavke.model))) modeli.unshift(String(postavke.model))
+    return json({
+      postavke, modeli, dostupno, greska,
+      putanja: DEZURNI_CONFIG_PATH,
+      provideri: PODRZANI_PROVIDERI,
+      granice: GRANICE,
+      stanje: citajDezurniStanje(),
+    })
+  } catch (err) {
+    return json({ error: String(err) }, 500)
+  }
+}
+
+/** Radi li dežurstvo upravo sada — isti zapis koji piše `dezurni.ts` (data/dezurni.stanje.json). */
+function citajDezurniStanje(): { dezurstvo: boolean; uzastopnihGresaka: number; od?: string } {
+  try {
+    const p = join(process.env.HOME || '/home/klaudio', '.claude/regoc/data/dezurni.stanje.json')
+    const s = JSON.parse(readFileSync(p, 'utf-8'))
+    return {
+      dezurstvo: !!s.dezurstvo,
+      uzastopnihGresaka: Number(s.uzastopnihGresaka) || 0,
+      od: s.od,
+    }
+  } catch {
+    return { dezurstvo: false, uzastopnihGresaka: 0 }
+  }
+}
+
+async function handleDezurniConfigPut(req: Request): Promise<Response> {
+  const json = (o: unknown, s = 200) =>
+    new Response(JSON.stringify(o), { status: s, headers: { 'Content-Type': 'application/json' } })
+  let tijelo: unknown
+  try {
+    tijelo = await req.json()
+  } catch {
+    return json({ error: 'Neispravan JSON' }, 400)
+  }
+  const provjera = validateDezurniPatch(tijelo)
+  if (!provjera.ok) return json({ error: provjera.greske.join('; '), greske: provjera.greske }, 400)
+  try {
+    const postavke = saveDezurniConfig(provjera.zakrpa)
+    console.log(`[DEZURNI] postavke promijenjene s ploče: ${JSON.stringify(provjera.zakrpa)}`)
+    return json({ ok: true, postavke })
+  } catch (err) {
+    return json({ error: String(err) }, 500)
+  }
 }
 
 // PUT /api/models/providers/:id — postavke providera (enabled, baseUrl, token).
@@ -7493,6 +8112,49 @@ async function handleCreateTask(req: Request): Promise<Response> {
       })
     }
 
+    // ── M2/TASK-4628: STROP STVARANJA ZADATAKA PO IZVORU ──────────────────────
+    // Stoji TU, iza sadržajnih vrata (anti-echo, prazan opis) i ispred `createTask`:
+    // rafal smeća je već odbijen besplatno, pa kvotu troše samo zadatci koji bi stvarno
+    // nastali. Preko praga zadatak NE nestaje — cijelo tijelo zahtjeva ide u
+    // `task_create_queue` i vraća se odgovorom (HTTP 429 + `queueId`), a Goran dobije
+    // JEDNU dojavu po epizodi. Ovo su vrata koja M1 (osigurač spawnova) ne može
+    // zamijeniti: on rafal vidi tek kad su zadatci već u bazi i već zovu `claude --print`.
+    const createdBy = typeof createFields.normalized.createdBy === 'string' && createFields.normalized.createdBy
+      ? String(createFields.normalized.createdBy).slice(0, 64)
+      : 'user'
+    const breaker = getTaskCreateBreaker()
+    const rateVerdict = breaker?.check(createdBy)
+    if (rateVerdict && (rateVerdict.wouldQueue || rateVerdict.alarm)) {
+      const queuedNow = breaker!.queuedList({ source: createdBy }).length + (rateVerdict.allowed ? 0 : 1)
+      if (rateVerdict.alarm) notifyGoranTaskBurst(formatTaskCreateAlarm(createdBy, rateVerdict, queuedNow))
+    }
+    if (rateVerdict && !rateVerdict.allowed) {
+      const q = breaker!.enqueue(createdBy, createFields.normalized, rateVerdict.reason)
+      console.warn(`[TaskWebUI] QUEUED task creation (task rate breaker, ${rateVerdict.scope}): `
+        + `"${(validatedData.title ?? '').slice(0, 80)}" → red #${q.id}`)
+      warnCreateSwallowedFields(createFields, `ODGOĐEN(429 task_rate_limited, red #${q.id})`)
+      return new Response(JSON.stringify({
+        error: 'Task creation rate limit — zadatak je u redu čekanja',
+        code: 'task_rate_limited',
+        queued: true,
+        queueId: q.id,
+        position: q.position,
+        source: createdBy,
+        scope: rateVerdict.scope,
+        count: rateVerdict.count,
+        limit: rateVerdict.limit,
+        retryAfterMs: rateVerdict.retryAfterMs,
+        reason: rateVerdict.reason + '. Zadatak NIJE izgubljen: čeka u redu i pušta se s '
+          + 'bun ~/.claude/regoc/tools/task-create-queue.ts --release',
+      }), {
+        status: 429,
+        headers: {
+          'Content-Type': 'application/json',
+          'Retry-After': String(Math.max(1, Math.ceil(rateVerdict.retryAfterMs / 1000))),
+        },
+      })
+    }
+
     // Vrata projekta: nikad NULL, i nikad tiho (v. resolveProjectForCreate).
     const projectGate = resolveProjectForCreate(validatedData.projectId)
     if (projectGate.warning) {
@@ -7510,12 +8172,15 @@ async function handleCreateTask(req: Request): Promise<Response> {
       projectId: projectGate.projectId,
       // Stvaratelj se dosad tvrdo upisivao kao 'user' i tko god ga je poslao — nestao je.
       // Sad se poštuje ako je poslan (createdBy ili created_by), uz isti default.
-      createdBy: typeof createFields.normalized.createdBy === 'string' && createFields.normalized.createdBy
-        ? String(createFields.normalized.createdBy).slice(0, 64)
-        : 'user',
+      // Izračunat je iznad, jer strop stvaranja zadataka mora znati IZVOR prije upisa.
+      createdBy,
     }
 
     const task = taskManager.createTask(input)
+
+    // Mjesto u pomičnom prozoru troši SAMO zadatak koji je stvarno nastao (TASK-4628):
+    // odbijenica drugih vrata ne smije pojesti kvotu poštenom pošiljatelju.
+    breaker?.recordCreated(createdBy, task.id)
 
     // TU je ID konačno poznat — jedini trenutak u kojem se gutanje može povezati sa žrtvom.
     warnCreateSwallowedFields(createFields, task.id)
@@ -8323,6 +8988,357 @@ function handleTaskPause(taskId: string, paused: boolean, req: Request): Promise
     wsClients.forEach(client => { try { client.send(message) } catch { wsClients.delete(client) } })
 
     return new Response(JSON.stringify(task), { headers: { 'Content-Type': 'application/json' } })
+  })()
+}
+
+
+
+
+/**
+ * GET/PUT /api/odlucitelj/config  ·  POST /api/odlucitelj/pokreni
+ *
+ * Goran, 04.09.2026.: „dodao bi switch i odabir modela koji se moze koristiti umjesto odluke
+ * korisnika."
+ *
+ * Odluka modela ide ISTIM putem kao ljudska (`/api/tasks/<ID>/odluka`), pa je trag jednak i
+ * uvijek se vidi tko je potpisan. Rizične zadatke model uopće ne vidi — deterministički
+ * filtar u `tools/odlucitelj.py` ih zadrži prije njega (mjereno: bez filtra qwen3:8b kaže
+ * „kreni" na 6 od 7 rizičnih, s filtrom 7/7 točno).
+ */
+const ODLUCITELJ_CONFIG_PATH = `${process.env.HOME}/.claude/regoc/config/odlucitelj.json`
+const ODLUCITELJ_ZADANE = {
+  ukljucen: false, provider: 'ollama', model: 'qwen3:8b',
+  baseUrl: 'http://192.168.10.4:11434', najvise_po_prolazu: 3, smije_kreni: true,
+}
+
+function ucitajOdluciteljConfig(): Record<string, any> {
+  try {
+    return { ...ODLUCITELJ_ZADANE,
+             ...JSON.parse(require('fs').readFileSync(ODLUCITELJ_CONFIG_PATH, 'utf-8')) }
+  } catch { return { ...ODLUCITELJ_ZADANE } }
+}
+
+function putanjaOdlucitelja(): string | null {
+  const fs = require('fs')
+  for (const put of [`${process.env.HOME}/app/regoc_system/tools/odlucitelj.py`,
+                     `${import.meta.dir}/../tools/odlucitelj.py`,
+                     `${process.env.HOME}/.claude/regoc/tools/odlucitelj.py`]) {
+    if (fs.existsSync(put)) return put
+  }
+  return null
+}
+
+/** Poznati modeli za davatelje bez javnog kataloga. Polazište, ne ograda — sučelje dopušta
+ *  i vlastito ime modela. */
+const POZNATI_MODELI: Record<string, string[]> = {
+  anthropic: ['claude-haiku-4-5-20251001', 'claude-sonnet-5', 'claude-opus-5'],
+  google: ['gemini-2.0-flash', 'gemini-2.5-flash', 'gemini-2.5-pro'],
+  glm: ['glm-4.6', 'glm-4.7-flash'],
+  kimi: ['kimi-k2-0905-preview'],
+  minimax: ['MiniMax-M2'],
+  qwen: ['qwen3-coder-plus'],
+  deepseek: ['deepseek-chat', 'deepseek-reasoner'],
+}
+
+/** Katalog OpenRoutera je javan i ima 400+ modela; besplatni idu naprijed jer odluka o
+ *  zadatku ne smije koštati više od samog zadatka. */
+async function openrouterModeli(): Promise<string[]> {
+  try {
+    const r = await fetch('https://openrouter.ai/api/v1/models',
+                          { signal: AbortSignal.timeout(15000) })
+    if (!r.ok) return []
+    const d = await r.json() as any
+    const svi = (d.data || []) as any[]
+    const cijena = (m: any) => Number(m?.pricing?.prompt ?? 9) || 0
+    // Auto-ruteri (`openrouter/auto` i srodni) sami biraju model po zadatku, pa idu na vrh:
+    // to je izbor kod kojeg se ne mora pogoditi ime modela. Ispadali su iz popisa jer im
+    // cijena nije obična brojka — filtar po cijeni ih je tiho izbacivao.
+    const auto = svi.filter(m => String(m.id).startsWith('openrouter/')).map(m => m.id)
+    const jeAuto = new Set(auto)
+    const besplatni = svi.filter(m => !jeAuto.has(m.id) && cijena(m) === 0).map(m => m.id)
+    const ostali = svi.filter(m => !jeAuto.has(m.id) && cijena(m) > 0)
+      .sort((a, b) => cijena(a) - cijena(b)).map(m => m.id)
+    return [...auto, ...besplatni, ...ostali]
+  } catch { return [] }
+}
+
+/** Davatelji iz `models/model-config.json` + je li svaki stvarno upotrebljiv.
+ *  Davatelj bez ključa se NE skriva nego pošteno prijavi — inače bi izbor bio lažan. */
+function odluciteljDavatelji(): Record<string, any> {
+  const fs = require('fs')
+  let konf: Record<string, any> = {}
+  try {
+    konf = JSON.parse(fs.readFileSync(
+      `${process.env.HOME}/.claude/regoc/models/model-config.json`, 'utf-8')).providers || {}
+  } catch { /* bez konfiguracije ostaje samo lokalni put */ }
+  let spremiste = ''
+  try {
+    spremiste = fs.readFileSync(`${process.env.HOME}/.claude/regoc/credentials.env`, 'utf-8')
+  } catch { /* nema spremišta — tada odlučuje samo okolina */ }
+  // Provjerava se SAMO postoji li redak s tim imenom; vrijednost se nikad ne čita ni ne šalje.
+  const imaKljuc = (ime: string) =>
+    !!process.env[ime] || new RegExp('^' + ime + '=\\S', 'm').test(spremiste)
+
+  const out: Record<string, any> = {}
+  for (const [ime, v] of Object.entries(konf)) {
+    if (!v || typeof v !== 'object') continue
+    const sirovi = String((v as any).apiKey || '')
+    const env = sirovi.startsWith('env:') ? sirovi.slice(4) : ''
+    let spreman = env ? imaKljuc(env) : true
+    let zasto = spreman ? 'spreman' : 'treba ' + env
+    if (ime === 'ollama') { spreman = true; zasto = 'lokalno' }
+    if (ime === 'anthropic') {
+      spreman = !!Bun.which('claude')
+      zasto = spreman ? 'Claude CLI — troši istu kvotu kao rad' : 'nema Claude CLI'
+    }
+    out[ime] = { ukljucen: !!(v as any).enabled, spreman, zasto,
+                 baseUrl: (v as any).baseUrl || null }
+  }
+  return out
+}
+
+async function handleOdluciteljConfigGet(): Promise<Response> {
+  const postavke = ucitajOdluciteljConfig()
+  const dav = odluciteljDavatelji()
+  const odabrani = String(postavke.provider || 'ollama')
+
+  let modeli: string[] = []
+  let dostupno = false
+  let greska: string | null = null
+  if (odabrani === 'ollama') {
+    try {
+      // Modeli za ugrađivanje (`*-embedding*`) vraćaju vektore, ne tekst — kao izbor
+      // odlučitelja bili bi tiha slijepa ulica. Ollama ih vraća u istom popisu, pa se
+      // ovdje izbacuju; automatski odabir prvog inače uzme baš njih.
+      const svi = await fetchOllamaModels(String(postavke.baseUrl))
+      modeli = svi.filter(m => !/embed/i.test(String(m)))
+      dostupno = true
+    }
+    catch (e: any) { greska = String(e?.message ?? e) }
+  } else if (odabrani === 'openrouter') {
+    modeli = await openrouterModeli()
+    dostupno = modeli.length > 0
+    if (!dostupno) greska = 'katalog OpenRoutera nije dostupan'
+  } else {
+    modeli = POZNATI_MODELI[odabrani] || []
+    dostupno = !!dav[odabrani]?.spreman
+    if (!dostupno) greska = dav[odabrani]?.zasto || 'davatelj nije spreman'
+  }
+  if (postavke.model && !modeli.includes(String(postavke.model))) {
+    modeli.unshift(String(postavke.model))
+  }
+
+  return new Response(JSON.stringify({
+    postavke, modeli, dostupno, greska,
+    davatelji: dav,
+    putanja: ODLUCITELJ_CONFIG_PATH,
+    alat: putanjaOdlucitelja(),
+  }), { headers: { 'Content-Type': 'application/json' } })
+}
+
+async function handleOdluciteljConfigPut(req: Request): Promise<Response> {
+  const json = (o: unknown, st = 200) =>
+    new Response(JSON.stringify(o), { status: st, headers: { 'Content-Type': 'application/json' } })
+  let telo: any
+  try { telo = await req.json() } catch { return json({ error: 'neispravan JSON' }, 400) }
+  const stare = ucitajOdluciteljConfig()
+  const nove: Record<string, any> = { ...stare }
+  if (typeof telo.ukljucen === 'boolean') nove.ukljucen = telo.ukljucen
+  if (typeof telo.smije_kreni === 'boolean') nove.smije_kreni = telo.smije_kreni
+  if (typeof telo.model === 'string' && telo.model.trim()) nove.model = telo.model.trim()
+  if (typeof telo.provider === 'string' && telo.provider.trim()) {
+    // Model prethodnog davatelja kod novoga ne postoji (qwen3:8b nije model na Anthropicu),
+    // pa se pri promjeni davatelja model briše i sučelje uzme prvi iz njegova popisa.
+    if (telo.provider.trim() !== nove.provider) nove.model = ''
+    nove.provider = telo.provider.trim()
+  }
+  if (typeof telo.baseUrl === 'string' && telo.baseUrl.trim()) nove.baseUrl = telo.baseUrl.trim()
+  const n = Number(telo.najvise_po_prolazu)
+  if (Number.isFinite(n) && n >= 1 && n <= 20) nove.najvise_po_prolazu = Math.round(n)
+  try {
+    const fs = require('fs')
+    fs.mkdirSync(require('path').dirname(ODLUCITELJ_CONFIG_PATH), { recursive: true })
+    fs.writeFileSync(ODLUCITELJ_CONFIG_PATH, JSON.stringify(nove, null, 1))
+  } catch (e: any) { return json({ error: `zapis nije uspio: ${e?.message ?? e}` }, 500) }
+  console.log(`[API] odlucitelj: ukljucen=${nove.ukljucen} model=${nove.provider}/${nove.model}`)
+  return json({ ok: true, postavke: nove })
+}
+
+/** Jedan prolaz odlučitelja. `proba=true` ništa ne mijenja — samo pokaže što bi odlučio. */
+async function handleOdluciteljPokreni(req: Request): Promise<Response> {
+  const json = (o: unknown, st = 200) =>
+    new Response(JSON.stringify(o), { status: st, headers: { 'Content-Type': 'application/json' } })
+  let proba = true
+  try { const b = await req.json() as any; if (b?.proba === false) proba = false } catch { }
+  const alat = putanjaOdlucitelja()
+  if (!alat) return json({ error: 'alat odlucitelj.py nije pronađen na ovom stroju' }, 500)
+  if (!proba && !ucitajOdluciteljConfig().ukljucen) {
+    return json({ error: 'odlučitelj je isključen — uključi ga prije izvršavanja' }, 409)
+  }
+  try {
+    const pr = Bun.spawn(['python3', alat, proba ? '--proba' : '--izvrsi', '--json'],
+                         { stdout: 'pipe', stderr: 'pipe' })
+    const izlaz = await new Response(pr.stdout).text()
+    const greske = await new Response(pr.stderr).text()
+    await pr.exited
+    let ishodi: any[] = []
+    try { ishodi = JSON.parse(izlaz.trim() || '[]') } catch { /* alat je javio tekstom */ }
+    return json({ ok: true, proba, ishodi, poruka: izlaz.trim().slice(0, 400),
+                  greska: greske.trim().slice(0, 300) || null })
+  } catch (e: any) { return json({ error: String(e?.message ?? e) }, 500) }
+}
+
+/**
+ * GET /api/jezici        — koji jezici postoje i koji je zadani
+ * GET /api/jezik/<kod>   — rječnik jednog jezika
+ *
+ * Goran, 04.09.2026.: „ako se to moze odraditi tako da taj vizualni dio ima mogucnost odabira
+ * vise jezika … naknadno mozda samo ako netko zeli doda jezik u nekom fajlu i odabere ga kao
+ * default."
+ *
+ * Zato se popis NE drži u kodu nego se čita iz mape `locales/`: nova datoteka `<kod>.json`
+ * pojavi se u izborniku bez ijedne izmjene koda. Zadani jezik je `TM_LANG` ili
+ * `config/jezik.json`; ako ni toga nema, hrvatski.
+ *
+ * Prevodi se SAMO sučelje. Naslovi, opisi i bilješke zadataka su podatci korisnika i kroz
+ * ovaj put nikad ne prolaze.
+ */
+const LOCALES_DIR = `${import.meta.dir}/../locales`
+
+const IMENA_JEZIKA: Record<string, string> = {
+  hr: 'Hrvatski', en: 'English', de: 'Deutsch', it: 'Italiano', fr: 'Français',
+  es: 'Español', sl: 'Slovenščina', sr: 'Srpski',
+}
+
+function zadaniJezik(): string {
+  if (process.env.TM_LANG) return String(process.env.TM_LANG).toLowerCase()
+  try {
+    const c = JSON.parse(require('fs').readFileSync(`${import.meta.dir}/../config/jezik.json`, 'utf-8'))
+    if (c?.zadani) return String(c.zadani).toLowerCase()
+  } catch { /* nema datoteke — vrijedi ugrađeni zadani */ }
+  return 'hr'
+}
+
+function dostupniJezici(): string[] {
+  try {
+    return require('fs').readdirSync(LOCALES_DIR)
+      .filter((f: string) => f.endsWith('.json'))
+      .map((f: string) => f.replace(/\.json$/, ''))
+      .sort()
+  } catch { return ['hr'] }
+}
+
+function handleGetJezici(): Response {
+  const kodovi = dostupniJezici()
+  return new Response(JSON.stringify({
+    zadani: kodovi.includes(zadaniJezik()) ? zadaniJezik() : (kodovi[0] || 'hr'),
+    jezici: kodovi.map(k => ({ kod: k, naziv: IMENA_JEZIKA[k] || k.toUpperCase() })),
+  }), { headers: { 'Content-Type': 'application/json' } })
+}
+
+function handleGetJezik(kod: string): Response {
+  // Samo slova i crtica — putanja se sastavlja od korisnikova unosa, pa nema izlaska iz mape.
+  if (!/^[a-z]{2}(-[a-z]{2})?$/i.test(kod)) {
+    return new Response(JSON.stringify({ error: 'neispravan kod jezika' }), {
+      status: 400, headers: { 'Content-Type': 'application/json' },
+    })
+  }
+  try {
+    // Engleski je podloga: ključ bez prijevoda pada na njega umjesto da ostane prazan ili u
+    // zatečenom jeziku. Tako je i djelomičan prijevod upotrebljiv — što je uvjet da netko
+    // uopće doda jezik postupno, jednu datoteku po jednu.
+    const fs = require('fs')
+    let podloga: Record<string, string> = {}
+    try { podloga = JSON.parse(fs.readFileSync(`${LOCALES_DIR}/en.json`, 'utf-8')) } catch { }
+    const trazeni = JSON.parse(fs.readFileSync(`${LOCALES_DIR}/${kod.toLowerCase()}.json`, 'utf-8'))
+    return new Response(JSON.stringify({ ...podloga, ...trazeni }),
+      { headers: { 'Content-Type': 'application/json' } })
+  } catch {
+    return new Response(JSON.stringify({ error: `nema rječnika za „${kod}"` }), {
+      status: 404, headers: { 'Content-Type': 'application/json' },
+    })
+  }
+}
+
+/**
+ * GET  /api/odluke — zadatci koji čekaju ljudsku odluku (oznaka needs-decision i srodne).
+ * POST /api/tasks/:id/odluka `{odluka, by?}` — upiši odluku i vrati zadatak u red.
+ *
+ * Goran, 04.09.2026.: "taj needs-decision je ok, ali onda mi to napravi da je vidljivo i
+ * dodaj polje gdje ću upisati odluku i stisnuti nastavi."
+ *
+ * Povod: devet zadataka stajalo je 1,5 h s tom oznakom, a nigdje se nije vidjelo da čekaju
+ * — ni na ploči ni u dnevniku. Oznaka je ispravan mehanizam; nedostajalo je mjesto na kojem
+ * se odluka donosi.
+ *
+ * Odluka se NE briše nego ostaje u `progress_notes` — inače bi se poslije znalo samo da je
+ * zadatak krenuo, a ne zašto i tko ga je pustio.
+ */
+const OZNAKE_ODLUKE = ['needs-decision', 'no-autonomy', 'waiting-for-human', 'interactive']
+
+function handleGetOdluke(): Response {
+  const svi = taskManager.getTasks() as any[]
+  const cekaju = svi
+    .filter(t => ['pending', 'blocked'].includes(String(t.status)))
+    .filter(t => (t.tags || []).some((g: string) => OZNAKE_ODLUKE.includes(String(g).toLowerCase())))
+    .map(t => ({
+      id: t.id, title: t.title, assignee: t.assignee,
+      description: String(t.description || '').slice(0, 400),
+      priority: t.priority, projectId: t.projectId ?? t.project_id, status: t.status,
+      createdAt: t.createdAt ?? t.created_at,
+      oznake: (t.tags || []).filter((g: string) => OZNAKE_ODLUKE.includes(String(g).toLowerCase())),
+      cekaSati: Math.round((Date.now() - new Date(t.createdAt ?? t.created_at ?? Date.now()).getTime()) / 36e5),
+    }))
+    .sort((a, b) => (a.priority ?? 9) - (b.priority ?? 9) || b.cekaSati - a.cekaSati)
+  return new Response(JSON.stringify({ ukupno: cekaju.length, zadatci: cekaju }), {
+    headers: { 'Content-Type': 'application/json' },
+  })
+}
+
+function handleTaskOdluka(taskId: string, req: Request): Promise<Response> {
+  return (async () => {
+    let odluka = ''
+    let by = 'goran'
+    try {
+      const body = await req.json() as any
+      if (typeof body?.odluka === 'string') odluka = body.odluka.trim()
+      if (typeof body?.by === 'string' && body.by) by = body.by
+    } catch { /* tijelo je obavezno — provjera slijedi */ }
+
+    if (!odluka) {
+      return new Response(JSON.stringify({ error: 'Odluka je obavezna — upiši što je odlučeno.' }), {
+        status: 400, headers: { 'Content-Type': 'application/json' },
+      })
+    }
+
+    const task = taskManager.getTask(taskId) as any
+    if (!task) {
+      return new Response(JSON.stringify({ error: 'Task not found' }), {
+        status: 404, headers: { 'Content-Type': 'application/json' },
+      })
+    }
+
+    const preostale = (task.tags || []).filter(
+      (g: string) => !OZNAKE_ODLUKE.includes(String(g).toLowerCase()))
+    const kad = new Date().toLocaleString('hr-HR', { timeZone: 'Europe/Zagreb' })
+    // Oznaka `nalog`: odluka nije autonomni rad nego izričito puštanje, pa u daemonu prolazi
+    // kroz `spawnOnRequest` i ne čeka obnovu kvote. Bez nje se odluka uredno zapiše, a zadatak
+    // svejedno stoji — izmjereno 04.09.2026. na dvije odluke pri 82 % sjednice.
+    const azurirano = taskManager.updateTask(taskId, {
+      tags: [...preostale, 'nalog'],
+      progressNotes: [`ODLUKA (${by}, ${kad} Europe/Zagreb): ${odluka}`],
+      // Zadatak koji je bio `blocked` mora natrag u `pending`, inače ga red i dalje ne vidi.
+      ...(String(task.status) === 'blocked' ? { status: 'pending' } : {}),
+    } as any)
+
+    console.log(`[API] ODLUKA ${taskId} (${by}): ${odluka.slice(0, 90)}`)
+    const message = JSON.stringify({ type: 'task_updated', task: azurirano })
+    wsClients.forEach(client => { try { client.send(message) } catch { wsClients.delete(client) } })
+
+    return new Response(JSON.stringify({ ok: true, task: azurirano, kreceOdmah: true, skinuteOznake:
+      (task.tags || []).filter((g: string) => OZNAKE_ODLUKE.includes(String(g).toLowerCase())) }), {
+      headers: { 'Content-Type': 'application/json' },
+    })
   })()
 }
 
@@ -10410,6 +11426,17 @@ const server = Bun.serve({
     }
 
     // TASK-3047: ručna kočnica — globalna i po zadatku.
+    if (url.pathname === '/api/odlucitelj/config' && req.method === 'GET') return handleOdluciteljConfigGet()
+    if (url.pathname === '/api/odlucitelj/config' && req.method === 'PUT') return handleOdluciteljConfigPut(req)
+    if (url.pathname === '/api/odlucitelj/pokreni' && req.method === 'POST') return handleOdluciteljPokreni(req)
+    if (url.pathname === '/api/jezici' && req.method === 'GET') return handleGetJezici()
+    if (url.pathname.startsWith('/api/jezik/') && req.method === 'GET') {
+      return handleGetJezik(url.pathname.slice('/api/jezik/'.length))
+    }
+    if (url.pathname === '/api/odluke' && req.method === 'GET') return handleGetOdluke()
+    if (url.pathname.match(/^\/api\/tasks\/[^\/]+\/odluka$/) && req.method === 'POST') {
+      return handleTaskOdluka(url.pathname.split('/')[3], req)
+    }
     if (url.pathname === '/api/pause' && req.method === 'GET') return handleGetPause()
     if (url.pathname === '/api/pause' && req.method === 'POST') return handleSetPause(req)
     if (url.pathname.match(/^\/api\/tasks\/[^\/]+\/pause$/) && req.method === 'POST') {
@@ -10635,6 +11662,16 @@ const server = Bun.serve({
     if (url.pathname.match(/^\/api\/models\/providers\/[^\/]+$/) && req.method === 'PUT') {
       const providerId = decodeURIComponent(url.pathname.split('/')[4])
       return handleSetProvider(providerId, req)
+    }
+
+    // GET /api/dezurni/config — postavke dežurnog + živi popis modela s njegove Ollame
+    if (url.pathname === '/api/dezurni/config' && req.method === 'GET') {
+      return handleDezurniConfigGet()
+    }
+
+    // PUT /api/dezurni/config — izbor modela i ostale postavke dežurnog (D4)
+    if (url.pathname === '/api/dezurni/config' && req.method === 'PUT') {
+      return handleDezurniConfigPut(req)
     }
 
     // ============================================

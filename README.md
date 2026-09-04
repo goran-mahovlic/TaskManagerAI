@@ -1,72 +1,79 @@
 # TaskManagerAI
 
-Upravitelj zadataka za rad s AI agentima: SQLite baza, web ploča i REST API na jednim vratima.
-Pisan je za slučaj u kojem zadatke ne otvara i ne zatvara samo čovjek nego i programi — agenti
-uzimaju zadatke, mijenjaju im stanje i ostavljaju bilješke, a čovjek to gleda na ploči.
+A task manager built for working with AI agents: SQLite database, web board and REST API on a
+single port. It is written for the case where tasks are not opened and closed by a person alone
+but also by programs — agents pick tasks up, change their state and leave notes, while a person
+watches it happen on the board.
 
-Nastao je iz [Tasks.md](https://github.com/BaldissaraMatheus/Tasks.md) Matheusa Baldissare — odatle
-dolazi zamisao ploče na kojoj su zadatci obične datoteke koje uređuješ kako hoćeš. S vremenom je
-prešao s datoteka na SQL, jer su zadatke počeli otvarati i zatvarati programi, a ne samo ljudi.
+*Croatian version: [README.hr.md](./README.hr.md)*
+
+It began as a fork of [Tasks.md](https://github.com/BaldissaraMatheus/Tasks.md) by Matheus
+Baldissara — that is where the idea comes from: a board whose tasks are plain files you edit
+however you like. Over time it moved from files to SQL, because programs, not just people, had
+started opening and closing tasks.
 
 ---
 
-## Što dobiješ
+## What you get
 
 | | |
 |---|---|
-| **Ploča** | Kanban s pregledom po stanju, prioritetu, nositelju i projektu |
-| **REST API** | otvaranje, izmjena, pretraga i zaključivanje zadataka |
-| **SQLite + WAL** | ploča čita dok agenti pišu, bez zaključavanja |
-| **Automatsko izvršavanje** | zadatak prioriteta 1 okidač sam stavlja u red |
-| **Projekti** | zadatci se grupiraju, svaki projekt ima svoju specifikaciju |
-| **Ručna kočnica** | pauza globalno ili po zadatku, bez gubitka stanja |
-| **Živa konzola** | tijek rada preko web utičnice, bez osvježavanja stranice |
-| **Graf znanja** | bilješke i veze među njima, neobavezno uz semantičko pretraživanje |
+| **Board** | Kanban view by state, priority, assignee and project |
+| **REST API** | create, edit, search and close tasks |
+| **SQLite + WAL** | the board reads while agents write, without locking |
+| **Automatic execution** | a priority-1 task is queued by a trigger on its own |
+| **Projects** | tasks are grouped; each project has its own specification |
+| **Manual brake** | pause globally or per task, without losing state |
+| **Live console** | work streams over a WebSocket, no page refresh |
+| **Knowledge graph** | notes and the links between them, optionally with semantic search |
+| **Interface languages** | English and Croatian; further languages are one JSON file away |
+| **Decision gate** | tasks tagged `needs-decision` wait for a person — or for a model you choose |
 
-Sve radi bez ijedne vanjske usluge. RAG (semantičko pretraživanje) je neobavezan dodatak.
+Everything runs without a single external service. RAG (semantic search) is an optional extra.
 
 ---
 
-## Brzi početak
+## Quick start
 
-Treba ti [Bun](https://bun.sh) 1.1 ili noviji. Ništa drugo.
+You need [Bun](https://bun.sh) 1.1 or newer. Nothing else.
 
 ```bash
 git clone https://github.com/goran-mahovlic/TaskManagerAI.git
 cd TaskManagerAI
 
-bun install          # ovisnosti
-bun run init         # stvara bazu iz db/schema.sql
-bun run start        # pokreće ploču i API
+bun install          # dependencies
+bun run init         # creates the database from db/schema.sql
+bun run start        # starts the board and the API
 ```
 
-Otvori `http://localhost:17781`.
+Open `http://localhost:17781`.
 
-Prvi zadatak preko API-ja:
+Your first task through the API:
 
 ```bash
 curl -X POST http://localhost:17781/api/tasks \
   -H "Content-Type: application/json" \
-  -d '{"title":"Prvi zadatak","priority":2,"assignee":"user","createdBy":"user"}'
+  -d '{"title":"First task","priority":2,"assignee":"user","createdBy":"user"}'
 ```
 
 ---
 
-## Postavke
+## Settings
 
-Sve je neobavezno; bez ijedne postavke radi na zadanim vrijednostima. Kopiraj `env.example` u
-`.env` i promijeni što treba.
+Everything is optional; with no settings at all it runs on defaults. Copy `env.example` to
+`.env` and change what you need.
 
-| Varijabla | Zadano | Čemu služi |
+| Variable | Default | What it does |
 |---|---|---|
-| `TM_PORT` | `17781` | vrata poslužitelja |
-| `TM_HOME` | `$HOME/.taskmanager` | mapa s bazom i radnim datotekama |
-| `TM_DB` | `$TM_HOME/data/tasks.db` | putanja do baze, ako je držiš drugdje |
-| `TM_AGENTS` | ugrađeni popis | imena agenata koji smiju biti nositelji, odvojena zarezom |
-| `TM_EXTERNAL_HOST` | `localhost` | ime poslužitelja koje se prikazuje u sučelju |
-| `TM_CHROMA_HOST`, `TM_OLLAMA_URL` | — | uključuju RAG; bez njih je isključen |
+| `TM_PORT` | `17781` | server port |
+| `TM_HOME` | `$HOME/.taskmanager` | folder holding the database and working files |
+| `TM_DB` | `$TM_HOME/data/tasks.db` | path to the database, if you keep it elsewhere |
+| `TM_AGENTS` | built-in list | comma-separated names allowed as assignees |
+| `TM_EXTERNAL_HOST` | `localhost` | host name shown in the interface |
+| `TM_LANG` | `hr` | default interface language (`en`, `hr`, or any file in `locales/`) |
+| `TM_CHROMA_HOST`, `TM_OLLAMA_URL` | — | enable RAG; without them it is off |
 
-**Vlastiti sastav tima** postavlja se ovako — `user` i `scheduler` uvijek se dodaju sami:
+**Your own team** is set like this — `user` and `scheduler` are always added automatically:
 
 ```bash
 TM_AGENTS=ana,ivan,marko bun run start
@@ -74,58 +81,102 @@ TM_AGENTS=ana,ivan,marko bun run start
 
 ---
 
-## Dokumentacija
+## Interface language
 
-| Dokument | O čemu |
-|---|---|
-| [docs/INSTALL.md](docs/INSTALL.md) | instalacija korak po korak, servis, pričuve, nadogradnja |
-| [docs/DATABASE.md](docs/DATABASE.md) | tablice, okidači, kako nastaje baza i kako se mijenja |
-| [docs/API.md](docs/API.md) | svi krajevi API-ja s primjerima |
-| [docs/TOOLS.md](docs/TOOLS.md) | skripte, konzola, periodički poslovi |
-| [REGOC/README.md](REGOC/README.md) | kako izgleda pravi sustav agenata izgrađen oko ovoga |
+The board ships with English and Croatian. Pick one from the selector in the header; the choice
+is remembered in the browser. To set what everyone sees before they choose anything, use
+`TM_LANG` or `config/jezik.json`.
 
-Mapa `REGOC` opisuje sustav iz kojega je TaskManagerAI izvučen: tim agenata s vlastitim ulogama i
-modelima, demon koji radi u pozadini, sjednice koje preživljavaju prekid, kočnice autonomije,
-usmjeravanje poruka, glas i lokalne modele. Nije potrebna za rad TaskManagera; služi kao prikaz
-dokle se s ovim alatom može otići i što se pritom naučilo. Sam REGOČ počiva na
-[PAI — Personal AI Infrastructure](https://github.com/danielmiessler/PAI).
+Adding a language needs no code. Copy an existing file in `locales/`, translate the values —
+never the keys — and the language appears in the selector on the next restart:
+
+```bash
+cp locales/en.json locales/de.json
+$EDITOR locales/de.json          # translate the values only
+TM_LANG=de bun run start
+```
+
+A key with no translation falls back to English, so a partial translation is still usable.
+Task titles, descriptions and notes are **never** translated: they are your data, not interface.
 
 ---
 
-## Zahvala i podrijetlo
+## Deciding what may start
 
-Upravitelj zadataka počinje od **[Tasks.md](https://github.com/BaldissaraMatheus/Tasks.md)** (autor
-[Matheus Baldissara](https://github.com/BaldissaraMatheus), MIT). Odande je preuzeta osnovna
-zamisao: ploča sa zadatcima koju možeš držati uz sebe, bez računa i bez usluge u oblaku.
+A task tagged `needs-decision` is left alone by every automation until a person releases it.
+The board collects those in a bar above the columns, with a field for the decision and a
+**Continue** button; what you write stays with the task.
 
-Sustav koji je oko njega izrastao počinje od **[PAI — Personal AI Infrastructure](https://github.com/danielmiessler/PAI)**
-(autor [Daniel Miessler](https://github.com/danielmiessler), MIT) — odatle dolaze vještine, kuke,
-učitavanje konteksta pri pokretanju i zamisao da pomoćnik bude infrastruktura koju držiš kod
-sebe, a ne usluga na koju se prijaviš. Opisano je u [REGOC/README.md](REGOC/README.md).
+You can also hand that judgement to a model — any provider configured in
+`models/model-config.json`, from a local Ollama model to OpenRouter or Anthropic. A
+deterministic filter runs first and sends anything touching money, deletion, secrets, external
+effects or a vague description straight back to you; the model only sees the rest and cannot
+overrule the filter.
 
-Otkad su zadatke počeli otvarati i agenti, a ne samo ljudi, trebalo je ono što datoteke ne daju —
-istodobno pisanje bez sudara, red za izvršavanje, povijest svake promjene i upit koji vrati sve
-zadatke jednoga nositelja. Zato je pohrana prešla na SQLite, a s njom se promijenio i najveći dio
-koda. Ideja je ostala.
+That split is deliberate. Measured on a small local model, judging risk on its own it answered
+"go" to 6 of 7 risky tasks — convincingly worded every time. With the filter: 7 of 7 correct.
 
-## Licencija
+Details, providers and settings: [docs/ODLUCIVANJE.md](docs/ODLUCIVANJE.md).
 
-MIT, ista kao u izvornom projektu. Autorska prava zadržavaju i Matheus Baldissara (Tasks.md,
-2023.) i Goran Mahovlić (TaskManagerAI, 2026.). Puni tekst je u [LICENSE](LICENSE).
+---
 
-## Agenti i vještine
+## Documentation
 
-Paket namjerno **ne nosi vještine ni alate** — oni žive u [PAI](https://github.com/danielmiessler/PAI)
-i drugim repozitorijima koji ih održavaju. Ovdje je samo popis tko su agenti i što im treba:
+| Document | About |
+|---|---|
+| [docs/INSTALL.md](docs/INSTALL.md) | step-by-step install, service, backups, upgrades |
+| [docs/DATABASE.md](docs/DATABASE.md) | tables, triggers, how the database is created and changed |
+| [docs/API.md](docs/API.md) | every API endpoint with examples |
+| [docs/TOOLS.md](docs/TOOLS.md) | scripts, console, periodic jobs |
+| [docs/JEZICI.md](docs/JEZICI.md) | interface languages: choosing one, adding one |
+| [docs/ODLUCIVANJE.md](docs/ODLUCIVANJE.md) | tasks that wait for a decision; letting a model decide, and the risk filter |
+| [REGOC/README.md](REGOC/README.md) | what a real agent system built around this looks like |
+
+The `REGOC` folder describes the system TaskManagerAI was extracted from: a team of agents with
+their own roles and models, a daemon running in the background, sessions that survive an
+interruption, autonomy brakes, message routing, voice and local models. It is not needed to run
+TaskManager; it shows how far this tool can be taken and what was learned along the way. REGOČ
+itself rests on [PAI — Personal AI Infrastructure](https://github.com/danielmiessler/PAI).
+
+---
+
+## Credit and origin
+
+The task manager starts from **[Tasks.md](https://github.com/BaldissaraMatheus/Tasks.md)** (by
+[Matheus Baldissara](https://github.com/BaldissaraMatheus), MIT). That is where the basic idea
+comes from: a task board you can keep to yourself, with no account and no cloud service.
+
+The system that grew around it starts from
+**[PAI — Personal AI Infrastructure](https://github.com/danielmiessler/PAI)** (by
+[Daniel Miessler](https://github.com/danielmiessler), MIT) — that is where the skills, hooks,
+context loading at startup and the idea of an assistant as infrastructure you host yourself,
+rather than a service you log into, come from. It is described in [REGOC/README.md](REGOC/README.md).
+
+Once agents, and not only people, began opening tasks, files no longer sufficed: concurrent
+writes without collisions, an execution queue, a history of every change, and a query returning
+every task of one assignee. Storage moved to SQLite, and most of the code moved with it. The
+idea stayed the same.
+
+## Licence
+
+MIT, the same as the original project. Copyright is held by both Matheus Baldissara (Tasks.md,
+2023) and Goran Mahovlić (TaskManagerAI, 2026). Full text in [LICENSE](LICENSE).
+
+## Agents and skills
+
+The package deliberately **ships no skills or tools** — those live in
+[PAI](https://github.com/danielmiessler/PAI) and other repositories that maintain them. What is
+here is only the list of who the agents are and what they need:
 
 ```bash
-bash scripts/install-agents.sh --vjestine   # zadani tim + dohvat vještina iz PAI-ja
+bash scripts/install-agents.sh --vjestine   # default team + fetch skills from PAI
 ```
 
-Zadani tim: REGOČ, Kosjenka, Jelena, Malik, Manda, Dora, Gita, Grga, Potjeh (`docs/AGENTI.md`).
+Default team: REGOČ, Kosjenka, Jelena, Malik, Manda, Dora, Gita, Grga, Potjeh (`docs/AGENTI.md`).
 
-## Dalje od ploče
+## Beyond the board
 
-`docs/SUSTAV.md` opisuje kako se od ovog paketa slaže sustav u kojem se zadatci sami odrađuju:
-agenti i njihov registar, znanje (RAG) i njegova zaštita, instalacija dodatnih vještina, ulazni
-kanali te kočnice i vratar dovršetka — redom, sa što se smije preskočiti i zašto.
+`docs/SUSTAV.md` describes how this package grows into a system where tasks get done on their
+own: the agents and their registry, knowledge (RAG) and how it is protected, installing extra
+skills, input channels, and the brakes and completion gate — in order, with what may be skipped
+and why.

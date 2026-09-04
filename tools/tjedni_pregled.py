@@ -87,7 +87,14 @@ TOP_ALATA = 5
 # ─────────────────────────────────────────────────────────────────────────────
 
 def otisak(run: dict, put: Path | None) -> str:
-    """Ključ keša: izvođenje + stanje transkripta na disku (O3)."""
+    """Ključ keša: izvođenje + stanje transkripta na disku (O3).
+
+    M3/TASK-4625: u otisak ULAZI i `outcome`. Otisak mora pokrivati svako polje iz
+    `run_log`-a koje završi u keširanom zapisu — inače ispravak ishoda ostane nevidljiv
+    dok keš ne istekne. Mjereno 04.09.2026.: nakon preračuna 14 redaka u `blocked_ok`
+    pregled je i dalje pokazivao „blocked_ok 0 (0,0 %)" jer je svih 968 izvođenja došlo
+    iz keša. Promjena otiska je i automatsko poništenje: stari ključ se više ne pogodi.
+    """
     if put is not None and put.exists():
         st = put.stat()
         trag = f"{st.st_size}:{int(st.st_mtime)}"
@@ -95,6 +102,7 @@ def otisak(run: dict, put: Path | None) -> str:
         trag = "bez-transkripta"
     return "|".join([
         str(run.get("task_id")), str(run.get("ts")), str(run.get("session_id")), trag,
+        str(run.get("outcome")),
     ])
 
 
@@ -387,6 +395,9 @@ def agregiraj(zapisi: list[dict]) -> dict:
                          if str(z["sesija"]["transkript_putanja"] or "").endswith(".gz")),
         "ishodi": dict(Counter((z.get("zadatak") or {}).get("outcome") or "(nepoznat)"
                                for z in zapisi).most_common()),
+        # M3/TASK-4625: `ishodi` je puna raščlamba po sirovoj vrijednosti; `ishodi_stupci`
+        # su tri stupca koja ploča prikazuje. Oba se objavljuju da se zbroj može provjeriti.
+        "ishodi_stupci": stupci_ishoda(zapisi),
         "trosak": {
             "usd": at.r6(trosak_usd) if trosak_usd is not None else None,
             "iz_zadataka": trosak_n,
@@ -421,6 +432,38 @@ def agregiraj(zapisi: list[dict]) -> dict:
             "iz_zadataka": trenje_mjereno,
         },
     }
+
+
+# ── M3/TASK-4625: tri stupca ishoda ──────────────────────────────────────────
+# `run_log.outcome` ima ČETIRI vrijednosti, a ploča pokazuje TRI stupca. Taksonomija i
+# obrazloženje su u ~/.claude/regoc/RunOutcome.ts (SSOT); ovdje je samo preslikavanje,
+# jer python ne može uvesti TypeScript. Test koji brani da se dvije kopije ne raziđu:
+# ~/.claude/regoc/tests/run-outcome.test.ts + tools/test_tjedni_pregled.py.
+#
+#   completed  → completed   posao isporučen i prihvaćen
+#   blocked_ok → blocked_ok  agent je SAM stao pred preprekom (nije kvar)
+#   blocked    → failed      spawn ili rezultat odbijen (kvar koji se popravlja)
+#   failed     → failed      proces je pao
+#   ostalo     → failed      mjerilo koje redak ne razumije ne smije ga zvati uspjehom
+STUPCI_ISHODA = ("completed", "blocked_ok", "failed")
+
+
+def stupac_ishoda(outcome) -> str:
+    """Sirovi `run_log.outcome` → jedan od tri stupca."""
+    o = (outcome or "").strip()
+    if o == "completed":
+        return "completed"
+    if o == "blocked_ok":
+        return "blocked_ok"
+    return "failed"
+
+
+def stupci_ishoda(zapisi: list[dict]) -> dict:
+    """Tri stupca, uvijek sva tri ključa (nazivnik mora biti vidljiv i kad je nula)."""
+    br = {k: 0 for k in STUPCI_ISHODA}
+    for z in zapisi:
+        br[stupac_ishoda((z.get("zadatak") or {}).get("outcome"))] += 1
+    return br
 
 
 def najskuplji(zapisi: list[dict], koliko: int) -> list[dict]:
@@ -590,7 +633,12 @@ def ispisi(p: dict) -> None:
     tr = u["trenje"]
     print(f"  trenje            {tr['zadataka_s_trenjem']} izvođenja s trenjem "
           f"(mjereno na {tr['iz_zadataka']}) · izgubljeno do {trajanje_txt(tr['izgubljeno_s'])}")
-    print(f"  ishodi            " + " · ".join(f"{k} {v}" for k, v in u["ishodi"].items()))
+    st = u["ishodi_stupci"]
+    uk_ish = sum(st.values())
+    print(f"  ishodi            completed {st['completed']} ({pos(at.udio(st['completed'], uk_ish))})"
+          f" · blocked_ok {st['blocked_ok']} ({pos(at.udio(st['blocked_ok'], uk_ish))})"
+          f" · failed {st['failed']} ({pos(at.udio(st['failed'], uk_ish))})")
+    print(f"                    raščlamba: " + " · ".join(f"{k} {v}" for k, v in u["ishodi"].items()))
 
     for naslov, kljuc, redci in (("PO PROJEKTU", "project_id", p["po_projektu"]),
                                  ("PO AGENTU", "agent", p["po_agentu"])):

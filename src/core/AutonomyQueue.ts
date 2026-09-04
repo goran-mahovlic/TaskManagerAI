@@ -256,6 +256,65 @@ export function classifyAutonomyQueue(tasks: QueueTaskLike[], opts: AutonomyQueu
 }
 
 // ============================================
+// Zašto red stoji, a nitko ne radi (TASK-4640)
+// ============================================
+
+/** Redci za dnevnik + otisak stanja koji pozivatelj pamti do sljedećeg prolaza. */
+export interface SkippedQueueNotice {
+  /** Prazno = ne piši ništa (nema preskočenih ili je stanje isto kao prošli put). */
+  lines: string[]
+  /** Prosljeđuje se natrag kao `previousFingerprint`; `''` znači „nema što čekati". */
+  fingerprint: string
+}
+
+/**
+ * Red pun preskočenih zadataka izgledao je do 04.09.2026. IDENTIČNO kao prazan red: nula
+ * zapisa u oba slučaja. Devet zadataka stajalo je 1,5 h s oznakom `needs-decision`, a u
+ * dnevniku o tome nije bilo ni retka — pa je Goran morao pitati zašto posao ne kreće.
+ *
+ * ZAŠTO OTISAK, a ne bezuvjetan zapis: petlja auto-execa prolazi svakih 15 s. Bezuvjetan
+ * redak bio bi 240 redaka na sat o istom nepromijenjenom stanju — dnevnik bi postao šum i
+ * time opet nevidljiv, samo skuplje. Zato se javlja SAMO promjena stanja.
+ *
+ * U otisak ulaze i IDENTITETI preskočenih, ne samo brojevi po presudi: zamjena jednog
+ * `needs-decision` zadatka drugim ostavlja iste brojke, a to je druga vijest za čovjeka.
+ * Prazan popis vraća prazan otisak — kad red kasnije opet stane, to je nova vijest.
+ */
+export function describeSkippedQueue(
+  skipped: QueueEntry[],
+  previousFingerprint: string,
+): SkippedQueueNotice {
+  const lista = Array.isArray(skipped) ? skipped : []
+  if (lista.length === 0) return { lines: [], fingerprint: '' }
+
+  const razlozi = new Map<string, number>()
+  for (const e of lista) razlozi.set(e.verdict, (razlozi.get(e.verdict) || 0) + 1)
+
+  const fingerprint = JSON.stringify({
+    n: lista.length,
+    v: [...razlozi.entries()].sort((a, b) => a[0].localeCompare(b[0])),
+    ids: lista.map(e => e.id).sort(),
+  })
+  if (fingerprint === previousFingerprint) return { lines: [], fingerprint }
+
+  // Poredak: najbrojniji razlog prvi (to je ono što drži red), pa abecedno — deterministički.
+  const opis = [...razlozi.entries()]
+    .sort((a, b) => (b[1] - a[1]) || a[0].localeCompare(b[0]))
+    .map(([v, n]) => `${n}× ${v}`)
+    .join(', ')
+
+  const lines = [
+    `⏸️ [red] nijedan zadatak nije kvalificiran za autonomiju, a ${lista.length} ih čeka: ${opis}`,
+  ]
+  // Imena su bitna: bez njih čovjek zna DA nešto čeka odluku, ali ne i ŠTO odblokirati.
+  const gated = lista.filter(e => e.verdict === 'human-gated')
+  if (gated.length > 0) {
+    lines.push(`   ↳ čeka ljudsku odluku (${DEFAULT_HUMAN_GATED_TAGS.join('/')}): ${gated.map(e => e.id).join(', ')}`)
+  }
+  return { lines, fingerprint }
+}
+
+// ============================================
 // Zapis reda (ono što čeka kvotu postaje vidljivo)
 // ============================================
 
