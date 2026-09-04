@@ -1,0 +1,47 @@
+{
+ "_opis": "Upute koje se pri OTVARANJU zadatka same dopisuju u opis, kad se prepozna obrazac koji je već jednom prošao krivo. Lekcija u RAG-u ne pomaže ako je izvršitelj ne pročita; ovo mu dolazi u prompt jer je dio opisa. Novo pravilo se dodaje ovdje, bez izmjene koda.",
+ "_polja": {
+  "kad": "uvjeti koji svi moraju vrijediti: oznake (sve moraju biti prisutne), assignee (popis), naslovSadrzi / opisSadrzi (regex, bez razlike u veličini slova)",
+  "uputa": "tekst koji se dopisuje na kraj opisa",
+  "izvor": "odakle pravilo dolazi — zadatak ili datum, radi provjere poslije"
+ },
+ "pravila": [
+  {
+   "id": "pokretac-orkestrator",
+   "kad": {
+    "oznake": [
+     "pokretac"
+    ],
+    "assignee": [
+     "regoc"
+    ]
+   },
+   "izvor": "TASK-4267, 04.09.2026.",
+   "uputa": "⚠ NAPOMENA SUSTAVA (automatska): ovaj zadatak je POKRETAČ dodijeljen `regoc`-u, a AutonomyQueue zadatke tog izvršitelja svrstava u `orchestrator` i NIKAD ih ne pokreće — prebacivanje u `pending` neće proizvesti ništa i zadatak će ondje stajati zauvijek. Dodijeli ga stvarnom izvršitelju (jelena/kosjenka) ili posao izvedi kroz API (gumb „Nastavi\", POST /api/tasks/<ID>/odluka), ne kroz zadatak-posrednik."
+  },
+  {
+   "id": "otkljucavanje-lanca",
+   "kad": {
+    "opisSadrzi": "skini oznaku|otključaj lanac|otkljucaj lanac"
+   },
+   "izvor": "TASK-4267, 04.09.2026.",
+   "uputa": "⚠ NAPOMENA SUSTAVA (automatska): kad skidaš oznaku koja drži zadatke, NE vraćaj u `pending` onaj koji ima nepraznu `blockedBy` — status mijenja samo onome koga ništa ne drži. Lanac je jedina zaštita redoslijeda; slijepo vraćanje statusa pustilo bi korak koji po planu ide kasnije (npr. živi ulaz prije sjene)."
+  },
+  {
+   "id": "lanac-bez-reciprociteta",
+   "kad": {
+    "opisSadrzi": "blockedBy|blocked_by"
+   },
+   "izvor": "TASK-4267 i ranije mjerenje lanca, 28.08.2026.",
+   "uputa": "⚠ NAPOMENA SUSTAVA (automatska): `blockedBy` postavljen preko PUT-a NE otključava sam — roditelj mora nositi i `blocks` s ID-om djeteta, inače red tiho stane. Provjeri oba smjera u bazi nakon izmjene."
+  },
+  {
+   "id": "dugotrajni-proces",
+   "kad": {
+    "opisSadrzi": "RegocDaemon|TaskWebUI|telegram_agent|daemon\\.ts"
+   },
+   "izvor": "VERIFICATION GATE, CLAUDE.md",
+   "uputa": "⚠ NAPOMENA SUSTAVA (automatska): diraš kod koji vrti dugotrajan proces. Spremljena datoteka mijenja SAMO disk — bun/node ne učitavaju kod ponovno. Popravak nije gotov dok proces nije restartan i provjeren (`StaleCodeCheck`, pa `regoc-services.sh restart-service <servis>`); u rezultat upiši novi PID i vrijeme."
+  }
+ ]
+}

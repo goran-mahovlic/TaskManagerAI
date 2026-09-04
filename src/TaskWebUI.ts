@@ -8270,6 +8270,58 @@ function resolveProjectForCreate(requested: string | undefined): { projectId: st
   return { projectId: wanted }
 }
 
+
+/**
+ * Upute koje se same dopisuju u opis zadatka pri otvaranju (Goran, 04.09.2026.).
+ *
+ * Zapisana lekcija pomaže samo onome tko je potraži; izvršitelj koji dobije zadatak čita opis,
+ * a ne RAG. Zato se poznati obrasci — oni koji su već jednom prošli krivo — dopisuju u sam
+ * opis, pa dolaze u prompt bez ičije dobre volje.
+ *
+ * Pravila su u `config/upute-po-tipu.json` i čitaju se pri svakom otvaranju, pa novo pravilo
+ * vrijedi odmah, bez izmjene koda i bez restarta.
+ */
+const UPUTE_PATH = `${process.env.HOME}/.claude/regoc/config/upute-po-tipu.json`
+
+function upozorenjaZaZadatak(zadatak: {
+  title?: unknown; description?: unknown; assignee?: unknown; tags?: unknown
+}): string[] {
+  let pravila: any[] = []
+  try {
+    pravila = JSON.parse(require('fs').readFileSync(UPUTE_PATH, 'utf-8')).pravila || []
+  } catch { return [] }          // nema datoteke ili je pokvarena → zadatak se otvara kao i prije
+
+  const naslov = String(zadatak.title ?? '')
+  const opis = String(zadatak.description ?? '')
+  const izvrsitelj = String(zadatak.assignee ?? '').toLowerCase()
+  const oznake = (Array.isArray(zadatak.tags) ? zadatak.tags : []).map(g => String(g).toLowerCase())
+
+  const out: string[] = []
+  for (const pr of pravila) {
+    const kad = pr?.kad || {}
+    let vrijedi = true
+    if (Array.isArray(kad.oznake) && kad.oznake.length) {
+      vrijedi = kad.oznake.every((g: string) => oznake.includes(String(g).toLowerCase()))
+    }
+    if (vrijedi && Array.isArray(kad.assignee) && kad.assignee.length) {
+      vrijedi = kad.assignee.map((a: string) => String(a).toLowerCase()).includes(izvrsitelj)
+    }
+    if (vrijedi && kad.naslovSadrzi) {
+      try { vrijedi = new RegExp(String(kad.naslovSadrzi), 'i').test(naslov) } catch { vrijedi = false }
+    }
+    if (vrijedi && kad.opisSadrzi) {
+      try { vrijedi = new RegExp(String(kad.opisSadrzi), 'i').test(`${naslov}\n${opis}`) }
+      catch { vrijedi = false }
+    }
+    // Prazan uvjet ne smije pogoditi svaki zadatak — pravilo bez ijednog uvjeta se preskače.
+    const imaUvjet = !!(kad.oznake?.length || kad.assignee?.length || kad.naslovSadrzi || kad.opisSadrzi)
+    if (vrijedi && imaUvjet && pr?.uputa && !opis.includes(String(pr.uputa).slice(0, 40))) {
+      out.push(String(pr.uputa))
+    }
+  }
+  return out
+}
+
 async function handleCreateTask(req: Request): Promise<Response> {
   // Izvan try-a: catch mora znati što je progutano da se trag ne izgubi na iznimci.
   let createFields: { normalized: Record<string, unknown>; unknown: string[]; conflicts: string[] } | null = null
@@ -8298,6 +8350,15 @@ async function handleCreateTask(req: Request): Promise<Response> {
     }
 
     const validatedData = parseResult.data
+
+    // Dopiši upute za prepoznate obrasce. Ide poslije validacije da se ne petlja u shemu, a
+    // prije spremanja da uputa doista završi u opisu — ondje je izvršitelj i vidi.
+    const upute = upozorenjaZaZadatak(validatedData as any)
+    if (upute.length) {
+      const stari = String((validatedData as any).description ?? '')
+      ;(validatedData as any).description = (stari ? stari + '\n\n' : '') + upute.join('\n\n')
+      console.log(`[API] uputa dopisana (${upute.length}) pri otvaranju zadatka`)
+    }
 
     // Anti-echo guard: reject tasks whose "spec" is itself a recycled REGOČ agent
     // report (📋 SUMMARY / 🔍 ANALYSIS / ⚡ ACTIONS ... ≥3 markers) rather than an
