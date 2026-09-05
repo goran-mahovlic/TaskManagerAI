@@ -143,7 +143,7 @@ export interface AutonomyQueueResult {
   counts: Record<QueueVerdict, number>
 }
 
-const DEFAULT_HUMAN_ASSIGNEES = ['user', 'goran']
+export const DEFAULT_HUMAN_ASSIGNEES = ['user', 'goran']
 
 /**
  * REGOČ je orkestrator, ne radnik kojeg se spawna. `assignee:'regoc'` znači „ovo radi
@@ -156,7 +156,7 @@ const DEFAULT_HUMAN_ASSIGNEES = ['user', 'goran']
  * pad ploče koji je Goran prijavio. Oznaka `no-watchdog` tu ne pomaže: ona sprječava
  * reset zadatka, ne spawn.
  */
-const ORCHESTRATOR_ASSIGNEES = new Set(['regoc', 'regoč'])
+export const ORCHESTRATOR_ASSIGNEES = new Set(['regoc', 'regoč'])
 
 function toTags(v: QueueTaskLike['tags']): string[] {
   if (Array.isArray(v)) return v.filter(t => typeof t === 'string')

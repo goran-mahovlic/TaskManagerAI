@@ -575,3 +575,42 @@ export function getCostTracker(dbPath?: string): CostTracker {
   }
   return _instance
 }
+
+// ============================================
+// Ukupna potrošnja po projektu (ploča: GET /api/projects/trosak)
+// ============================================
+
+/**
+ * PROJEKT SE ČITA JOIN-om NA ZADATAK. `logUsage` namjerno upisuje `project_id = NULL` kad
+ * redak ima `task_id` — zadatak je izvor istine, jer se njegov projekt može ispraviti
+ * naknadno, a zamrznuta vrijednost u `cost_log` bi tada lagala. Tko grupira samo po
+ * `cost_log.project_id`, dobije da SVAKI spawn vezan uz zadatak nema projekt.
+ *
+ * Upravo se to i događalo na ploči do 05.09.2026. (TASK-4263): mjereno 91,32 USD u
+ * 23 zapisa u 24 h u pretincu „(bez projekta)", a svih 23 imaju zadatak koji IMA projekt.
+ * Na kartici projekta vidio se samo trošak iz retroaktivnog uvoza (on je `project_id`
+ * upisivao izravno, bez zadatka), a nijedan sat živog rada.
+ *
+ * SQL stoji OVDJE, uz `logUsage` čiji ugovor provodi, a ne uz endpoint: dva mjesta koja
+ * neovisno odlučuju kako se čita projekt su isti raskorak koji je i nastao.
+ *
+ * `$1` (kad se koristi) je granica prozora za `datetime('now', ?)`, npr. `-30 days`.
+ */
+export const TROSAK_PO_PROJEKTU_SQL = `
+      SELECT COALESCE(t.project_id, c.project_id, '(bez projekta)') AS pid,
+             ROUND(SUM(c.cost_usd), 4) AS usd,
+             COUNT(*)                  AS zapisa,
+             MAX(c.timestamp)          AS zadnji
+        FROM cost_log c
+        LEFT JOIN tasks t ON t.id = c.task_id
+       GROUP BY pid`
+
+/** Isti agregat, ograničen na prozor (parametar: npr. `-30 days`). */
+export const TROSAK_PO_PROJEKTU_PROZOR_SQL = `
+      SELECT COALESCE(t.project_id, c.project_id, '(bez projekta)') AS pid,
+             ROUND(SUM(c.cost_usd), 4) AS usd,
+             COUNT(*)                  AS zapisa
+        FROM cost_log c
+        LEFT JOIN tasks t ON t.id = c.task_id
+       WHERE c.timestamp > datetime('now', ?)
+       GROUP BY pid`

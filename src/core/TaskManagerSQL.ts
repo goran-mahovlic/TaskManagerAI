@@ -25,6 +25,12 @@ import { TASKS_ORDER_BY } from "./ChronoOrder";
  */
 export const HUMAN_GATED_UNBLOCK_TAGS = ['no-autonomy', 'waiting-for-human', 'needs-decision', 'interactive'];
 
+/**
+ * Dopuna razloga blokade kad ljudska zadrska drzi zadatak, a ovisnosti su nestale.
+ * Dopisuje se IZA izvornog razloga, nikad umjesto njega (TASK-3599).
+ */
+export const OVISNOSTI_DOVRSENE = 'sve ovisnosti su dovršene, ostaje samo ljudska odluka';
+
 /** Nosi li zadatak oznaku ljudske zadrske? */
 export function humanGatedTask(tags?: string[] | null): boolean {
   if (!Array.isArray(tags)) return false;
@@ -811,8 +817,19 @@ export class TaskManagerSQL {
           // drzi — pa je ovdje postujemo: ovisnost se skida, ali status i razlog ostaju.
           const humanHeld = humanGatedTask(waitingTask.tags);
           const newStatus = (!humanHeld && newBlockedBy.length === 0 && waitingTask.status === 'blocked') ? 'pending' : waitingTask.status;
-          this.db.prepare("UPDATE tasks SET blocked_by = ?, status = ?, blocked_reason = CASE WHEN ? = 'pending' THEN '' ELSE blocked_reason END, updated_at = ? WHERE id = ?")
-            .run(JSON.stringify(newBlockedBy), newStatus, newStatus, now, waitingId);
+          // Razlog blokade mora pratiti stvarnost (Goran, 05.09.2026.: „to bi trebalo biti
+          // vidljivije oznaceno jer ovako ne vidim"). Kad ljudska zadrska zadrzi status, a
+          // ovisnosti su nestale, stari tekst „Ceka TASK-4620" ostajao je zapisan i nakon sto
+          // je TASK-4620 dovrsen — sedam zadataka je 6 h pisalo da cekaju zadatak koji je gotov.
+          // Izvorni razlog se NE brise (TASK-3599: brisanje je bio prethodni kvar) nego dobiva
+          // dopunu — pa se vidi i zasto je zadatak stao i da ga vise nista ne ceka.
+          const noviRazlog = (humanHeld && newBlockedBy.length === 0
+                              && !String(waitingTask.blockedReason || '').includes(OVISNOSTI_DOVRSENE))
+            ? [String(waitingTask.blockedReason || '').trim(), OVISNOSTI_DOVRSENE].filter(Boolean).join(' · ')
+            : null;
+          this.db.prepare(
+            "UPDATE tasks SET blocked_by = ?, status = ?, blocked_reason = CASE WHEN ? = 'pending' THEN '' WHEN ? IS NOT NULL THEN ? ELSE blocked_reason END, updated_at = ? WHERE id = ?")
+            .run(JSON.stringify(newBlockedBy), newStatus, newStatus, noviRazlog, noviRazlog, now, waitingId);
           if (newStatus !== waitingTask.status) {
             this.logChange(waitingId, 'status', waitingTask.status, newStatus, 'system');
           } else if (humanHeld && newBlockedBy.length === 0 && waitingTask.status === 'blocked') {

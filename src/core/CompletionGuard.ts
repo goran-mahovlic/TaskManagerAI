@@ -34,6 +34,15 @@
  *     BLOCKED: ...        → fali sposobnost/alat/pristup (popravlja se drugim runnerom)
  */
 
+import {
+  loadStepSchemaConfig,
+  ocijeniIzlazKoraka,
+  shemaSeProvodi,
+  shemaUPromptu,
+  zamjerkeZaAgenta,
+  type SudKoraka,
+} from './StepSchema'
+
 // ─── Pragovi (izvezeni: testovi i pozivatelji ne smiju pogađati brojeve) ──────
 
 /** Ispod ovoliko znakova rezultat ne može biti smislen dokaz izvršenja. */
@@ -146,6 +155,10 @@ export type CompletionCode =
   | 'no_evidence'
   /** Agent je SAM deklarirao neuspjeh kroz REGOC-STATUS redak (nije heuristika). */
   | 'declared_not_done'
+  /** W3: blok REGOC-IZLAZ postoji, ali polja ne zadovoljavaju shemu. */
+  | 'schema_invalid'
+  /** W3: blok REGOC-IZLAZ uopće ne postoji, a način je `on`. */
+  | 'schema_missing'
 
 /**
  * Koliko je sud pouzdan.
@@ -154,8 +167,12 @@ export type CompletionCode =
  *   `heuristic` — nema deklaracije, sudi se po prozi. NISKA pouzdanost: koristi se
  *                 kao fallback i tako se i loga (uvjet iz arhitektonske dorade,
  *                 TASK-2959: „regex nad prozom nikad kao jedini osnov" u live modu).
+ *   `schema`    — W3/TASK-4615: sud je donesen nad POLJIMA bloka `REGOC-IZLAZ`, ne nad
+ *                 prozom. Najviša pouzdanost od tri: dokaz je oblika koji se može
+ *                 PONOVITI (naredba + izlaz, putanja, statusni kod), pa sud ne ovisi
+ *                 o tome kako je agent formulirao rečenicu.
  */
-export type CompletionConfidence = 'declared' | 'heuristic'
+export type CompletionConfidence = 'declared' | 'heuristic' | 'schema'
 
 /** Oznaka koja ide kao prefiks u blocked_reason (i u telemetriju). */
 export type CompletionLabel = 'NEEDS_CONTEXT' | 'BLOCKED'
@@ -178,6 +195,8 @@ export interface CompletionVerdict {
   confidence: CompletionConfidence
   /** Doslovni isječak koji je okinuo odbijanje (dijagnostika/log). */
   matched?: string
+  /** W3: sud o strukturiranom izlazu koraka, kad ga ima (za dnevnik i mjerenje). */
+  stepSchema?: SudKoraka
 }
 
 /** Strojno čitljiv ishod koji agent MORA ispisati kao zadnji redak odgovora. */
@@ -266,6 +285,7 @@ function reject(
   evidence: number,
   matched?: string,
   confidence: CompletionConfidence = 'heuristic',
+  stepSchema?: SudKoraka,
 ): CompletionVerdict {
   return {
     accept: false,
@@ -277,10 +297,15 @@ function reject(
     evidence,
     confidence,
     matched,
+    ...(stepSchema ? { stepSchema } : {}),
   }
 }
 
-function accept(evidence: number, confidence: CompletionConfidence): CompletionVerdict {
+function accept(
+  evidence: number,
+  confidence: CompletionConfidence,
+  stepSchema?: SudKoraka,
+): CompletionVerdict {
   return {
     accept: true,
     code: 'ok',
@@ -290,6 +315,7 @@ function accept(evidence: number, confidence: CompletionConfidence): CompletionV
     blockedReason: '',
     evidence,
     confidence,
+    ...(stepSchema ? { stepSchema } : {}),
   }
 }
 
@@ -301,7 +327,7 @@ function accept(evidence: number, confidence: CompletionConfidence): CompletionV
  * (≥ EVIDENCE_OVERRIDE_THRESHOLD različitih vrsta) — pošten izvještaj smije reći
  * "ovo jedno nisam mogao" ako je sve ostalo dokazano napravio.
  */
-export function evaluateCompletion(resultSummary?: string | null): CompletionVerdict {
+function evaluateProse(resultSummary?: string | null): CompletionVerdict {
   const text = (resultSummary ?? '').trim()
 
   // ── Prvo ugovor, tek onda heuristika ────────────────────────────────────────
@@ -383,6 +409,63 @@ export function evaluateCompletion(resultSummary?: string | null): CompletionVer
   return accept(evidence, 'heuristic')
 }
 
+/**
+ * Sud o zatvaranju — DVA SLOJA, jačim prema slabijem (W3/TASK-4615):
+ *
+ *   1. `REGOC-STATUS` retkom deklariran NE-DONE — agentova vlastita izjava. Iznad svega,
+ *      pa i iznad besprijekorne sheme: tko sam kaže da nije gotov, nije gotov.
+ *   2. `REGOC-IZLAZ` blok — sud nad POLJIMA. Ako su polja valjana I bar jedan dokaz je
+ *      ponovljiv (naredba+izlaz, putanja, statusni kod…), zadatak se zatvara s
+ *      `confidence: 'schema'`. Nema raščlanjivanja proze, nema regexa nad rečenicama.
+ *   3. Tek ako sheme nema (ili je način `shadow`) → stari put po prozi (`heuristic`).
+ *
+ * Nevaljana shema BLOKIRA samo u načinu `on` (config/step-schema.json). U `shadow`-u se
+ * sud izračuna, zakači na `verdict.stepSchema` i ode u dnevnik — promet se mjeri prije
+ * nego se išta počne odbijati. To je isti obrazac po kojem su prošli W0 i completion gate.
+ */
+export function evaluateCompletion(resultSummary?: string | null): CompletionVerdict {
+  const text = (resultSummary ?? '').trim()
+  const cfg = loadStepSchemaConfig()
+  // `off` znači doslovno „kao da W3 nema": ni sud se ne donosi. Bez ovoga bi ugašen
+  // mehanizam i dalje mijenjao ishod zatvaranja, pa prekidač ne bi bio prekidač.
+  if (!shemaUPromptu(cfg)) return evaluateProse(text)
+
+  const declared = parseDeclaredStatus(text)
+  const declaredNotDone = !!declared && declared.status !== 'DONE'
+  const sud = ocijeniIzlazKoraka(text)
+  const provodi = shemaSeProvodi(cfg)
+
+  if (!declaredNotDone) {
+    if (sud.strojnoProvjerljiv) {
+      return accept(countEvidenceMarkers(text), 'schema', sud)
+    }
+    if (provodi) {
+      return sud.nadjen
+        ? reject(
+            'schema_invalid',
+            'NEEDS_CONTEXT',
+            zamjerkeZaAgenta(sud),
+            countEvidenceMarkers(text),
+            sud.greske[0],
+            'schema',
+            sud,
+          )
+        : reject(
+            'schema_missing',
+            'NEEDS_CONTEXT',
+            'Rezultat nema strukturirani izlaz koraka (blok REGOC-IZLAZ s poljima napravljeno, dokaz, datoteke, sljedeci_korak, nesigurnosti). Vratar provjerava polja, ne prozu.',
+            countEvidenceMarkers(text),
+            undefined,
+            'schema',
+            sud,
+          )
+    }
+  }
+
+  const v = evaluateProse(text)
+  return sud.nadjen ? { ...v, stepSchema: sud } : v
+}
+
 // ─── Rollout: shadow → live (config/completion-gate.json) ────────────────────
 
 export interface GateConfig {
@@ -448,6 +531,10 @@ export function loadGateConfig(force = false): GateConfig {
 export function shouldEnforce(v: CompletionVerdict, cfg: GateConfig = loadGateConfig()): boolean {
   if (v.accept) return false
   if (!cfg.enabled) return false
+  // W3: sud nad POLJIMA nije heuristika i ima vlastiti prekidač (config/step-schema.json
+  // → nacin: 'on'). Da nije tako, strukturirani izlaz bi čekao rollout proznog sloja koji
+  // je i nastao zato što proza nije pouzdana.
+  if (v.confidence === 'schema') return true
   if (cfg.live) return true
   if (!cfg.deterministicLive) return false
   return v.confidence === 'declared' || v.code === 'empty_result'

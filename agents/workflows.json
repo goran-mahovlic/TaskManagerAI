@@ -1,7 +1,7 @@
 {
   "_meta": {
     "opis": "Katalog višeagentskih tijekova rada (workflow). Odgovara na tri pitanja pri otvaranju zadatka: ide li uopće po tijeku, po kojem, i tko su koraci.",
-    "verzija": "1.0.0",
+    "verzija": "1.1.0",
     "pravilo_odabira": [
       "1. Izričita oznaka `workflow:<id>` na zadatku ima prednost pred svime.",
       "2. Bez oznake odlučuju okidači (`okidaci`) — prvi tijek čiji se uzorak nađe u naslovu ili opisu.",
@@ -23,9 +23,90 @@
       "Korak deklarira što traži (`treba`): alate, web, dug kontekst, pisanje po disku.",
       "Ako izvršitelj to ne može (lokalni model bez tool-petlje, kratak kontekst), koristi se `zamjena` — jednostavniji oblik istog koraka. Bez zamjene korak ide jačem izvršitelju.",
       "Mjereno kod nas: lokalni Ollama agenti su jedan chat bez petlje alata i sami ne pozovu alat; zato slabom izvršitelju kontekst treba PRED-UBACITI, a ne očekivati da ga dohvati."
-    ]
+    ],
+    "inventar": {
+      "opis": "W0b (TASK-4621, 05.09.2026.): zatečeni tijekovi s četiri mjesta preneseni su u ovaj katalog. Ono što je postojalo nije prepisano nego prevedeno — okidači i koraci su preuzeti iz izvornika, a polje `izvor` na svakom tijeku pokazuje odakle.",
+      "zatecenih": 21,
+      "izvan_kataloga_bilo": 17,
+      "uvrsteno": [
+        "istrazi-planiraj-izvedi ← ResearchPlanAgenticTaskmanagerWork.md",
+        "pregled-popravak ← ReviewPlanRepairTask.md",
+        "osint-lookup ← devet spisa OSINT/izviđanja spojeno u jedan tijek s parametrom `vrsta_cilja`",
+        "novi-projekt ← CreateProjectWorkflow.ts"
+      ],
+      "spojeno": [
+        "ComprehensiveUISimTesting.md → pregled-popravak (opći kostur; simulacijske faze ostaju projektne)",
+        "BugFixWorkflow.ts → bug-fix (faze ANALIZA i DOKUMENTACIJA ugrađene u korake)",
+        "TeamWorkflow.ts (4) → već preneseni; TeamWorkflow.ts ostaje izvršni sloj"
+      ],
+      "projektni_predlosci": [
+        "T58_pcie_si_workflow.md",
+        "gladius-plan.md",
+        "gladius-project.md",
+        "ComprehensiveUISimTesting.md (faze 2 i 5 — simulacije i KiCad ploče)"
+      ],
+      "zapisnik": "~/app/regoc_system/docs/W0B_INVENTAR_TIJEKOVA.md"
+    }
   },
   "workflows": {
+    "istrazi-planiraj-izvedi": {
+      "id": "istrazi-planiraj-izvedi",
+      "naziv": "Istraži → isplaniraj → zadatci → izvedba",
+      "opis": "Posao koji se prije izvedbe mora istražiti: nalazi → arhitektura i razlaganje → zadatci na ploči → višeagentska izvedba s provjerom.",
+      "izvor": "~/.claude/skills/Workflows/ResearchPlanAgenticTaskmanagerWork.md",
+      "najmanja_tezina": 61,
+      "okidaci": [
+        "(istraž|prouč)[a-zćčšžđ]* .{0,60}(pa|te|i) (implementiraj|izvedi|napravi|ugradi|prepravi)",
+        "(implementiraj|izvedi|napravi) .{0,60}(nakon|po) (istraživanj|analiz)",
+        "od istraživanja do (izvedbe|implementacije)",
+        "istraži,? (pa )?(isplaniraj|planiraj)",
+        "razlož[a-zćčšžđ]* .{0,40}na (zadatke|podzadatke)",
+        "(razradi|razloži) (zahtjev|plan|specifikaciju) .{0,40}u zadatke"
+      ],
+      "koraci": [
+        {
+          "agent": "manda",
+          "uloga": "research",
+          "vjestina": "Research",
+          "opis": "Istraži prostor problema: RAG, web, dokumentacija, dodirne točke u postojećem kodu. Izlaz: nalazi s izvorima, ograničenja i preporučen pristup.",
+          "treba": [
+            "web",
+            "rag"
+          ],
+          "zamjena": "Bez weba: pretraži samo RAG i postojeće spise; izostanak izvora navedi izrijekom."
+        },
+        {
+          "agent": "kosjenka",
+          "uloga": "plan",
+          "vjestina": "GrillWithDocs",
+          "opis": "Arhitektura rješenja (sučelja, tok podataka) i razlaganje na atomarne zadatke: izvršitelj, ovisnosti, kritični put, procjena. Za E3+ i ISA.",
+          "treba": [
+            "dug-kontekst"
+          ],
+          "zamjena": "Bez GrillWithDocs: plan u pet natuknica — koraci, tko ih radi, čime je svaki dokazan."
+        },
+        {
+          "agent": "regoc",
+          "uloga": "taskmanager",
+          "opis": "Otvori zadatke na ploči (POST /api/tasks, port 17781): opis s prihvatnim kriterijem, izvršitelj, prioritet, projectId, blockedBy lanac, oznake. Provjeri da su vidljivi.",
+          "treba": [
+            "alate"
+          ],
+          "zamjena": "Bez pristupa ploči: ispiši popis zadataka u istom obliku i navedi da nisu otvoreni."
+        },
+        {
+          "agent": "jelena",
+          "uloga": "work",
+          "opis": "Izvedba zadataka po prioritetu i ovisnostima; svaki korak prolazi vrata provjere i vraća DONE/BLOCKED/NEEDS_CONTEXT. Potjeh provjerava dovršeno.",
+          "treba": [
+            "alate",
+            "pisanje"
+          ],
+          "zamjena": "Bez alata: opiši izmjenu i naredbu koja je dokazuje; izvedbu preuzima jači izvršitelj."
+        }
+      ],
+      "enabled": true
+    },
     "implement-feature": {
       "id": "implement-feature",
       "naziv": "Izrada značajke",
@@ -77,7 +158,8 @@
           ]
         }
       ],
-      "enabled": true
+      "enabled": true,
+      "izvor": "~/.claude/regoc/TeamWorkflow.ts (implement-feature)"
     },
     "bug-fix": {
       "id": "bug-fix",
@@ -100,7 +182,7 @@
           "agent": "jelena",
           "uloga": "fix",
           "vjestina": "DiagnosingBugs",
-          "opis": "Reproduciraj, izoliraj, postavi hipotezu, dokaži je, popravi, dodaj regresijski test.",
+          "opis": "Prije popravka utvrdi KORIJENSKI uzrok i zapiši ga (ADR ako mijenja odluku); Reproduciraj, izoliraj, postavi hipotezu, dokaži je, popravi, dodaj regresijski test.",
           "treba": [
             "alate",
             "pisanje"
@@ -118,10 +200,162 @@
         {
           "agent": "malik",
           "uloga": "review",
-          "opis": "Provjeri da popravak nije otvorio sigurnosnu rupu.",
+          "opis": "Provjeri da popravak nije otvorio sigurnosnu rupu. Na kraju zapiši lekciju u RAG (uzrok, popravak, čime je dokazan) — inače se nalaz gubi do sljedećeg spawna.",
           "treba": [
             "alate"
           ]
+        }
+      ],
+      "enabled": true,
+      "izvor": "~/.claude/regoc/TeamWorkflow.ts (bug-fix) + faze ANALIZA i DOKUMENTACIJA iz ~/.claude/regoc/workflows/BugFixWorkflow.ts"
+    },
+    "pregled-popravak": {
+      "id": "pregled-popravak",
+      "naziv": "Pregled → plan popravka → popravak",
+      "opis": "Puna provjera kvalitete gotove značajke ili aplikacije: pregled kao krajnji korisnik → razvrstan popis kvarova → popravci → regresija na ploči.",
+      "izvor": "~/.claude/skills/Workflows/ReviewPlanRepairTask.md (+ spojen ~/.claude/skills/Workflows/ComprehensiveUISimTesting.md)",
+      "najmanja_tezina": 36,
+      "okidaci": [
+        "pregledaj (i popravi|sve|cijel|aplikaciju|sučelje)",
+        "prođi kroz (aplikaciju|sučelje|sve stranice)",
+        "provjeri sve (stranice|ekrane|krajnje točke|endpoint)",
+        "popravi sve (greške|kvarove|nedostatke)",
+        "prije (proglašenja|nego proglasimo) (gotovim|spremnim|produkcijskim)",
+        "(audit|revizija) kvalitete"
+      ],
+      "koraci": [
+        {
+          "agent": "malik",
+          "uloga": "review",
+          "vjestina": "WebappTesting",
+          "opis": "Pregled kao krajnji korisnik: svaka stranica, tipka, poveznica, obrazac, statički resurs i krajnja točka; usporedba s prihvatnim kriterijem. Izlaz: tablica (stranica | stanje | što radi | što nedostaje | težina) i popis P1/P2/P3. Kod računskih ili simulacijskih sučelja provjeri i da su vrijednosti fizikalne, ne samo da se ekran iscrtava.",
+          "treba": [
+            "alate",
+            "web"
+          ],
+          "zamjena": "Bez preglednika: prođi krajnje točke curlom i popiši odgovore; izostavljeno navedi izrijekom (nema tihih rezova)."
+        },
+        {
+          "agent": "kosjenka",
+          "uloga": "plan",
+          "opis": "Razvrstaj nalaze (kvar / nedostaje značajka / regresija), procijeni težinu, dodijeli izvršitelja, odredi ovisnosti; za svaki P1/P2 zapiši ISA.",
+          "treba": [
+            "dug-kontekst"
+          ],
+          "zamjena": "Bez razrade: poredaj nalaze po težini i uz svaki napiši jednu rečenicu što je popravak."
+        },
+        {
+          "agent": "jelena",
+          "uloga": "repair",
+          "vjestina": "DiagnosingBugs",
+          "opis": "Popravci redom po prioritetu; svaki nosi provjeru (vrata u pet koraka) i pokrenute testove pogođenog dijela. Zapiši što je izmijenjeno i zašto.",
+          "treba": [
+            "alate",
+            "pisanje"
+          ],
+          "zamjena": "Bez DiagnosingBugs: opiši kako se kvar ponavlja, što si promijenio i koja naredba to dokazuje."
+        },
+        {
+          "agent": "potjeh",
+          "uloga": "regresija",
+          "opis": "Zatvori zadatke na ploči s dokazom i pokreni završnu regresiju preko svih pregledanih stranica/krajnjih točaka; radni se tijek ne proglašava gotovim dok regresija ne prođe.",
+          "treba": [
+            "alate"
+          ],
+          "zamjena": "Bez alata: nabroji koje provjere treba ponoviti i po čemu se vidi da su prošle."
+        }
+      ],
+      "enabled": true
+    },
+    "osint-lookup": {
+      "id": "osint-lookup",
+      "naziv": "OSINT / izviđanje (po vrsti cilja)",
+      "opis": "Prikupljanje obavijesti iz javnih izvora nad jednim ciljem. Vrsta cilja bira dubinu i izvore; zadano je pasivno — ničim se ne dira sam cilj.",
+      "izvor": "~/.claude/skills/Workflows/{PassiveRecon,DomainRecon,IpRecon,NetblockRecon,PeopleLookup,EntityLookup,CompanyLookup,CompanyDueDiligence,BountyPrograms}.md",
+      "najmanja_tezina": 36,
+      "parametri": [
+        {
+          "ime": "cilj",
+          "obavezan": true,
+          "opis": "Sam cilj: domena, IP, CIDR, ime osobe, naziv tvrtke ili ključna riječ za programe nagrada."
+        },
+        {
+          "ime": "vrsta_cilja",
+          "obavezan": true,
+          "zadano": "auto",
+          "vrijednosti": [
+            "domena",
+            "ip",
+            "netblock",
+            "osoba",
+            "tvrtka",
+            "entitet",
+            "dubinska-analiza",
+            "bounty"
+          ],
+          "opis": "Bira izvornik koraka: domena→DomainRecon, ip→IpRecon, netblock→NetblockRecon, osoba→PeopleLookup, tvrtka→CompanyLookup, entitet→EntityLookup, dubinska-analiza→CompanyDueDiligence (pet faza, otkrivanje domena BLOKIRA ostalo), bounty→BountyPrograms. `auto` = prepoznaj iz oblika cilja."
+        },
+        {
+          "ime": "nacin",
+          "obavezan": false,
+          "zadano": "pasivno",
+          "vrijednosti": [
+            "pasivno",
+            "aktivno"
+          ],
+          "opis": "`aktivno` (skeniranje portova, brute-force poddomena, sonde nad netblokom) traži pisano ovlaštenje i bez njega se NE izvodi — PassiveRecon/NetblockRecon.md."
+        }
+      ],
+      "okidaci": [
+        "osint",
+        "due diligence|dubinsk[au] (provjer|analiz)",
+        "background check|provjera pozadine",
+        "izviđanje|reconnaissance|\\brecon\\b",
+        "bug ?bounty|bount(y|i) program",
+        "napadn[au] površin|attack surface",
+        "(provjeri|istraži|raspitaj se o) (tvrtk|osob|domen|poslovnom partneru|dobavljač)",
+        "(mapiraj|popiši) (infrastrukturu|poddomene|subdomen)",
+        "whois|certificate transparency"
+      ],
+      "koraci": [
+        {
+          "agent": "malik",
+          "uloga": "ovlastenje",
+          "vjestina": "OSINT",
+          "opis": "Vrata prije svega: tko je naručio, koji je opseg (cilj i vrste podataka), koja pravna osnova (GDPR/FCRA/zabrana uhođenja) i je li način `aktivno` pisano odobren. Ako ijedna stavka nedostaje — STOP, tijek ne kreće.",
+          "treba": [],
+          "zamjena": "Bez alata: prepiši naručitelja, opseg i pravnu osnovu u tri retka; bez njih se ne nastavlja."
+        },
+        {
+          "agent": "manda",
+          "uloga": "prikupljanje",
+          "vjestina": "OSINT",
+          "opis": "Prikupljanje po `vrsta_cilja` iz izvornog spisa (domena: WHOIS, DNS, certificate transparency, poddomene, pošta; ip: IPInfo, obrnuti DNS, ASN, netblok; netblock: vlasništvo i dodjela; osoba/tvrtka: registri, profesionalne mreže, sudski i poslovni registri; bounty: BountyPrograms.ts). Za `dubinska-analiza` otkrivanje domena je PRVO i blokira ostale faze. Svaki nalaz nosi izvor i vrijeme.",
+          "treba": [
+            "web",
+            "alate"
+          ],
+          "zamjena": "Bez weba: samo RAG i postojeći spisi; svaku rupu navedi izrijekom umjesto da je prešutiš."
+        },
+        {
+          "agent": "dora",
+          "uloga": "korelacija",
+          "vjestina": "FirstPrinciples",
+          "opis": "Spoji nalaze iz više izvora, odvoji dokazano od pretpostavljenog; tvrdnja bez najmanje tri neovisna izvora ide u „nepotvrđeno“. Označi proturječja.",
+          "treba": [
+            "dug-kontekst"
+          ],
+          "zamjena": "Bez razrade: nabroji nalaze s izvorom i uz svaki napiši je li potvrđen ili nije."
+        },
+        {
+          "agent": "kosjenka",
+          "uloga": "izvjestaj",
+          "opis": "Izvještaj: sažetak, karta cilja, crvene zastavice s procjenom rizika, preporuka i granice pokrivenosti. Izlaz obavezno u RAG (--type istrazivanje uz --source).",
+          "treba": [
+            "rag",
+            "pisanje"
+          ],
+          "zamjena": "Bez RAG-a: spremi izvještaj u docs/ i navedi da upis u RAG nedostaje."
         }
       ],
       "enabled": true
@@ -171,7 +405,8 @@
           ]
         }
       ],
-      "enabled": true
+      "enabled": true,
+      "izvor": "~/.claude/regoc/TeamWorkflow.ts (research)"
     },
     "security-audit": {
       "id": "security-audit",
@@ -213,6 +448,52 @@
           "treba": [
             "dug-kontekst"
           ]
+        }
+      ],
+      "enabled": true,
+      "izvor": "~/.claude/regoc/TeamWorkflow.ts (security-audit)"
+    },
+    "novi-projekt": {
+      "id": "novi-projekt",
+      "naziv": "Otvaranje novog projekta",
+      "opis": "Novi projekt na jednom mjestu: mapa i dijeljenje na Nextcloudu, zapis projekta na ploči, prvi zadatci i specifikacija.",
+      "izvor": "~/.claude/regoc/workflows/CreateProjectWorkflow.ts (v1.0.0)",
+      "najmanja_tezina": 0,
+      "okidaci": [
+        "(otvori|kreiraj|napravi|pokreni|osnuj) (mi )?(novi )?projekt",
+        "novi projekt (za|na|:)",
+        "zavedi projekt"
+      ],
+      "koraci": [
+        {
+          "agent": "kosjenka",
+          "uloga": "opseg",
+          "opis": "Utvrdi ime, opis, prioritet (1–5), vodećeg agenta, oznake i s kim se mapa dijeli; provjeri da projekt s tim imenom već ne postoji.",
+          "treba": [
+            "alate"
+          ],
+          "zamjena": "Bez alata: ispiši istih šest polja i zatraži potvrdu prije otvaranja."
+        },
+        {
+          "agent": "regoc",
+          "uloga": "izvedba",
+          "opis": "Pokreni `bun ~/.claude/regoc/workflows/CreateProjectWorkflow.ts \"<ime>\" --description … --priority … --lead … --tags …` — mapa /PROJEKTI/<ime> na Nextcloudu, dijeljenje, zapis projekta i metapodatci (folder path, share url). Provjeri povratni projectId.",
+          "treba": [
+            "alate",
+            "web",
+            "pisanje"
+          ],
+          "zamjena": "Bez Nextclouda: otvori projekt preko POST /api/projects i zapiši izrijekom da mapa nije stvorena."
+        },
+        {
+          "agent": "kosjenka",
+          "uloga": "pokretanje",
+          "opis": "Otvori prve zadatke s tim `projectId` i zapiši specifikaciju (SSOT) te prvi ADR ako projekt nosi arhitektonsku odluku.",
+          "treba": [
+            "alate",
+            "pisanje"
+          ],
+          "zamjena": "Bez alata: nabroji prve zadatke i gdje specifikacija treba stajati."
         }
       ],
       "enabled": true
@@ -268,7 +549,8 @@
           ]
         }
       ],
-      "enabled": true
+      "enabled": true,
+      "izvor": "izvorno napisan za katalog (nema zatečenog predloška)"
     }
   }
 }

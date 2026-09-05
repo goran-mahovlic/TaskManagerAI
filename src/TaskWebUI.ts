@@ -35,10 +35,31 @@ import { tecajOdgovor } from './Tecaj'
 import type { Task, AgentId, TaskFilter } from './types/task-types'
 import { CreateTaskInputSchema, UpdateTaskInputSchema, TaskFilterSchema } from './zod/schemas/task'
 import { isNonActionableMessage, emptyOrFixtureReason, EMPTY_TASK_REASON_TEXT } from './core/DispatchGuard'
+import { mozdaZapisiOdluku, formatOdlukaLog, loadWorkflowKatalog } from './core/WorkflowGate'
+// W2/TASK-4616: odabrani tijek postaje LANAC ZADATAKA na ploči. Zaseban prekidač
+// (`materijalizacija` u config/workflow-gate.json), zadano `shadow` — W1 način `on`
+// (upis oznake) sam po sebi NE otvara lance.
+import {
+  materijalizirajTijek, loadMaterijalizacijaNacin, formatLanacLog, zapisiLanac,
+} from './core/WorkflowMaterializer'
+import {
+  sastaviPitanje, rasclaniPitanje, provjeriPitanje, razrijesiOdgovor, ulogaZaModel, ukloniPitanje,
+} from './core/OdlukaPitanje'
+import { citajZadnjiProlaz, opisiProlaz, citajOdgode, ucitajConfig as odluciteljConfig }
+  from './core/OdluciteljPogon'
+import {
+  OZNAKA_STROJNI_OKIDAC, OBLICI_CINJENICE, imaStrojniOkidac, provjeriCinjenicu,
+} from './core/StrojniOkidac'
+// TASK-2635 (160_MODEL_SWITCHING, dio C): klasifikacijski model je ODVOJENA postavka od
+// izvršnog modela agenta — zove se na svaku poruku pa mora ostati brz i lokalan (Ollama).
+import {
+  readClassifier, writeClassifier, clearClassifier,
+  CLASSIFIER_DEFAULT_SPEC, CLASSIFIER_ENV_KEY,
+} from './core/models/ClassifierModel'
 // M2/TASK-4628: strop stvaranja zadataka po izvoru (rafal 02.09. = 686 zadataka u 2 h).
 import { TaskCreateBreaker, formatTaskCreateAlarm } from './core/TaskCreateBreaker'
 // K7/TASK-2986: potrošnja na ploči dolazi iz cost_loga koji puni svaki spawn.
-import { getCostTracker } from './core/CostTracker'
+import { getCostTracker, TROSAK_PO_PROJEKTU_SQL, TROSAK_PO_PROJEKTU_PROZOR_SQL } from './core/CostTracker'
 import {
   normalizeTaskFields,
   unknownFieldResponseBody,
@@ -1588,6 +1609,17 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       font-weight: 600;
     }
 
+    /* Lanac zadataka (Goran, 05.09.2026.): „onim jednim koji blokira cijeli niz, to bi
+       trebalo biti vidljivije oznaceno jer ovako ne vidim." Broj otkljucanih zadataka je
+       jedino sto razlikuje korijen niza od obicne kartice — dosad se nije prikazivao. */
+    .lanac-badge {
+      font-size: 0.68rem; border-radius: 3px; padding: 1px 5px; margin-left: 6px;
+      font-weight: 600; background: #3a2d13; color: #e8c65a; border: 1px solid #6b5b2a;
+    }
+    .lanac-badge.korijen { background: #8a5a12; color: #1a1a1a; border-color: #b8801f; }
+    .lanac-badge.ceka { background: #2a2030; color: #c0a8d0; border-color: #4a3a58; font-weight: 500; }
+    .task-card.korijen-niza { border-left: 3px solid #d4a017; }
+
     /* Add Task Button */
     .add-task-btn {
       position: fixed;
@@ -1942,17 +1974,51 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     .odluke-toggle { margin-left:10px; background:#3d3419; color:#e8c65a; border:1px solid #6b5b2a;
       border-radius:4px; padding:3px 12px; cursor:pointer; font-size:12px; }
     .odluke-toggle:hover { background:#4d421f; }
+    /* Zadnji prolaz odlucitelja — jedini dokaz da ukljuceni prekidac doista nesto radi. */
+    .odluke-prolaz { margin-top:7px; font-size:11.5px; color:#9a8c60; }
+    .odluke-prolaz.greska { color:#d98c6a; }
+    .odluka-model-kaze { margin-top:7px; font-size:11.5px; color:#8fa8c0; background:#151b22;
+      border:1px solid #2c3a48; border-left:3px solid #4a7fa8; border-radius:4px; padding:6px 9px; }
     .odluke-popis { margin-top:12px; display:flex; flex-direction:column; gap:10px; }
     .odluka-stavka { background:#1e1a10; border:1px solid #4a4020; border-radius:5px; padding:10px 12px; }
     .odluka-naslov { color:#e0d5b0; font-size:13px; margin-bottom:3px; }
     .odluka-meta { color:#8a7d55; font-size:11px; margin-bottom:8px; }
     .odluka-opis { color:#a89b70; font-size:11.5px; margin-bottom:8px; white-space:pre-wrap;
-      max-height:74px; overflow:auto; }
-    .odluka-red { display:flex; gap:8px; align-items:stretch; }
-    .odluka-unos { flex:1; background:#12100a; color:#e0d5b0; border:1px solid #5a4d28;
-      border-radius:4px; padding:7px 10px; font-size:12.5px; font-family:inherit; resize:vertical;
-      min-height:36px; }
+      max-height:150px; overflow:auto; }
+    /* Goran, 05.09.2026.: „Prvo ne mogu unutra napisati dulji tekst, to mora biti omoguceno."
+       Polje je bilo rows=1 / 36 px pa je izgledalo kao jednoredni unos — obrazlozenje odluke
+       se u njemu nije dalo ni procitati. Sada je uspravno slozeno, puna sirina i raste. */
+    .odluka-red { display:flex; flex-direction:column; gap:8px; align-items:stretch; }
+    .odluka-unos { width:100%; box-sizing:border-box; background:#12100a; color:#e0d5b0;
+      border:1px solid #5a4d28; border-radius:4px; padding:9px 11px; font-size:12.5px;
+      font-family:inherit; resize:vertical; min-height:104px; line-height:1.5; }
     .odluka-unos:focus { outline:none; border-color:#d4a017; }
+    .odluka-alat { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+    .odluka-savjet { color:#7d7047; font-size:11px; }
+
+    /* Strukturirano pitanje: struka + opcije. Bez opcija odluka je bila slobodan sastavak,
+       pa se u povijesti zadatka nije vidjelo IZMEDJU CEGA se biralo. */
+    .pitanje-blok { background:#161b12; border:1px solid #3f5030; border-left:3px solid #7fae4f;
+      border-radius:5px; padding:9px 11px; margin-bottom:9px; }
+    .pitanje-struka { color:#a9d17a; font-size:11.5px; font-weight:600; margin-bottom:4px; }
+    .pitanje-tekst { color:#cfe0b8; font-size:12.5px; white-space:pre-wrap; margin-bottom:8px; }
+    .pitanje-opcije { display:flex; flex-direction:column; gap:5px; }
+    .opcija-gumb { text-align:left; background:#1d2417; color:#d5e6c0; border:1px solid #46592f;
+      border-radius:4px; padding:6px 9px; font-size:12px; font-family:inherit; cursor:pointer; }
+    .opcija-gumb:hover { background:#27311e; border-color:#7fae4f; }
+    .opcija-gumb.izabrana { background:#2d3d21; border-color:#9ccf62; color:#e8f5d8; }
+    .opcija-slovo { display:inline-block; min-width:16px; font-weight:700; color:#9ccf62; }
+    .pitanje-preporuka { color:#8fa872; font-size:11.5px; margin-top:7px; font-style:italic; }
+    .pitanje-manjka { background:#2a1a12; border:1px solid #6b3a20; border-left:3px solid #d97a3a;
+      border-radius:5px; padding:8px 11px; margin-bottom:9px; color:#e0b48c; font-size:11.5px; }
+    .pitanje-manjka ul { margin:5px 0 0 16px; padding:0; }
+
+    /* Koliko niza drzi jedan zadatak — dosad se nigdje nije vidjelo. */
+    .odluka-lanac { display:inline-block; background:#3a2d13; color:#e8c65a; border:1px solid #6b5b2a;
+      border-radius:3px; padding:1px 7px; font-size:10.5px; font-weight:700; margin-left:6px; }
+    .odluka-lanac.korijen { background:#5a3a10; color:#ffd77a; border-color:#96631a; }
+    .odluka-ceka-na { display:inline-block; background:#2a2030; color:#c0a8d0; border:1px solid #4a3a58;
+      border-radius:3px; padding:1px 7px; font-size:10.5px; margin-left:6px; }
     .odluka-nastavi { background:#2d6a2d; color:#d8f0d8; border:1px solid #3f8f3f; border-radius:4px;
       padding:7px 18px; cursor:pointer; font-size:12.5px; white-space:nowrap; }
     .odluka-nastavi:hover { background:#377f37; }
@@ -1963,6 +2029,8 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       padding:4px 8px; font-size:12px; margin-right:8px; cursor:pointer; }
     .izbor-jezika:hover { border-color:#4a5f80; color:#cfe0f0; }
   
+    .odluc-broj { width:64px; background:#12100a; color:#e0d5b0; border:1px solid #5a4d28;
+      border-radius:4px; padding:3px 6px; font-size:12px; font-family:inherit; }
     .odluke-odlucitelj { display:none; align-items:center; gap:10px; flex-wrap:wrap;
       margin-top:10px; padding-top:10px; border-top:1px solid #4a4020; }
     .odluc-prekidac { display:flex; align-items:center; gap:6px; color:#c9b87a; font-size:12px;
@@ -2028,6 +2096,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
           <span id="odluke-tko" class="odluke-tko"></span>
           <button id="odluke-toggle" class="odluke-toggle" data-i18n="prikazi">prikaži</button>
         </div>
+        <div id="odluke-prolaz" class="odluke-prolaz" style="display:none"></div>
         <div id="odluke-odlucitelj" class="odluke-odlucitelj">
           <label class="odluc-prekidac">
             <input type="checkbox" id="odluc-ukljucen">
@@ -2037,6 +2106,10 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
                   data-i18n-title="davatelj_modela" title="Davatelj"></select>
           <select id="odluc-model" class="odluc-model" data-i18n-title="model_koji_odlucuje"
                   title="Model koji odlučuje"></select>
+          <label class="odluc-prekidac" title="Koliko imaš vremena za odluku prije nego model odluči umjesto tebe">
+            <span data-i18n="cekanje_h">čekanje (h)</span>
+            <input type="number" id="odluc-cekanje" class="odluc-broj" min="0.25" max="72" step="0.25">
+          </label>
           <button id="odluc-proba" class="odluc-gumb" data-i18n="probaj_bez_upisa">Probaj (bez upisa)</button>
           <button id="odluc-izvrsi" class="odluc-gumb odluc-glavni" data-i18n="odluci_sada">Odluči sada</button>
           <span id="odluc-poruka" class="odluc-poruka"></span>
@@ -2299,6 +2372,10 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         <div class="info-card info-full" id="info-agents-card">
           <div class="info-card-title"><span class="icon">&#9733;</span> Agents &amp; Model Requirements</div>
           <div id="info-agents-content"><div class="empty" data-i18n="loading">Loading...</div></div>
+        </div>
+        <div class="info-card info-full" id="info-classifier-card">
+          <div class="info-card-title"><span class="icon">&#8644;</span> Klasifikacijski model &mdash; rutiranje poruka (odvojeno od izvr&#353;nog)</div>
+          <div id="info-classifier-content"><div class="empty" data-i18n="loading">Loading...</div></div>
         </div>
         <div class="info-card info-full" id="info-login-card">
           <div class="info-card-title"><span class="icon">&#128273;</span> Prijave (login preko linka)</div>
@@ -2858,8 +2935,34 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       }
     }
 
+    // ─── Lanac zadataka (Goran, 05.09.2026.) ──────────────────────────────────
+    // „Nakon njega mozes nastaviti sa onim jednim koji blokira cijeli niz, to bi trebalo biti
+    // vidljivije oznaceno jer ovako ne vidim." Ploca je znala tko koga blokira (polja
+    // blockedBy/blocks), ali to nigdje nije prikazivala — pa je zadatak koji drzi sest drugih
+    // izgledao isto kao zadatak koji ne drzi nikoga.
+    function zatvorenStatus(s) { return s === 'completed' || s === 'cancelled'; }
+
+    function lanacInfo(task, poId) {
+      const cekaNa = (task.blockedBy || []).filter(function (b) {
+        const bl = poId.get(b);
+        return bl && !zatvorenStatus(bl.status);
+      });
+      const vidjeni = new Set();
+      const red = (task.blocks || []).slice();
+      while (red.length) {
+        const id = red.shift();
+        if (vidjeni.has(id)) continue;                 // ciklus ne smije vrtjeti petlju
+        const t = poId.get(id);
+        if (!t || zatvorenStatus(t.status)) continue;
+        vidjeni.add(id);
+        (t.blocks || []).forEach(function (d) { red.push(d); });
+      }
+      return { cekaNa: cekaNa, otkljucava: vidjeni.size };
+    }
+
     function renderTasks() {
       const filtered = currentFilter === 'all' ? tasks : tasks.filter(t => t.assignee === currentFilter);
+      const poId = new Map(tasks.map(function (t) { return [t.id, t]; }));
 
       const containers = {
         'in_progress': document.getElementById('in-progress-tasks'),
@@ -2951,8 +3054,24 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
           ? \`<button class="task-pause-btn resume" data-pause-id="\${task.id}" data-pause-to="0" title="Nastavi rad na zadatku">&#9654; Nastavi</button>\`
           : \`<button class="task-pause-btn" data-pause-id="\${task.id}" data-pause-to="1" title="Pauziraj zadatak (prekida i agenta koji radi)">&#9208;</button>\`;
 
+        // Lanac: korijen niza (nista ga ne drzi, a on drzi druge) dobiva punu oznaku i rub,
+        // jer je to jedini zadatak cije rjesavanje odmah pusta posao dalje.
+        const lanac = lanacInfo(task, poId);
+        let lanacBadge = '';
+        if (lanac.otkljucava > 0) {
+          const korijen = lanac.cekaNa.length === 0 && task.status !== 'completed' && task.status !== 'cancelled';
+          if (korijen) card.classList.add('korijen-niza');
+          lanacBadge = \`<span class="lanac-badge\${korijen ? ' korijen' : ''}" title="\${escapeAttr(
+            (korijen ? 'KORIJEN NIZA — ništa ga ne drži. ' : '') +
+            'Rješavanjem ovog zadatka otključava se ' + lanac.otkljucava + ' zadataka: ' +
+            (task.blocks || []).join(', '))}">&#128279; \${korijen ? 'KORIJEN · ' : ''}otključava \${lanac.otkljucava}</span>\`;
+        }
+        if (lanac.cekaNa.length) {
+          lanacBadge += \`<span class="lanac-badge ceka" title="\${escapeAttr('Čeka da se dovrši: ' + lanac.cekaNa.join(', '))}">čeka \${lanac.cekaNa.join(', ')}</span>\`;
+        }
+
         card.innerHTML = \`
-          <div class="task-id">\${task.id}\${projectBadgeHTML}\${pausedBadge}\${unverifiedBadge}</div>
+          <div class="task-id">\${task.id}\${projectBadgeHTML}\${pausedBadge}\${unverifiedBadge}\${lanacBadge}</div>
           <div class="task-title">\${task.title}</div>
           \${progressHTML}
           <div class="task-meta">
@@ -3296,6 +3415,11 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         if (!red) return;
         red.style.display = odlukeOtvoreno ? 'flex' : 'none';
         document.getElementById('odluc-ukljucen').checked = !!d.postavke.ukljucen;
+        const polje = document.getElementById('odluc-cekanje');
+        // Ne prepisuj dok čovjek tipka — inače mu osvježavanje popisa pojede unos.
+        if (polje && document.activeElement !== polje) {
+          polje.value = d.postavke.cekanje_sati ?? d.postavke.odgoda_sati ?? 1;
+        }
 
         // Davatelji se NE skrivaju kad nemaju ključ — pokazuju se s razlogom zašto ne rade.
         // Skriveni izbor bi izgledao kao da ih sustav nema, a ima ih; samo nisu spremni.
@@ -3412,10 +3536,29 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         // Naslov govori o onome što odluka doista pušta u rad; blokirani se navode odvojeno,
         // jer njih ni odluka ne pokreće dok se ne dovrši zadatak koji ih drži.
         const rj = (k, zad) => (RJECNIK && RJECNIK[k] != null) ? RJECNIK[k] : zad;
-        document.getElementById('odluke-naslov').textContent =
-          sprem + ' ' + rj(sprem === 1 ? 'zadatak_ceka_odluku' : 'zadataka_ceka_odluku',
-                           sprem === 1 ? 'zadatak čeka tvoju odluku' : 'zadataka čeka tvoju odluku')
-          + (blok ? '  ·  ' + blok + ' ' + rj('blokirano_drugim', 'blokirano drugim zadatkom') : '');
+        // Goran, 05.09.2026.: „nista ne treba cekati mene ako sam odabrao da model odlucuje
+        // za mene." Dok prekidač radi, naslov ne smije tvrditi da zadatci čekaju njega.
+        document.getElementById('odluke-naslov').textContent = d.modelOdlucuje
+          ? (sprem + (sprem === 1 ? ' zadatak u redu odlučitelja' : ' zadataka u redu odlučitelja')
+             + ' — odlučuje model, ne čekaju tebe')
+            + (blok ? '  ·  ' + blok + ' ' + rj('blokirano_drugim', 'blokirano drugim zadatkom') : '')
+          : sprem + ' ' + rj(sprem === 1 ? 'zadatak_ceka_odluku' : 'zadataka_ceka_odluku',
+                             sprem === 1 ? 'zadatak čeka tvoju odluku' : 'zadataka čeka tvoju odluku')
+            + (blok ? '  ·  ' + blok + ' ' + rj('blokirano_drugim', 'blokirano drugim zadatkom') : '');
+        // „Ne vidim da se nesto desava" (Goran, 05.09.2026.) — zato se zadnji prolaz vidi
+        // UVIJEK, i kad je popis zatvoren, i kad model nije odlucio nista.
+        const prolaz = document.getElementById('odluke-prolaz');
+        if (prolaz) {
+          const zp = d.odluciteljZadnji;
+          if (zp) {
+            const min = Math.max(0, Math.round((Date.now() - new Date(zp.ts).getTime()) / 60000));
+            prolaz.style.display = 'block';
+            prolaz.className = 'odluke-prolaz' + (zp.greska ? ' greska' : '');
+            prolaz.textContent = '🤖 ' + zp.opis + ' · prije ' + (min < 1 ? '<1' : min) + ' min';
+          } else {
+            prolaz.style.display = 'none';
+          }
+        }
         const popis = document.getElementById('odluke-popis');
         popis.style.display = odlukeOtvoreno ? 'flex' : 'none';
         const redOdl = document.getElementById('odluke-odlucitelj');
@@ -3425,14 +3568,80 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
           const ceka = t.cekaSati >= 24
             ? Math.floor(t.cekaSati / 24) + ' d'
             : (t.cekaSati > 0 ? t.cekaSati + ' h' : '<1 h');
+          // Lanac: koliko zadataka ovaj otključava i čeka li još na nekoga. Bez ova dva
+          // podatka se s ploče nije vidjelo koji zadatak drži cijeli niz.
+          const lanac = (t.otkljucava
+            ? '<span class="odluka-lanac' + (t.cekaNa && t.cekaNa.length ? '' : ' korijen') + '">'
+              + (t.cekaNa && t.cekaNa.length ? '' : 'KORIJEN NIZA · ')
+              + 'otključava ' + t.otkljucava + '</span>'
+            : '')
+            + ((t.cekaNa && t.cekaNa.length)
+              ? '<span class="odluka-ceka-na">čeka ' + esc(t.cekaNa.join(', ')) + '</span>' : '');
+
+          // Pitanje se prikazuje umjesto proze iz opisa; opis ostaje ispod, kao podloga.
+          let pitanjeHtml = '';
+          if (t.pitanje && (t.pitanje.opcije || []).length >= 2) {
+            pitanjeHtml = '<div class="pitanje-blok">'
+              + '<div class="pitanje-struka">Trebam eksperta za: ' + esc(t.pitanje.ekspert) + '</div>'
+              + '<div class="pitanje-tekst">' + esc(t.pitanje.pitanje) + '</div>'
+              + '<div class="pitanje-opcije">'
+              + t.pitanje.opcije.map(function (o) {
+                  return '<button class="opcija-gumb" data-oznaka="' + esc(o.oznaka) + '">'
+                    + '<span class="opcija-slovo">' + esc(o.oznaka) + ')</span> ' + esc(o.tekst)
+                    + '</button>';
+                }).join('')
+              + '</div>'
+              + (t.pitanje.preporuka
+                  ? '<div class="pitanje-preporuka">Agent preporuča: ' + esc(t.pitanje.preporuka) + '</div>' : '')
+              + '</div>';
+          } else if ((t.pitanjeGreske || []).length) {
+            // Ne šutimo o manjkavom pitanju — inače se pravilo tiho izgubi, a upravo je
+            // „blokada bez pitanja s opcijama" ono što je smetalo.
+            pitanjeHtml = '<div class="pitanje-manjka"><strong>Pitanje nije postavljeno po pravilu</strong>'
+              + '<ul>' + t.pitanjeGreske.map(function (g) { return '<li>' + esc(g) + '</li>'; }).join('') + '</ul>'
+              + '</div>';
+          }
+
+          // Sto je model rekao o BAS OVOM zadatku — inace se ne zna je li ga presao ili
+          // ga je namjerno ostavio covjeku.
+          let modelKaze = '';
+          if (t.odgoda) {
+            const doKad = new Date(t.odgoda.do);
+            const min = Math.round((doKad.getTime() - Date.now()) / 60000);
+            const koliko = min >= 60 ? Math.round(min / 6) / 10 + ' h' : min + ' min';
+            const sat = doKad.toLocaleTimeString('hr-HR',
+              { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Zagreb' });
+            modelKaze = t.odgoda.najava
+              // Najava: rok je TVOJ, i to se mora vidjeti kao poziv, ne kao obavijest o odgodi.
+              ? '<div class="odluka-model-kaze">⏳ ' + (min > 0
+                  ? 'imaš još ' + koliko + ' za odluku (do ' + sat + ') — poslije odlučuje model'
+                  : 'rok je istekao — model odlučuje u sljedećem prolazu') + '</div>'
+              : '<div class="odluka-model-kaze">⏳ odlučitelj ga je odgodio'
+                + (t.odgoda.puta > 1 ? ' (' + t.odgoda.puta + '. put)' : '')
+                + ' — vraća se ' + (min > 0 ? 'za ' + koliko : 'u sljedećem prolazu')
+                + ', ne čeka tebe</div>';
+          }
+          // Najavu već ispisuje odbrojavanje iznad — drugi redak o istoj stvari je šum.
+          if (t.odluciteljKaze && t.odluciteljKaze.rijec !== 'najava') {
+            const k = t.odluciteljKaze;
+            const sto = k.rijec === 'opcija' ? ('izabrao opciju ' + k.opcija)
+              : (k.ishod === 'upisano' ? ('odlučio: ' + k.rijec) : ('ostavio tebi' + (k.rijec ? ' (' + k.rijec + ')' : '')));
+            modelKaze += '<div class="odluka-model-kaze">🤖 ' + esc(sto)
+              + (k.razlog ? ' — ' + esc(String(k.razlog).slice(0, 220)) : '') + '</div>';
+          }
+
           return '<div class="odluka-stavka" data-id="' + t.id + '">' +
-            '<div class="odluka-naslov"><strong>' + t.id + '</strong> · ' + esc(t.title) + '</div>' +
+            '<div class="odluka-naslov"><strong>' + t.id + '</strong> · ' + esc(t.title) + lanac + '</div>' +
             '<div class="odluka-meta">P' + (t.priority ?? '?') + ' · ' + esc(t.assignee || 'bez izvršitelja') +
               ' · čeka ' + ceka + ' · ' + esc((t.oznake || []).join(', ')) + '</div>' +
-            '<div class="odluka-opis">' + esc(String(t.description || '').slice(0, 420)) + '</div>' +
+            pitanjeHtml + modelKaze +
+            '<div class="odluka-opis">' + esc(String(t.description || '')) + '</div>' +
             '<div class="odluka-red">' +
-              '<textarea class="odluka-unos" rows="1" placeholder="Upiši odluku, npr. može kreni — ili: odgodi, treba mi još podataka"></textarea>' +
-              '<button class="odluka-nastavi">Nastavi</button>' +
+              '<textarea class="odluka-unos" rows="5" placeholder="Upiši odluku i obrazloženje — koliko treba, polje se rasteže. Klik na opciju gore je samo početak rečenice."></textarea>' +
+              '<div class="odluka-alat">' +
+                '<button class="odluka-nastavi">Nastavi</button>' +
+                '<span class="odluka-savjet">Ctrl+Enter šalje · Enter je novi redak</span>' +
+              '</div>' +
             '</div><div class="odluka-poruka"></div></div>';
         }).join('');
         popis.querySelectorAll('.odluka-stavka').forEach(function (el) {
@@ -3442,6 +3651,18 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
           // Ctrl+Enter šalje — polje je višeredno, pa sam Enter mora ostati novi redak.
           unos.addEventListener('keydown', function (e) {
             if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) posaljiOdluku(el);
+          });
+          // Klik na opciju SAMO upiše početak rečenice i vrati kursor u polje. Ne šalje —
+          // odluka bez obrazloženja je za pola godine nečitljiva, a pogrešan klik nepovratan.
+          el.querySelectorAll('.opcija-gumb').forEach(function (og) {
+            og.addEventListener('click', function () {
+              el.querySelectorAll('.opcija-gumb').forEach(function (d) { d.classList.remove('izabrana'); });
+              og.classList.add('izabrana');
+              const pocetak = og.textContent.trim();
+              unos.value = pocetak + (unos.value.trim() ? '\\n' + unos.value.trim() : '\\n— jer ');
+              unos.focus();
+              unos.selectionStart = unos.selectionEnd = unos.value.length;
+            });
           });
         });
       } catch (e) { console.error('[odluke]', e); }
@@ -6678,6 +6899,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         renderInfoProviders(d, agentsData);
         renderInfoAgents(d, modelsData);
         renderModelSetup(modelsData);
+        loadClassifier();
         loadLoginProviders();
         loadDezurni();
         loadUlaznaVrata();
@@ -7096,6 +7318,63 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     async function doApikey(id){ var k=document.getElementById('login-key-'+id); if(!k||!k.value.trim())return; try{ var d=await (await fetch('/api/providers/login/apikey',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:id,key:k.value.trim()})})).json(); if(d.error)throw new Error(d.error); fetchInfoData(); }catch(e){ alert('Greška: '+e.message); } }
     async function doLogout(id){ if(!confirm('Odjaviti '+id+'?'))return; try{ await fetch('/api/providers/login/logout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:id})}); fetchInfoData(); }catch(e){} }
 
+    // ── Klasifikacijski model (TASK-2635) ────────────────────────────────────────
+    // ODVOJENO od dropdowna po agentu: taj bira model kojim agent RADI, a ovaj model
+    // kojim REGOČ RUTIRA svaku dolaznu poruku. Rutiranje mora ostati brzo i lokalno,
+    // pa su ponuđeni samo Ollama modeli.
+    async function loadClassifier() {
+      var el = document.getElementById('info-classifier-content');
+      if (!el) return;
+      try {
+        var d = await (await fetch('/api/models/classifier')).json();
+        if (d.error && !d.models) throw new Error(d.error);
+        el.innerHTML = renderClassifier(d);
+      } catch(e) {
+        el.innerHTML = '<div class="empty">Greška pri čitanju klasifikatora: ' + _dezEsc(e.message) + '</div>';
+      }
+    }
+
+    function renderClassifier(d) {
+      var izvor = { 'process-env': 'okolina procesa (' + _dezEsc(d.envKey) + ')', 'config': 'model-config.json → componentOverrides.classifier', 'default': 'ugrađeni zadani' }[d.source] || d.source;
+      var h = '<div style="font-size:0.72rem;color:var(--text-secondary);margin-bottom:0.5rem">' +
+        'REGOČ na <strong>svaku</strong> poruku pokreće klasifikaciju/rutiranje. To NIJE isto što i model kojim agent radi ' +
+        '(to je dropdown u tablici agenata gore). Klasifikator mora ostati <strong>brz i lokalan</strong> pa su ponuđeni samo Ollama modeli. ' +
+        'Sprema se u <code>' + _dezEsc(d.envKey) + '</code> (spremište vjerodajnica) i u <code>componentOverrides.classifier</code>; ' +
+        'config vrijedi odmah, okolina tek nakon restarta procesa.</div>';
+      h += '<div style="display:flex;gap:0.6rem;flex-wrap:wrap;align-items:center;font-size:0.72rem">';
+      h += '<span class="info-dot ' + (d.reachable ? 'online' : 'offline') + '"></span>';
+      h += '<span style="color:var(--text-secondary)">Ollama</span> <span style="font-family:monospace">' + _dezEsc(d.baseUrl) + '</span>';
+      var opts = '<option value="">⭐ zadano (' + _dezEsc(String(d.defaultSpec || '').replace('ollama:','')) + ')</option>';
+      (d.models || []).forEach(function(m) {
+        opts += '<option value="' + _dezEsc(m) + '"' + (m === d.model ? ' selected' : '') + '>' + _dezEsc(m) + '</option>';
+      });
+      h += '<select id="classifier-select" style="font-size:0.72rem;padding:3px 5px;border-radius:4px;background:var(--bg-primary,#111);color:var(--text-primary,#ddd);border:1px solid var(--border-color,#333)" ' +
+        'onchange="setClassifier(this.value, this)">' + opts + '</select>';
+      h += '<span class="info-badge ' + (d.source === 'default' ? 'disabled' : 'enabled') + '" title="Odakle vrijednost stvarno dolazi">' + _dezEsc(izvor) + '</span>';
+      h += '</div>';
+      if (!d.reachable) {
+        h += '<div style="font-size:0.66rem;color:var(--accent-red);margin-top:0.35rem">Ollama nedostupna — popis modela je nepotpun' + (d.error ? (': ' + _dezEsc(d.error)) : '') + '. Postavka se svejedno može spremiti.</div>';
+      }
+      if (d.storeSet && d.storeMatchesConfig === false) {
+        h += '<div style="font-size:0.66rem;color:#f59e0b;margin-top:0.35rem">Spremište vjerodajnica ima drukčiju vrijednost od configa — na stroju koji spremište učitava u okolinu ona pobjeđuje nakon restarta.</div>';
+      }
+      return h;
+    }
+
+    async function setClassifier(model, el) {
+      try {
+        if (el) el.disabled = true;
+        var r = await fetch('/api/models/classifier', { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ model: model }) });
+        var d = await r.json();
+        if (!r.ok || d.error) throw new Error(d.error || 'save failed');
+        loadClassifier();
+      } catch(e) {
+        alert('Greška pri spremanju klasifikatora: ' + e.message);
+        if (el) el.disabled = false;
+        loadClassifier();
+      }
+    }
+
     function renderModelSetup(md) {
       var el = document.getElementById('info-modelsetup-content');
       if (!el) return;
@@ -7185,7 +7464,12 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       let h = '<div style="font-size:0.72rem;color:var(--text-secondary);margin-bottom:0.4rem">' +
         'Model po agentu — “zadano” koristi tier iz registra. Override se sprema u <code>model-config.json → agentOverrides</code> i vrijedi odmah (bez restarta). ' +
         '<strong>lokalno</strong> = Ollama model preko API spawna — radi, ali tekstualno (bez alata: Bash/datoteke/MCP). Claude, Gemini, Kimi i OpenRouter modeli imaju PUNE alate. ' +
-        '&#128274; <strong>interface — fiksno</strong> (Klaudio/Stribor/REGOČ) = trajni servisi/glavna petlja; njima se model ne mijenja ovdje.</div>';
+        // TASK-2635: REGOČ, Klaudio i Stribor su ODABIRLJIVI (nisu više „fiksni"): Klaudio poštuje
+        // override po poruci (TASK-2634), REGOČ i Stribor preko resolveSpawnModel pri self/on-demand spawnu.
+        '<strong>REGOČ, Klaudio i Stribor</strong> su ovdje odabirljivi kao i ostali: Klaudio čita override po poruci (bez restarta bota), ' +
+        'a REGOČ-u i Striboru vrijedi kad sami izvršavaju zadatak. ' +
+        '<strong>Rutiranje poruka</strong> (koji agent dobiva posao) NE ide preko ovog izbora — ono ostaje na lokalnom Ollama klasifikatoru, ' +
+        'koji se mijenja u kartici „Klasifikacijski model" ispod.</div>';
       h += '<table class="info-table"><thead><tr>' +
         '<th>Agent</th><th>Uloga</th><th>Min Tier</th><th>Model (odabir)</th>' +
         '<th>Context</th><th>Tools</th><th>Notes</th></tr></thead><tbody>';
@@ -7456,6 +7740,10 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
 
     document.getElementById('odluc-ukljucen')?.addEventListener('change', function () {
       spremiOdlucitelja({ ukljucen: this.checked });
+    });
+    document.getElementById('odluc-cekanje')?.addEventListener('change', function () {
+      const v = Number(this.value);
+      if (Number.isFinite(v) && v >= 0.08 && v <= 72) spremiOdlucitelja({ cekanje_sati: v });
     });
     document.getElementById('odluc-provider')?.addEventListener('change', function () {
       // Model prethodnog davatelja ne vrijedi kod novoga, pa se šalje samo davatelj;
@@ -8256,6 +8544,59 @@ async function handleSetAgentModel(agentId: string, req: Request): Promise<Respo
   }
 }
 
+// ── Klasifikacijski model (TASK-2635) ─────────────────────────────────────────
+// GET  /api/models/classifier — trenutna postavka + živi popis lokalnih modela.
+// PUT  /api/models/classifier — { model: "qwen3:8b" } postavi, "" ili "default" vrati na zadano.
+// Odvojeno od `agentOverrides` NAMJERNO: ovo je *rutiranje* (svaka poruka), ne „glas" REGOČ-a.
+async function handleGetClassifier(): Promise<Response> {
+  const json = (o: unknown, status = 200) =>
+    new Response(JSON.stringify(o), { status, headers: { 'Content-Type': 'application/json' } })
+  const HOME = process.env.HOME || '/home/klaudio'
+  try {
+    const cur = readClassifier(HOME)
+    let models: string[] = []
+    let reachable = false
+    let error: string | null = null
+    try {
+      let apiKey: string | undefined
+      try {
+        const mc = JSON.parse(readFileSync(join(HOME, '.claude/regoc/models/model-config.json'), 'utf-8'))
+        if (typeof mc?.providers?.ollama?.apiKey === 'string') apiKey = mc.providers.ollama.apiKey
+      } catch {}
+      models = await fetchOllamaModels(cur.baseUrl, apiKey)
+      reachable = true
+    } catch (e: any) { error = String(e?.message || e) }
+    // Trenutni model uvijek u popisu — inače bi ga dropdown "izgubio" kad je Ollama nedostupna.
+    if (!models.includes(cur.model)) models = [cur.model, ...models]
+    return json({
+      spec: cur.spec, model: cur.model, source: cur.source,
+      defaultSpec: CLASSIFIER_DEFAULT_SPEC, envKey: CLASSIFIER_ENV_KEY,
+      // Vrijednost tajne se NE vraća — samo je li redak zapisan u spremištu.
+      storeSet: cur.storeValue !== null,
+      storeMatchesConfig: cur.storeValue === null ? null : ('ollama:' + cur.storeValue) === cur.spec,
+      baseUrl: cur.baseUrl, reachable, models, error,
+    })
+  } catch (err) { return json({ error: String(err) }, 500) }
+}
+
+async function handleSetClassifier(req: Request): Promise<Response> {
+  const json = (o: unknown, status = 200) =>
+    new Response(JSON.stringify(o), { status, headers: { 'Content-Type': 'application/json' } })
+  const HOME = process.env.HOME || '/home/klaudio'
+  try {
+    const body = (await req.json()) as { model?: string | null }
+    const raw = (body.model ?? '').toString().trim()
+    if (raw === '' || raw === 'default' || raw === 'zadano') {
+      const r = clearClassifier(HOME)
+      if (!r.ok) return json({ error: r.error }, 500)
+      return json({ status: 'cleared', spec: CLASSIFIER_DEFAULT_SPEC })
+    }
+    const r = writeClassifier(HOME, raw)
+    if (!r.ok) return json({ error: r.error }, 400)
+    return json({ status: 'saved', spec: r.spec, model: r.model })
+  } catch (err) { return json({ error: String(err) }, 400) }
+}
+
 function handleGetTasks(url: URL): Response {
   // Build filter object from query params
   const rawFilter: Record<string, unknown> = {}
@@ -8611,6 +8952,88 @@ async function handleCreateTask(req: Request): Promise<Response> {
 
     // TU je ID konačno poznat — jedini trenutak u kojem se gutanje može povezati sa žrtvom.
     warnCreateSwallowedFields(createFields, task.id)
+
+    // ── W0/TASK-4620: PREKIDAČ ZA TIJEKOVE RADA (tri razine) ──────────────────
+    // Zadano je `shadow`: odluka „ide li ovaj zadatak po tijeku i po kojem" se IZRAČUNA i
+    // zapiše u `data/workflow_odluke.jsonl`, a ništa se ne materijalizira — nula spawnova,
+    // nula izmjena na zadatku. Tako se novi put uspoređuje sa starim na ISTOM prometu.
+    // Stoji tu, iza `createTask`, iz dva razloga: (a) zapis nosi pravi `task.id`, pa se
+    // odluka može vezati uz ishod, i (b) zadatci koje su vrata iznad odbila (echo, prazan
+    // opis, strop) uopće ne postoje — mjerilo ne smije brojati posao koji nikad nije nastao.
+    // `mozdaZapisiOdluku` NIKAD ne baca i povratna se vrijednost smije zanemariti;
+    // prekidač u sjeni ne smije moći srušiti jedini ingress ploče. Gašenje: nacin='off'
+    // u config/workflow-gate.json (djeluje bez ponovnog pokretanja).
+    //
+    // W1/TASK-4614 — MATERIJALIZACIJA ODLUKE KAO OZNAKE. `primijeniOznaku` se poziva SAMO
+    // u načinu `on`, samo kad oznake još nema i samo za zadatak koji je stvarno nastao;
+    // sva tri uvjeta provjeravaju vrata, pa ovdje ostaje čist upis. U sjeni se ovaj
+    // zatvarač NIKAD ne izvrši — to je prihvatni kriterij naloga („oznaka se ne upisuje"),
+    // a ne stvar dobre namjere: drži ga `tests/workflow-w1.test.ts`.
+    //
+    // Redoslijed upisa je namjeran: prvo oznaka, pa bilješka. Oznaka je ono što mijenja
+    // ponašanje sustava, bilješka je objašnjenje; ako upis oznake padne, ne smije ostati
+    // bilješka koja tvrdi da je tijek izabran. Povratna vrijednost je ono što završi u
+    // `oznakaUpisana`, pa zapis ne može tvrditi učinak kojeg nema.
+    const wfOdluka = mozdaZapisiOdluku({
+      taskId: task.id,
+      naslov: validatedData.title ?? '',
+      opis: validatedData.description ?? '',
+      oznake: validatedData.tags ?? null,
+      projectId: projectGate.projectId ?? null,
+      assignee: validatedData.assignee ?? null,
+      izvor: 'create',
+    }, {
+      log: (m) => console.warn(`[TaskWebUI] ${m}`),
+      primijeniOznaku: (nalog) => {
+        const azuriran = taskManager.updateTask(nalog.taskId, { tags: nalog.noveOznake })
+        if (!azuriran) return false
+        taskManager.addProgressNote(nalog.taskId, 'workflow-gate', nalog.biljeska)
+        return true
+      },
+      // W2/TASK-4616 — MATERIJALIZACIJA TIJEKA U LANAC ZADATAKA.
+      //
+      // Ide kroz `taskManager` (SQL), NIKAD kroz vlastiti HTTP ulaz: koraci nose oznaku
+      // `workflow:<id>`, pa bi ih ovaj isti handler ponovno provukao kroz vrata, odlučio
+      // „ide po tijeku" (kod `oznaka`) i granao lanac iz lanca. Uz to i `materijalizirajTijek`
+      // ima vlastiti guard (`jeKorakTijeka`) — dvije brave, jer je ova greška tiha i skupa.
+      //
+      // Drugi prekidač je namjeran: `nacin: 'on'` znači „smije se upisati oznaka", a
+      // `materijalizacija: 'on'` znači „smiju nastati zadatci". Prvo je bezopasno, drugo
+      // troši spawnove; jedan prekidač za oba rizika značio bi da se W1 ne može pustiti
+      // uživo bez da istog trena počnu nastajati lanci.
+      materijaliziraj: (nalog) => {
+        const mat = loadMaterijalizacijaNacin()
+        if (mat.nacin !== 'on') return null
+        const tijekId = nalog.oznaka.startsWith('workflow:') ? nalog.oznaka.slice('workflow:'.length) : ''
+        if (!tijekId) return null
+        const katalog = loadWorkflowKatalog()
+        const tijek = (katalog.workflows || {})[tijekId]
+        if (!tijek) return null
+        const ishod = materijalizirajTijek({
+          tijekId, tijek,
+          task: {
+            id: nalog.taskId,
+            title: validatedData.title ?? '',
+            description: validatedData.description ?? '',
+            projectId: projectGate.projectId ?? null,
+            oznake: nalog.noveOznake,
+            priority: validatedData.priority ?? null,
+          },
+          ploca: {
+            createTask: (input) => taskManager.createTask(input as any),
+            getTask: (id) => taskManager.getTask(id) as any,
+            updateTask: (id, u) => taskManager.updateTask(id, u as any) as any,
+            addProgressNote: (id, agent, note) => taskManager.addProgressNote(id, agent, note),
+          },
+          nacin: 'on',
+          createdBy: 'workflow-materializer',
+        })
+        console.log(`[TaskWebUI] ${formatLanacLog(ishod)}`)
+        try { zapisiLanac(ishod) } catch (e: any) { console.warn(`[TaskWebUI] dnevnik lanaca: ${e?.message || e}`) }
+        return { ok: ishod.ok, taskIds: ishod.taskIds }
+      },
+    })
+    if (wfOdluka) console.log(`[TaskWebUI] ${formatOdlukaLog(wfOdluka)}`)
 
     // Broadcast to WebSocket clients
     const message = JSON.stringify({ type: 'task_created', task })
@@ -9487,6 +9910,9 @@ const ODLUCITELJ_CONFIG_PATH = `${process.env.HOME}/.claude/regoc/config/odlucit
 const ODLUCITELJ_ZADANE = {
   ukljucen: false, provider: 'ollama', model: 'qwen3:8b',
   baseUrl: 'http://192.168.10.4:11434', najvise_po_prolazu: 3, smije_kreni: true,
+  // Koliko čovjek ima vremena prije nego model odluči (i koliko traje odgoda). Stari naziv
+  // `odgoda_sati` se i dalje čita u `tools/odlucitelj.py`.
+  cekanje_sati: 1,
 }
 
 function ucitajOdluciteljConfig(): Record<string, any> {
@@ -9633,6 +10059,11 @@ async function handleOdluciteljConfigPut(req: Request): Promise<Response> {
   if (typeof telo.baseUrl === 'string' && telo.baseUrl.trim()) nove.baseUrl = telo.baseUrl.trim()
   const n = Number(telo.najvise_po_prolazu)
   if (Number.isFinite(n) && n >= 1 && n <= 20) nove.najvise_po_prolazu = Math.round(n)
+  // Goran, 05.09.2026.: „dodati opcije za namjestiti koliko je to cekanje." Isti broj vrijedi
+  // za rok koji čovjek dobije prije nego model odluči i za trajanje odgode. Raspon: 5 min do
+  // 3 dana — ispod toga najava nema smisla, iznad toga to više nije odgoda nego zaborav.
+  const c = Number(telo.cekanje_sati)
+  if (Number.isFinite(c) && c >= 0.08 && c <= 72) nove.cekanje_sati = Math.round(c * 100) / 100
   try {
     const fs = require('fs')
     fs.mkdirSync(require('path').dirname(ODLUCITELJ_CONFIG_PATH), { recursive: true })
@@ -9754,36 +10185,165 @@ function handleGetJezik(kod: string): Response {
  */
 const OZNAKE_ODLUKE = ['needs-decision', 'no-autonomy', 'waiting-for-human', 'interactive']
 
+/** Zadatak je „gotov" za potrebe lanca kad je zatvoren — dovršen ili otkazan. */
+const ZATVOREN = (s: any) => ['completed', 'cancelled'].includes(String(s))
+
+/**
+ * Koliko zadataka (izravno i posredno) čeka na ovaj — mjera „koliko niza drži".
+ *
+ * Goran, 05.09.2026.: „onim jednim koji blokira cijeli niz, to bi trebalo biti vidljivije
+ * označeno jer ovako ne vidim." Broj otključanih je jedini podatak koji razlikuje korijen
+ * niza od lista, a do sada se nigdje nije računao.
+ */
+function brojOtkljucanih(id: string, po: Map<string, any>): number {
+  const vidjeni = new Set<string>()
+  const red = [...(po.get(id)?.blocks || [])]
+  while (red.length) {
+    const sljedeci = String(red.shift())
+    if (vidjeni.has(sljedeci)) continue          // ciklus u lancu ne smije vrtjeti petlju
+    const t = po.get(sljedeci)
+    if (!t || ZATVOREN(t.status)) continue
+    vidjeni.add(sljedeci)
+    for (const d of (t.blocks || [])) red.push(String(d))
+  }
+  return vidjeni.size
+}
+
 function handleGetOdluke(): Response {
   const svi = taskManager.getTasks() as any[]
+  const po = new Map<string, any>(svi.map(t => [String(t.id), t]))
+  // Zadnji prolaz odlucitelja. Bez ovoga se s ploce ne vidi RADI LI uopce — Goran je
+  // 05.09.2026. ukljucio prekidac i cekao pola sata pred zelenom oznakom koja nista ne znaci.
+  const zadnjiProlaz = citajZadnjiProlaz()
+  const kazePoZadatku = new Map<string, any>(
+    (zadnjiProlaz?.ishodi || []).map(i => [String(i.id), i]))
+  // Odgode i stanje prekidača: kad model odlučuje, zadatak koji „stoji" najčešće ne čeka
+  // čovjeka nego istek odgode — a to se s ploče nije vidjelo.
+  const odgode = citajOdgode()
+  const modelOdlucuje = odluciteljConfig().ukljucen
   const cekaju = svi
     .filter(t => ['pending', 'blocked'].includes(String(t.status)))
     .filter(t => (t.tags || []).some((g: string) => OZNAKE_ODLUKE.includes(String(g).toLowerCase())))
-    .map(t => ({
-      id: t.id, title: t.title, assignee: t.assignee,
-      description: String(t.description || '').slice(0, 400),
-      priority: t.priority, projectId: t.projectId ?? t.project_id, status: t.status,
-      createdAt: t.createdAt ?? t.created_at,
-      oznake: (t.tags || []).filter((g: string) => OZNAKE_ODLUKE.includes(String(g).toLowerCase())),
-      cekaSati: Math.round((Date.now() - new Date(t.createdAt ?? t.created_at ?? Date.now()).getTime()) / 36e5),
-    }))
-    .sort((a, b) => (a.priority ?? 9) - (b.priority ?? 9) || b.cekaSati - a.cekaSati)
-  // Blokiran zadatak treba odluku, ali ni nakon nje ne kreće dok se ne dovrši onaj koji ga
-  // blokira. Zato dvije brojke, ne jedna: „spremno" je ono što odluka doista pušta u rad.
-  const spremni = cekaju.filter(t => String(t.status) === 'pending').length
+    .map(t => {
+      // Pitanje se traži u opisu, pa u bilješkama (agent ga zna dopisati naknadno, kad tek
+      // usred rada naiđe na razdvojnicu).
+      const izvor = [String(t.description || ''),
+                     ...(t.progressNotes || []).map((b: any) => String(b?.note ?? b ?? ''))]
+      let pitanje = null
+      for (let i = izvor.length - 1; i >= 0 && !pitanje; i--) pitanje = rasclaniPitanje(izvor[i])
+      const provjera = provjeriPitanje(pitanje)
+      // „Čeka na" su SAMO nezatvorene ovisnosti. Do 05.09. se čitao status `blocked`, pa je
+      // zadatak čiji je blokator odavno dovršen i dalje pisao „blokirano drugim zadatkom" —
+      // sedam takvih stajalo je na ploči, a nijedan zapravo nije čekao ništa osim odluke.
+      const cekaNa = (t.blockedBy || []).map(String).filter((b: string) => {
+        const bl = po.get(b)
+        return bl ? !ZATVOREN(bl.status) : false
+      })
+      return {
+        id: t.id, title: t.title, assignee: t.assignee,
+        // Opis BEZ bloka pitanja — pitanje se iscrtava zasebno, pa bi ga proza ponovila.
+        description: pitanje ? ukloniPitanje(t.description) : String(t.description || ''),
+        priority: t.priority, projectId: t.projectId ?? t.project_id, status: t.status,
+        createdAt: t.createdAt ?? t.created_at,
+        oznake: (t.tags || []).filter((g: string) => OZNAKE_ODLUKE.includes(String(g).toLowerCase())),
+        cekaSati: Math.round((Date.now() - new Date(t.createdAt ?? t.created_at ?? Date.now()).getTime()) / 36e5),
+        pitanje, pitanjeGreske: provjera.ok ? [] : provjera.greske,
+        ulogaModela: ulogaZaModel(pitanje),
+        // Okidač je stroj, ne prosudba: odlučitelj takav zadatak preskače (nema pristup
+        // stanju okidača), a puštanje traži provjerenu činjenicu. Vidi StrojniOkidac.ts.
+        okidacStrojni: imaStrojniOkidac(t.tags),
+        cekaNa,
+        blokiraniRazlog: cekaNa.length ? String(t.blockedReason || '') : '',
+        otkljucava: brojOtkljucanih(String(t.id), po),
+        odluciteljKaze: kazePoZadatku.get(String(t.id)) ?? null,
+        odgoda: odgode[String(t.id)] ?? null,
+      }
+    })
+    // Prvo ono što odluka doista pušta u rad, pa unutar toga ono što otključava najviše
+    // posla — to je „onaj jedan koji drži cijeli niz".
+    .sort((a, b) => (a.cekaNa.length - b.cekaNa.length)
+      || (b.otkljucava - a.otkljucava)
+      || (a.priority ?? 9) - (b.priority ?? 9)
+      || b.cekaSati - a.cekaSati)
+  const spremni = cekaju.filter(t => t.cekaNa.length === 0).length
   return new Response(JSON.stringify({
     ukupno: cekaju.length, spremni, blokirani: cekaju.length - spremni, zadatci: cekaju,
+    modelOdlucuje,
+    odluciteljZadnji: zadnjiProlaz
+      ? { ts: zadnjiProlaz.ts, opis: opisiProlaz(zadnjiProlaz), upisano: zadnjiProlaz.upisano,
+          pregledano: zadnjiProlaz.pregledano, greska: zadnjiProlaz.greska ?? null }
+      : null,
   }), { headers: { 'Content-Type': 'application/json' } })
+}
+
+/**
+ * POST /api/tasks/:id/pitanje `{ekspert, pitanje, opcije[], preporuka?, by?}`
+ *
+ * Jedini ispravan način da agent zatraži odluku. Dopisuje blok u opis, stavlja oznaku
+ * `needs-decision` i vraća zadatak u `blocked` — pa je „pitao sam" i „stao sam" jedan potez,
+ * a ne dva koja se mogu razići.
+ *
+ * Odbija (HTTP 400) pitanje bez struke ili s manje od dvije opcije: to onda nije dilema nego
+ * posao koji treba obaviti, a upravo su takva „pitanja" pretvorila blokadu u smetlište.
+ */
+function handleTaskPitanje(taskId: string, req: Request): Promise<Response> {
+  return (async () => {
+    const json = (o: any, status = 200) => new Response(JSON.stringify(o),
+      { status, headers: { 'Content-Type': 'application/json' } })
+    let body: any = {}
+    try { body = await req.json() } catch { /* provjera slijedi */ }
+
+    const nacrt = {
+      ekspert: String(body?.ekspert || '').trim(),
+      pitanje: String(body?.pitanje || '').trim(),
+      opcije: Array.isArray(body?.opcije) ? body.opcije : [],
+      preporuka: body?.preporuka ? String(body.preporuka) : undefined,
+    }
+    const blok = sastaviPitanje(nacrt)
+    const provjera = provjeriPitanje(rasclaniPitanje(blok))
+    if (!provjera.ok) {
+      return json({ error: 'Pitanje nije po pravilu.', greske: provjera.greske,
+        primjer: sastaviPitanje({
+          ekspert: '<struka koja zna odgovoriti>',
+          pitanje: 'Objasni mi sa svog stručnog stajališta <predmet> i pomozi mi da donesem odluku o <odluci>.',
+          opcije: ['<prva mogućnost> — <posljedica>', '<druga mogućnost> — <posljedica>'],
+          preporuka: '<slovo> — <zašto>',
+        }) }, 400)
+    }
+
+    const task = taskManager.getTask(taskId) as any
+    if (!task) return json({ error: 'Task not found' }, 404)
+
+    const by = String(body?.by || task.assignee || 'agent')
+    const oznake = [...(task.tags || [])]
+    if (!oznake.some((g: string) => String(g).toLowerCase() === 'needs-decision')) oznake.push('needs-decision')
+    const opis = String(task.description || '').trimEnd()
+    const azurirano = taskManager.updateTask(taskId, {
+      description: `${opis}\n\n${blok}`,
+      tags: oznake,
+      progressNotes: [`PITANJE (${by}): ${nacrt.pitanje} — ${nacrt.opcije.length} opcije, struka: ${nacrt.ekspert}`],
+      ...(String(task.status) === 'in_progress' || String(task.status) === 'pending'
+        ? { status: 'blocked', blockedReason: `Čeka odluku: ${nacrt.pitanje.slice(0, 200)}` } : {}),
+    } as any)
+
+    console.log(`[API] PITANJE ${taskId} (${by}): ${nacrt.opcije.length} opcije · struka ${nacrt.ekspert}`)
+    const message = JSON.stringify({ type: 'task_updated', task: azurirano })
+    wsClients.forEach(client => { try { client.send(message) } catch { wsClients.delete(client) } })
+    return json({ ok: true, task: azurirano, blok })
+  })()
 }
 
 function handleTaskOdluka(taskId: string, req: Request): Promise<Response> {
   return (async () => {
     let odluka = ''
     let by = 'goran'
+    // Činjenica koju poslužitelj sam provjeri — jedini ključ za zadatak sa strojnim okidačem.
+    let cinjenica = ''
     try {
       const body = await req.json() as any
       if (typeof body?.odluka === 'string') odluka = body.odluka.trim()
       if (typeof body?.by === 'string' && body.by) by = body.by
+      if (typeof body?.cinjenica === 'string') cinjenica = body.cinjenica.trim()
     } catch { /* tijelo je obavezno — provjera slijedi */ }
 
     if (!odluka) {
@@ -9799,24 +10359,94 @@ function handleTaskOdluka(taskId: string, req: Request): Promise<Response> {
       })
     }
 
+    // Odgovor „B" razriješi u punu rečenicu prije zapisa — inače u povijesti zadatka ostane
+    // samo slovo, a značenje nestane s prvom izmjenom opisa.
+    const izvorPitanja = [String(task.description || ''),
+                          ...(task.progressNotes || []).map((b: any) => String(b?.note ?? b ?? ''))]
+    let pitanjeTaska = null
+    for (let i = izvorPitanja.length - 1; i >= 0 && !pitanjeTaska; i--) {
+      pitanjeTaska = rasclaniPitanje(izvorPitanja[i])
+    }
+    odluka = razrijesiOdgovor(odluka, pitanjeTaska)
+
+    // ODGODA NIJE PUŠTANJE (05.09.2026.). Do danas je svaka odluka — pa i „odgodi, treba mi
+    // još podataka", koju sam placeholder polja predlaže — skidala oznaku, dopisivala `nalog`
+    // i gurala zadatak u red. Model koji kaže ODGODI time je pokretao posao koji je htio
+    // odgoditi. Odgoda zato mijenja SAMO povijest: zadatak ostaje točno gdje jest.
+    const odgoda = /^\s*(odgodi|odgoda|odgadjam|odgađam|čekaj|cekaj|pričekaj|pricekaj|ne\s+sada|ne\s+još|ne\s+jos)\b/i
+      .test(odluka)
+    const kad = new Date().toLocaleString('hr-HR', { timeZone: 'Europe/Zagreb' })
+    if (odgoda) {
+      const odgodjen = taskManager.updateTask(taskId, {
+        progressNotes: [`ODLUKA — ODGODA (${by}, ${kad} Europe/Zagreb): ${odluka}`],
+      } as any)
+      console.log(`[API] ODGODA ${taskId} (${by}): ${odluka.slice(0, 90)}`)
+      const poruka = JSON.stringify({ type: 'task_updated', task: odgodjen })
+      wsClients.forEach(c => { try { c.send(poruka) } catch { wsClients.delete(c) } })
+      return new Response(JSON.stringify({ ok: true, task: odgodjen, kreceOdmah: false,
+        odgodjeno: true, skinuteOznake: [] }), { headers: { 'Content-Type': 'application/json' } })
+    }
+
+    // Zadatak koji JOŠ ČEKA nedovršenu ovisnost ne smije u `pending` ni s odlukom — inače
+    // krene prije svog preduvjeta. Izmjereno 05.09.2026.: odlučitelj je pustio TASK-4616 (W2)
+    // dok je TASK-4614 (W1) još stajao.
+    const svi = taskManager.getTasks() as any[]
+    const statusPo = new Map<string, string>(svi.map(t => [String(t.id), String(t.status)]))
+
+    // STROJNI OKIDAČ (05.09.2026., ADR-0010). Zadatak označen `okidac-strojni` čeka stanje
+    // koje odlučitelj NE VIDI (nastala datoteka, prošao trenutak, dovršen preduvjet), pa je
+    // svaki sud iz naslova i opisa nagađanje. Puštanje zato traži činjenicu koju poslužitelj
+    // sam provjeri — tvrdnja se ne uzima na riječ. Mjereno na TASK-4651: dva suprotna suda
+    // istog modela u 7 minuta, a pobjednički je digao zadatak 2,2 dana prerano.
+    if (imaStrojniOkidac(task.tags)) {
+      const sud = provjeriCinjenicu(cinjenica, {
+        status: (id: string) => statusPo.get(id),
+      })
+      if (!sud.ok) {
+        // Odbijenica se ZAPISUJE, ali samo kad je nova — inače bi prolaz svakih 5 min
+        // pretvorio povijest zadatka u dnevnik odbijanja.
+        const zadnja = (task.progressNotes || []).map((b: any) => String(b?.note ?? b ?? '')).pop() || ''
+        const biljeska = `PUŠTANJE ODBIJENO (${by}, ${kad} Europe/Zagreb): okidač je strojno provjerljiv — ${sud.opis}`
+        if (!zadnja.startsWith('PUŠTANJE ODBIJENO') || !zadnja.endsWith(sud.opis)) {
+          taskManager.updateTask(taskId, { progressNotes: [biljeska] } as any)
+        }
+        console.log(`[API] ODBIJENO PUŠTANJE ${taskId} (${by}): ${sud.opis}`)
+        return new Response(JSON.stringify({
+          error: 'Zadatak ima strojno provjerljiv okidač — puštanje traži provjerenu činjenicu.',
+          razlog: sud.opis, oznaka: OZNAKA_STROJNI_OKIDAC, polje: 'cinjenica',
+          oblici: OBLICI_CINJENICE,
+          savjet: `Ako okidač više ne vrijedi, skini oznaku ${OZNAKA_STROJNI_OKIDAC} `
+            + 'zasebnim potezom (PUT /api/tasks/<ID> {tags}) pa odluči normalno.',
+          kreceOdmah: false, skinuteOznake: [],
+        }), { status: 409, headers: { 'Content-Type': 'application/json' } })
+      }
+      // Dokaz ide u istu rečenicu kao odluka — za pola godine se mora vidjeti ŠTO je bilo
+      // istina u trenutku puštanja, ne samo da je netko rekao „kreni".
+      odluka = `${odluka} [činjenica: ${cinjenica} → ${sud.opis}]`
+    }
+    const josCeka = (task.blockedBy || []).map(String)
+      .filter((b: string) => !['completed', 'cancelled'].includes(statusPo.get(b) || ''))
+
     const preostale = (task.tags || []).filter(
       (g: string) => !OZNAKE_ODLUKE.includes(String(g).toLowerCase()))
-    const kad = new Date().toLocaleString('hr-HR', { timeZone: 'Europe/Zagreb' })
     // Oznaka `nalog`: odluka nije autonomni rad nego izričito puštanje, pa u daemonu prolazi
     // kroz `spawnOnRequest` i ne čeka obnovu kvote. Bez nje se odluka uredno zapiše, a zadatak
     // svejedno stoji — izmjereno 04.09.2026. na dvije odluke pri 82 % sjednice.
     const azurirano = taskManager.updateTask(taskId, {
       tags: [...preostale, 'nalog'],
       progressNotes: [`ODLUKA (${by}, ${kad} Europe/Zagreb): ${odluka}`],
-      // Zadatak koji je bio `blocked` mora natrag u `pending`, inače ga red i dalje ne vidi.
-      ...(String(task.status) === 'blocked' ? { status: 'pending' } : {}),
+      // Zadatak koji je bio `blocked` mora natrag u `pending`, inače ga red i dalje ne vidi —
+      // ali samo ako ga više ne drži nijedna nedovršena ovisnost.
+      ...(String(task.status) === 'blocked' && josCeka.length === 0 ? { status: 'pending' } : {}),
+      ...(josCeka.length ? { blockedReason: `Odluka je zapisana — čeka još: ${josCeka.join(', ')}` } : {}),
     } as any)
 
     console.log(`[API] ODLUKA ${taskId} (${by}): ${odluka.slice(0, 90)}`)
     const message = JSON.stringify({ type: 'task_updated', task: azurirano })
     wsClients.forEach(client => { try { client.send(message) } catch { wsClients.delete(client) } })
 
-    return new Response(JSON.stringify({ ok: true, task: azurirano, kreceOdmah: true, skinuteOznake:
+    return new Response(JSON.stringify({ ok: true, task: azurirano, kreceOdmah: josCeka.length === 0,
+      cekaJos: josCeka, skinuteOznake:
       (task.tags || []).filter((g: string) => OZNAKE_ODLUKE.includes(String(g).toLowerCase())) }), {
       headers: { 'Content-Type': 'application/json' },
     })
@@ -9974,14 +10604,10 @@ function handleGetProjectsTrosak(): Response {
     })
   }
   try {
-    const ukupno = db.query(`
-      SELECT COALESCE(project_id, '(bez projekta)') AS pid,
-             ROUND(SUM(cost_usd), 4) AS usd,
-             COUNT(*)               AS zapisa,
-             MAX(timestamp)         AS zadnji
-        FROM cost_log
-       GROUP BY pid
-    `).all() as any[]
+    // U3/TASK-4263: projekt se čita JOIN-om na zadatak, ne samo iz `cost_log.project_id`.
+    // Zašto — v. `TROSAK_PO_PROJEKTU_SQL` u `CostTracker.ts`; SQL stoji ondje, uz
+    // `logUsage` čiji ugovor provodi, da ploča i pisac ne mogu razviti dvije istine.
+    const ukupno = db.query(TROSAK_PO_PROJEKTU_SQL).all() as any[]
     // TASK-3691 (sort na popisu projekata): „datum početka" NIJE `projects.created_at` —
     // projekt se često otvori naknadno (PRJ-041 otvoren 25.08., a rad počeo ranije). Zato
     // se početak čita iz PRVOG zadatka, a zadnji rad iz najnovijeg traga na zadatku.
@@ -9992,14 +10618,7 @@ function handleGetProjectsTrosak(): Response {
         FROM tasks WHERE project_id IS NOT NULL
        GROUP BY project_id
     `).all() as any[]
-    const zadnjih30 = db.query(`
-      SELECT COALESCE(project_id, '(bez projekta)') AS pid,
-             ROUND(SUM(cost_usd), 4) AS usd,
-             COUNT(*)               AS zapisa
-        FROM cost_log
-       WHERE timestamp > datetime('now', '-30 days')
-       GROUP BY pid
-    `).all() as any[]
+    const zadnjih30 = db.query(TROSAK_PO_PROJEKTU_PROZOR_SQL).all('-30 days') as any[]
 
     const po: Record<string, any> = {}
     for (const r of ukupno) {
@@ -11918,6 +12537,9 @@ const server = Bun.serve({
     if (url.pathname.match(/^\/api\/tasks\/[^\/]+\/odluka$/) && req.method === 'POST') {
       return handleTaskOdluka(url.pathname.split('/')[3], req)
     }
+    if (url.pathname.match(/^\/api\/tasks\/[^\/]+\/pitanje$/) && req.method === 'POST') {
+      return handleTaskPitanje(url.pathname.split('/')[3], req)
+    }
     if (url.pathname === '/api/pause' && req.method === 'GET') return handleGetPause()
     if (url.pathname === '/api/pause' && req.method === 'POST') return handleSetPause(req)
     if (url.pathname.match(/^\/api\/tasks\/[^\/]+\/pause$/) && req.method === 'POST') {
@@ -12137,6 +12759,14 @@ const server = Bun.serve({
       } catch (err) {
         return new Response(JSON.stringify({ error: String(err) }), { status: 500, headers: { 'Content-Type': 'application/json' } })
       }
+    }
+
+    // GET/PUT /api/models/classifier — rutirajući (klasifikacijski) model, odvojen od izvršnog
+    if (url.pathname === '/api/models/classifier' && req.method === 'GET') {
+      return handleGetClassifier()
+    }
+    if (url.pathname === '/api/models/classifier' && req.method === 'PUT') {
+      return handleSetClassifier(req)
     }
 
     // PUT /api/models/providers/:id — provider setup (enabled, baseUrl, token)

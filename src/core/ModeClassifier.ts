@@ -103,9 +103,37 @@ function normalizeText(text: string): string {
   return text.toLowerCase().trim()
 }
 
-function containsKeyword(text: string, keywords: string[]): boolean {
+/**
+ * TASK-4673 — pogodak po CIJELOJ RIJEČI, ne po podnizu.
+ *
+ * Prije je ovdje stajao `normalized.includes(kw)`. Kako E1_KEYWORDS sadrži "da", "ne",
+ * "ok" i "koji", podniz "ne" postoji u "nedostaje", "ključne", "lokalne" → gotovo svaka
+ * hrvatska poruka pogađala je E1 ključnu riječ, pa je E1 grana u praksi značila samo
+ * „nema glagola naloga s popisa E2_ACTION_VERBS". Mjereno (TASK-4262 / U2 sjena): od pet
+ * promašaja na 20 poruka stvarnog prometa ČETIRI su bili PROPUŠTENI ZADATCI — zahtjev
+ * sročen bez imperativa („treba ispraviti", „htio bi") padao je u E1 i nikad se ne bi otvorio.
+ *
+ * ZAMKA: JS \b se oslanja na \w = [A-Za-z0-9_], gdje „č" NIJE slovo. Zato /\bne\b/
+ * i dalje pogađa „ključne". Granicu zato definiramo preko \p{L}\p{N} (Unicode), čime
+ * su č/ć/ž/š/đ dio riječi. Popisi riječi i redoslijed grana ostaju netaknuti.
+ */
+const _kwRegexCache = new Map<string, RegExp>()
+
+function keywordRegex(kw: string): RegExp {
+  const key = kw.toLowerCase()
+  let re = _kwRegexCache.get(key)
+  if (!re) {
+    const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    re = new RegExp(`(?<![\\p{L}\\p{N}_])${escaped}(?![\\p{L}\\p{N}_])`, 'u')
+    _kwRegexCache.set(key, re)
+  }
+  return re
+}
+
+export function containsKeyword(text: string, keywords: string[]): boolean {
   const normalized = normalizeText(text)
-  return keywords.some(kw => normalized.includes(kw.toLowerCase()))
+  if (!normalized) return false
+  return keywords.some(kw => keywordRegex(kw).test(normalized))
 }
 
 function countActionVerbs(text: string): number {

@@ -9,11 +9,19 @@ ODLUKA JE DETERMINISTIČKA. Ne pita se model: izbor tijeka je jeftina odluka koj
 pri svakom otvaranju zadatka, a LLM na tom mjestu je kod nas već jednom promašio 92 %
 prometa. Ovdje odlučuju oznaka, okidači iz kataloga i težina posla — sve provjerljivo.
 
-REDOSLIJED (prvi koji se poklopi):
-    1. izričita oznaka `workflow:<id>` na zadatku,
-    2. oznaka `bez-workflowa` → nikad tijek,
+REDOSLIJED (prvi koji se poklopi) — W0/TASK-4620:
+    1. oznaka `bez-workflowa` → nikad tijek. PRVA, jer po nalogu §6.1 „uvijek pobjeđuje":
+       i izričitu oznaku `workflow:<id>` i način `on`. Zaustavljanje je jeftinije od
+       krivo pokrenutog tijeka.
+    2. izričita oznaka `workflow:<id>` na zadatku (preskače prag težine, ali NE i `enabled`),
     3. okidač iz `agents/workflows.json` uz uvjet da je težina >= `najmanja_tezina`,
     4. inače: bez tijeka, jedan izvršitelj.
+
+Tijek s `enabled: false` (razina 2 prekidača) ponaša se kao da ga u katalogu nema — ne bira
+ga ni okidač ni izričita oznaka. Globalni prekidač (`config/workflow-gate.json`, razina 3)
+NIJE posao ovog alata: on je CLI za ljude i uvijek odgovara na pitanje „što BI se odabralo".
+Način rada primjenjuje pogon — `~/.claude/regoc/WorkflowGate.ts`, koji je izvor istine za
+odluku; parnost dviju preslika drži `tests/workflow-gate-parity.test.ts` (ADR-0004).
 
 Težina je ljestvica 1–100 (E1 1–15, E2 16–35, E3 36–60, E4 61–80, E5 81–100). Ako nije
 zadana, procjenjuje se grubo iz duljine i glagola — namjerno oprezno, jer je krivo pokrenut
@@ -43,6 +51,11 @@ def ucitaj(put: Path = KATALOG) -> dict:
     return json.loads(put.read_text(encoding="utf-8"))
 
 
+def ukljucen(w: dict) -> bool:
+    """Razina 2 prekidača: `enabled` po tijeku. Polje koje nedostaje = uključen."""
+    return w.get("enabled", True) is not False
+
+
 def procijeni_tezinu(tekst: str) -> int:
     """1–100, oprezno. Bez dokaza da je posao velik ostaje nisko."""
     t = tekst.strip()
@@ -66,29 +79,52 @@ def odaberi(naslov: str, opis: str = "", tezina: int | None = None,
     tekst = f"{naslov}\n{opis}".strip()
     t = tezina if isinstance(tezina, int) else procijeni_tezinu(tekst)
 
+    # Razina 1 — kočnica na zadatku. PRVA: „uvijek pobjeđuje" (nalog §6.1).
+    if "bez-workflowa" in oznake:
+        return {"workflow": None, "kod": "bez-workflowa",
+                "razlog": "oznaka `bez-workflowa` na zadatku", "tezina": t, "koraci": []}
+
     for o in oznake:
         if o.startswith("workflow:"):
-            wid = o.split(":", 1)[1]
-            if wid in k["workflows"]:
-                return {"workflow": wid, "razlog": "izričita oznaka na zadatku",
-                        "tezina": t, "koraci": k["workflows"][wid]["koraci"]}
-            return {"workflow": None,
-                    "razlog": f'oznaka traži nepoznat tijek „{wid}"',
-                    "tezina": t, "koraci": []}
-    if "bez-workflowa" in oznake:
-        return {"workflow": None, "razlog": "oznaka `bez-workflowa`", "tezina": t, "koraci": []}
+            wid = o.split(":", 1)[1].strip()
+            w = k["workflows"].get(wid)
+            if w is None:
+                return {"workflow": None, "kod": "oznaka-nepoznat",
+                        "razlog": f'oznaka traži nepoznat tijek „{wid}"',
+                        "tezina": t, "koraci": []}
+            if not ukljucen(w):
+                return {"workflow": None, "kod": "oznaka-ugasen",
+                        "razlog": f'tijek „{wid}" je ugašen (enabled=false)',
+                        "tezina": t, "koraci": []}
+            return {"workflow": wid, "kod": "oznaka",
+                    "razlog": "izričita oznaka na zadatku",
+                    "tezina": t, "koraci": w["koraci"]}
 
+    # Ugašen tijek se preskače kao da ga nema, ali se PAMTI — inače bi razlog „nijedan
+    # okidač ne odgovara" sakrio to da je tijek zapravo ručno isključen.
+    preskoceni: list[str] = []
     for wid, w in k["workflows"].items():
         for uzorak in w.get("okidaci", []):
-            if re.search(uzorak, tekst, re.IGNORECASE):
-                prag = int(w.get("najmanja_tezina", 0))
-                if t < prag:
-                    return {"workflow": None,
-                            "razlog": f'okidač „{uzorak}" pogađa {wid}, ali težina {t} < {prag}',
-                            "tezina": t, "koraci": []}
-                return {"workflow": wid, "razlog": f'okidač „{uzorak}"',
-                        "tezina": t, "koraci": w["koraci"]}
-    return {"workflow": None, "razlog": "nijedan okidač ne odgovara", "tezina": t, "koraci": []}
+            if not re.search(uzorak, tekst, re.IGNORECASE):
+                continue
+            if not ukljucen(w):
+                preskoceni.append(wid)
+                break
+            prag = int(w.get("najmanja_tezina", 0))
+            if t < prag:
+                return {"workflow": None, "kod": "prelagan",
+                        "razlog": f'okidač „{uzorak}" pogađa {wid}, ali težina {t} < {prag}',
+                        "tezina": t, "koraci": []}
+            return {"workflow": wid, "kod": "okidac", "razlog": f'okidač „{uzorak}"',
+                    "tezina": t, "koraci": w["koraci"]}
+
+    if preskoceni:
+        return {"workflow": None, "kod": "ugasen",
+                "razlog": "okidač pogađa, ali je tijek ugašen (enabled=false): "
+                          + ", ".join(preskoceni),
+                "tezina": t, "koraci": []}
+    return {"workflow": None, "kod": "nema-okidaca",
+            "razlog": "nijedan okidač ne odgovara", "tezina": t, "koraci": []}
 
 
 def main() -> int:
@@ -99,14 +135,17 @@ def main() -> int:
     ap.add_argument("--oznake", default="", help="zarezom odvojeno")
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--popis", action="store_true")
+    ap.add_argument("--katalog", default=None,
+                    help="drugi katalog (za provjeru parnosti s WorkflowGate.ts)")
     a = ap.parse_args()
 
-    k = ucitaj()
+    k = ucitaj(Path(a.katalog)) if a.katalog else ucitaj()
     if a.popis:
         print(f"{'ID':22}{'NAJMANJA TEŽINA':>16}  KORACI")
         for wid, w in k["workflows"].items():
             koraci = " → ".join(s["agent"] for s in w["koraci"])
-            print(f"{wid:22}{w.get('najmanja_tezina', 0):>16}  {koraci}")
+            stanje = "" if ukljucen(w) else "  [UGAŠEN]"
+            print(f"{wid:22}{w.get('najmanja_tezina', 0):>16}  {koraci}{stanje}")
             print(f"{'':22}{'':16}  okidači: {', '.join(w.get('okidaci', []))[:90]}")
         return 0
 

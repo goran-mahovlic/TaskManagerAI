@@ -67,7 +67,13 @@ regoc, paket = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
 UI = regoc / "TaskManagerMD/src"
 
 # Tri oblika uvoza koja se pojavljuju: './core/X', './X' (uz ploču) i puna REGOČ putanja.
-UVOZ = re.compile(r"""from\s+['"](?:\./core/|\./|[^'"]*\.claude/regoc/)([A-Za-z0-9_]+)['"]""")
+#
+# Ime modula smije nositi PODMAPU ('models/ClassifierModel', 'types/task-types').
+# 05.09.2026.: bez toga je paket prestao graditi — živi TaskWebUI uvezao je
+# `~/.claude/regoc/models/ClassifierModel`, otkrivanje ga nije vidjelo (uzorak je tražio
+# samo ravna imena), pa je `bun build` pao na „Could not resolve". Isti razred kvara koji
+# je 04.09. napravio `TaskCreateBreaker`, samo kat dublje.
+UVOZ = re.compile(r"""from\s+['"](?:\./core/|\./|[^'"]*\.claude/regoc/)([A-Za-z0-9_][A-Za-z0-9_./-]*)['"]""")
 
 def uvozi(tekst):
     return set(UVOZ.findall(tekst))
@@ -88,12 +94,18 @@ while red:
     if ime in vidjeni:
         continue
     vidjeni.add(ime)
+    # Zod sheme imaju vlastiti korak (3) i vlastito mjesto (`src/zod/schemas`);
+    # bez ovoga ih otkrivanje kopira i u `src/core/zod/` kao mrtav drugi primjerak.
+    if ime.startswith(("zod/", "rag/")):
+        continue
     izvor = nadji(ime)
     if not izvor:
         continue
     tekst = izvor.read_text(encoding="utf-8", errors="replace")
-    # Modul uz ploču ostaje uz ploču; ostalo ide u jezgru.
-    cilj = (paket / "src" / f"{ime}.ts") if izvor.parent == UI else (paket / "src/core" / f"{ime}.ts")
+    # Modul uz ploču ostaje uz ploču; ostalo ide u jezgru. Podmapa se čuva.
+    uz_plocu = str(izvor).startswith(str(UI) + "/")
+    cilj = (paket / "src" / f"{ime}.ts") if uz_plocu else (paket / "src/core" / f"{ime}.ts")
+    cilj.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(izvor, cilj)
     preneseno.append(str(cilj.relative_to(paket)))
     red |= uvozi(tekst) - vidjeni
@@ -134,38 +146,60 @@ done
 cd "$PAKET"
 python3 - <<'PYEOF'
 import glob
+import os
 import re
 
 REGOC = "/home/klaudio/.claude/regoc/"
 # PAI biblioteke (RAG) žive izvan REGOČ mape; paket ih nosi u `src/rag/`.
 SKILLS = "/home/klaudio/.claude/skills/CORE/Tools/lib/"
 
-def prepisi(putanja: str, u_jezgri: bool) -> None:
+
+def prefiks(od_mape: str, do_mape: str) -> str:
+    """Relativni prefiks s trailing '/' — './' za istu mapu, '../' za kat iznad."""
+    rel = os.path.relpath(do_mape, od_mape).rstrip("/")
+    if rel == ".":
+        return "./"
+    # Bez vodećeg './' bun uvoz čita kao naziv paketa ("Maybe you need to bun install").
+    return (rel if rel.startswith("..") else "./" + rel) + "/"
+
+
+def prepisi(putanja: str) -> None:
+    """Uvozi se preračunavaju iz DUBINE datoteke, ne iz zastavice `u_jezgri`.
+
+    Modul smije živjeti u podmapi (`src/core/models/…`), pa fiksna dva slučaja
+    („uz ploču" / „u jezgri") nisu dovoljna — prefiks se računa relativno.
+    """
+    mapa = os.path.dirname(putanja) or "."
+    u_jezgri = putanja.startswith("src/core/")
+    jezgra = prefiks(mapa, "src/core")          # kamo idu moduli iz korijena REGOČ-a
+    zod = prefiks(mapa, "src/zod/schemas").rstrip("/")
+    rag = prefiks(mapa, "src/rag")
+
     s = open(putanja, encoding="utf-8").read()
     izvorno = s
-    zod = "../zod/schemas" if u_jezgri else "./zod/schemas"
-    jezgra = "./" if u_jezgri else "./core/"
     s = s.replace(f"'{REGOC}zod/schemas'", f"'{zod}/index'")
     s = s.replace(f"'{REGOC}zod/schemas/", f"'{zod}/")
     s = s.replace(f"'{REGOC}security/AuditLogger'", f"'{jezgra}AuditLogger'")
     s = s.replace(f"'{REGOC}security/", f"'{jezgra}")
     s = s.replace(f"'{REGOC}", f"'{jezgra}")
-    rag = "../rag/" if u_jezgri else "./rag/"
     s = s.replace(f"'{SKILLS}", f"'{rag}")
     if u_jezgri:
-        # Unutar ~/.claude/regoc/ sheme su podmapa, u paketu su kat iznad jezgre.
-        s = s.replace("'./zod/schemas'", "'../zod/schemas/index'")
-        s = s.replace("'./zod/schemas/", "'../zod/schemas/")
+        # Unutar ~/.claude/regoc/ sheme su podmapa, u paketu su izvan jezgre.
+        s = s.replace("'./zod/schemas'", f"'{zod}/index'")
+        s = s.replace("'./zod/schemas/", f"'{zod}/")
     else:
-        s = s.replace("'../../zod/schemas/", "'./zod/schemas/")
+        s = s.replace("'../../zod/schemas/", f"'{zod}/")
     if s != izvorno:
         open(putanja, "w", encoding="utf-8").write(s)
         print(f"  putanje: {putanja}")
 
-for f in glob.glob("src/*.ts"):
-    prepisi(f, u_jezgri=False)
-for f in glob.glob("src/core/*.ts"):
-    prepisi(f, u_jezgri=True)
+
+# Podmape ulaze u obradu (`**`) — inače novi `src/core/models/*.ts` ostane s
+# apsolutnom REGOČ putanjom i paket padne izvan ovog stroja.
+for f in sorted(glob.glob("src/**/*.ts", recursive=True)):
+    if f.startswith(("src/zod/", "src/rag/")):
+        continue        # tuđe biblioteke se prenose doslovno
+    prepisi(f)
 PYEOF
 
 # 6) U6/TASK-4266: pet datoteka koje prijenos DONOSI CIJELE nose i izmjene kojih u

@@ -36,6 +36,8 @@
 import { existsSync, readFileSync, readdirSync, statSync, appendFileSync, mkdirSync } from 'fs'
 import { join, dirname, relative, basename, extname, resolve, isAbsolute, sep } from 'path'
 import { isTestRuntime } from './LiveDbGuard'
+// W3/TASK-4615: unakrsna provjera tvrdnji gleda POLJE `datoteke` kad ga ima (v. crossCheckClaims).
+import { ocijeniIzlazKoraka } from './StepSchema'
 
 const HOME = process.env.HOME || '/home/klaudio'
 
@@ -976,18 +978,29 @@ export interface ClaimCheck {
   unreported: string[]
   /** Najveći broj prolaza koji izvještaj tvrdi (usporedba s izmjerenim). */
   claimedPass: number | null
+  /** W3: je li popis datoteka pročitan iz POLJA `datoteke`, ili izvučen iz proze? */
+  izvor: 'polja' | 'proza'
 }
 
 /**
  * Izvještaj izvođača NE ULAZI u sud, ali se smije usporediti s izmjerenim. Namjerno je
  * savjetodavno: spomen datoteke ne znači i izmjenu (agent ju je mogao samo pročitati),
  * pa bi blokiranje po ovome bilo kažnjavanje poštenog izvještaja.
+ *
+ * W3/TASK-4615 — POLJA PRIJE PROZE: ako izvještaj nosi valjan blok `REGOC-IZLAZ`, popis
+ * datoteka se uzima iz polja `datoteke` (agentova NAMJERA, izrečena strojno) umjesto iz
+ * regexa nad rečenicama. Razlika nije kozmetička: prozni regex hvata svaku spomenutu
+ * datoteku — i onu koju je agent samo pročitao ili citirao iz prompta — pa je `unbacked`
+ * bio pun lažnih pogodaka. Kad bloka nema, sve ostaje kao prije.
  */
 export function crossCheckClaims(resultText: string, changed: ChangedFile[]): ClaimCheck {
   const text = resultText || ''
   const changedBase = new Set(changed.map((c) => basename(c.path)))
   const mentioned = new Set<string>()
-  for (const m of text.matchAll(CLAIM_FILE_RE)) mentioned.add(basename(m[0]))
+  const sud = ocijeniIzlazKoraka(text)
+  const izPolja = sud.strojnoProvjerljiv && sud.datoteke.length > 0
+  if (izPolja) for (const f of sud.datoteke) mentioned.add(basename(f))
+  else for (const m of text.matchAll(CLAIM_FILE_RE)) mentioned.add(basename(m[0]))
 
   const unbacked = [...mentioned].filter((f) => !changedBase.has(f))
   const unreported = [...changedBase].filter((f) => !mentioned.has(f))
@@ -997,7 +1010,7 @@ export function crossCheckClaims(resultText: string, changed: ChangedFile[]): Cl
     const n = Number(m[1])
     if (Number.isFinite(n)) claimedPass = Math.max(claimedPass ?? 0, n)
   }
-  return { unbacked, unreported, claimedPass }
+  return { unbacked, unreported, claimedPass, izvor: izPolja ? 'polja' : 'proza' }
 }
 
 // ─── 6. Kontrola petlje popravak → odbijanje → popravak ──────────────────────
@@ -1088,7 +1101,12 @@ export function decideNextAction(
   verdict: CriticVerdict,
   cfg: CriticConfig = loadCriticConfig(),
 ): LoopDecision {
-  const round = history.length + 1
+  // BROJE SE SAMO ODBIJENICE. `history` su SVI sudovi o ovom zadatku, a velika ih je
+  // većina `pass`/`unverifiable` (mjereno 05.09.2026. na data/critic_gate.jsonl: 170 od
+  // 176). Da se broje i oni, zadatak koji je prije bio uredno provjeren ulazio bi u prvu
+  // svoju odbijenicu s već potrošenim krugovima i odmah eskalirao čovjeku — dakle W4
+  // petlja mu se ne bi ni jednom okrenula. Krug je krug POPRAVKA, pa ga broji samo pad.
+  const round = history.filter((h) => h.status === 'fail').length + 1
   if (verdict.status !== 'fail') {
     return { action: 'accept', round, reason: `sud=${verdict.status}, nema kvara koji bi vraćao zadatak`, repeated: [] }
   }
