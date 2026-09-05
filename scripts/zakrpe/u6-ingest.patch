@@ -1,0 +1,214 @@
+diff --git a/src/TaskWebUI.ts b/src/TaskWebUI.ts
+index b071f9a..4601d9c 100644
+--- a/src/TaskWebUI.ts
++++ b/src/TaskWebUI.ts
+@@ -76,12 +76,16 @@ import {
+   DEZURNI_CONFIG_PATH, GRANICE, PODRZANI_PROVIDERI,
+   loadDezurniConfig, saveDezurniConfig, validateDezurniPatch,
+ } from './DezurniConfig'
+-// U1/TASK-4261: ulazna vrata za Telegram — prekidač po grupi (off/shadow/on) + pragovi.
++// U6/TASK-4266: generički ulaz `POST /api/ingest` — source/externalId/replyTo/text/senderName.
++// Ništa u njemu ne zna za Telegram; most, pretinac e-pošte i konzola su obični pozivatelji.
+ import {
+-  INGEST_GATE_CONFIG_PATH, NACINI, POZNATE_GRUPE,
+-  GRANICE as GRANICE_ULAZ,
+-  loadIngestGateConfig, saveIngestGateConfig, validateIngestGatePatch,
+-} from './IngestGateConfig'
++  procijeniIngest, validirajZahtjev, zapisiUlaz, INGEST_LOG_PATH,
++} from './core/Ingest'
++import { renderirajOpis } from './core/IngestTemplate'
++import {
++  INGEST_CONFIG_PATH, loadIngestConfig, saveIngestConfig, validateIngestPatch,
++  NACINI as NACINI_ULAZ, GRANICE as GRANICE_ULAZA,
++} from './core/IngestConfig'
+ // TASK-2989/2991: traka više ne vjeruje status datoteci na riječ — stanje se izvodi.
+ import { resolveDaemonLiveness, type LivenessDeps } from './DaemonLiveness'
+ // TASK-3568 (T4): „Potrošnja zadatka" na kartici — poziva agent_telemetry.py (T2/T3).
+@@ -7710,16 +7714,18 @@ async function handleDezurniConfigPut(req: Request): Promise<Response> {
+   }
+ }
+ 
+-// ── Ulazna vrata za Telegram — U1 / TASK-4261 ─────────────────────────────────────────────
+-// Prekidač po grupi s TRI položaja (off/shadow/on) + zadani projekt po grupi + pragovi A/B/C.
++// ── Ulazna vrata — U1 / TASK-4261, poopćena u U6 / TASK-4266 ──────────────────────────────
++// Prekidač po IZVORU s TRI položaja (off/shadow/on) + zadani projekt po izvoru + pragovi A/B/C.
+ // Razrada §1: kvačica ne pokriva uvođenje u sjeni, pa je ovo prekidač, ne boolean.
+-// Bez restarta: i most (`telegram_agent.ts`) i ploča čitaju datoteku pri svakom prolazu.
++// Bez restarta: i pozivatelji i ploča čitaju datoteku pri svakom prolazu.
++// Ključ više nije `chatId` nego izvor (`email`, `telegram:-123`, `*`); stari nazivi polja
++// (`perGroup`, `projectByGroup`) ostaju u odgovoru i u zakrpi da sučelje ne pukne.
+ 
+ function handleIngestGateGet(): Response {
+   const json = (o: unknown, s = 200) =>
+     new Response(JSON.stringify(o), { status: s, headers: { 'Content-Type': 'application/json' } })
+   try {
+-    const postavke = loadIngestGateConfig()
++    const postavke = loadIngestConfig()
+     // Popis projekata služi padajućem izborniku „zadani projekt grupe" — ploča ne smije
+     // nuditi projekt koji u bazi ne postoji, jer bi zadatci padali u pretinac PRJ-033.
+     let projekti: string[] = []
+@@ -7729,12 +7735,15 @@ function handleIngestGateGet(): Response {
+     for (const p of Object.values(postavke.projectByGroup)) {
+       if (p && !projekti.includes(p)) projekti.unshift(p)
+     }
++    // „grupe" su ostale ime polja zbog sučelja; sadržaj su ključevi izvora koje
++    // postavke poznaju (`email`, `telegram:-123`, `*`) — natpis je sam ključ.
++    const grupe: Record<string, string> = {}
++    for (const k of Object.keys(postavke.perSource)) grupe[k] = k
+     return json({
+-      postavke, projekti,
+-      nacini: NACINI,
+-      grupe: POZNATE_GRUPE,
+-      granice: GRANICE_ULAZ,
+-      putanja: INGEST_GATE_CONFIG_PATH,
++      postavke, projekti, grupe,
++      nacini: NACINI_ULAZ,
++      granice: GRANICE_ULAZA,
++      putanja: INGEST_CONFIG_PATH,
+     })
+   } catch (err) {
+     return json({ error: String(err) }, 500)
+@@ -7751,10 +7760,10 @@ async function handleIngestGatePut(req: Request): Promise<Response> {
+     return json({ error: 'Neispravan JSON' }, 400)
+   }
+   // Poredak pragova se provjerava prema onome što JE na disku — ploča šalje jedno polje.
+-  const provjera = validateIngestGatePatch(tijelo, loadIngestGateConfig())
++  const provjera = validateIngestPatch(tijelo, loadIngestConfig())
+   if (!provjera.ok) return json({ error: provjera.greske.join('; '), greske: provjera.greske }, 400)
+   try {
+-    const postavke = saveIngestGateConfig(provjera.zakrpa)
++    const postavke = saveIngestConfig(provjera.zakrpa)
+     console.log(`[ULAZNA-VRATA] postavke promijenjene s ploče: ${JSON.stringify(provjera.zakrpa)}`)
+     return json({ ok: true, postavke })
+   } catch (err) {
+@@ -7762,6 +7771,118 @@ async function handleIngestGatePut(req: Request): Promise<Response> {
+   }
+ }
+ 
++// ── POST /api/ingest — generički ulaz (U6 / TASK-4266) ────────────────────────────────────
++//
++// Pet polja koja ne znaju za kanal: source, externalId, replyTo, text, senderName.
++// Telegram, e-pošta i konzola su odsad SAMO pozivatelji ovog ulaza — sve što je dosad
++// radio most (ocjena težine, prag A/B/C, izbor projekta, opis s koracima) živi ovdje.
++//
++// ZAŠTO ULAZ NE STVARA ZADATAK SAM. Zadatak i dalje nastaje kroz `handleCreateTask` —
++// jedini ingress ploče. Drugi stvaratelj značio bi granu koja zaobilazi vratare
++// (anti-echo, prazan opis, strop stvaranja) i dvije istine o tome tko je zadatak otvorio.
++// Zato ovdje stoji unutarnji `POST /api/tasks`: odgovor tih vratara (422, 429) prolazi
++// nepromijenjen do pozivatelja.
++async function handleIngest(req: Request): Promise<Response> {
++  const json = (o: unknown, s = 200) =>
++    new Response(JSON.stringify(o), { status: s, headers: { 'Content-Type': 'application/json' } })
++
++  let tijelo: unknown
++  try {
++    tijelo = await req.json()
++  } catch {
++    return json({ ok: false, error: 'Neispravan JSON' }, 400)
++  }
++
++  const provjera = validirajZahtjev(tijelo)
++  if (!provjera.ok) {
++    return json({ ok: false, error: provjera.greske.join('; '), greske: provjera.greske }, 400)
++  }
++  const zahtjev = provjera.zahtjev!
++
++  let odluka
++  try {
++    odluka = procijeniIngest(zahtjev, loadIngestConfig())
++  } catch (err) {
++    console.error(`[ULAZ] ocjena pukla (${String(err)}) — zahtjev odbijen, ništa nije otvoreno`)
++    return json({ ok: false, error: `Ocjena ulaza nije uspjela: ${String(err)}` }, 500)
++  }
++  // Mjerenje teče u SVA TRI položaja — inače bi se točno pri paljenju izgubila usporedba
++  // „što bi ulaz napravio" ↔ „što je napravio".
++  zapisiUlaz(odluka.zapis)
++
++  const sazetak = {
++    action: odluka.akcija,
++    mode: odluka.nacin,
++    postupak: odluka.postupak,
++    effort: odluka.effort,
++    weight: odluka.tezina,
++    weightReason: odluka.tezinaRazlog,
++    projectId: odluka.projectId,
++    projectSource: odluka.projectSource,
++    needsApproval: odluka.trebaPotvrdu,
++    reason: odluka.razlog,
++    replyTo: zahtjev.replyTo ?? null,
++    log: INGEST_LOG_PATH,
++  }
++
++  if (odluka.akcija !== 'zadatak') {
++    console.log(`[ULAZ] ${zahtjev.source}${zahtjev.externalId ? ':' + zahtjev.externalId : ''} — `
++      + `${odluka.akcija} (${odluka.effort}/${odluka.tezina}): ${odluka.razlog}`)
++    return json({ ok: true, created: false, ...sazetak })
++  }
++
++  const stvaranje = await handleCreateTask(new Request('http://localhost/api/tasks', {
++    method: 'POST',
++    headers: { 'Content-Type': 'application/json' },
++    body: JSON.stringify(odluka.zadatak),
++  }))
++  let stvoreno: any = null
++  try { stvoreno = await stvaranje.clone().json() } catch { /* odgovor bez tijela */ }
++
++  if (!stvaranje.ok) {
++    // Odbijenica vratara ide van doslovno (isti kôd i razlog), uz ocjenu ulaza uz nju.
++    console.warn(`[ULAZ] ${zahtjev.source}: zadatak NIJE otvoren (HTTP ${stvaranje.status})`)
++    return json({ ok: false, created: false, ...sazetak, taskManager: stvoreno }, stvaranje.status)
++  }
++
++  const taskId = stvoreno?.id || stvoreno?.task?.id || null
++
++  // Broj zadatka postoji tek POSLIJE stvaranja, a koraci 5 i 6 ga trebaju doslovno
++  // (`git checkout -b zadatak/TASK-####` nije naredba nego rebus). Zato se opis
++  // jednom prepiše s pravim brojem. Ide kroz `updateTask`, isti put kojim ide i
++  // PUT s ploče — vratari zatvaranja se ne dotiču, mijenja se samo opis.
++  if (taskId) {
++    try {
++      const sKonacnimId = renderirajOpis({
++        message: zahtjev.text,
++        weight: odluka.tezina,
++        source: zahtjev.source,
++        externalId: zahtjev.externalId,
++        replyTo: zahtjev.replyTo,
++        senderName: zahtjev.senderName,
++        projectId: odluka.projectId,
++        taskId,
++        pragB: odluka.zapis.pragovi.B,
++        textOnly: odluka.zadatak!.tags.includes('samo-tekst'),
++        receivedAt: odluka.zapis.ts,
++      })
++      taskManager.updateTask(taskId, { description: sKonacnimId })
++    } catch (err) {
++      console.warn(`[ULAZ] opis ${taskId} ostao s oznakom TASK-#### (${String(err)})`)
++    }
++  }
++
++  console.log(`[ULAZ] ${zahtjev.source}${zahtjev.externalId ? ':' + zahtjev.externalId : ''} → `
++    + `${taskId} (${odluka.effort}/${odluka.tezina}, projekt ${odluka.projectId})`)
++  return json({
++    ok: true, created: true, taskId,
++    title: odluka.zadatak!.title,
++    tags: odluka.zadatak!.tags,
++    ...sazetak,
++    task: stvoreno,
++  }, 201)
++}
++
+ // PUT /api/models/providers/:id — postavke providera (enabled, baseUrl, token).
+ async function handleSetProvider(providerId: string, req: Request): Promise<Response> {
+   const json = (o: unknown, s = 200) =>
+@@ -12044,6 +12165,11 @@ const server = Bun.serve({
+       return handleIngestGatePut(req)
+     }
+ 
++    // POST /api/ingest — generički ulaz: source, externalId, replyTo, text, senderName (U6)
++    if (url.pathname === '/api/ingest' && req.method === 'POST') {
++      return handleIngest(req)
++    }
++
+     // ============================================
+     // INFO API ROUTE
+     // ============================================

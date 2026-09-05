@@ -1,3 +1,32 @@
+## 2026-09-05 — generički ulaz `POST /api/ingest`
+
+**Ulaz koji ne zna ni za jedan kanal**
+- `POST /api/ingest` prima `source`, `externalId`, `replyTo`, `text`, `senderName` (uz
+  neobavezne `projectId`, `assignee`, `tags`) i vraća odluku: je li otvoren zadatak, s kojom
+  težinom, u kojem projektu i zašto. Most za dopisivanje, pretinac e-pošte i konzola odsad su
+  samo pozivatelji — ocjena, pragovi i izbor projekta više nisu u njima.
+- Zadatak i dalje nastaje kroz `POST /api/tasks`, jedini ulaz ploče: odbijenice vratara
+  (reciklirani izvještaj 422, prazan sadržaj 422, strop stvaranja 429) prolaze nepromijenjene.
+- Ocjena je deterministična i besplatna (razred težine + bodovi po koracima, datotekama i
+  ponovnom pokušaju) — nijedan model ne stoji na putu dolazne poruke.
+- Svaki poziv se zapisuje u `$TM_HOME/data/ingest.jsonl`, i u položaju `shadow` i u `on`.
+
+**Postavke i predlošci**
+- `config/ingest-gate.json` — položaj po izvoru (`off`/`shadow`/`on`), zadani projekt po
+  izvoru i pragovi A/B/C. Ključ se traži od najužeg prema najširem
+  (`source:externalId` → `externalId` → `source` → `*`); stari nazivi `perGroup` /
+  `projectByGroup` i dalje rade. Čita se pri svakom pozivu — bez ponovnog pokretanja.
+- `templates/koraci.json` i `templates/prvi-zadatak.md` — deset koraka tijeka rada i skelet
+  opisa postali su PODATCI. Instalacija mijenja izvršitelje, alate i kanal dojave bez diranja
+  koda; pravilo skaliranja po težini ostaje u kodu.
+
+**Paket radi bez REGOČ instalacije**
+- `TM_DB` / `TM_HOME` sada premještaju bazu zadataka, projekata, troška i reda poruka izvan
+  `~/.claude/regoc`. Bez tih varijabli je putanja nepromijenjena.
+- Red poruka stvara svoju mapu ako je nema — dotad poslužitelj na praznom `$HOME` uopće nije
+  mogao krenuti (`unable to open database file`, izvan `try/catch`).
+- Provjereno: `HOME` bez `~/.claude/regoc`, `bun src/TaskWebUI.ts`, `curl POST /api/ingest`
+  → `TASK-001` u `$TM_HOME/data/tasks.db`.
 
 ## 2026-09-04 — potrošnja, vrijednost rada i RAG
 

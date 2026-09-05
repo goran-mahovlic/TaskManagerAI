@@ -14,6 +14,7 @@
 import Database, { type Statement } from "bun:sqlite";
 import { TaskIdAllocator } from "./TaskIdAllocator";
 import { assertNotLiveDbInTest } from "./LiveDbGuard";
+import { TM_DB } from "./paths";
 // TASK-3516: jedno pravilo poretka za cijeli TaskManager — najnovije na vrhu.
 import { TASKS_ORDER_BY } from "./ChronoOrder";
 
@@ -177,7 +178,14 @@ const ValidStatusTransitions: Record<string, string[]> = {
 // ============================================
 
 const HOME = process.env.HOME || '/home/klaudio';
-export const DB_PATH = `${HOME}/.claude/regoc/data/regoc.db`;
+
+// U6/TASK-4266: paket mora raditi i ondje gdje `~/.claude/regoc` uopće ne postoji.
+// `TM_DB` (ili `TM_HOME`) je jedini prekidač; BEZ NJIH je putanja doslovno ista kao
+// dosad, pa se ponašanje žive REGOČ instalacije ne mijenja ni za jedan bajt.
+// SSOT razrješenja je `core/paths.ts` — ovdje se samo bira između njega i naslijeđene
+// putanje, jer bi bezuvjetni prelazak na `~/.taskmanager` živoj ploči podmetnuo praznu bazu.
+export const LEGACY_DB_PATH = `${HOME}/.claude/regoc/data/regoc.db`;
+export const DB_PATH = (process.env.TM_DB || process.env.TM_HOME) ? TM_DB : LEGACY_DB_PATH;
 
 // ============================================
 // ROW → TASK MAPPER

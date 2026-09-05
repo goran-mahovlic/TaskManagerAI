@@ -51,6 +51,7 @@
 import Database from 'bun:sqlite'
 import { join } from 'path'
 import { randomUUID } from 'crypto'
+import { TM_DB } from './paths'
 
 // ============================================
 // Types
@@ -169,7 +170,11 @@ export class CostTracker {
   private db: Database
 
   constructor(dbPath?: string) {
-    const defaultPath = join(process.env.HOME || '', '.claude/regoc/data/regoc.db')
+    // U6/TASK-4266: `TM_DB`/`TM_HOME` premještaju bazu izvan `~/.claude/regoc`;
+    // bez njih je putanja nepromijenjena (živa instalacija se ne dira).
+    const defaultPath = (process.env.TM_DB || process.env.TM_HOME)
+      ? TM_DB
+      : join(process.env.HOME || '', '.claude/regoc/data/regoc.db')
     this.db = new Database(dbPath || defaultPath)
     this.db.exec("PRAGMA journal_mode = WAL"); this.db.exec("PRAGMA busy_timeout = 5000");
     this.db.exec('PRAGMA journal_mode = WAL')

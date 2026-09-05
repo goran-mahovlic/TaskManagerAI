@@ -14,8 +14,9 @@
  */
 
 import { Database } from 'bun:sqlite'
-import { existsSync, readFileSync } from 'fs'
-import { join } from 'path'
+import { existsSync, mkdirSync, readFileSync } from 'fs'
+import { dirname, join } from 'path'
+import { TM_DB } from './paths'
 import { randomUUID } from 'crypto'
 import { AgentIdSchema, SendMessageInputSchema } from '../zod/schemas/index'
 
@@ -23,9 +24,16 @@ import { AgentIdSchema, SendMessageInputSchema } from '../zod/schemas/index'
 // Configuration
 // ============================================
 
-const REGOC_DIR = join(process.env.HOME || '', '.claude/regoc')
+// U6/TASK-4266: `TM_HOME`/`TM_DB` premještaju red poruka izvan `~/.claude/regoc`, a mapa
+// se stvara ako je nema. Bez toga poslužitelj NIJE MOGAO krenuti na stroju bez REGOČ
+// instalacije: `new Database(...)` nad nepostojećom mapom baca „unable to open database
+// file", i to izvan try/catch-a (mjereno 05.09.2026. na praznom $HOME). Bez tih varijabli
+// putanja je nepromijenjena.
+const LEGACY_DIR = join(process.env.HOME || '', '.claude/regoc')
+const REGOC_DIR = (process.env.TM_DB || process.env.TM_HOME) ? dirname(TM_DB) : LEGACY_DIR
 const DB_PATH = join(REGOC_DIR, 'messages.db')
 const SCHEMA_PATH = join(REGOC_DIR, 'schema.sql')
+if (!existsSync(REGOC_DIR)) { try { mkdirSync(REGOC_DIR, { recursive: true }) } catch { /* pada na otvaranju */ } }
 
 // Valid agents (whitelist for security)
 const VALID_AGENTS = [

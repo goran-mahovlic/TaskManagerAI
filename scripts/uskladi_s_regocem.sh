@@ -47,6 +47,12 @@ for f in odlucitelj.py dezurni.py; do
   done
 done
 
+# 1d) VLASTITO U PAKETU. Ove datoteke nastale su ovdje (U6/TASK-4266) i u živoj
+#     instalaciji ih nema ili ondje imaju putanje na `~/.claude/regoc`. Otkrivanje po
+#     uvozima ih ne bi ni našlo, ali `IngestGateConfig.ts` bi se vratio kroz uvoz iz
+#     prekopiranog `TaskWebUI.ts` — a on nosi putanju koja izvan REGOČ stroja ne postoji.
+VLASTITO_U_PAKETU="src/core/Ingest.ts src/core/IngestConfig.ts src/core/IngestTemplate.ts"
+
 # 2) Jezgra: moduli se OTKRIVAJU iz uvoza, ne održavaju ručnim popisom.
 #
 #    Ručni popis je 04.09.2026. slomio paket: agent je u živu instalaciju dodao
@@ -161,6 +167,29 @@ for f in glob.glob("src/*.ts"):
 for f in glob.glob("src/core/*.ts"):
     prepisi(f, u_jezgri=True)
 PYEOF
+
+# 6) U6/TASK-4266: `TaskWebUI.ts` se prenosi CIJEL, pa prijenos zbriše rutu
+#    `POST /api/ingest` koje u živoj instalaciji nema. Zato se zakrpa vraća — i to
+#    glasno: tiho izgubljena ruta bila bi kvar koji se primijeti tek kad pozivatelj
+#    dobije 404.
+if grep -q "'/api/ingest'" src/TaskWebUI.ts 2>/dev/null; then
+  echo "  ruta POST /api/ingest: već je u prenesenoj datoteci"
+elif [ -f scripts/zakrpe/u6-ingest.patch ]; then
+  if git apply --3way scripts/zakrpe/u6-ingest.patch 2>/dev/null; then
+    echo "  ruta POST /api/ingest: zakrpa vraćena (scripts/zakrpe/u6-ingest.patch)"
+    rm -f src/IngestGateConfig.ts   # paket koristi src/core/IngestConfig.ts
+  else
+    echo "  !! ZAKRPA NIJE PROŠLA: scripts/zakrpe/u6-ingest.patch"
+    echo "     POST /api/ingest NE POSTOJI u prenesenom TaskWebUI.ts."
+    echo "     Vrati ručno (docs/API.md, odjeljak „Ulaz\") ili osvježi zakrpu:"
+    echo "       git diff -- src/TaskWebUI.ts > scripts/zakrpe/u6-ingest.patch"
+  fi
+fi
+
+# 7) Vlastite datoteke paketa ne smiju ostati pregažene starijom inačicom.
+for f in $VLASTITO_U_PAKETU; do
+  [ -f "$f" ] || echo "  !! NEDOSTAJE $f (vlastito u paketu — vrati iz gita)"
+done
 
 echo
 echo "Preostale apsolutne putanje na REGOČ (moraju biti samo zadane vrijednosti, ne uvozi):"

@@ -35,6 +35,7 @@ import {
 import type { AgentId } from '../zod/schemas/task'
 // TASK-3516/TASK-3513: poredak projekata po zadnjem radu — jedna izvedba za oba zadatka.
 import { projectLastActivityExpr, projectsOrderBy, TASKS_ORDER_BY } from './ChronoOrder'
+import { TM_DB, TM_DATA } from './paths'
 
 /**
  * Brojke zadataka po statusu za jedan projekt (TASK-3513: kućica projekta
@@ -54,9 +55,14 @@ function projectStatusCountsSelect(srcAlias: string): string {
 // CONFIGURATION
 // ============================================
 
-const DB_PATH = join(homedir(), '.claude/regoc/data/regoc.db')
-const PROJECTS_SCHEMA_PATH = join(homedir(), '.claude/regoc/data/projects-schema.sql')
-const MIGRATE_TASKS_PATH = join(homedir(), '.claude/regoc/data/migrate-tasks-project.sql')
+// U6/TASK-4266: projekti moraju živjeti u istoj bazi kao zadatci — i ondje gdje
+// `~/.claude/regoc` ne postoji. Prekidač je `TM_DB`/`TM_HOME`; bez njih je putanja
+// nepromijenjena, pa živa REGOČ instalacija nastavlja čitati svoju bazu.
+const LEGACY_DATA_DIR = join(homedir(), '.claude/regoc/data')
+const DATA_DIR = (process.env.TM_DB || process.env.TM_HOME) ? TM_DATA : LEGACY_DATA_DIR
+const DB_PATH = (process.env.TM_DB || process.env.TM_HOME) ? TM_DB : join(LEGACY_DATA_DIR, 'regoc.db')
+const PROJECTS_SCHEMA_PATH = join(DATA_DIR, 'projects-schema.sql')
+const MIGRATE_TASKS_PATH = join(DATA_DIR, 'migrate-tasks-project.sql')
 
 // ============================================
 // PROJECT MANAGER CLASS

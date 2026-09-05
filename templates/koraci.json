@@ -1,0 +1,82 @@
+{
+  "_": [
+    "Fiksni popis koraka tijeka rada — predložak koji zadatak nosi u svom opisu.",
+    "Ovo su PODATCI, ne kod: instalacija ih smije prepisati (druga imena izvršitelja,",
+    "drugi alati, drugi kanal dojave) bez ijedne izmjene u TypeScriptu.",
+    "Redni broj `n` je dio ugovora — koraci se ne premeću i ne brišu; kad su za neki",
+    "zadatak nepotrebni, dobiju oznaku [neobvezno] ili [preskače se], v. src/core/IngestTemplate.ts.",
+    "Ako datoteka nedostaje ili je pokvarena, ulaz pada na ugrađeni popis i nastavlja raditi."
+  ],
+  "koraci": [
+    {
+      "n": 0, "key": "prijem", "title": "Prijem",
+      "what": "otvaranje zadatka: izvor, pošiljatelj, projekt, težina",
+      "executor": "automatika (bez modela)", "tool": "—",
+      "artifact": "zadatak u TaskManageru s oznakama i izvorom",
+      "proof": "zadatak postoji, ima projekt i težinu"
+    },
+    {
+      "n": 1, "key": "grill", "title": "Grill",
+      "what": "zaoštravanje zahtjeva, rječnik pojmova, otvorena pitanja",
+      "executor": "arhitekt", "tool": "GrillWithDocs",
+      "artifact": "dopuna specifikacije projekta + ADR ako je odluka značajna",
+      "proof": "ADR ili zapis „nema značajne odluke\""
+    },
+    {
+      "n": 2, "key": "istrazivanje", "title": "Istraživanje",
+      "what": "što već postoji (baza znanja, kod, ploča, web)",
+      "executor": "istraživač", "tool": "Research + rag-query + rag-store",
+      "artifact": "dokument u bazi znanja (project_id, tip=istrazivanje, task_id, izvori)",
+      "proof": "ID dokumenta u result_summary (vratar ResearchRagGate)"
+    },
+    {
+      "n": 3, "key": "razlaganje", "title": "Razlaganje",
+      "what": "3–7 podzadataka s ulazima, izlazima i ovisnostima",
+      "executor": "orkestrator", "tool": "TaskDecomposer",
+      "artifact": "plan u data/decomposition_plans/<ID>.json",
+      "proof": "plan prolazi normalizePlan (bez ciklusa, poznati izvršitelji)"
+    },
+    {
+      "n": 4, "key": "ocjena", "title": "Ocjena",
+      "what": "težina 1–100, potrebni alati, je li zadatak „samo tekst\"",
+      "executor": "automatika + planer", "tool": "registar izvršitelja ($TM_AGENTS)",
+      "artifact": "polja i oznake na zadatku",
+      "proof": "svaki imenovani alat postoji u registru"
+    },
+    {
+      "n": 5, "key": "grana", "title": "Grana",
+      "what": "git checkout -b zadatak/TASK-####",
+      "executor": "izvršitelj", "tool": "git",
+      "artifact": "grana zadatak/TASK-####",
+      "proof": "grana postoji, radno stablo čisto"
+    },
+    {
+      "n": 6, "key": "izvedba", "title": "Izvedba",
+      "what": "po koracima plana, TDD gdje ima testova",
+      "executor": "izvršitelj", "tool": "TDD / DiagnosingBugs",
+      "artifact": "izmjene + testovi",
+      "proof": "testovi prolaze; commit po koraku s ID-em zadatka"
+    },
+    {
+      "n": 7, "key": "provjera", "title": "Provjera (dvije osi)",
+      "what": "os A: standardi (kod, testovi); os B: sukladnost izvornom zahtjevu",
+      "executor": "QA, pa sigurnost", "tool": "code-review, security-review",
+      "artifact": "nalaz s obje osi",
+      "proof": "CriticGate bez `fail`; nalazi zatvoreni ili izrijekom prihvaćeni"
+    },
+    {
+      "n": 8, "key": "spajanje", "title": "Spajanje",
+      "what": "merge u glavnu granu",
+      "executor": "orkestrator", "tool": "MergeGate",
+      "artifact": "commit u glavnoj grani",
+      "proof": "lanac provjera zelen nakon spajanja"
+    },
+    {
+      "n": 9, "key": "dojava", "title": "Dojava",
+      "what": "JEDAN sažetak korisniku, na adresu iz polja replyTo",
+      "executor": "dojavljivač (zadatak tipa report-back)", "tool": "kanal izvora (replyTo)",
+      "artifact": "jedna poruka na izvornu adresu",
+      "proof": "poruka poslana (report-back zadatak zatvoren), niz zatvoren"
+    }
+  ]
+}
