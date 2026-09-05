@@ -168,21 +168,27 @@ for f in glob.glob("src/core/*.ts"):
     prepisi(f, u_jezgri=True)
 PYEOF
 
-# 6) U6/TASK-4266: `TaskWebUI.ts` se prenosi CIJEL, pa prijenos zbriše rutu
-#    `POST /api/ingest` koje u živoj instalaciji nema. Zato se zakrpa vraća — i to
-#    glasno: tiho izgubljena ruta bila bi kvar koji se primijeti tek kad pozivatelj
-#    dobije 404.
+# 6) U6/TASK-4266: pet datoteka koje prijenos DONOSI CIJELE nose i izmjene kojih u
+#    živoj instalaciji nema — rutu `POST /api/ingest` i razrješenje putanja preko
+#    `TM_DB`/`TM_HOME` (bez njega paket ne radi izvan REGOČ stroja). Zato se zakrpa
+#    vraća, i to glasno: tiho izgubljena ruta bila bi kvar koji se primijeti tek kad
+#    pozivatelj dobije 404.
+echo
 if grep -q "'/api/ingest'" src/TaskWebUI.ts 2>/dev/null; then
-  echo "  ruta POST /api/ingest: već je u prenesenoj datoteci"
+  echo "U6: ruta POST /api/ingest već je u prenesenoj datoteci — zakrpa nije potrebna"
 elif [ -f scripts/zakrpe/u6-ingest.patch ]; then
-  if git apply --3way scripts/zakrpe/u6-ingest.patch 2>/dev/null; then
-    echo "  ruta POST /api/ingest: zakrpa vraćena (scripts/zakrpe/u6-ingest.patch)"
+  if patch -p1 --forward --silent --no-backup-if-mismatch < scripts/zakrpe/u6-ingest.patch \
+     || git apply --3way scripts/zakrpe/u6-ingest.patch 2>/dev/null; then
+    echo "U6: zakrpa vraćena (scripts/zakrpe/u6-ingest.patch)"
     rm -f src/IngestGateConfig.ts   # paket koristi src/core/IngestConfig.ts
+    find src -name '*.orig' -o -name '*.rej' | while read -r r; do echo "  ostatak: $r"; done
   else
-    echo "  !! ZAKRPA NIJE PROŠLA: scripts/zakrpe/u6-ingest.patch"
-    echo "     POST /api/ingest NE POSTOJI u prenesenom TaskWebUI.ts."
-    echo "     Vrati ručno (docs/API.md, odjeljak „Ulaz\") ili osvježi zakrpu:"
-    echo "       git diff -- src/TaskWebUI.ts > scripts/zakrpe/u6-ingest.patch"
+    echo "!! U6 ZAKRPA NIJE PROŠLA: scripts/zakrpe/u6-ingest.patch"
+    echo "   POST /api/ingest i TM_HOME putanje NISU u prenesenim datotekama."
+    echo "   Vrati ručno (docs/API.md, odjeljak „Ulaz\") pa osvježi zakrpu:"
+    echo "     git diff <zadnji-cisti-commit> -- src/TaskWebUI.ts src/core/TaskManagerSQL.ts \\"
+    echo "        src/core/ProjectManager.ts src/core/CostTracker.ts src/core/MessageQueue.ts \\"
+    echo "        > scripts/zakrpe/u6-ingest.patch"
   fi
 fi
 
