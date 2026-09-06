@@ -2059,7 +2059,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       <div class="status">
         <!-- TASK-3047: ručna kočnica. Stoji u zaglavlju jer mora biti dohvatljiva s bilo
              kojeg taba — kad nešto krene po zlu, ne traži se gumb po karticama. -->
-        <select id="izbor-jezika" class="izbor-jezika" title="Jezik sučelja"></select>
+        <select id="izbor-jezika" class="izbor-jezika" data-i18n-title="jezik_sucelja" title="Jezik sučelja"></select>
         <button id="global-pause-btn" class="global-pause-btn" title="Zaustavi sav automatski rad" data-i18n-title="zaustavi_sav_automatski_rad" data-i18n="pauza">&#9208; Pauza</button>
         <span id="global-pause-info" class="global-pause-info"></span>
         <span id="connection-status" class="status-dot"></span>
@@ -2093,7 +2093,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       <div id="odluke-traka" class="odluke-traka" style="display:none">
         <div class="odluke-glava">
           <span class="odluke-znak" data-i18n="ceka">ČEKA</span>
-          <strong id="odluke-naslov">Čeka tvoju odluku</strong>
+          <strong id="odluke-naslov" data-i18n="ceka_tvoju_odluku">Čeka tvoju odluku</strong>
           <span class="odluke-opis" data-i18n="stroj_ih_namjerno_ne_dira_dok_ne_odlucis">stroj ih namjerno ne dira dok ne odlučiš</span>
           <span id="odluke-tko" class="odluke-tko"></span>
           <button id="odluke-toggle" class="odluke-toggle" data-i18n="prikazi">prikaži</button>
@@ -2108,7 +2108,8 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
                   data-i18n-title="davatelj_modela" title="Davatelj"></select>
           <select id="odluc-model" class="odluc-model" data-i18n-title="model_koji_odlucuje"
                   title="Model koji odlučuje"></select>
-          <label class="odluc-prekidac" title="Koliko imaš vremena za odluku prije nego model odluči umjesto tebe">
+          <label class="odluc-prekidac" data-i18n-title="koliko_imas_vremena_za_odluku"
+                 title="Koliko imaš vremena za odluku prije nego model odluči umjesto tebe">
             <span data-i18n="cekanje_h">čekanje (h)</span>
             <input type="number" id="odluc-cekanje" class="odluc-broj" min="0.25" max="72" step="0.25">
           </label>
@@ -2176,10 +2177,10 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       </div>
 
       <div class="projects-legend">
-        <span class="legend-item"><i class="legend-dot status-active"></i>Aktivan</span>
-        <span class="legend-item"><i class="legend-dot status-on_hold"></i>Na čekanju</span>
-        <span class="legend-item"><i class="legend-dot status-completed"></i>Dovršen</span>
-        <span class="legend-item"><i class="legend-dot status-archived"></i>Arhiviran</span>
+        <span class="legend-item"><i class="legend-dot status-active"></i><span data-i18n="prj_status_active">Aktivan</span></span>
+        <span class="legend-item"><i class="legend-dot status-on_hold"></i><span data-i18n="prj_status_on_hold">Na čekanju</span></span>
+        <span class="legend-item"><i class="legend-dot status-completed"></i><span data-i18n="prj_status_completed">Dovršen</span></span>
+        <span class="legend-item"><i class="legend-dot status-archived"></i><span data-i18n="prj_status_archived">Arhiviran</span></span>
         <span class="legend-item" id="projects-sort-opis" data-i18n="poredak_zadnji_rad_na_projektu_najnoviji_prv">Poredak: zadnji rad na projektu — najnoviji prvi</span>
       </div>
 
@@ -3048,13 +3049,15 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         const unv = unverifiedCache.tasks[task.id];
         const unverifiedBadge = unv
           ? '<span class="unverified-badge" title="' + escapeAttr(
-              'Vratar NIJE provjerio rezultat (' + unv.status + ', ' + (unv.ts || '') + ').\\n' +
-              (unv.reasons && unv.reasons.length ? unv.reasons.map(r => '• ' + r).join('\\n') : 'razlog nije zapisan')
-            ) + '">&#9888; NIJE PROVJERENO</span>'
+              _Tv('tsk_neprovjereno_naslov', 'Vratar NIJE provjerio rezultat ({status}, {kada}).',
+                  { status: unv.status, kada: unv.ts || '' }) + '\\n' +
+              (unv.reasons && unv.reasons.length ? unv.reasons.map(r => '• ' + r).join('\\n')
+                : _T('tsk_razlog_nije_zapisan', 'razlog nije zapisan'))
+            ) + '">&#9888; ' + _T('tsk_nije_provjereno', 'NIJE PROVJERENO') + '</span>'
           : '';
         const pauseBtnHTML = task.paused
-          ? \`<button class="task-pause-btn resume" data-pause-id="\${task.id}" data-pause-to="0" title="Nastavi rad na zadatku">&#9654; Nastavi</button>\`
-          : \`<button class="task-pause-btn" data-pause-id="\${task.id}" data-pause-to="1" title="Pauziraj zadatak (prekida i agenta koji radi)">&#9208;</button>\`;
+          ? \`<button class="task-pause-btn resume" data-pause-id="\${task.id}" data-pause-to="0" title="\${escapeAttr(_T('tsk_nastavi_naslov', 'Nastavi rad na zadatku'))}">&#9654; \${_T('nastavi', 'Nastavi')}</button>\`
+          : \`<button class="task-pause-btn" data-pause-id="\${task.id}" data-pause-to="1" title="\${escapeAttr(_T('tsk_pauziraj_naslov', 'Pauziraj zadatak (prekida i agenta koji radi)'))}">&#9208;</button>\`;
 
         // Lanac: korijen niza (nista ga ne drzi, a on drzi druge) dobiva punu oznaku i rub,
         // jer je to jedini zadatak cije rjesavanje odmah pusta posao dalje.
@@ -3064,12 +3067,12 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
           const korijen = lanac.cekaNa.length === 0 && task.status !== 'completed' && task.status !== 'cancelled';
           if (korijen) card.classList.add('korijen-niza');
           lanacBadge = \`<span class="lanac-badge\${korijen ? ' korijen' : ''}" title="\${escapeAttr(
-            (korijen ? 'KORIJEN NIZA — ništa ga ne drži. ' : '') +
-            'Rješavanjem ovog zadatka otključava se ' + lanac.otkljucava + ' zadataka: ' +
-            (task.blocks || []).join(', '))}">&#128279; \${korijen ? 'KORIJEN · ' : ''}otključava \${lanac.otkljucava}</span>\`;
+            (korijen ? _T('lanac_korijen_naslov', 'KORIJEN NIZA — ništa ga ne drži.') + ' ' : '') +
+            _Tv('lanac_otkljucava_naslov', 'Rješavanjem ovog zadatka otključava se {broj} zadataka: {popis}',
+                { broj: lanac.otkljucava, popis: (task.blocks || []).join(', ') }))}">&#128279; \${korijen ? _T('korijen_kratko', 'KORIJEN') + ' · ' : ''}\${_Tv('otkljucava_n', 'otključava {broj}', { broj: lanac.otkljucava })}</span>\`;
         }
         if (lanac.cekaNa.length) {
-          lanacBadge += \`<span class="lanac-badge ceka" title="\${escapeAttr('Čeka da se dovrši: ' + lanac.cekaNa.join(', '))}">čeka \${lanac.cekaNa.join(', ')}</span>\`;
+          lanacBadge += \`<span class="lanac-badge ceka" title="\${escapeAttr(_Tv('lanac_ceka_naslov', 'Čeka da se dovrši: {popis}', { popis: lanac.cekaNa.join(', ') }))}">\${_T('ceka_malo', 'čeka')} \${lanac.cekaNa.join(', ')}</span>\`;
         }
 
         card.innerHTML = \`
@@ -3360,6 +3363,26 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     let RJECNIK = {};
     let JEZIK = localStorage.getItem('tm_jezik') || null;
 
+    // ── Prijevod teksta koji ploca SASTAVLJA u JS-u ────────────────────────────────────
+    // Staticki okvir se prevodi atributom data-i18n; sve sto render-funkcije slozi u
+    // runtimeu mora proci kroz _T/_Tv, inace ostane na jeziku u kojem je napisano
+    // (tako su TASK-4710 i TASK-4720 dvaput promasili dijelove ploce). Ovi helperi
+    // vrijede za CIJELU plocu — ne za jednu karticu.
+    //   _T(kljuc, podloga)         — podloga je zateceni hrvatski, sluzi i kad rjecnik zataji
+    //   _Tv(kljuc, podloga, {a:1}) — {oznake} su PODATCI, ne prevode se
+    //   _esc(v)                    — vrijednost u atribut (navodnik ne smije razvaliti oznake)
+    function _T(k, zad) { return (RJECNIK && RJECNIK[k] != null) ? RJECNIK[k] : zad; }
+    function _Tv(k, zad, v) {
+      var s = _T(k, zad);
+      for (var kk in v) s = s.split('{' + kk + '}').join(v[kk]);
+      return s;
+    }
+    function _esc(v) {
+      return String(v == null ? '' : v)
+        .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+        .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+    }
+
     function prevediElement(el) {
       const k = el.getAttribute('data-i18n');
       if (k && RJECNIK[k] != null) el.textContent = RJECNIK[k];
@@ -3383,15 +3406,42 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         JEZIK = kod;
         localStorage.setItem('tm_jezik', kod);
         primijeniJezik();
-        if (typeof ucitajOdluke === 'function') ucitajOdluke();
-        if (typeof ucitajOdlucitelja === 'function') ucitajOdlucitelja();
-        if (typeof osvjeziDezurniJezik === 'function') osvjeziDezurniJezik();
-        // Kartica Config se u cijelosti sastavlja u JS-u, pa data-i18n prolaz iznad
-        // ne dira ni jedan njezin redak — bez ovoga bi ostala na starom jeziku dok
-        // je korisnik ne osvjezi rukom (TASK-4720).
-        if (typeof fetchInfoData === 'function' && document.getElementById('info-grid')) fetchInfoData();
+        // Sadrzaj SVIH kartica ploca sastavlja u JS-u, pa ga prolaz po data-i18n iznad
+        // ne dira. Bez ovoga bi svaka kartica ostala na starom jeziku dok je korisnik
+        // ne osvjezi rukom — tocno kvar iz TASK-4710 (Dezurni) i TASK-4720 (Config).
+        osvjeziZaJezik();
         return true;
       } catch (e) { console.error('[jezik]', e); return false; }
+    }
+
+    /**
+     * Ponovno iscrtavanje SVEGA sto se sastavlja u JS-u, nakon promjene jezika.
+     * Popis je namjerno po karticama i pokriva svih 7 — provjerava ga PlocaJezik.test.ts,
+     * jer je izostavljena kartica upravo nacin na koji je ovaj kvar tri puta prezivio.
+     */
+    function osvjeziZaJezik() {
+      const zovi = (f, arg) => { try { f(arg); } catch (e) { console.error('[jezik]', e); } };
+      // tasks — popis, traka odluka, prekidac odlucitelja, rucna kocnica, otvoren detalj
+      zovi(fetchTasks);
+      zovi(ucitajOdluke);
+      zovi(ucitajOdlucitelja);
+      zovi(renderGlobalPause);
+      if (selectedTaskId) zovi(openTaskDetail, selectedTaskId);
+      // projects — kartice, opis poretka, otvoren panel projekta
+      zovi(renderProjects);
+      zovi(osvjeziSortOpis);
+      if (selectedProjectId) zovi(ucitajPotrosnjuProjekta, selectedProjectId);
+      // potrosnja
+      if (currentTab === 'potrosnja') { zovi(ucitajPotrosnju, {}); zovi(ucitajVrijednost, false); }
+      // rag
+      if (currentTab === 'rag') zovi(renderRAGEntries);
+      // konzola
+      if (currentTab === 'konzola') { zovi(fetchKonzolaStatus); zovi(fetchSessionUsage, false); }
+      // status
+      if (currentTab === 'status') zovi(fetchStatusDashboard);
+      // config
+      zovi(osvjeziDezurniJezik);
+      if (document.getElementById('info-grid')) zovi(fetchInfoData);
     }
 
     async function postaviIzbornikJezika() {
@@ -3434,7 +3484,9 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         const dav = d.davatelji || {};
         selP.innerHTML = Object.keys(dav).map(function (ime) {
           const v = dav[ime];
-          const oznaka = v.spreman ? ime : ime + ' (' + v.zasto + ')';
+          // Razlog dolazi s posluzitelja, ali nosi kljuc rjecnika (TASK-4721) — inace bi
+          // engleska ploca ovdje pisala hrvatski („nema Claude CLI na ovom stroju").
+          const oznaka = v.spreman ? ime : ime + ' (' + _Tv(v.zastoKey || '', v.zasto || '', v.zastoVars || {}) + ')';
           return '<option value="' + ime + '"' + (v.spreman ? '' : ' disabled') + '>'
                  + oznaka + '</option>';
         }).join('');
@@ -3456,15 +3508,19 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         const por = document.getElementById('odluc-poruka');
         if (!d.dostupno) {
           por.style.color = '#d98c3a';
-          por.textContent = 'Ollama nije dostupna (' + (d.greska || '') + ') — model ne može odlučivati.';
+          por.textContent = _Tv('odl_ollama_nedostupna', 'Ollama nije dostupna ({greska}) — model ne može odlučivati.',
+                                { greska: d.greska || '' });
         } else if (!d.alat) {
           por.style.color = '#d98c3a';
-          por.textContent = 'Alat odlucitelj.py nije nađen na ovom stroju.';
+          por.textContent = _T('odl_alat_nema', 'Alat odlucitelj.py nije nađen na ovom stroju.');
         } else {
           por.style.color = '#9a8c60';
           const koliko = (d.modeli || []).length;
-          por.textContent = (d.postavke.ukljucen ? 'uključen' : 'isključen — odlučuješ ti')
-            + ' · ' + d.postavke.provider + ' · ' + koliko + ' modela';
+          por.textContent = (d.postavke.ukljucen
+              ? _T('odl_ukljucen', 'uključen')
+              : _T('odl_iskljucen', 'isključen — odlučuješ ti'))
+            + ' · ' + d.postavke.provider + ' · '
+            + _Tv('odl_broj_modela', '{broj} modela', { broj: koliko });
         }
         // Tko odlučuje mora se vidjeti i kad je popis zatvoren — inače se stanje prekidača
         // sazna tek otvaranjem, a to je upravo pitanje koje korisnik postavlja izvana.
@@ -3472,10 +3528,9 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         if (tko) {
           const on = !!d.postavke.ukljucen;
           tko.className = 'odluke-tko' + (on ? ' aktivan' : '');
-          const rj2 = (k, zad) => (RJECNIK && RJECNIK[k] != null) ? RJECNIK[k] : zad;
           tko.textContent = on
-            ? rj2('odlucuje_model', 'odlučuje model') + ': ' + d.postavke.model
-            : rj2('odlucujes_ti', 'odlučuješ ti');
+            ? _T('odlucuje_model', 'odlučuje model') + ': ' + d.postavke.model
+            : _T('odlucujes_ti', 'odlučuješ ti');
         }
       } catch (e) { console.error('[odlucitelj]', e); }
     }
@@ -3491,7 +3546,8 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         ucitajOdlucitelja();
       } catch (e) {
         const por = document.getElementById('odluc-poruka');
-        por.style.color = '#d96a6a'; por.textContent = 'Nije spremljeno: ' + e.message;
+        por.style.color = '#d96a6a';
+        por.textContent = _Tv('odl_nije_spremljeno', 'Nije spremljeno: {greska}', { greska: e.message });
       }
     }
 
@@ -3500,7 +3556,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       const gumbi = [document.getElementById('odluc-proba'), document.getElementById('odluc-izvrsi')];
       gumbi.forEach(function (g) { g.disabled = true; });
       por.style.color = '#9a8c60';
-      por.textContent = proba ? 'pitam model…' : 'odlučujem…';
+      por.textContent = proba ? _T('odl_pitam_model', 'pitam model…') : _T('odl_odlucujem', 'odlučujem…');
       try {
         const r = await fetch('/api/odlucitelj/pokreni', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -3512,11 +3568,13 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         const brojKreni = i.filter(function (x) { return x.rijec === 'kreni'; }).length;
         const brojCovjek = i.filter(function (x) { return x.rijec === 'covjek'; }).length;
         por.style.color = '#6fbf6f';
-        por.textContent = (proba ? 'proba: ' : 'odlučeno: ') + brojKreni + ' kreni, '
-          + (i.length - brojKreni - brojCovjek) + ' odgodi, ' + brojCovjek + ' ostaje tebi';
+        por.textContent = (proba ? _T('odl_proba_prefiks', 'proba: ') : _T('odl_odluceno_prefiks', 'odlučeno: '))
+          + _Tv('odl_ishod_sazetak', '{kreni} kreni, {odgodi} odgodi, {tebi} ostaje tebi',
+                { kreni: brojKreni, odgodi: i.length - brojKreni - brojCovjek, tebi: brojCovjek });
         if (!proba) { setTimeout(function () { ucitajOdluke(); fetchTasks(); }, 1200); }
       } catch (e) {
-        por.style.color = '#d96a6a'; por.textContent = 'Nije prošlo: ' + e.message;
+        por.style.color = '#d96a6a';
+        por.textContent = _Tv('odl_nije_proslo', 'Nije prošlo: {greska}', { greska: e.message });
       } finally {
         gumbi.forEach(function (g) { g.disabled = false; });
       }
@@ -3542,16 +3600,20 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         const blok = d.blokirani || 0;
         // Naslov govori o onome što odluka doista pušta u rad; blokirani se navode odvojeno,
         // jer njih ni odluka ne pokreće dok se ne dovrši zadatak koji ih drži.
-        const rj = (k, zad) => (RJECNIK && RJECNIK[k] != null) ? RJECNIK[k] : zad;
         // Goran, 05.09.2026.: „nista ne treba cekati mene ako sam odabrao da model odlucuje
         // za mene." Dok prekidač radi, naslov ne smije tvrditi da zadatci čekaju njega.
-        document.getElementById('odluke-naslov').textContent = d.modelOdlucuje
-          ? (sprem + (sprem === 1 ? ' zadatak u redu odlučitelja' : ' zadataka u redu odlučitelja')
-             + ' — odlučuje model, ne čekaju tebe')
-            + (blok ? '  ·  ' + blok + ' ' + rj('blokirano_drugim', 'blokirano drugim zadatkom') : '')
-          : sprem + ' ' + rj(sprem === 1 ? 'zadatak_ceka_odluku' : 'zadataka_ceka_odluku',
-                             sprem === 1 ? 'zadatak čeka tvoju odluku' : 'zadataka čeka tvoju odluku')
-            + (blok ? '  ·  ' + blok + ' ' + rj('blokirano_drugim', 'blokirano drugim zadatkom') : '');
+        const dodatakBlok = blok
+          ? '  ·  ' + _Tv('blokirano_drugim_n', '{broj} blokirano drugim zadatkom', { broj: blok })
+          : '';
+        document.getElementById('odluke-naslov').textContent = (d.modelOdlucuje
+          ? _Tv(sprem === 1 ? 'odl_naslov_model_1' : 'odl_naslov_model_n',
+                sprem === 1
+                  ? '{broj} zadatak u redu odlučitelja — odlučuje model, ne čeka tebe'
+                  : '{broj} zadataka u redu odlučitelja — odlučuje model, ne čekaju tebe',
+                { broj: sprem })
+          : _Tv(sprem === 1 ? 'odl_naslov_covjek_1' : 'odl_naslov_covjek_n',
+                sprem === 1 ? '{broj} zadatak čeka tvoju odluku' : '{broj} zadataka čeka tvoju odluku',
+                { broj: sprem })) + dodatakBlok;
         // „Ne vidim da se nesto desava" (Goran, 05.09.2026.) — zato se zadnji prolaz vidi
         // UVIJEK, i kad je popis zatvoren, i kad model nije odlucio nista.
         const prolaz = document.getElementById('odluke-prolaz');
@@ -3561,7 +3623,8 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
             const min = Math.max(0, Math.round((Date.now() - new Date(zp.ts).getTime()) / 60000));
             prolaz.style.display = 'block';
             prolaz.className = 'odluke-prolaz' + (zp.greska ? ' greska' : '');
-            prolaz.textContent = '🤖 ' + zp.opis + ' · prije ' + (min < 1 ? '<1' : min) + ' min';
+            prolaz.textContent = '🤖 ' + zp.opis + ' · '
+              + _Tv('prije_n_min', 'prije {broj} min', { broj: min < 1 ? '<1' : min });
           } else {
             prolaz.style.display = 'none';
           }
@@ -3570,7 +3633,8 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         popis.style.display = odlukeOtvoreno ? 'flex' : 'none';
         const redOdl = document.getElementById('odluke-odlucitelj');
         if (redOdl) redOdl.style.display = odlukeOtvoreno ? 'flex' : 'none';
-        document.getElementById('odluke-toggle').textContent = odlukeOtvoreno ? 'sakrij' : 'prikaži';
+        document.getElementById('odluke-toggle').textContent =
+          odlukeOtvoreno ? _T('sakrij', 'sakrij') : _T('prikazi', 'prikaži');
         popis.innerHTML = d.zadatci.map(function (t) {
           const ceka = t.cekaSati >= 24
             ? Math.floor(t.cekaSati / 24) + ' d'
@@ -3579,17 +3643,19 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
           // podatka se s ploče nije vidjelo koji zadatak drži cijeli niz.
           const lanac = (t.otkljucava
             ? '<span class="odluka-lanac' + (t.cekaNa && t.cekaNa.length ? '' : ' korijen') + '">'
-              + (t.cekaNa && t.cekaNa.length ? '' : 'KORIJEN NIZA · ')
-              + 'otključava ' + t.otkljucava + '</span>'
+              + (t.cekaNa && t.cekaNa.length ? '' : _T('korijen_niza', 'KORIJEN NIZA') + ' · ')
+              + _Tv('otkljucava_n', 'otključava {broj}', { broj: t.otkljucava }) + '</span>'
             : '')
             + ((t.cekaNa && t.cekaNa.length)
-              ? '<span class="odluka-ceka-na">čeka ' + esc(t.cekaNa.join(', ')) + '</span>' : '');
+              ? '<span class="odluka-ceka-na">' + _T('ceka_malo', 'čeka') + ' '
+                + esc(t.cekaNa.join(', ')) + '</span>' : '');
 
           // Pitanje se prikazuje umjesto proze iz opisa; opis ostaje ispod, kao podloga.
           let pitanjeHtml = '';
           if (t.pitanje && (t.pitanje.opcije || []).length >= 2) {
             pitanjeHtml = '<div class="pitanje-blok">'
-              + '<div class="pitanje-struka">Trebam eksperta za: ' + esc(t.pitanje.ekspert) + '</div>'
+              + '<div class="pitanje-struka">' + _T('odl_trebam_eksperta', 'Trebam eksperta za:') + ' '
+                + esc(t.pitanje.ekspert) + '</div>'
               + '<div class="pitanje-tekst">' + esc(t.pitanje.pitanje) + '</div>'
               + '<div class="pitanje-opcije">'
               + t.pitanje.opcije.map(function (o) {
@@ -3599,12 +3665,14 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
                 }).join('')
               + '</div>'
               + (t.pitanje.preporuka
-                  ? '<div class="pitanje-preporuka">Agent preporuča: ' + esc(t.pitanje.preporuka) + '</div>' : '')
+                  ? '<div class="pitanje-preporuka">' + _T('odl_agent_preporuca', 'Agent preporuča:') + ' '
+                    + esc(t.pitanje.preporuka) + '</div>' : '')
               + '</div>';
           } else if ((t.pitanjeGreske || []).length) {
             // Ne šutimo o manjkavom pitanju — inače se pravilo tiho izgubi, a upravo je
             // „blokada bez pitanja s opcijama" ono što je smetalo.
-            pitanjeHtml = '<div class="pitanje-manjka"><strong>Pitanje nije postavljeno po pravilu</strong>'
+            pitanjeHtml = '<div class="pitanje-manjka"><strong>'
+              + _T('odl_pitanje_manjka', 'Pitanje nije postavljeno po pravilu') + '</strong>'
               + '<ul>' + t.pitanjeGreske.map(function (g) { return '<li>' + esc(g) + '</li>'; }).join('') + '</ul>'
               + '</div>';
           }
@@ -3616,38 +3684,47 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
             const doKad = new Date(t.odgoda.do);
             const min = Math.round((doKad.getTime() - Date.now()) / 60000);
             const koliko = min >= 60 ? Math.round(min / 6) / 10 + ' h' : min + ' min';
-            const sat = doKad.toLocaleTimeString('hr-HR',
+            // Sat se ispisuje po jeziku sucelja; podatak (vrijeme) ostaje isti trenutak.
+            const sat = doKad.toLocaleTimeString(JEZIK === 'en' ? 'en-GB' : 'hr-HR',
               { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Zagreb' });
             modelKaze = t.odgoda.najava
               // Najava: rok je TVOJ, i to se mora vidjeti kao poziv, ne kao obavijest o odgodi.
               ? '<div class="odluka-model-kaze">⏳ ' + (min > 0
-                  ? 'imaš još ' + koliko + ' za odluku (do ' + sat + ') — poslije odlučuje model'
-                  : 'rok je istekao — model odlučuje u sljedećem prolazu') + '</div>'
-              : '<div class="odluka-model-kaze">⏳ odlučitelj ga je odgodio'
-                + (t.odgoda.puta > 1 ? ' (' + t.odgoda.puta + '. put)' : '')
-                + ' — vraća se ' + (min > 0 ? 'za ' + koliko : 'u sljedećem prolazu')
-                + ', ne čeka tebe</div>';
+                  ? _Tv('odl_rok_tece', 'imaš još {koliko} za odluku (do {sat}) — poslije odlučuje model',
+                        { koliko: koliko, sat: sat })
+                  : _T('odl_rok_istekao', 'rok je istekao — model odlučuje u sljedećem prolazu')) + '</div>'
+              : '<div class="odluka-model-kaze">⏳ ' + _T('odl_odgodjen', 'odlučitelj ga je odgodio')
+                + (t.odgoda.puta > 1 ? ' ' + _Tv('odl_n_put', '({broj}. put)', { broj: t.odgoda.puta }) : '')
+                + ' — ' + (min > 0
+                    ? _Tv('odl_vraca_se_za', 'vraća se za {koliko}, ne čeka tebe', { koliko: koliko })
+                    : _T('odl_vraca_se_prolaz', 'vraća se u sljedećem prolazu, ne čeka tebe')) + '</div>';
           }
           // Najavu već ispisuje odbrojavanje iznad — drugi redak o istoj stvari je šum.
           if (t.odluciteljKaze && t.odluciteljKaze.rijec !== 'najava') {
             const k = t.odluciteljKaze;
-            const sto = k.rijec === 'opcija' ? ('izabrao opciju ' + k.opcija)
-              : (k.ishod === 'upisano' ? ('odlučio: ' + k.rijec) : ('ostavio tebi' + (k.rijec ? ' (' + k.rijec + ')' : '')));
+            const sto = k.rijec === 'opcija'
+              ? _Tv('odl_izabrao_opciju', 'izabrao opciju {opcija}', { opcija: k.opcija })
+              : (k.ishod === 'upisano'
+                  ? _Tv('odl_odlucio', 'odlučio: {rijec}', { rijec: k.rijec })
+                  : _T('odl_ostavio_tebi', 'ostavio tebi') + (k.rijec ? ' (' + k.rijec + ')' : ''));
             modelKaze += '<div class="odluka-model-kaze">🤖 ' + esc(sto)
               + (k.razlog ? ' — ' + esc(String(k.razlog).slice(0, 220)) : '') + '</div>';
           }
 
           return '<div class="odluka-stavka" data-id="' + t.id + '">' +
             '<div class="odluka-naslov"><strong>' + t.id + '</strong> · ' + esc(t.title) + lanac + '</div>' +
-            '<div class="odluka-meta">P' + (t.priority ?? '?') + ' · ' + esc(t.assignee || 'bez izvršitelja') +
-              ' · čeka ' + ceka + ' · ' + esc((t.oznake || []).join(', ')) + '</div>' +
+            '<div class="odluka-meta">P' + (t.priority ?? '?') + ' · '
+              + esc(t.assignee || _T('bez_izvrsitelja', 'bez izvršitelja')) +
+              ' · ' + _T('ceka_malo', 'čeka') + ' ' + ceka + ' · '
+              + esc((t.oznake || []).join(', ')) + '</div>' +
             pitanjeHtml + modelKaze +
             '<div class="odluka-opis">' + esc(String(t.description || '')) + '</div>' +
             '<div class="odluka-red">' +
-              '<textarea class="odluka-unos" rows="5" placeholder="Upiši odluku i obrazloženje — koliko treba, polje se rasteže. Klik na opciju gore je samo početak rečenice."></textarea>' +
+              '<textarea class="odluka-unos" rows="5" placeholder="' + _esc(_T('odl_unos_placeholder',
+                'Upiši odluku i obrazloženje — koliko treba, polje se rasteže. Klik na opciju gore je samo početak rečenice.')) + '"></textarea>' +
               '<div class="odluka-alat">' +
-                '<button class="odluka-nastavi">Nastavi</button>' +
-                '<span class="odluka-savjet">Ctrl+Enter šalje · Enter je novi redak</span>' +
+                '<button class="odluka-nastavi">' + _T('nastavi', 'Nastavi') + '</button>' +
+                '<span class="odluka-savjet">' + _T('odl_savjet', 'Ctrl+Enter šalje · Enter je novi redak') + '</span>' +
               '</div>' +
             '</div><div class="odluka-poruka"></div></div>';
         }).join('');
@@ -3666,7 +3743,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
               el.querySelectorAll('.opcija-gumb').forEach(function (d) { d.classList.remove('izabrana'); });
               og.classList.add('izabrana');
               const pocetak = og.textContent.trim();
-              unos.value = pocetak + (unos.value.trim() ? '\\n' + unos.value.trim() : '\\n— jer ');
+              unos.value = pocetak + (unos.value.trim() ? '\\n' + unos.value.trim() : '\\n— ' + _T('odl_jer', 'jer') + ' ');
               unos.focus();
               unos.selectionStart = unos.selectionEnd = unos.value.length;
             });
@@ -3683,11 +3760,11 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       const odluka = (unos.value || '').trim();
       if (!odluka) {
         poruka.style.color = '#d98c3a';
-        poruka.textContent = 'Upiši odluku prije nego nastaviš — ostaje zapisana uz zadatak.';
+        poruka.textContent = _T('odl_upisi_prvo', 'Upiši odluku prije nego nastaviš — ostaje zapisana uz zadatak.');
         unos.focus();
         return;
       }
-      gumb.disabled = true; gumb.textContent = 'šaljem…';
+      gumb.disabled = true; gumb.textContent = _T('saljem', 'šaljem…');
       try {
         const r = await fetch('/api/tasks/' + id + '/odluka', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -3696,13 +3773,13 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         const d = await r.json();
         if (!r.ok) throw new Error(d.error || ('HTTP ' + r.status));
         poruka.style.color = '#6fbf6f';
-        poruka.textContent = 'Odluka zapisana, zadatak je vraćen u red.';
-        gumb.textContent = 'gotovo';
+        poruka.textContent = _T('odl_zapisana', 'Odluka zapisana, zadatak je vraćen u red.');
+        gumb.textContent = _T('gotovo', 'gotovo');
         setTimeout(function () { ucitajOdluke(); fetchTasks(); }, 1200);
       } catch (e) {
         poruka.style.color = '#d96a6a';
-        poruka.textContent = 'Nije prošlo: ' + e.message;
-        gumb.disabled = false; gumb.textContent = 'Nastavi';
+        poruka.textContent = _Tv('odl_nije_proslo', 'Nije prošlo: {greska}', { greska: e.message });
+        gumb.disabled = false; gumb.textContent = _T('nastavi', 'Nastavi');
       }
     }
 
@@ -3723,7 +3800,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         if (!res.ok) { console.error('[Pause] HTTP', res.status); return; }
         fetchTasks();
       } catch (err) {
-        console.error('[Pause] Greška:', err);
+        console.error('[Pause] error:', err);
       }
     }
 
@@ -3736,13 +3813,13 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       if (!btn) return;
       if (globalPauseState.paused) {
         btn.classList.add('paused');
-        btn.innerHTML = '&#9654; Nastavi';
-        btn.title = 'Rad je zaustavljen — klikni za nastavak';
-        info.textContent = globalPauseState.description || 'SVE PAUZIRANO';
+        btn.innerHTML = '&#9654; ' + _T('nastavi', 'Nastavi');
+        btn.title = _T('pauza_zaustavljeno_naslov', 'Rad je zaustavljen — klikni za nastavak');
+        info.textContent = globalPauseState.description || _T('pauza_sve_pauzirano', 'SVE PAUZIRANO');
       } else {
         btn.classList.remove('paused');
-        btn.innerHTML = '&#9208; Pauza';
-        btn.title = 'Zaustavi sav automatski rad';
+        btn.innerHTML = '&#9208; ' + _T('pauza_gumb', 'Pauza');
+        btn.title = _T('zaustavi_sav_automatski_rad', 'Zaustavi sav automatski rad');
         info.textContent = '';
       }
     }
@@ -3757,8 +3834,9 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     async function toggleGlobalPause() {
       const next = !globalPauseState.paused;
       // Potvrda samo za zaustavljanje — „Nastavi" je bezopasno i mora biti jedan klik.
-      if (next && !confirm('Zaustaviti SAV automatski rad?\\n\\nAuto-exec staje, a svi agenti koji trenutno rade bit će prekinuti. Zadaci ostaju gdje jesu i nastavljaju kad pritisneš „Nastavi".')) return;
-      const reason = next ? (prompt('Razlog (nije obavezno):') || '') : '';
+      if (next && !confirm(_T('pauza_potvrda',
+          'Zaustaviti SAV automatski rad?\\n\\nAuto-exec staje, a svi agenti koji trenutno rade bit će prekinuti. Zadaci ostaju gdje jesu i nastavljaju kad pritisneš „Nastavi".'))) return;
+      const reason = next ? (prompt(_T('pauza_razlog_upit', 'Razlog (nije obavezno):')) || '') : '';
       try {
         const res = await fetch('/api/pause', {
           method: 'POST',
@@ -3767,7 +3845,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         });
         if (res.ok) renderGlobalPause(await res.json());
       } catch (err) {
-        console.error('[Pause] Globalna kočnica pala:', err);
+        console.error('[Pause] global brake failed:', err);
       }
     }
 
@@ -3854,7 +3932,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
             const body = await response.json();
             if (body && (body.reason || body.error)) msg = body.reason || body.error;
           } catch (_) { /* tijelo nije JSON — ostaje status */ }
-          alert('Zadatak nije stvoren: ' + msg);
+          alert(_Tv('tsk_nije_stvoren', 'Zadatak nije stvoren: {greska}', { greska: msg }));
         }
       } catch (err) {
         console.error('Failed to create task:', err);
@@ -3885,7 +3963,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         // TASK-3512: bez popisa projekata izbornik bi bio prazan (npr. kad WS veza
         // još nije stigla pozvati fetchProjectsForFilter). Dohvati ga na zahtjev.
         if (!projectsCache.length) {
-          try { await fetchProjectsForFilter(); } catch (e) { console.error('Projekti nedostupni:', e); }
+          try { await fetchProjectsForFilter(); } catch (e) { console.error('projects unavailable:', e); }
         }
         selectedTaskId = taskId;
         selectedTaskData = task;
@@ -3977,7 +4055,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       // natpis mora govoriti istinu o tome gdje ce zadatak zavrsiti.
       const none = document.createElement('option');
       none.value = '';
-      none.textContent = '— Pretinac (bez projekta) —';
+      none.textContent = '— ' + _T('prj_pretinac', 'Pretinac (bez projekta)') + ' —';
       select.appendChild(none);
 
       function addGroup(label, list) {
@@ -3993,8 +4071,8 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         select.appendChild(group);
       }
 
-      addGroup('Aktivni projekti', known);
-      addGroup('Arhivirani projekti', archived);
+      addGroup(_T('prj_aktivni_projekti', 'Aktivni projekti'), known);
+      addGroup(_T('prj_arhivirani_projekti', 'Arhivirani projekti'), archived);
 
       // Projekt zadatka koji nije u popisu (obrisan ili popis nije stigao) ne smije
       // tiho nestati iz izbornika — inače bi ga prvo spremanje izbrisalo sa zadatka.
@@ -4002,7 +4080,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       if (currentId && !inList) {
         const orphan = document.createElement('option');
         orphan.value = currentId;
-        orphan.textContent = currentId + ' (nepoznat projekt)';
+        orphan.textContent = currentId + ' (' + _T('prj_nepoznat_projekt', 'nepoznat projekt') + ')';
         select.appendChild(orphan);
       }
 
@@ -4011,12 +4089,13 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       if (currentLabel) {
         const project = projectsCache.find(function (p) { return p.id === currentId; });
         if (!currentId) {
-          currentLabel.textContent = 'Trenutno: bez projekta';
+          currentLabel.textContent = _T('prj_trenutno', 'Trenutno:') + ' ' + _T('prj_bez_projekta', 'bez projekta');
         } else if (project) {
-          currentLabel.textContent = 'Trenutno: ' + project.name + ' (' + project.id + ')'
-            + (project.status === 'archived' ? ' — arhiviran' : '');
+          currentLabel.textContent = _T('prj_trenutno', 'Trenutno:') + ' ' + project.name + ' (' + project.id + ')'
+            + (project.status === 'archived' ? ' — ' + _T('prj_arhiviran', 'arhiviran') : '');
         } else {
-          currentLabel.textContent = 'Trenutno: ' + currentId + ' (projekt nije u popisu)';
+          currentLabel.textContent = _T('prj_trenutno', 'Trenutno:') + ' ' + currentId
+            + ' (' + _T('prj_nije_u_popisu', 'projekt nije u popisu') + ')';
         }
       }
     }
@@ -4157,7 +4236,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       if (v === null || v === undefined || !isFinite(v)) return '—';
       var d = (dec === undefined) ? 1 : dec;
       try {
-        return Number(v).toLocaleString('hr-HR', { minimumFractionDigits: d, maximumFractionDigits: d });
+        return Number(v).toLocaleString(JEZIK === 'en' ? 'en-GB' : 'hr-HR', { minimumFractionDigits: d, maximumFractionDigits: d });
       } catch (e) {
         return Number(v).toFixed(d);
       }
@@ -4168,12 +4247,12 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       if (sec >= 3600) {
         var h = Math.floor(sec / 3600);
         var m = Math.round((sec - h * 3600) / 60);
-        return h + ' h ' + m + ' min';
+        return h + ' h ' + m + ' ' + _T('jed_min', 'min');
       }
       if (sec >= 60) {
         var mm = Math.floor(sec / 60);
         var ss = Math.round(sec - mm * 60);
-        return mm + ' min ' + ss + ' s';
+        return mm + ' ' + _T('jed_min', 'min') + ' ' + ss + ' s';
       }
       return telBroj(sec, 1) + ' s';
     }
@@ -4190,8 +4269,9 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     var TECAJ = { tecaj: null, datum: '', izvor: '' };
 
     function tecajOpis() {
-      if (TECAJ.tecaj === null) return 'tecaj jos nije ucitan';
-      var kako = TECAJ.izvor === 'ecb' ? 'ECB' : (TECAJ.izvor === 'kes' ? 'ECB (zadnji poznati)' : 'pretpostavka');
+      if (TECAJ.tecaj === null) return _T('tecaj_nije_ucitan', 'tečaj još nije učitan');
+      var kako = TECAJ.izvor === 'ecb' ? 'ECB'
+        : (TECAJ.izvor === 'kes' ? _T('tecaj_ecb_zadnji', 'ECB (zadnji poznati)') : _T('tecaj_pretpostavka', 'pretpostavka'));
       return '1 USD = ' + telBroj(TECAJ.tecaj, 5) + ' EUR · ' + kako + (TECAJ.datum ? ' · ' + TECAJ.datum : '');
     }
 
@@ -4224,11 +4304,11 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
 
     function telHtml(data) {
       var t = data && data.telemetrija;
-      if (!t) return '<span class="tel-muted">Nema telemetrije za ovaj zadatak.</span>';
+      if (!t) return '<span class="tel-muted">' + _T('tel_nema', 'Nema telemetrije za ovaj zadatak.') + '</span>';
       if (!t.imaPodatke) {
-        return '<span class="tel-muted">' + telEsc(t.razlog || 'Za ovaj zadatak nema zabilježenog izvođenja agenta.') + '</span>'
+        return '<span class="tel-muted">' + telEsc(t.razlog || _T('tel_nema_izvodjenja', 'Za ovaj zadatak nema zabilježenog izvođenja agenta.')) + '</span>'
           + '<div class="tel-muted" style="margin-top:0.35rem;font-size:0.7rem;">'
-          + 'Potrošnja se računa iz transkripta sesije; zadatci nastali prije uvođenja telemetrije nemaju taj zapis.</div>';
+          + _T('tel_nema_zapisa_opis', 'Potrošnja se računa iz transkripta sesije; zadatci nastali prije uvođenja telemetrije nemaju taj zapis.') + '</div>';
       }
 
       var h = [];
@@ -4238,12 +4318,12 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       if (t.zadatak.agent) glava.push(telEsc(t.zadatak.agent));
       if (t.zadatak.model) glava.push(telEsc(t.zadatak.model));
       if (t.zadatak.outcome) glava.push(telEsc(t.zadatak.outcome));
-      if (t.latencija.poziva !== null) glava.push(telBroj(t.latencija.poziva, 0) + ' poziva modela');
-      if (t.alati.poziva !== null) glava.push(telBroj(t.alati.poziva, 0) + ' poziva alata');
-      if (t.sesija.sessionId) glava.push('sesija ' + telEsc(t.sesija.sessionId.slice(0, 8)));
+      if (t.latencija.poziva !== null) glava.push(_Tv('tel_poziva_modela', '{broj} poziva modela', { broj: telBroj(t.latencija.poziva, 0) }));
+      if (t.alati.poziva !== null) glava.push(_Tv('tel_poziva_alata', '{broj} poziva alata', { broj: telBroj(t.alati.poziva, 0) }));
+      if (t.sesija.sessionId) glava.push(_T('tel_sesija', 'sesija') + ' ' + telEsc(t.sesija.sessionId.slice(0, 8)));
       var izvor = data.izvor === 'kes'
-        ? 'iz keša' + (data.staroS !== null && data.staroS !== undefined ? ' (' + data.staroS + ' s)' : '')
-        : 'svježe izračunato';
+        ? _T('iz_kesa', 'iz keša') + (data.staroS !== null && data.staroS !== undefined ? ' (' + data.staroS + ' s)' : '')
+        : _T('tel_svjeze_izracunato', 'svježe izračunato');
       h.push('<div class="tel-head"><span>' + glava.join(' · ') + '</span><span style="margin-left:auto;">' + izvor + '</span></div>');
       if (data.poruka) {
         h.push('<div class="tel-muted" style="margin-bottom:0.4rem;">' + telEsc(data.poruka) + '</div>');
@@ -4252,7 +4332,8 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       // Mjera 1 — razlaganje trajanja.
       var tr = t.trajanje;
       var sirina = function (u) { return Math.max(0, Math.round((u || 0) * 1000) / 10); };
-      h.push('<div class="tel-sec"><div class="tel-sec-title">Razlaganje trajanja — ukupno ' + telTrajanje(tr.ukupnoS) + '</div>');
+      h.push('<div class="tel-sec"><div class="tel-sec-title">'
+        + _Tv('tel_razlaganje_trajanja', 'Razlaganje trajanja — ukupno {trajanje}', { trajanje: telTrajanje(tr.ukupnoS) }) + '</div>');
       h.push('<div class="tel-bar">'
         + '<span class="tel-seg-model" style="width:' + sirina(tr.udioModel) + '%"></span>'
         + '<span class="tel-seg-alat" style="width:' + sirina(tr.udioAlat) + '%"></span>'
@@ -4260,30 +4341,34 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         + '<span class="tel-seg-rezija" style="width:' + sirina(tr.udioRezija) + '%"></span>'
         + '</div>');
       h.push('<div class="tel-legend">'
-        + '<span><i class="tel-seg-model"></i>model ' + telTrajanje(tr.modelS) + ' (' + telPostotak(tr.udioModel) + ')</span>'
-        + '<span><i class="tel-seg-alat"></i>alati ' + telTrajanje(tr.alatS) + ' (' + telPostotak(tr.udioAlat) + ')</span>'
-        + '<span><i class="tel-seg-covjek"></i>čekanje čovjeka ' + telTrajanje(tr.cekanjeCovjekaS) + '</span>'
-        + '<span><i class="tel-seg-rezija"></i>režija ' + telTrajanje(tr.rezijaS) + '</span>'
+        + '<span><i class="tel-seg-model"></i>' + _T('tel_model', 'model') + ' ' + telTrajanje(tr.modelS) + ' (' + telPostotak(tr.udioModel) + ')</span>'
+        + '<span><i class="tel-seg-alat"></i>' + _T('tel_alati', 'alati') + ' ' + telTrajanje(tr.alatS) + ' (' + telPostotak(tr.udioAlat) + ')</span>'
+        + '<span><i class="tel-seg-covjek"></i>' + _T('tel_cekanje_covjeka', 'čekanje čovjeka') + ' ' + telTrajanje(tr.cekanjeCovjekaS) + '</span>'
+        + '<span><i class="tel-seg-rezija"></i>' + _T('tel_rezija', 'režija') + ' ' + telTrajanje(tr.rezijaS) + '</span>'
         + '</div></div>');
 
       // Mjera 2 — latencija modela.
       var l = t.latencija;
-      h.push('<div class="tel-sec"><div class="tel-sec-title">Latencija modela</div><div class="tel-grid">'
-        + telCelija(telBroj(l.poziva, 0), 'poziva')
-        + telCelija(telBroj(l.prosjekS, 1) + ' s', 'prosjek')
-        + telCelija(telBroj(l.medijanS, 1) + ' s', 'medijan')
+      h.push('<div class="tel-sec"><div class="tel-sec-title">' + _T('tel_latencija', 'Latencija modela') + '</div><div class="tel-grid">'
+        + telCelija(telBroj(l.poziva, 0), _T('tel_poziva', 'poziva'))
+        + telCelija(telBroj(l.prosjekS, 1) + ' s', _T('tel_prosjek', 'prosjek'))
+        + telCelija(telBroj(l.medijanS, 1) + ' s', _T('tel_medijan', 'medijan'))
         + telCelija(telBroj(l.p95S, 1) + ' s', 'p95')
-        + telCelija(telBroj(l.najvecaS, 1) + ' s', 'najveća')
+        + telCelija(telBroj(l.najvecaS, 1) + ' s', _T('tel_najveca', 'najveća'))
         + '</div></div>');
 
       // Mjera 3 — top 5 alata.
       var a = t.alati;
-      h.push('<div class="tel-sec"><div class="tel-sec-title">Alati — top 5 od ' + telBroj(a.poziva, 0)
-        + ' poziva (neuspjelih ' + telBroj(a.neuspjelih, 0) + ', ' + telPostotak(a.udioNeuspjelih) + ')</div>');
+      h.push('<div class="tel-sec"><div class="tel-sec-title">'
+        + _Tv('tel_alati_top5', 'Alati — top 5 od {poziva} poziva (neuspjelih {neuspjelih}, {udio})',
+              { poziva: telBroj(a.poziva, 0), neuspjelih: telBroj(a.neuspjelih, 0), udio: telPostotak(a.udioNeuspjelih) })
+        + '</div>');
       if (!a.top.length) {
-        h.push('<div class="tel-muted">Zadatak nije zvao nijedan alat.</div>');
+        h.push('<div class="tel-muted">' + _T('tel_bez_alata', 'Zadatak nije zvao nijedan alat.') + '</div>');
       } else {
-        var redci = ['<table class="tel-table"><tr><th>alat</th><th>poziva</th><th>udio</th><th>neuspj.</th><th>trajanje</th></tr>'];
+        var redci = ['<table class="tel-table"><tr><th>' + _T('tel_st_alat', 'alat') + '</th><th>' + _T('tel_poziva', 'poziva')
+          + '</th><th>' + _T('tel_st_udio', 'udio') + '</th><th>' + _T('tel_st_neuspj', 'neuspj.')
+          + '</th><th>' + _T('tel_st_trajanje', 'trajanje') + '</th></tr>'];
         a.top.forEach(function (x) {
           redci.push('<tr><td>' + telEsc(x.ime) + '</td><td>' + telBroj(x.poziva, 0) + '</td><td>'
             + telPostotak(x.udioPoziva, 0) + '</td><td>' + telBroj(x.neuspjelih, 0) + '</td><td>'
@@ -4292,33 +4377,38 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         redci.push('</table>');
         h.push(redci.join(''));
         if (a.ostalihAlata > 0) {
-          h.push('<div class="tel-muted" style="font-size:0.7rem;">+ još ' + a.ostalihAlata + ' vrsta alata</div>');
+          h.push('<div class="tel-muted" style="font-size:0.7rem;">+ '
+            + _Tv('tel_jos_vrsta_alata', 'još {broj} vrsta alata', { broj: a.ostalihAlata }) + '</div>');
         }
       }
       h.push('</div>');
 
       // Mjera 5 — udio keša (+ trošak, koji dolazi iz run_log.jsonl).
       var k = t.tokeni;
-      h.push('<div class="tel-sec"><div class="tel-sec-title">Tokeni i predmemorija</div><div class="tel-grid">'
-        + telCelija(telPostotak(k.udioKesa, 1), 'udio keša')
-        + telCelija(telBroj(k.ulazniKontekst, 0), 'ulazni kontekst')
-        + telCelija(telBroj(k.izlaz, 0), 'izlaz')
-        + telCelija(telBroj(k.kesPisanje, 0), 'pisanje keša')
-        + telCelija(eur(t.trosak.usd), 'trošak')
+      h.push('<div class="tel-sec"><div class="tel-sec-title">' + _T('tel_tokeni_kes', 'Tokeni i predmemorija') + '</div><div class="tel-grid">'
+        + telCelija(telPostotak(k.udioKesa, 1), _T('udio_kesa', 'udio keša'))
+        + telCelija(telBroj(k.ulazniKontekst, 0), _T('ulazni_kontekst', 'ulazni kontekst'))
+        + telCelija(telBroj(k.izlaz, 0), _T('tel_izlaz', 'izlaz'))
+        + telCelija(telBroj(k.kesPisanje, 0), _T('tel_pisanje_kesa', 'pisanje keša'))
+        + telCelija(eur(t.trosak.usd), _T('trosak', 'trošak'))
         + '</div></div>');
 
       // Mjera 4 — trenje.
       var f = t.trenje;
-      h.push('<div class="tel-sec"><div class="tel-sec-title">Trenje (ponovljena naredba / neuspjeli izlaz / petlja)</div>');
+      h.push('<div class="tel-sec"><div class="tel-sec-title">'
+        + _T('tel_trenje_naslov', 'Trenje (ponovljena naredba / neuspjeli izlaz / petlja)') + '</div>');
       if (!f) {
-        h.push('<div class="tel-muted">Nije izmjereno.</div>');
+        h.push('<div class="tel-muted">' + _T('nije_izmjereno', 'Nije izmjereno.') + '</div>');
       } else {
-        var razina = (f.ocjena || 0) >= 1 ? 'loše' : ((f.upozorenja || 0) >= 1 ? 'upoz' : 'ok');
-        var natpis = razina === 'ok' ? 'uredno' : (razina === 'upoz' ? 'upozorenje' : 'trenje');
+        var razina = (f.ocjena || 0) >= 1 ? 'lose' : ((f.upozorenja || 0) >= 1 ? 'upoz' : 'ok');
+        var natpis = razina === 'ok' ? _T('tel_uredno', 'uredno')
+          : (razina === 'upoz' ? _T('tel_upozorenje', 'upozorenje') : _T('tel_trenje', 'trenje'));
         h.push('<div><span class="tel-znacka ' + razina + '">' + natpis + '</span> '
-          + '<span class="tel-muted">ocjena ' + telBroj(f.ocjena, 0) + '/3 signala · upozorenja '
-          + telBroj(f.upozorenja, 0) + ' · označenih raspona ' + f.dogadjaja
-          + ' · izgubljeno do ' + telTrajanje(f.izgubljenoS) + ' (' + telPostotak(f.udioIzgubljenog) + ')</span></div>');
+          + '<span class="tel-muted">'
+          + _Tv('tel_trenje_sazetak', 'ocjena {ocjena}/3 signala · upozorenja {upoz} · označenih raspona {raspona} · izgubljeno do {izgubljeno} ({udio})',
+                { ocjena: telBroj(f.ocjena, 0), upoz: telBroj(f.upozorenja, 0), raspona: f.dogadjaja,
+                  izgubljeno: telTrajanje(f.izgubljenoS), udio: telPostotak(f.udioIzgubljenog) })
+          + '</span></div>');
         if (f.primjeri && f.primjeri.length) {
           var pl = ['<div style="margin-top:0.3rem;">'];
           f.primjeri.forEach(function (x) {
@@ -4330,7 +4420,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
           h.push(pl.join(''));
         }
         h.push('<div class="tel-muted" style="font-size:0.68rem;margin-top:0.2rem;">'
-          + 'Trenje je oznaka za pregled, ne presuda o zadatku (ADR §7.4).</div>');
+          + _T('tel_trenje_napomena', 'Trenje je oznaka za pregled, ne presuda o zadatku (ADR §7.4).') + '</div>');
       }
       h.push('</div>');
 
@@ -4341,7 +4431,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       opts = opts || {};
       var gen = ++telemetrijaGen;
       if (telemetrijaTimer) { clearTimeout(telemetrijaTimer); telemetrijaTimer = null; }
-      telPostavi('<span class="tel-muted">Učitavam potrošnju…</span>');
+      telPostavi('<span class="tel-muted">' + _T('ucitavam_potrosnju', 'Učitavam potrošnju…') + '</span>');
       var pokusaj = 0;
 
       async function korak() {
@@ -4357,22 +4447,22 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
           if (res.status === 202) {
             pokusaj++;
             if (pokusaj > 6) {
-              telPostavi('<span class="tel-muted">Izračun traje dulje nego obično — pokušajte „Osvježi".</span>');
+              telPostavi('<span class="tel-muted">' + _T('izracun_dulje', 'Izračun traje dulje nego obično — pokušajte „Osvježi".') + '</span>');
               return;
             }
-            telPostavi('<span class="tel-muted">Telemetrija se računa… (' + pokusaj + '/6)</span>');
+            telPostavi('<span class="tel-muted">' + _Tv('tel_racuna_se', 'Telemetrija se računa… ({pokusaj}/6)', { pokusaj: pokusaj }) + '</span>');
             telemetrijaTimer = setTimeout(korak, 1500);
             return;
           }
           if (!res.ok || !data || data.stanje === 'greska') {
             var zasto = data && data.poruka ? ': ' + telEsc(data.poruka) : '.';
-            telPostavi('<span class="tel-muted">Telemetrija trenutačno nije dostupna' + zasto + '</span>');
+            telPostavi('<span class="tel-muted">' + _T('tel_nedostupna', 'Telemetrija trenutačno nije dostupna') + zasto + '</span>');
             return;
           }
           telPostavi(telHtml(data));
         } catch (err) {
           if (gen !== telemetrijaGen) return;
-          telPostavi('<span class="tel-muted">Telemetrija trenutačno nije dostupna.</span>');
+          telPostavi('<span class="tel-muted">' + _T('tel_nedostupna', 'Telemetrija trenutačno nije dostupna') + '.</span>');
         }
       }
 
@@ -4408,7 +4498,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     }
 
     function potIz(n) {
-      return '<span class="tel-muted" style="font-size:0.68rem;">iz ' + telBroj(n, 0) + '</span>';
+      return '<span class="tel-muted" style="font-size:0.68rem;">' + _Tv('pot_iz_n', 'iz {broj}', { broj: telBroj(n, 0) }) + '</span>';
     }
 
     /*
@@ -4429,9 +4519,9 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     /** Tri značke u jednoj ćeliji tablice. */
     function potIshodi(st) {
       if (!st) return '—';
-      return '<span class="tel-ishod ok" title="completed &mdash; isporu&#269;eno i prihva&#263;eno">' + telBroj(st.completed, 0) + '</span>'
-        + ' <span class="tel-ishod zastoj" title="blocked_ok &mdash; agent je sam stao pred preprekom, nije kvar">' + telBroj(st.blocked_ok, 0) + '</span>'
-        + ' <span class="tel-ishod pad" title="failed &mdash; spawn ili rezultat odbijen, ili je proces pao">' + telBroj(st.failed, 0) + '</span>';
+      return '<span class="tel-ishod ok" title="' + _esc(_T('pot_ishod_completed_naslov', 'completed — isporučeno i prihvaćeno')) + '">' + telBroj(st.completed, 0) + '</span>'
+        + ' <span class="tel-ishod zastoj" title="' + _esc(_T('pot_ishod_blocked_naslov', 'blocked_ok — agent je sam stao pred preprekom, nije kvar')) + '">' + telBroj(st.blocked_ok, 0) + '</span>'
+        + ' <span class="tel-ishod pad" title="' + _esc(_T('pot_ishod_failed_naslov', 'failed — spawn ili rezultat odbijen, ili je proces pao')) + '">' + telBroj(st.failed, 0) + '</span>';
     }
 
     /** Odjeljak „Ishodi izvođenja" — isti na kartici Potrošnja i na kartici projekta. */
@@ -4441,16 +4531,16 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       var mali = function (x) { return ' <span class="tel-muted" style="font-size:0.7rem;">' + udio(x) + '</span>'; };
       var ishodi = u && u.ishodi ? u.ishodi : {};
       var razlomljeno = Object.keys(ishodi).map(function (k) { return k + ' ' + ishodi[k]; }).join(' \u00B7 ') || '—';
-      return '<div class="tel-sec"><div class="tel-sec-title">Ishodi izvo&#273;enja &mdash; iz '
-        + telBroj(st.ukupno, 0) + ' izvo&#273;enja</div><div class="tel-grid">'
-        + telCelija(telBroj(st.completed, 0) + mali(st.completed), 'completed · isporučeno')
-        + telCelija(telBroj(st.blocked_ok, 0) + mali(st.blocked_ok), 'blocked_ok · agent uredno stao')
-        + telCelija(telBroj(st.failed, 0) + mali(st.failed), 'failed · spawn/rezultat pao')
+      return '<div class="tel-sec"><div class="tel-sec-title">'
+        + _Tv('pot_ishodi_naslov', 'Ishodi izvođenja — iz {broj} izvođenja', { broj: telBroj(st.ukupno, 0) })
+        + '</div><div class="tel-grid">'
+        + telCelija(telBroj(st.completed, 0) + mali(st.completed), _T('pot_celija_completed', 'completed · isporučeno'))
+        + telCelija(telBroj(st.blocked_ok, 0) + mali(st.blocked_ok), _T('pot_celija_blocked', 'blocked_ok · agent uredno stao'))
+        + telCelija(telBroj(st.failed, 0) + mali(st.failed), _T('pot_celija_failed', 'failed · spawn/rezultat pao'))
         + '</div>'
         + '<div class="tel-muted" style="margin-top:0.25rem;font-size:0.7rem;">'
-        + '<b>blocked_ok</b> = agent je SAM deklarirao BLOCKED/NEEDS_CONTEXT (&#269;eka odluku, nema mre&#382;ne '
-        + 'rute, treba restart). To nije kvar &mdash; ve&#263;ina tih zadataka poslije bude completed. '
-        + 'Ra&#269;lamba po sirovom ishodu: ' + telEsc(razlomljeno)
+        + _T('pot_blocked_opis', '<b>blocked_ok</b> = agent je SAM deklarirao BLOCKED/NEEDS_CONTEXT (čeka odluku, nema mrežne rute, treba restart). To nije kvar — većina tih zadataka poslije bude completed.')
+        + ' ' + _T('pot_razlomljeno', 'Račlamba po sirovom ishodu:') + ' ' + telEsc(razlomljeno)
         + '</div></div>';
     }
 
@@ -4474,15 +4564,18 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     function potTablica(naslov, redci, jeProjekt) {
       if (!redci || !redci.length) {
         return '<div class="tel-sec"><div class="tel-sec-title">' + telEsc(naslov) + '</div>'
-          + '<span class="tel-muted">Nema izvođenja u razdoblju.</span></div>';
+          + '<span class="tel-muted">' + _T('pot_nema_izvodjenja', 'Nema izvođenja u razdoblju.') + '</span></div>';
       }
       var html = '<div class="tel-sec"><div class="tel-sec-title">' + telEsc(naslov)
-        + ' &mdash; ' + redci.length + (redci.length === 1 ? ' skupina' : ' skupina') + '</div>'
+        + ' &mdash; ' + _Tv('pot_n_skupina', '{broj} skupina', { broj: redci.length }) + '</div>'
         + '<table class="tel-table"><thead><tr>'
-        + '<th>' + (jeProjekt ? 'projekt' : 'agent') + '</th><th>izvo&#273;.</th>'
-        + '<th title="completed &middot; blocked_ok (uredan zastoj) &middot; failed">ishodi</th><th>tro&#353;ak</th>'
-        + '<th>ulazni kontekst</th><th>ke&#353;</th><th>latencija &empty;</th>'
-        + '<th>poziva</th><th>trajanje</th>'
+        + '<th>' + (jeProjekt ? _T('st_projekt', 'projekt') : _T('st_agent', 'agent')) + '</th>'
+        + '<th>' + _T('st_izvodj', 'izvođ.') + '</th>'
+        + '<th title="' + _esc(_T('pot_stupac_ishodi_naslov', 'completed · blocked_ok (uredan zastoj) · failed')) + '">'
+        + _T('st_ishodi', 'ishodi') + '</th><th>' + _T('trosak', 'trošak') + '</th>'
+        + '<th>' + _T('ulazni_kontekst', 'ulazni kontekst') + '</th><th>' + _T('st_kes', 'keš') + '</th>'
+        + '<th>' + _T('st_latencija', 'latencija') + ' &empty;</th>'
+        + '<th>' + _T('tel_poziva', 'poziva') + '</th><th>' + _T('tel_st_trajanje', 'trajanje') + '</th>'
         + '</tr></thead><tbody>';
       for (var i = 0; i < redci.length; i++) html += potRedakSkupine(redci[i], jeProjekt);
       return html + '</tbody></table></div>';
@@ -4490,69 +4583,76 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
 
     function potHtml(data) {
       var p = data && data.pregled;
-      if (!p) return '<span class="tel-muted">Nema pregleda.</span>';
+      if (!p) return '<span class="tel-muted">' + _T('pot_nema_pregleda', 'Nema pregleda.') + '</span>';
       var u = p.ukupno;
       var izv = p.izvor;
 
       if (!u || !u.zadataka) {
-        return '<span class="tel-muted">U zadnjih ' + telBroj(p.dana, 0)
-          + ' dana nema nijednog zabilje&#382;enog izvo&#273;enja u run_log.jsonl.</span>';
+        return '<span class="tel-muted">'
+          + _Tv('pot_nema_u_razdoblju', 'U zadnjih {dana} dana nema nijednog zabilježenog izvođenja u run_log.jsonl.',
+                { dana: telBroj(p.dana, 0) }) + '</span>';
       }
 
       var html = '<div class="tel-head">'
-        + '<b>zadnjih ' + telBroj(p.dana, 0) + ' dana</b>'
+        + '<b>' + _Tv('pot_zadnjih_n_dana', 'zadnjih {dana} dana', { dana: telBroj(p.dana, 0) }) + '</b>'
         + '<span class="tel-muted">' + telEsc((p.od || '').slice(0, 10)) + ' &rarr; ' + telEsc((p.do || '').slice(0, 10)) + '</span>'
-        + '<span class="tel-muted">&middot; ' + telBroj(u.zadataka, 0) + ' izvo&#273;enja ('
-        + telBroj(u.razlicitihZadataka, 0) + ' razli&#269;itih zadataka)</span>'
-        + '<span class="tel-muted">&middot; s transkriptom ' + telBroj(u.sTranskriptom, 0) + '</span>'
+        + '<span class="tel-muted">&middot; '
+        + _Tv('pot_n_izvodjenja_m_zadataka', '{izvodjenja} izvođenja ({zadataka} različitih zadataka)',
+              { izvodjenja: telBroj(u.zadataka, 0), zadataka: telBroj(u.razlicitihZadataka, 0) })
+        + '</span>'
+        + '<span class="tel-muted">&middot; ' + _Tv('pot_s_transkriptom', 's transkriptom {broj}', { broj: telBroj(u.sTranskriptom, 0) }) + '</span>'
+        + '</div>';
         + '</div>';
 
       // UKUPNO — svaka ćelija nosi svoj nazivnik u oznaci
-      html += '<div class="tel-sec"><div class="tel-sec-title">Ukupno</div><div class="tel-grid">'
-        + telCelija(eur(u.trosak.usd),
-                    'trošak · iz ' + u.trosak.izZadataka)
-        + telCelija(eur(u.trosak.usdPoZadatku),
-                    'po izvođenju')
-        + telCelija(telBroj(u.tokeni.ulazniKontekst, 0), 'ulazni kontekst · iz ' + u.tokeni.izZadataka)
-        + telCelija(telBroj(u.tokeni.izlaz, 0), 'izlazni tokeni · iz ' + u.tokeni.izZadataka)
-        + telCelija(telPostotak(u.tokeni.udioKesa), 'udio keša · iz ' + u.tokeni.izZadataka)
-        + telCelija(telTrajanje(u.trajanje.ukupnoS), 'trajanje · iz ' + u.trajanje.izZadataka)
+      html += '<div class="tel-sec"><div class="tel-sec-title">' + _T('ukupno', 'Ukupno') + '</div><div class="tel-grid">'
+        + telCelija(eur(u.trosak.usd), _T('trosak', 'trošak') + ' · ' + _Tv('iz_n', 'iz {broj}', { broj: u.trosak.izZadataka }))
+        + telCelija(eur(u.trosak.usdPoZadatku), _T('po_izvodjenju', 'po izvođenju'))
+        + telCelija(telBroj(u.tokeni.ulazniKontekst, 0), _T('ulazni_kontekst', 'ulazni kontekst') + ' · ' + _Tv('iz_n', 'iz {broj}', { broj: u.tokeni.izZadataka }))
+        + telCelija(telBroj(u.tokeni.izlaz, 0), _T('izlazni_tokeni', 'izlazni tokeni') + ' · ' + _Tv('iz_n', 'iz {broj}', { broj: u.tokeni.izZadataka }))
+        + telCelija(telPostotak(u.tokeni.udioKesa), _T('udio_kesa', 'udio keša') + ' · ' + _Tv('iz_n', 'iz {broj}', { broj: u.tokeni.izZadataka }))
+        + telCelija(telTrajanje(u.trajanje.ukupnoS), _T('tel_st_trajanje', 'trajanje') + ' · ' + _Tv('iz_n', 'iz {broj}', { broj: u.trajanje.izZadataka }))
         + '</div></div>';
 
       html += potIshodiOdjeljak(u);
 
-      html += '<div class="tel-sec"><div class="tel-sec-title">Latencija modela &mdash; iz '
-        + telBroj(u.latencija.izZadataka, 0) + ' izvo&#273;enja, ' + telBroj(u.latencija.izPoziva, 0)
-        + ' poziva</div><div class="tel-grid">'
-        + telCelija((u.latencija.prosjekS === null ? '—' : telBroj(u.latencija.prosjekS, 1) + ' s'), 'prosjek')
-        + telCelija((u.latencija.medijanS === null ? '—' : telBroj(u.latencija.medijanS, 1) + ' s'), 'medijan')
+      html += '<div class="tel-sec"><div class="tel-sec-title">'
+        + _Tv('pot_latencija_naslov', 'Latencija modela — iz {izvodjenja} izvođenja, {poziva} poziva',
+              { izvodjenja: telBroj(u.latencija.izZadataka, 0), poziva: telBroj(u.latencija.izPoziva, 0) })
+        + '</div><div class="tel-grid">'
+        + telCelija((u.latencija.prosjekS === null ? '—' : telBroj(u.latencija.prosjekS, 1) + ' s'), _T('tel_prosjek', 'prosjek'))
+        + telCelija((u.latencija.medijanS === null ? '—' : telBroj(u.latencija.medijanS, 1) + ' s'), _T('tel_medijan', 'medijan'))
         + telCelija((u.latencija.p95S === null ? '—' : telBroj(u.latencija.p95S, 1) + ' s'), 'p95')
-        + telCelija((u.latencija.najvecaS === null ? '—' : telBroj(u.latencija.najvecaS, 1) + ' s'), 'najveća')
-        + '</div></div>';
-
+        + telCelija((u.latencija.najvecaS === null ? '—' : telBroj(u.latencija.najvecaS, 1) + ' s'), _T('tel_najveca', 'najveća'))
       // Alati (mjera 3) i trenje (mjera 4) u razdoblju
       var vrh = (u.alati.vrh || []).map(function (t) {
         return telEsc(t.ime) + ' ' + telBroj(t.poziva, 0)
-          + (t.neuspjelih ? ' <span class="tel-znacka upoz">' + telBroj(t.neuspjelih, 0) + ' neuspj.</span>' : '');
+          + (t.neuspjelih ? ' <span class="tel-znacka upoz">' + telBroj(t.neuspjelih, 0) + ' ' + _T('tel_st_neuspj', 'neuspj.') + '</span>' : '');
       }).join(' &middot; ') || '—';
-      html += '<div class="tel-sec"><div class="tel-sec-title">Alati i trenje &mdash; iz '
-        + telBroj(u.alati.izZadataka, 0) + ' izvo&#273;enja</div>'
-        + '<div>' + telBroj(u.alati.poziva, 0) + ' poziva, neuspjelih ' + telBroj(u.alati.neuspjelih, 0)
-        + ' (' + telPostotak(u.alati.udioNeuspjelih) + ') &middot; ' + vrh + '</div>'
-        + '<div class="tel-muted" style="margin-top:0.2rem;">trenje: '
-        + telBroj(u.trenje.zadatakaSTrenjem, 0) + ' izvo&#273;enja s trenjem (mjereno na '
-        + telBroj(u.trenje.izZadataka, 0) + ') &middot; izgubljeno do ' + telTrajanje(u.trenje.izgubljenoS)
+      html += '<div class="tel-sec"><div class="tel-sec-title">'
+        + _Tv('pot_alati_trenje_naslov', 'Alati i trenje — iz {broj} izvođenja', { broj: telBroj(u.alati.izZadataka, 0) })
+        + '</div>'
+        + '<div>' + _Tv('pot_poziva_neuspjelih', '{poziva} poziva, neuspjelih {neuspjelih} ({udio})',
+              { poziva: telBroj(u.alati.poziva, 0), neuspjelih: telBroj(u.alati.neuspjelih, 0), udio: telPostotak(u.alati.udioNeuspjelih) })
+        + ' &middot; ' + vrh + '</div>'
+        + '<div class="tel-muted" style="margin-top:0.2rem;">'
+        + _Tv('pot_trenje_sazetak', 'trenje: {sTrenjem} izvođenja s trenjem (mjereno na {mjereno}) · izgubljeno do {izgubljeno}',
+              { sTrenjem: telBroj(u.trenje.zadatakaSTrenjem, 0), mjereno: telBroj(u.trenje.izZadataka, 0),
+                izgubljeno: telTrajanje(u.trenje.izgubljenoS) })
         + '</div></div>';
 
-      html += potTablica('Po projektu', p.poProjektu, true);
-      html += potTablica('Po agentu', p.poAgentu, false);
+      html += potTablica(_T('pot_po_projektu', 'Po projektu'), p.poProjektu, true);
+      html += potTablica(_T('pot_po_agentu', 'Po agentu'), p.poAgentu, false);
 
       // Pet najskupljih zadataka
       if (p.najskuplji && p.najskuplji.length) {
-        html += '<div class="tel-sec"><div class="tel-sec-title">Najskupljih ' + p.najskuplji.length
+        html += '<div class="tel-sec"><div class="tel-sec-title">'
+          + _Tv('pot_najskupljih', 'Najskupljih {broj}', { broj: p.najskuplji.length })
           + '</div><table class="tel-table"><thead><tr>'
-          + '<th>zadatak</th><th>agent</th><th>projekt</th><th>tro&#353;ak</th>'
-          + '<th>trajanje</th><th>poziva</th><th>ke&#353;</th></tr></thead><tbody>';
+          + '<th>' + _T('st_zadatak', 'zadatak') + '</th><th>' + _T('st_agent', 'agent') + '</th>'
+          + '<th>' + _T('st_projekt', 'projekt') + '</th><th>' + _T('trosak', 'trošak') + '</th>'
+          + '<th>' + _T('tel_st_trajanje', 'trajanje') + '</th><th>' + _T('tel_poziva', 'poziva') + '</th>'
+          + '<th>' + _T('st_kes', 'keš') + '</th></tr></thead><tbody>';
         for (var j = 0; j < p.najskuplji.length; j++) {
           var z = p.najskuplji[j];
           html += '<tr><td><b>' + telEsc(z.taskId) + '</b>'
@@ -4567,12 +4667,13 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       }
 
       // Izvor i upozorenja — bez ovoga se brojke ne mogu provjeriti
-      html += '<div class="tel-sec"><div class="tel-sec-title">Izvor</div>'
+      html += '<div class="tel-sec"><div class="tel-sec-title">' + _T('pot_izvor', 'Izvor') + '</div>'
         + '<div class="tel-muted">' + telEsc(izv.runLog || 'run_log.jsonl') + ' &middot; '
-        + telBroj(izv.izvodjenjaURazdoblju, 0) + ' izvo&#273;enja u razdoblju (od '
-        + telBroj(izv.runLogRedakaUkupno, 0) + ' ukupno) &middot; s transkriptom '
-        + telBroj(izv.sTranskriptom, 0) + ' &middot; iz ke&#353;a ' + telBroj(izv.izKesa, 0)
-        + ', izra&#269;unato sada ' + telBroj(izv.izracunatoSada, 0) + '</div>';
+        + _Tv('pot_izvor_opis', '{uRazdoblju} izvođenja u razdoblju (od {ukupno} ukupno) · s transkriptom {sTranskriptom} · iz keša {izKesa}, izračunato sada {sada}',
+              { uRazdoblju: telBroj(izv.izvodjenjaURazdoblju, 0), ukupno: telBroj(izv.runLogRedakaUkupno, 0),
+                sTranskriptom: telBroj(izv.sTranskriptom, 0), izKesa: telBroj(izv.izKesa, 0),
+                sada: telBroj(izv.izracunatoSada, 0) })
+        + '</div>';
       if (p.upozorenja && p.upozorenja.length) {
         html += '<ul class="tel-muted" style="margin:0.3rem 0 0 1rem;padding:0;">';
         for (var w = 0; w < p.upozorenja.length; w++) html += '<li>' + telEsc(p.upozorenja[w]) + '</li>';
@@ -4589,7 +4690,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       var izbor = document.getElementById('potrosnja-dana');
       var dana = izbor ? izbor.value : '7';
       var info = document.getElementById('potrosnja-izvor');
-      potPostavi('<span class="tel-muted">U&#269;itavam pregled&hellip;</span>');
+      potPostavi('<span class="tel-muted">' + _T('pot_ucitavam_pregled', 'Učitavam pregled…') + '</span>');
       if (info) info.textContent = '—';
       var pokusaj = 0;
 
@@ -4606,16 +4707,16 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
           if (res.status === 202) {
             pokusaj++;
             if (pokusaj > 12) {
-              potPostavi('<span class="tel-muted">Izra&#269;un traje dulje nego obi&#269;no &mdash; poku&#353;ajte &bdquo;Osvje&#382;i&ldquo;.</span>');
+              potPostavi('<span class="tel-muted">' + _T('izracun_dulje', 'Izračun traje dulje nego obično — pokušajte „Osvježi".') + '</span>');
               return;
             }
-            potPostavi('<span class="tel-muted">Pregled se ra&#269;una&hellip; (' + pokusaj + '/12)</span>');
+            potPostavi('<span class="tel-muted">' + _Tv('pot_racuna_se', 'Pregled se računa… ({pokusaj}/12)', { pokusaj: pokusaj }) + '</span>');
             potrosnjaTimer = setTimeout(korak, 1500);
             return;
           }
           if (!res.ok || !data || data.stanje === 'greska') {
             var zasto = data && data.poruka ? ': ' + telEsc(data.poruka) : '.';
-            potPostavi('<span class="tel-muted">Pregled trenuta&#269;no nije dostupan' + zasto + '</span>');
+            potPostavi('<span class="tel-muted">' + _T('pot_nedostupan', 'Pregled trenutačno nije dostupan') + zasto + '</span>');
             return;
           }
           potPostavi(potHtml(data));
@@ -4625,16 +4726,17 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
             var k = data.kontrola;
             var kTekst = '';
             if (k && k.slaze === true) {
-              kTekst = ' · ✔ slaže se s cost_logom';
+              kTekst = ' · ✔ ' + _T('pot_kontrola_ok', 'slaže se s cost_logom');
             } else if (k && k.slaze === false) {
-              kTekst = ' · ⚠ razlika prema cost_logu: ' + telBroj((k.razlikaUsd || 0) * (TECAJ.tecaj || 0), 2) + ' €';
+              kTekst = ' · ⚠ ' + _Tv('pot_kontrola_razlika', 'razlika prema cost_logu: {iznos} €',
+                { iznos: telBroj((k.razlikaUsd || 0) * (TECAJ.tecaj || 0), 2) });
             }
-            info.textContent = (data.izvor === 'kes' ? 'iz keša' : 'svjež izračun')
-              + (data.staroS ? ' · star ' + data.staroS + ' s' : '') + kTekst;
+            info.textContent = (data.izvor === 'kes' ? _T('iz_kesa', 'iz keša') : _T('svjez_izracun', 'svjež izračun'))
+              + (data.staroS ? ' · ' + _Tv('star_n_s', 'star {broj} s', { broj: data.staroS }) : '') + kTekst;
           }
         } catch (err) {
           if (gen !== potrosnjaGen) return;
-          potPostavi('<span class="tel-muted">Pregled trenuta&#269;no nije dostupan.</span>');
+          potPostavi('<span class="tel-muted">' + _T('pot_nedostupan', 'Pregled trenutačno nije dostupan') + '.</span>');
         }
       }
 
@@ -4642,20 +4744,26 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     }
 
     // ── TASK-3691: vrijednost korisničkih upita (cjenik S1–S6) ────────────────
-    var VRIJEDNOST_OPIS = {
-      S1: 'jednostavno pitanje / naredba', S2: 'poslovni ili informativni upit',
-      S3: 'tehnički problem koji traži razmišljanje', S4: 'analiza / debugging / odluka',
-      S5: 'istraživanje i usporedba izvora', S6: 'višekoračni rad na projektu'
-    };
+    function vrijednostOpis(r) {
+      return {
+        S1: _T('vr_s1', 'jednostavno pitanje / naredba'),
+        S2: _T('vr_s2', 'poslovni ili informativni upit'),
+        S3: _T('vr_s3', 'tehnički problem koji traži razmišljanje'),
+        S4: _T('vr_s4', 'analiza / debugging / odluka'),
+        S5: _T('vr_s5', 'istraživanje i usporedba izvora'),
+        S6: _T('vr_s6', 'višekoračni rad na projektu')
+      }[r] || '';
+    }
 
     /** „Goran 861,50 € (312) · Martina Sport 758,70 € (140)" — za hover i za popis. */
     function osobeOpis(poKorisniku) {
-      if (!poKorisniku) return 'nema podataka o osobama';
+      if (!poKorisniku) return _T('prj_nema_osoba', 'nema podataka o osobama');
       var k = Object.keys(poKorisniku);
-      if (!k.length) return 'nema podataka o osobama';
+      if (!k.length) return _T('prj_nema_osoba', 'nema podataka o osobama');
       k.sort(function (a, b) { return poKorisniku[b].eur - poKorisniku[a].eur; });
-      return 'Tko je radio: ' + k.map(function (ime) {
-        return ime + ' ' + telBroj(poKorisniku[ime].eur, 2) + ' € (' + poKorisniku[ime].upita + ' upita)';
+      return _T('prj_tko_je_radio', 'Tko je radio') + ': ' + k.map(function (ime) {
+        return ime + ' ' + telBroj(poKorisniku[ime].eur, 2) + ' € ('
+          + _Tv('vr_n_upita', '{broj} upita', { broj: poKorisniku[ime].upita }) + ')';
       }).join(' · ');
     }
 
@@ -4667,7 +4775,8 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       k.sort(function (a, b) { return poKorisniku[b].eur - poKorisniku[a].eur; });
       return ' ' + k.slice(0, 3).map(function (ime) {
         return '<span class="osoba-znacka" title="' + telEsc(ime + ': ' + telBroj(poKorisniku[ime].eur, 2)
-          + ' € iz ' + poKorisniku[ime].upita + ' upita') + '">' + telEsc(ime.split(' ')[0]) + '</span>';
+          + ' € ' + _Tv('iz_n_upita', 'iz {broj} upita', { broj: poKorisniku[ime].upita })) + '">'
+          + telEsc(ime.split(' ')[0]) + '</span>';
       }).join('');
     }
 
@@ -4676,9 +4785,9 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       var razredi = Object.keys(cj);
       var korisnici = Object.keys(d.poKorisniku || {});
       korisnici.sort(function (a, b) { return (d.poKorisniku[b].eur || 0) - (d.poKorisniku[a].eur || 0); });
-      var h = '<table class="tel-table"><thead><tr><th>Korisnik</th>';
-      razredi.forEach(function (r) { h += '<th title="' + telEsc(VRIJEDNOST_OPIS[r] + ' · ' + cj[r] + ' €') + '">' + r + '</th>'; });
-      h += '<th>upita</th><th>vrijednost</th></tr></thead><tbody>';
+      var h = '<table class="tel-table"><thead><tr><th>' + _T('vr_st_korisnik', 'Korisnik') + '</th>';
+      razredi.forEach(function (r) { h += '<th title="' + telEsc(vrijednostOpis(r) + ' · ' + cj[r] + ' €') + '">' + r + '</th>'; });
+      h += '<th>' + _T('vr_st_upita', 'upita') + '</th><th>' + _T('vr_st_vrijednost', 'vrijednost') + '</th></tr></thead><tbody>';
       var zbroj = {}, ukupnoUpita = 0, ukupnoEur = 0;
       korisnici.forEach(function (k) {
         var v = d.poKorisniku[k];
@@ -4691,7 +4800,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         ukupnoUpita += v.upita || 0; ukupnoEur += v.eur || 0;
         h += '<td>' + telBroj(v.upita || 0, 0) + '</td><td><strong>' + telBroj(v.eur || 0, 2) + ' €</strong></td></tr>';
       });
-      h += '<tr><td><strong>UKUPNO</strong></td>';
+      h += '<tr><td><strong>' + _T('ukupno_velika', 'UKUPNO') + '</strong></td>';
       razredi.forEach(function (r) { h += '<td><strong>' + telBroj(zbroj[r] || 0, 0) + '</strong></td>'; });
       h += '<td><strong>' + telBroj(ukupnoUpita, 0) + '</strong></td><td><strong>'
         + telBroj(ukupnoEur, 2) + ' €</strong></td></tr></tbody></table>';
@@ -4699,10 +4808,10 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       var pids = Object.keys(pp);
       if (pids.length) {
         pids.sort(function (a, b) { return pp[b].eur - pp[a].eur; });
-        h += '<div class="tel-head" style="margin-top:0.8rem;">Po projektu</div>';
-        h += '<table class="tel-table"><thead><tr><th>Projekt</th>';
+        h += '<div class="tel-head" style="margin-top:0.8rem;">' + _T('pot_po_projektu', 'Po projektu') + '</div>';
+        h += '<table class="tel-table"><thead><tr><th>' + _T('vr_st_projekt', 'Projekt') + '</th>';
         razredi.forEach(function (r) { h += '<th>' + r + '</th>'; });
-        h += '<th>upita</th><th>vrijednost</th></tr></thead><tbody>';
+        h += '<th>' + _T('vr_st_upita', 'upita') + '</th><th>' + _T('vr_st_vrijednost', 'vrijednost') + '</th></tr></thead><tbody>';
         pids.forEach(function (pid) {
           var v = pp[pid];
           // Ključ projekta sam po sebi ne kaže ništa (Goran): ide pun naziv, a ključ ostaje
@@ -4717,9 +4826,9 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         h += '</tbody></table>';
       }
       h += '<div class="tel-muted" style="margin-top:0.4rem;font-size:0.75rem;">'
-        + 'Razred se određuje iz zabilježenog rada po upitu (koraci, pozivi alata, vrsta alata), ne iz cijene modela. '
-        + 'Cjenik: ' + razredi.map(function (r) { return r + ' ' + cj[r] + ' €'; }).join(' · ')
-        + (d.razdoblje ? ' · razdoblje ' + d.razdoblje[0] + ' → ' + d.razdoblje[1] : '') + '</div>';
+        + _T('vr_razred_opis', 'Razred se određuje iz zabilježenog rada po upitu (koraci, pozivi alata, vrsta alata), ne iz cijene modela.') + ' '
+        + _T('vr_cjenik', 'Cjenik:') + ' ' + razredi.map(function (r) { return r + ' ' + cj[r] + ' €'; }).join(' · ')
+        + (d.razdoblje ? ' · ' + _T('vr_razdoblje', 'razdoblje') + ' ' + d.razdoblje[0] + ' → ' + d.razdoblje[1] : '') + '</div>';
       return h;
     }
 
@@ -4728,20 +4837,21 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       var info = document.getElementById('vrijednost-izvor');
       if (!box) return;
       box.className = 'tel-box tel-muted';
-      box.innerHTML = 'Ra&#269;unam&hellip;';
+      box.innerHTML = _T('racunam', 'Računam…');
       try {
         var r = await fetch('/api/vrijednost-inputa' + (force ? '?force=1' : ''));
         var d = await r.json();
         if (!r.ok || d.error) {
-          box.innerHTML = '<span class="tel-muted">Izra&#269;un nije dostupan' + (d.error ? ': ' + telEsc(d.error) : '.') + '</span>';
+          box.innerHTML = '<span class="tel-muted">' + _T('vr_nedostupan', 'Izračun nije dostupan') + (d.error ? ': ' + telEsc(d.error) : '.') + '</span>';
           return;
         }
         box.className = 'tel-box';
         box.innerHTML = vrijednostHtml(d);
-        if (info) info.textContent = (d.izvor === 'kes' ? 'iz keša' : 'svjež izračun')
-          + (d.staroS ? ' · star ' + d.staroS + ' s' : '') + ' · ' + (d.upita || 0) + ' upita';
+        if (info) info.textContent = (d.izvor === 'kes' ? _T('iz_kesa', 'iz keša') : _T('svjez_izracun', 'svjež izračun'))
+          + (d.staroS ? ' · ' + _Tv('star_n_s', 'star {broj} s', { broj: d.staroS }) : '')
+          + ' · ' + _Tv('vr_n_upita', '{broj} upita', { broj: d.upita || 0 });
       } catch (e) {
-        box.innerHTML = '<span class="tel-muted">Izra&#269;un nije dostupan.</span>';
+        box.innerHTML = '<span class="tel-muted">' + _T('vr_nedostupan', 'Izračun nije dostupan') + '.</span>';
       }
     }
 
@@ -4834,25 +4944,26 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         var d = await r.json();
         var v = d && d.poProjektu && d.poProjektu[projectId];
         if (!v || !v.poKorisniku || !Object.keys(v.poKorisniku).length) {
-          el.innerHTML = '<div class="tel-sec-title">Tko je radio</div>'
-            + '<div class="tel-muted">Nema zabilježenih korisničkih upita za ovaj projekt.</div>';
+          el.innerHTML = '<div class="tel-sec-title">' + _T('prj_tko_je_radio', 'Tko je radio') + '</div>'
+            + '<div class="tel-muted">' + _T('prj_nema_upita', 'Nema zabilježenih korisničkih upita za ovaj projekt.') + '</div>';
           return;
         }
         var k = Object.keys(v.poKorisniku);
         k.sort(function (a, b) { return v.poKorisniku[b].eur - v.poKorisniku[a].eur; });
-        var html = '<div class="tel-sec-title">Tko je radio</div><div class="tel-grid">';
+        var html = '<div class="tel-sec-title">' + _T('prj_tko_je_radio', 'Tko je radio') + '</div><div class="tel-grid">';
         k.forEach(function (ime) {
           var o = v.poKorisniku[ime];
           var udio = v.eur ? Math.round(1000 * o.eur / v.eur) / 10 : 0;
           html += telCelija(telBroj(o.eur, 2) + ' €',
-            telEsc(ime) + ' · ' + o.upita + ' upita · ' + String(udio).replace('.', ',') + ' %');
+            telEsc(ime) + ' · ' + _Tv('vr_n_upita', '{broj} upita', { broj: o.upita })
+            + ' · ' + String(udio).replace('.', ',') + ' %');
         });
         html += '</div><div class="tel-muted" style="font-size:0.72rem;margin-top:0.3rem;">'
-          + 'Vrijednost po cjeniku S1–S6 (procjena isporučenog rada), ne trošak modela.</div>';
+          + _T('prj_vrijednost_opis', 'Vrijednost po cjeniku S1–S6 (procjena isporučenog rada), ne trošak modela.') + '</div>';
         el.innerHTML = html;
       } catch (e) {
-        el.innerHTML = '<div class="tel-sec-title">Tko je radio</div>'
-          + '<div class="tel-muted">Podatak trenutačno nije dostupan.</div>';
+        el.innerHTML = '<div class="tel-sec-title">' + _T('prj_tko_je_radio', 'Tko je radio') + '</div>'
+          + '<div class="tel-muted">' + _T('podatak_nedostupan', 'Podatak trenutačno nije dostupan.') + '</div>';
       }
     }
 
@@ -4863,23 +4974,28 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     /** Odjeljak „Potrošnja projekta" — ukupno, latencija, trajanje, alati, najskuplji. */
     function projHtml(data) {
       var p = data && data.pregled;
-      if (!p) return '<span class="tel-muted">Nema pregleda.</span>';
+      if (!p) return '<span class="tel-muted">' + _T('pot_nema_pregleda', 'Nema pregleda.') + '</span>';
       var u = p.ukupno, izv = p.izvor || {};
-      var razdoblje = p.dana >= 3650 ? 'svo vrijeme' : ('zadnjih ' + telBroj(p.dana, 0) + ' dana');
+      var razdoblje = p.dana >= 3650
+        ? _T('svo_vrijeme', 'svo vrijeme')
+        : _Tv('pot_zadnjih_n_dana', 'zadnjih {dana} dana', { dana: telBroj(p.dana, 0) });
 
       if (!u || !u.zadataka) {
-        return '<span class="tel-muted">Za ' + telEsc(razdoblje) + ' ovaj projekt nema nijedno '
-          + 'zabilje&#382;eno izvo&#273;enje (razdoblje ih ukupno ima '
-          + telBroj(izv.izvodjenjaPrijeFiltra, 0) + ').</span>';
+        return '<span class="tel-muted">'
+          + _Tv('prj_nema_izvodjenja', 'Za {razdoblje} ovaj projekt nema nijedno zabilježeno izvođenje (razdoblje ih ukupno ima {ukupno}).',
+                { razdoblje: telEsc(razdoblje), ukupno: telBroj(izv.izvodjenjaPrijeFiltra, 0) })
+          + '</span>';
       }
 
       var html = '<div class="tel-head"><b>' + telEsc(razdoblje) + '</b>'
         + '<span class="tel-muted">' + telEsc((p.od || '').slice(0, 10)) + ' &rarr; '
         + telEsc((p.do || '').slice(0, 10)) + '</span>'
-        + '<span class="tel-muted">&middot; ' + telBroj(u.zadataka, 0) + ' izvo&#273;enja ('
-        + telBroj(u.razlicitihZadataka, 0) + ' razli&#269;itih zadataka, od '
-        + telBroj(izv.izvodjenjaPrijeFiltra, 0) + ' u razdoblju)</span>'
-        + '<span class="tel-muted">&middot; s transkriptom ' + telBroj(u.sTranskriptom, 0) + '</span>'
+        + '<span class="tel-muted">&middot; '
+        + _Tv('prj_n_izvodjenja', '{izvodjenja} izvođenja ({zadataka} različitih zadataka, od {uRazdoblju} u razdoblju)',
+              { izvodjenja: telBroj(u.zadataka, 0), zadataka: telBroj(u.razlicitihZadataka, 0),
+                uRazdoblju: telBroj(izv.izvodjenjaPrijeFiltra, 0) })
+        + '</span>'
+        + '<span class="tel-muted">&middot; ' + _Tv('pot_s_transkriptom', 's transkriptom {broj}', { broj: telBroj(u.sTranskriptom, 0) }) + '</span>'
         + '</div>';
       if (data.poruka) {
         html += '<div class="tel-muted" style="margin-bottom:0.4rem;">' + telEsc(data.poruka) + '</div>';
@@ -4889,69 +5005,77 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       // kod pregleda projekta piše sada ukupno, ali trebalo bi dodati po osobama."
       // Vrijednost po osobama dolazi iz drugog izvora (cjenik S1–S6 nad transkriptima),
       // pa se puni asinkrono i ne zadržava crtanje ostatka panela.
-      html += '<div class="tel-sec" id="projekt-osobe"><div class="tel-sec-title">Tko je radio</div>'
-        + '<div class="tel-muted">učitavam…</div></div>';
+      html += '<div class="tel-sec" id="projekt-osobe"><div class="tel-sec-title">' + _T('prj_tko_je_radio', 'Tko je radio') + '</div>'
+        + '<div class="tel-muted">' + _T('ucitavam', 'učitavam…') + '</div></div>';
 
       // Ukupno — svaka ćelija nosi svoj nazivnik
-      html += '<div class="tel-sec"><div class="tel-sec-title">Ukupno</div><div class="tel-grid">'
-        + telCelija(projIznos(u.trosak.usd), 'trošak · iz ' + u.trosak.izZadataka)
-        + telCelija(projIznos(u.trosak.usdPoZadatku), 'po izvođenju')
-        + telCelija(telBroj(u.tokeni.ulazniKontekst, 0), 'ulazni kontekst · iz ' + u.tokeni.izZadataka)
-        + telCelija(telBroj(u.tokeni.izlaz, 0), 'izlazni tokeni · iz ' + u.tokeni.izZadataka)
-        + telCelija(telPostotak(u.tokeni.udioKesa), 'udio keša · iz ' + u.tokeni.izZadataka)
-        + telCelija(telBroj(u.zadataka, 0), 'izvođenja')
+      html += '<div class="tel-sec"><div class="tel-sec-title">' + _T('ukupno', 'Ukupno') + '</div><div class="tel-grid">'
+        + telCelija(projIznos(u.trosak.usd), _T('trosak', 'trošak') + ' · ' + _Tv('iz_n', 'iz {broj}', { broj: u.trosak.izZadataka }))
+        + telCelija(projIznos(u.trosak.usdPoZadatku), _T('po_izvodjenju', 'po izvođenju'))
+        + telCelija(telBroj(u.tokeni.ulazniKontekst, 0), _T('ulazni_kontekst', 'ulazni kontekst') + ' · ' + _Tv('iz_n', 'iz {broj}', { broj: u.tokeni.izZadataka }))
+        + telCelija(telBroj(u.tokeni.izlaz, 0), _T('izlazni_tokeni', 'izlazni tokeni') + ' · ' + _Tv('iz_n', 'iz {broj}', { broj: u.tokeni.izZadataka }))
+        + telCelija(telPostotak(u.tokeni.udioKesa), _T('udio_kesa', 'udio keša') + ' · ' + _Tv('iz_n', 'iz {broj}', { broj: u.tokeni.izZadataka }))
+        + telCelija(telBroj(u.zadataka, 0), _T('izvodjenja', 'izvođenja'))
         + '</div></div>';
 
       // Latencija — prosjek i medijan traženi izrijekom
       html += potIshodiOdjeljak(u);
 
-      html += '<div class="tel-sec"><div class="tel-sec-title">Latencija modela &mdash; iz '
-        + telBroj(u.latencija.izZadataka, 0) + ' izvo&#273;enja, ' + telBroj(u.latencija.izPoziva, 0)
-        + ' poziva</div><div class="tel-grid">'
-        + telCelija((u.latencija.prosjekS === null ? '—' : telBroj(u.latencija.prosjekS, 1) + ' s'), 'prosjek')
-        + telCelija((u.latencija.medijanS === null ? '—' : telBroj(u.latencija.medijanS, 1) + ' s'), 'medijan')
+      html += '<div class="tel-sec"><div class="tel-sec-title">'
+        + _Tv('pot_latencija_naslov', 'Latencija modela — iz {izvodjenja} izvođenja, {poziva} poziva',
+              { izvodjenja: telBroj(u.latencija.izZadataka, 0), poziva: telBroj(u.latencija.izPoziva, 0) })
+        + '</div><div class="tel-grid">'
+        + telCelija((u.latencija.prosjekS === null ? '—' : telBroj(u.latencija.prosjekS, 1) + ' s'), _T('tel_prosjek', 'prosjek'))
+        + telCelija((u.latencija.medijanS === null ? '—' : telBroj(u.latencija.medijanS, 1) + ' s'), _T('tel_medijan', 'medijan'))
         + telCelija((u.latencija.p95S === null ? '—' : telBroj(u.latencija.p95S, 1) + ' s'), 'p95')
-        + telCelija((u.latencija.najvecaS === null ? '—' : telBroj(u.latencija.najvecaS, 1) + ' s'), 'najveća')
+        + telCelija((u.latencija.najvecaS === null ? '—' : telBroj(u.latencija.najvecaS, 1) + ' s'), _T('tel_najveca', 'najveća'))
         + '</div></div>';
 
       // Razlaganje trajanja (model / alati) — traka kao na kartici zadatka
       var tr = u.trajanje;
       var sirina = function (x) { return Math.max(0, Math.round((x || 0) * 1000) / 10); };
-      html += '<div class="tel-sec"><div class="tel-sec-title">Razlaganje trajanja &mdash; ukupno '
-        + telTrajanje(tr.ukupnoS) + ' (iz ' + telBroj(tr.izZadataka, 0) + ' izvo&#273;enja)</div>'
+      html += '<div class="tel-sec"><div class="tel-sec-title">'
+        + _Tv('prj_razlaganje_trajanja', 'Razlaganje trajanja — ukupno {trajanje} (iz {broj} izvođenja)',
+              { trajanje: telTrajanje(tr.ukupnoS), broj: telBroj(tr.izZadataka, 0) })
+        + '</div>'
         + '<div class="tel-bar">'
         + '<span class="tel-seg-model" style="width:' + sirina(tr.udioModel) + '%"></span>'
         + '<span class="tel-seg-alat" style="width:' + sirina(tr.udioAlat) + '%"></span>'
         + '</div>'
         + '<div class="tel-legend">'
-        + '<span><i class="tel-seg-model"></i>model ' + telTrajanje(tr.modelS) + ' (' + telPostotak(tr.udioModel) + ')</span>'
-        + '<span><i class="tel-seg-alat"></i>alati ' + telTrajanje(tr.alatS) + ' (' + telPostotak(tr.udioAlat) + ')</span>'
+        + '<span><i class="tel-seg-model"></i>' + _T('tel_model', 'model') + ' ' + telTrajanje(tr.modelS) + ' (' + telPostotak(tr.udioModel) + ')</span>'
+        + '<span><i class="tel-seg-alat"></i>' + _T('tel_alati', 'alati') + ' ' + telTrajanje(tr.alatS) + ' (' + telPostotak(tr.udioAlat) + ')</span>'
         + '</div></div>';
 
       // Alati i trenje
       var vrh = (u.alati.vrh || []).map(function (t) {
         return telEsc(t.ime) + ' ' + telBroj(t.poziva, 0);
       }).join(' &middot; ') || '—';
-      html += '<div class="tel-sec"><div class="tel-sec-title">Alati i trenje &mdash; iz '
-        + telBroj(u.alati.izZadataka, 0) + ' izvo&#273;enja</div>'
-        + '<div>' + telBroj(u.alati.poziva, 0) + ' poziva, neuspjelih ' + telBroj(u.alati.neuspjelih, 0)
-        + ' (' + telPostotak(u.alati.udioNeuspjelih) + ') &middot; ' + vrh + '</div>'
-        + '<div class="tel-muted" style="margin-top:0.2rem;">trenje: '
-        + telBroj(u.trenje.zadatakaSTrenjem, 0) + ' izvo&#273;enja s trenjem (mjereno na '
-        + telBroj(u.trenje.izZadataka, 0) + ') &middot; izgubljeno do ' + telTrajanje(u.trenje.izgubljenoS)
+      html += '<div class="tel-sec"><div class="tel-sec-title">'
+        + _Tv('pot_alati_trenje_naslov', 'Alati i trenje — iz {broj} izvođenja', { broj: telBroj(u.alati.izZadataka, 0) })
+        + '</div>'
+        + '<div>' + _Tv('pot_poziva_neuspjelih', '{poziva} poziva, neuspjelih {neuspjelih} ({udio})',
+              { poziva: telBroj(u.alati.poziva, 0), neuspjelih: telBroj(u.alati.neuspjelih, 0), udio: telPostotak(u.alati.udioNeuspjelih) })
+        + ' &middot; ' + vrh + '</div>'
+        + '<div class="tel-muted" style="margin-top:0.2rem;">'
+        + _Tv('pot_trenje_sazetak', 'trenje: {sTrenjem} izvođenja s trenjem (mjereno na {mjereno}) · izgubljeno do {izgubljeno}',
+              { sTrenjem: telBroj(u.trenje.zadatakaSTrenjem, 0), mjereno: telBroj(u.trenje.izZadataka, 0),
+                izgubljeno: telTrajanje(u.trenje.izgubljenoS) })
         + '</div></div>';
 
       // Po agentu unutar projekta — tko je potrošio
       if (p.poAgentu && p.poAgentu.length) {
-        html += potTablica('Po agentu u ovom projektu', p.poAgentu, false);
+        html += potTablica(_T('prj_po_agentu', 'Po agentu u ovom projektu'), p.poAgentu, false);
       }
 
       // Pet najskupljih zadataka TOG projekta
       if (p.najskuplji && p.najskuplji.length) {
-        html += '<div class="tel-sec"><div class="tel-sec-title">Najskupljih ' + p.najskuplji.length
-          + ' zadataka</div><table class="tel-table"><thead><tr>'
-          + '<th>zadatak</th><th>agent</th><th>tro&#353;ak</th><th>trajanje</th>'
-          + '<th>poziva</th><th>ke&#353;</th></tr></thead><tbody>';
+        html += '<div class="tel-sec"><div class="tel-sec-title">'
+          + _Tv('prj_najskupljih', 'Najskupljih {broj} zadataka', { broj: p.najskuplji.length })
+          + '</div><table class="tel-table"><thead><tr>'
+          + '<th>' + _T('st_zadatak', 'zadatak') + '</th><th>' + _T('st_agent', 'agent') + '</th>'
+          + '<th>' + _T('trosak', 'trošak') + '</th><th>' + _T('tel_st_trajanje', 'trajanje') + '</th>'
+          + '<th>' + _T('tel_poziva', 'poziva') + '</th><th>' + _T('st_kes', 'keš') + '</th></tr></thead><tbody>';
         for (var j = 0; j < p.najskuplji.length; j++) {
           var z = p.najskuplji[j];
           html += '<tr><td><b>' + telEsc(z.taskId) + '</b>'
@@ -4966,12 +5090,13 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       }
 
       // Izvor i upozorenja — bez toga se brojke ne mogu provjeriti
-      html += '<div class="tel-sec"><div class="tel-sec-title">Izvor</div>'
+      html += '<div class="tel-sec"><div class="tel-sec-title">' + _T('pot_izvor', 'Izvor') + '</div>'
         + '<div class="tel-muted">' + telEsc(izv.runLog || 'run_log.jsonl') + ' &middot; '
-        + telBroj(izv.izvodjenjaURazdoblju, 0) + ' izvo&#273;enja ovog projekta (od '
-        + telBroj(izv.izvodjenjaPrijeFiltra, 0) + ' u razdoblju, ' + telBroj(izv.runLogRedakaUkupno, 0)
-        + ' ukupno) &middot; iz ke&#353;a ' + telBroj(izv.izKesa, 0) + ', izra&#269;unato sada '
-        + telBroj(izv.izracunatoSada, 0) + '</div>';
+        + _Tv('prj_izvor_opis', '{uRazdoblju} izvođenja ovog projekta (od {prijeFiltra} u razdoblju, {ukupno} ukupno) · iz keša {izKesa}, izračunato sada {sada}',
+              { uRazdoblju: telBroj(izv.izvodjenjaURazdoblju, 0), prijeFiltra: telBroj(izv.izvodjenjaPrijeFiltra, 0),
+                ukupno: telBroj(izv.runLogRedakaUkupno, 0), izKesa: telBroj(izv.izKesa, 0),
+                sada: telBroj(izv.izracunatoSada, 0) })
+        + '</div>';
       if (p.upozorenja && p.upozorenja.length) {
         html += '<ul class="tel-muted" style="margin:0.3rem 0 0 1rem;padding:0;">';
         for (var w = 0; w < p.upozorenja.length; w++) html += '<li>' + telEsc(p.upozorenja[w]) + '</li>';
@@ -4989,7 +5114,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       var izbor = document.getElementById('projekt-potrosnja-dana');
       var dana = izbor ? izbor.value : '30';
       var info = document.getElementById('projekt-potrosnja-izvor');
-      projPostavi('<span class="tel-muted">U&#269;itavam potro&#353;nju&hellip;</span>');
+      projPostavi('<span class="tel-muted">' + _T('ucitavam_potrosnju', 'Učitavam potrošnju…') + '</span>');
       if (info) info.textContent = '—';
       var pokusaj = 0;
 
@@ -5008,27 +5133,27 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
           if (res.status === 202) {
             pokusaj++;
             if (pokusaj > 12) {
-              projPostavi('<span class="tel-muted">Izra&#269;un traje dulje nego obi&#269;no &mdash; poku&#353;ajte &bdquo;Osvje&#382;i&ldquo;.</span>');
+              projPostavi('<span class="tel-muted">' + _T('izracun_dulje', 'Izračun traje dulje nego obično — pokušajte „Osvježi".') + '</span>');
               return;
             }
-            projPostavi('<span class="tel-muted">Potro&#353;nja se ra&#269;una&hellip; (' + pokusaj + '/12)</span>');
+            projPostavi('<span class="tel-muted">' + _Tv('prj_racuna_se', 'Potrošnja se računa… ({pokusaj}/12)', { pokusaj: pokusaj }) + '</span>');
             projektPotrosnjaTimer = setTimeout(korak, 1500);
             return;
           }
           if (!res.ok || !data || data.stanje === 'greska') {
             var zasto = data && data.poruka ? ': ' + telEsc(data.poruka) : '.';
-            projPostavi('<span class="tel-muted">Potro&#353;nja trenuta&#269;no nije dostupna' + zasto + '</span>');
+            projPostavi('<span class="tel-muted">' + _T('prj_nedostupna', 'Potrošnja trenutačno nije dostupna') + zasto + '</span>');
             return;
           }
           projPostavi(projHtml(data));
           projOsobe(projectId);
           if (info) {
-            info.textContent = (data.izvor === 'kes' ? 'iz keša' : 'svjež izračun')
-              + (data.staroS ? ' · star ' + data.staroS + ' s' : '');
+            info.textContent = (data.izvor === 'kes' ? _T('iz_kesa', 'iz keša') : _T('svjez_izracun', 'svjež izračun'))
+              + (data.staroS ? ' · ' + _Tv('star_n_s', 'star {broj} s', { broj: data.staroS }) : '');
           }
         } catch (err) {
           if (gen !== projektPotrosnjaGen) return;
-          projPostavi('<span class="tel-muted">Potro&#353;nja trenuta&#269;no nije dostupna.</span>');
+          projPostavi('<span class="tel-muted">' + _T('prj_nedostupna', 'Potrošnja trenutačno nije dostupna') + '.</span>');
         }
       }
 
@@ -5101,36 +5226,36 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     function projectVrijednostChip(projectId) {
       // Vrijednost isporučenog rada po Goranovu cjeniku S1–S6 — NIJE trošak modela.
       // Dvije brojke stoje jedna uz drugu na kartici i namjerno se ne zbrajaju.
-      var naslov = 'vrijednost korisničkih upita po cjeniku S1–S6 (procjena isporučenog rada, ne trošak modela)';
+      var naslov = _T('chip_vrijednost_naslov', 'vrijednost korisničkih upita po cjeniku S1–S6 (procjena isporučenog rada, ne trošak modela)');
       if (!popisVrijednost) {
-        return '<span class="project-count c-vrijednost is-racuna" title="' + naslov + ' — računa se">&#8721; <b>&hellip;</b></span>';
+        return '<span class="project-count c-vrijednost is-racuna" title="' + _esc(naslov + ' — ' + _T('chip_racuna_se', 'računa se')) + '">&#8721; <b>&hellip;</b></span>';
       }
       var v = popisVrijednost[projectId];
       if (!v) {
-        return '<span class="project-count c-vrijednost is-prazna" title="' + naslov + ' — nema upita">&#8721; <b>&mdash;</b></span>';
+        return '<span class="project-count c-vrijednost is-prazna" title="' + _esc(naslov + ' — ' + _T('chip_nema_upita', 'nema upita')) + '">&#8721; <b>&mdash;</b></span>';
       }
       var razredi = Object.keys(v.razredi || {}).sort().map(function (r) { return r + ':' + v.razredi[r]; }).join(' ');
       return '<span class="project-count c-vrijednost" title="'
-        + telEsc(naslov + ' — ' + v.upita + ' upita · ' + razredi + '; ' + osobeOpis(v.poKorisniku)) + '">'
+        + telEsc(naslov + ' — ' + _Tv('vr_n_upita', '{broj} upita', { broj: v.upita })
+                 + ' · ' + razredi + '; ' + osobeOpis(v.poKorisniku)) + '">'
         + '&#8721; ' + telBroj(v.eur, 2) + ' €</span>';
     }
 
     function projectTrosakChip(projectId) {
-      var naslov = 'ukupna potrošnja projekta (cost_log: agentski spawnovi + uvezeni telegramski zahtjevi)';
+      var naslov = _T('chip_trosak_naslov', 'ukupna potrošnja projekta (cost_log: agentski spawnovi + uvezeni telegramski zahtjevi)');
       if (!popisTrosak) {
-        return '<span class="project-count c-trosak is-racuna" title="' + naslov
-          + ' — učitava se">&euro; <b>&hellip;</b></span>';
+        return '<span class="project-count c-trosak is-racuna" title="' + _esc(naslov + ' — ' + _T('chip_ucitava_se', 'učitava se')) + '">&euro; <b>&hellip;</b></span>';
       }
       var z = popisTrosak[projectId];
       if (!z || z.usd === null || z.usd === undefined) {
-        return '<span class="project-count c-trosak is-prazna" title="' + naslov
-          + ' — nema nijednog zabilježenog izvođenja">&euro; <b>&mdash;</b></span>';
+        return '<span class="project-count c-trosak is-prazna" title="' + _esc(naslov + ' — ' + _T('chip_nema_izvodjenja', 'nema nijednog zabilježenog izvođenja')) + '">&euro; <b>&mdash;</b></span>';
       }
-      var opis = naslov + ' — iz ' + z.izZadataka + ' izvođenja'
+      var opis = naslov + ' — ' + _Tv('iz_n_izvodjenja', 'iz {broj} izvođenja', { broj: z.izZadataka })
         + (z.usd30 !== null && z.usd30 !== undefined
-            ? '; zadnjih 30 dana ' + telBroj(z.usd30 * (TECAJ.tecaj || 0), 2) + ' € iz ' + z.zadataka + ' izvođenja'
-            : '; u zadnjih 30 dana ništa')
-        + (z.zadnji ? '; zadnje izvođenje ' + z.zadnji : '');
+            ? '; ' + _Tv('chip_zadnjih_30', 'zadnjih 30 dana {iznos} € iz {broj} izvođenja',
+                         { iznos: telBroj(z.usd30 * (TECAJ.tecaj || 0), 2), broj: z.zadataka })
+            : '; ' + _T('chip_30_nista', 'u zadnjih 30 dana ništa'))
+        + (z.zadnji ? '; ' + _Tv('chip_zadnje_izvodjenje', 'zadnje izvođenje {kada}', { kada: z.zadnji }) : '');
       return '<span class="project-count c-trosak" title="' + telEsc(opis) + '">' + eur(z.usd) + '</span>';
     }
 
@@ -5163,17 +5288,17 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
 
     /** Kućica „dokumenata" na kartici projekta: „…" dok se učitava, 0 kad ih nema. */
     function projectRagChip(projectId) {
-      var naslov = 'RAG dokumenata s project_id = ' + projectId;
+      var naslov = _Tv('chip_rag_naslov', 'RAG dokumenata s project_id = {id}', { id: projectId });
       if (!ragBrojDokumenata) {
-        return '<span class="project-count c-rag is-racuna" title="' + naslov
-          + ' — učitava se">dokumenata <b>&hellip;</b></span>';
+        return '<span class="project-count c-rag is-racuna" title="' + _esc(naslov + ' — ' + _T('chip_ucitava_se', 'učitava se')) + '">'
+          + _T('chip_dokumenata', 'dokumenata') + ' <b>&hellip;</b></span>';
       }
       var n = Number(ragBrojDokumenata[projectId]) || 0;
       var opis = n === 0
-        ? naslov + ' — NIJEDAN dokument nije pripisan ovom projektu'
+        ? naslov + ' — ' + _T('chip_rag_nijedan', 'NIJEDAN dokument nije pripisan ovom projektu')
         : naslov;
       return '<span class="project-count c-rag' + (n === 0 ? ' is-zero' : '') + '" title="'
-        + telEsc(opis) + '">dokumenata <b>' + n + '</b></span>';
+        + telEsc(opis) + '">' + _T('chip_dokumenata', 'dokumenata') + ' <b>' + n + '</b></span>';
     }
 
     // Add progress note
@@ -5368,17 +5493,19 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     const projectModal = document.getElementById('project-modal-overlay');
     const projectForm = document.getElementById('project-form');
 
-    const SORT_OPIS = {
-      aktivnost: ['zadnji rad na projektu — najnoviji prvi', 'zadnji rad na projektu — najstariji prvi'],
-      cijena: ['potrošnja — najskuplji prvi', 'potrošnja — najjeftiniji prvi'],
-      ime: ['ime projekta — A→Ž', 'ime projekta — Ž→A'],
-      pocetak: ['početak rada — najnoviji prvi', 'početak rada — najstariji prvi'],
-      zadataka: ['broj zadataka — najviše prvo', 'broj zadataka — najmanje prvo'],
-    };
+    function sortOpis(kljuc, smjer) {
+      return {
+        aktivnost: [_T('sort_aktivnost_desc', 'zadnji rad na projektu — najnoviji prvi'), _T('sort_aktivnost_asc', 'zadnji rad na projektu — najstariji prvi')],
+        cijena: [_T('sort_cijena_desc', 'potrošnja — najskuplji prvi'), _T('sort_cijena_asc', 'potrošnja — najjeftiniji prvi')],
+        ime: [_T('sort_ime_desc', 'ime projekta — A→Ž'), _T('sort_ime_asc', 'ime projekta — Ž→A')],
+        pocetak: [_T('sort_pocetak_desc', 'početak rada — najnoviji prvi'), _T('sort_pocetak_asc', 'početak rada — najstariji prvi')],
+        zadataka: [_T('sort_zadataka_desc', 'broj zadataka — najviše prvo'), _T('sort_zadataka_asc', 'broj zadataka — najmanje prvo')],
+      }[kljuc][smjer];
+    }
 
     function osvjeziSortOpis() {
       const el = document.getElementById('projects-sort-opis');
-      if (el) el.textContent = 'Poredak: ' + SORT_OPIS[projectsSort][projectsSortSmjer === 1 ? 0 : 1];
+      if (el) el.textContent = _T('poredak', 'Poredak:') + ' ' + sortOpis(projectsSort, projectsSortSmjer === 1 ? 0 : 1);
       const btn = document.getElementById('projects-sort-smjer');
       if (btn) btn.innerHTML = projectsSortSmjer === 1 ? '&#8595;' : '&#8593;';
     }
@@ -5419,12 +5546,15 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     }
 
     // Nazivi statusa projekta na hrvatskom (TASK-3513)
-    const PROJECT_STATUS_LABELS = {
-      active: 'Aktivan',
-      on_hold: 'Na čekanju',
-      completed: 'Dovršen',
-      archived: 'Arhiviran'
-    };
+    // Nazivi statusa projekta (TASK-3513) — prevode se kao i ostatak ploče (TASK-4721)
+    function projectStatusLabel(status) {
+      return {
+        active: _T('prj_status_active', 'Aktivan'),
+        on_hold: _T('prj_status_on_hold', 'Na čekanju'),
+        completed: _T('prj_status_completed', 'Dovršen'),
+        archived: _T('prj_status_archived', 'Arhiviran')
+      }[status] || status;
+    }
 
     /**
      * Vremenska oznaka iz baze u Date. Baza nosi dva zapisa ('2026-08-28 11:29:20'
@@ -5441,14 +5571,14 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     /** 'prije 5 min' / 'prije 3 h' / 'prije 2 d' — koliko je davno bio zadnji rad. */
     function projectAgeText(ts) {
       const d = parseDbTs(ts);
-      if (!d) return 'bez zapisa';
+      if (!d) return _T('prj_bez_zapisa', 'bez zapisa');
       const min = Math.floor((Date.now() - d.getTime()) / 60000);
-      if (min < 1) return 'upravo sad';
-      if (min < 60) return 'prije ' + min + ' min';
+      if (min < 1) return _T('upravo_sad', 'upravo sad');
+      if (min < 60) return _Tv('prije_n_min', 'prije {broj} min', { broj: min });
       const h = Math.floor(min / 60);
-      if (h < 24) return 'prije ' + h + ' h';
+      if (h < 24) return _Tv('prije_n_h', 'prije {broj} h', { broj: h });
       const dani = Math.floor(h / 24);
-      return 'prije ' + dani + ' d';
+      return _Tv('prije_n_d', 'prije {broj} d', { broj: dani });
     }
 
     function projectCountChip(cssKey, label, value) {
@@ -5501,7 +5631,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       container.innerHTML = '';
 
       if (filtered.length === 0) {
-        container.innerHTML = '<div class="empty">Nema projekata</div>';
+        container.innerHTML = '<div class="empty">' + _T('prj_nema_projekata', 'Nema projekata') + '</div>';
         return;
       }
 
@@ -5515,23 +5645,23 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
 
         const card = document.createElement('div');
         card.className = 'project-card status-' + status;
-        card.title = 'Zadnji rad: ' + (project.last_activity_at || project.updated_at || '—');
+        card.title = _T('prj_zadnji_rad', 'Zadnji rad:') + ' ' + (project.last_activity_at || project.updated_at || '—');
 
         card.innerHTML = \`
           <div class="project-card-top">
             <span class="project-id">\${project.id}</span>
-            <span class="project-status-badge status-\${status}">\${PROJECT_STATUS_LABELS[status] || status}</span>
+            <span class="project-status-badge status-\${status}">\${projectStatusLabel(status)}</span>
           </div>
           <div class="project-name">\${project.name}</div>
           <div class="project-meta">
-            <span>\${project.lead_agent || 'bez vodstva'} · P\${project.priority}</span>
+            <span>\${project.lead_agent || _T('prj_bez_vodstva', 'bez vodstva')} · P\${project.priority}</span>
             <span>\${projectAgeText(project.last_activity_at || project.updated_at)}</span>
           </div>
           <div class="project-counts">
-            \${projectCountChip('in_progress', 'u radu', project.in_progress_task_count)}
-            \${projectCountChip('pending', 'na čekanju', project.pending_task_count)}
-            \${projectCountChip('blocked', 'blokirano', project.blocked_task_count)}
-            \${projectCountChip('completed', 'gotovo', done)}
+            \${projectCountChip('in_progress', _T('chip_u_radu', 'u radu'), project.in_progress_task_count)}
+            \${projectCountChip('pending', _T('chip_na_cekanju', 'na čekanju'), project.pending_task_count)}
+            \${projectCountChip('blocked', _T('chip_blokirano', 'blokirano'), project.blocked_task_count)}
+            \${projectCountChip('completed', _T('chip_gotovo', 'gotovo'), done)}
             \${projectTrosakChip(project.id)}
             \${projectVrijednostChip(project.id)}
             \${projectRagChip(project.id)}
@@ -5541,8 +5671,8 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
               <div class="project-progress-fill" style="width: \${Math.max(0, Math.min(100, pct))}%"></div>
             </div>
             <div class="project-progress-label">
-              <span>\${String(pct).replace('.', ',')} % dovršeno</span>
-              <span>\${done}/\${total} zadataka</span>
+              <span>\${_Tv('prj_postotak_dovrseno', '{pct} % dovršeno', { pct: String(pct).replace('.', ',') })}</span>
+              <span>\${_Tv('prj_done_od_total', '{done}/{total} zadataka', { done: done, total: total })}</span>
             </div>
           </div>
         \`;
@@ -5828,7 +5958,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         const res = await fetch('/api/agents');
         const data = await res.json();
         const agents = (data.agents || []);
-        sel.innerHTML = '<option value="">Odaberi agenta...</option>';
+        sel.innerHTML = '<option value="">' + _T('odaberi_agenta', 'Odaberi agenta...') + '</option>';
         agents.forEach(a => {
           const opt = document.createElement('option');  // textContent → bez XSS
           opt.value = a.id;
@@ -5864,7 +5994,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       btn.dataset.busy = '1';
       btn.disabled = true;
       const origLabel = btn.textContent;
-      btn.textContent = '⟳ Šaljem...';
+      btn.textContent = '⟳ ' + _T('saljem_tocke', 'Šaljem...');
       try {
         // Prvo spremi aktualnu spec (da dispatch koristi zadnji upisani tekst)
         await fetch(\`/api/projects/\${selectedProjectId}\`, {
@@ -5884,11 +6014,11 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
           }
           openProjectDetail(selectedProjectId);  // refresh
         } else {
-          alert('Dispatch nije uspio: ' + (data.error || res.status));
+          alert(_Tv('dispatch_nije_uspio', 'Dispatch nije uspio: {greska}', { greska: data.error || res.status }));
         }
       } catch (err) {
         console.error('dispatch-upgrade failed:', err);
-        alert('Dispatch nije uspio (mreža).');
+        alert(_T('dispatch_mreza', 'Dispatch nije uspio (mreža).'));
       } finally {
         btn.dataset.busy = '';
         btn.textContent = origLabel;
@@ -5903,7 +6033,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       const toggle = document.getElementById('spec-template-toggle');
       if (ed.style.display === 'none') {
         ed.style.display = 'block';
-        toggle.textContent = '▾ Template poruke';
+        toggle.textContent = '▾ ' + _T('template_poruke', 'Template poruke');
         try {
           const res = await fetch('/api/templates/spec-upgrade');
           if (res.ok) {
@@ -5913,7 +6043,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         } catch (err) { console.error('load template failed:', err); }
       } else {
         ed.style.display = 'none';
-        toggle.textContent = '▸ Template poruke';
+        toggle.textContent = '▸ ' + _T('template_poruke', 'Template poruke');
       }
     });
 
@@ -5924,10 +6054,10 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
           method: 'PUT', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ content })
         });
-        alert(res.ok ? '✓ Template spremljen.' : 'Spremanje template-a nije uspjelo.');
+        alert(res.ok ? '✓ ' + _T('template_spremljen', 'Template spremljen.') : _T('template_nije_spremljen', 'Spremanje template-a nije uspjelo.'));
       } catch (err) {
         console.error('save template failed:', err);
-        alert('Spremanje template-a nije uspjelo.');
+        alert(_T('template_nije_spremljen', 'Spremanje template-a nije uspjelo.'));
       }
     });
 
@@ -6006,7 +6136,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         const d = (Number(ragBrojDokumenata[b]) || 0) - (Number(ragBrojDokumenata[a]) || 0);
         return d !== 0 ? d : String(a).localeCompare(String(b), 'hr');
       });
-      select.innerHTML = '<option value="">Svi projekti</option>' +
+      select.innerHTML = '<option value="">' + _T('svi_projekti', 'Svi projekti') + '</option>' +
         ids.map(id => \`<option value="\${id}">\${id} (\${Number(ragBrojDokumenata[id]) || 0})</option>\`).join('');
       select.value = ragProjectFilter;
     }
@@ -6321,13 +6451,13 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       const shown = dm.display || (typeof dm.status === 'string' ? dm.status : null) || fileStatus || '--';
       const lastKnown = fileStatus
         || (typeof dm.status === 'string' && dm.status !== 'OFFLINE' ? dm.status : null)
-        || 'nepoznato';
+        || _T('nepoznato', 'nepoznato');
       const task = dm.currentTask || '--';
 
       const tip = [];
       if (reason) tip.push(reason);
       if (pid !== null) tip.push('PID ' + pid);
-      if (ageS !== null) tip.push('zadnji zapis prije ' + fmtAgeShort(ageS));
+      if (ageS !== null) tip.push(_Tv('sta_zadnji_zapis_prije', 'zadnji zapis prije {koliko}', { koliko: fmtAgeShort(ageS) }));
       const title = tip.join(' · ');
 
       if (state === 'offline') {
@@ -6337,8 +6467,9 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
           statusText: 'OFFLINE',
           statusClass: ' s-error',
           uptimeText: '--',
-          taskText: 'zadnje: ' + lastKnown + (clock ? ' u ' + clock : ' (vrijeme nepoznato)'),
-          title: title || 'daemon ne odgovara'
+          taskText: _T('sta_zadnje', 'zadnje:') + ' ' + lastKnown
+            + (clock ? ' ' + _Tv('sta_u_sat', 'u {sat}', { sat: clock }) : ' (' + _T('sta_vrijeme_nepoznato', 'vrijeme nepoznato') + ')'),
+          title: title || _T('sta_daemon_ne_odgovara', 'daemon ne odgovara')
         };
       }
 
@@ -6348,8 +6479,8 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
           statusText: shown + ' ⚠',
           statusClass: ' s-warn',
           uptimeText: formatUptime(dm.uptime),
-          taskText: task + ' · zapis star ' + fmtAgeShort(ageS),
-          title: title || 'zapis je zastario — daemon je živ, ali ne piše status'
+          taskText: task + ' · ' + _Tv('sta_zapis_star', 'zapis star {koliko}', { koliko: fmtAgeShort(ageS) }),
+          title: title || _T('sta_zapis_zastario', 'zapis je zastario — daemon je živ, ali ne piše status')
         };
       }
 
@@ -6413,22 +6544,25 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         // stoji li autonomija do jutra a da nitko ne zna zašto.
         const meterDown = d.meter_status === 'down';
         const meterInfo = meterDown
-          ? 'MJERILO NE RADI' + (d.meter_down_min != null ? ' ' + d.meter_down_min + ' min' : '')
-            + (d.meter_error ? ' — ' + d.meter_error : '') + ' · autonomija stoji'
+          ? _T('sta_mjerilo_ne_radi', 'MJERILO NE RADI') + (d.meter_down_min != null ? ' ' + d.meter_down_min + ' ' + _T('jed_min', 'min') : '')
+            + (d.meter_error ? ' — ' + d.meter_error : '') + ' · ' + _T('sta_autonomija_stoji', 'autonomija stoji')
           : '';
         if (d.session_percent == null) {
-          el.textContent = meterDown ? 'mjerilo ⛔' : 'n/a';
+          el.textContent = meterDown ? _T('sta_mjerilo', 'mjerilo') + ' ⛔' : 'n/a';
           el.className = 'konzola-status-value ' + (meterDown ? 's-error' : 's-warn');
-          el.title = meterInfo || d.error || 'nedostupno'; return;
+          el.title = meterInfo || d.error || _T('nedostupno', 'nedostupno'); return;
         }
         const sp = Math.round(d.session_percent), wp = (d.weekly_percent == null ? null : Math.round(d.weekly_percent));
-        el.textContent = sp + '%' + (wp != null ? ' · 7d ' + wp + '%' : '') + (meterDown ? ' ⛔ mjerilo' : d.stale ? ' ⚠' : '');
+        el.textContent = sp + '%' + (wp != null ? ' · 7d ' + wp + '%' : '')
+          + (meterDown ? ' ⛔ ' + _T('sta_mjerilo', 'mjerilo') : d.stale ? ' ⚠' : '');
         el.className = 'konzola-status-value' + (meterDown || sp >= 90 ? ' s-error' : sp >= 75 ? ' s-warn' : '');
-        el.title = (meterDown ? meterInfo + ' · zadnja poznata brojka: ' : '')
-          + 'Sesija 5h: ' + sp + '% · Tjedan 7d: ' + (wp == null ? '?' : wp) + '%'
+        el.title = (meterDown ? meterInfo + ' · ' + _T('sta_zadnja_poznata', 'zadnja poznata brojka:') + ' ' : '')
+          + _Tv('sta_sesija_tjedan', 'Sesija 5h: {sesija}% · Tjedan 7d: {tjedan}%',
+                { sesija: sp, tjedan: (wp == null ? '?' : wp) })
           + (d.session_reset_local ? ' · reset ' + d.session_reset_local : '')
-          + (d.age_s != null ? ' · očitano prije ' + d.age_s + ' s' : '')
-          + (!meterDown && d.stale ? ' · ZASTARJELO: ' + (d.error || 'osvježavanje ne uspijeva') : '');
+          + (d.age_s != null ? ' · ' + _Tv('sta_ocitano_prije', 'očitano prije {broj} s', { broj: d.age_s }) : '')
+          + (!meterDown && d.stale ? ' · ' + _T('sta_zastarjelo', 'ZASTARJELO') + ': '
+             + (d.error || _T('sta_osvjezavanje_ne_uspijeva', 'osvježavanje ne uspijeva')) : '');
       } catch(e) {}
     }
     // Na I/O u konzoli osvježi, ali najviše svakih 5 s (da ne spama pri brzom logu).
@@ -6485,9 +6619,9 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         appendToKonzolaLog('  📊 Token usage per inference', 'log-system');
         appendToKonzolaLog('', '');
         appendToKonzolaLog('Natural language → REGOČ message queue:', 'log-info');
-        appendToKonzolaLog('  Sve sto ne pocinje poznatom komandom salje se', 'log-system');
-        appendToKonzolaLog('  kao poruka REGOČ-u (kao Telegram/terminal).', 'log-system');
-        appendToKonzolaLog('  Prefix /cmd za forsiranje kao komandu.', 'log-system');
+        appendToKonzolaLog('  ' + _T('knz_pomoc_prirodni_1', 'Sve što ne počinje poznatom naredbom šalje se'), 'log-system');
+        appendToKonzolaLog('  ' + _T('knz_pomoc_prirodni_2', 'kao poruka REGOČ-u (kao Telegram/terminal).'), 'log-system');
+        appendToKonzolaLog('  ' + _T('knz_pomoc_prirodni_3', 'Prefiks /cmd prisiljava tumačenje kao naredbu.'), 'log-system');
         return true;
       }
       if (cmd === 'clear') {
@@ -6606,7 +6740,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         });
         const d = await r.json();
         if (d.error) { appendToKonzolaLog('❌ ' + d.error, 'log-error'); }
-        else if (d.success) { appendToKonzolaLog('✅ Queued (' + d.messageId.substring(0,8) + '). Daemon ce obraditi poruku.', 'log-success'); }
+        else if (d.success) { appendToKonzolaLog('✅ ' + _Tv('knz_u_redu_cekanja', 'Queued ({id}). Daemon će obraditi poruku.', { id: d.messageId.substring(0,8) }), 'log-success'); }
       } catch(e) { appendToKonzolaLog('Error: ' + e.message, 'log-error'); }
     }
 
@@ -6803,10 +6937,11 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       if (!tokens?.byModel || Object.keys(tokens.byModel).length === 0) { el.innerHTML = '<div class="empty">No token data</div>'; return; }
       // Izvor se ISPISUJE — ploča koja tiho servira mrtav keš je gora od prazne ploče.
       const src = tokens.source === 'cost_log'
-        ? 'cost_log &middot; zadnjih ' + (tokens.windowDays || 30) + ' dana &middot; ' + (tokens.totalTasks ?? 0) + ' zadataka'
+        ? 'cost_log &middot; ' + _Tv('pot_zadnjih_n_dana', 'zadnjih {dana} dana', { dana: tokens.windowDays || 30 })
+          + ' &middot; ' + _Tv('sta_n_zadataka', '{broj} zadataka', { broj: tokens.totalTasks ?? 0 })
         : tokens.source
-          ? escapeHtml(String(tokens.source)) + (tokens.lastAt ? ' &middot; zadnji izračun ' + escapeHtml(String(tokens.lastAt)) : '')
-          : 'nepoznat izvor';
+          ? escapeHtml(String(tokens.source)) + (tokens.lastAt ? ' &middot; ' + _T('sta_zadnji_izracun', 'zadnji izračun') + ' ' + escapeHtml(String(tokens.lastAt)) : '')
+          : _T('sta_nepoznat_izvor', 'nepoznat izvor');
       let totalIn = 0, totalOut = 0, totalCost = 0, totalCache = 0;
       let rows = '';
       for (const [model, d] of Object.entries(tokens.byModel)) {
@@ -6818,7 +6953,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       }
       rows += '<tr class="total-row"><td>TOTAL</td><td>' + fmtTokens(totalIn) + '</td><td>' + fmtTokens(totalOut) + '</td><td>' + fmtTokens(totalCache) + '</td><td>' + fmtCost(totalCost) + '</td></tr>';
       el.innerHTML = '<table class="token-table"><thead><tr><th>Model</th><th>Input</th><th>Output</th><th>Cache Read</th><th>Cost</th></tr></thead><tbody>' + rows + '</tbody></table>'
-        + '<div style="margin-top:0.4rem;font-size:0.72rem;opacity:0.6;">izvor: ' + src + '</div>';
+        + '<div style="margin-top:0.4rem;font-size:0.72rem;opacity:0.6;">' + _T('sta_izvor', 'izvor:') + ' ' + src + '</div>';
     }
 
     function renderProjectsAndTasks(tasks, projects) {
@@ -6927,11 +7062,11 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       document.getElementById('info-system-content').innerHTML =
         '<div class="info-version">REGOČ v' + (s.version||'?') + '</div>' +
         '<div class="info-subtitle">' + (s.fullName||'') + '</div>' +
-        '<div class="info-kv"><span class="info-kv-label">' + _dezT('cfg_princip', 'Princip') + '</span><span class="info-kv-value">' + (s.principle||'') + '</span></div>' +
+        '<div class="info-kv"><span class="info-kv-label">' + _T('cfg_princip', 'Princip') + '</span><span class="info-kv-value">' + (s.principle||'') + '</span></div>' +
         '<div class="info-kv"><span class="info-kv-label">Orchestrator Model</span><span class="info-kv-value">' + (s.orchestratorModel||'') + '</span></div>' +
-        '<div class="info-kv"><span class="info-kv-label">' + _dezT('cfg_agenti', 'Agenti') + '</span><span class="info-kv-value">' + (s.agentCount||0) + '</span></div>' +
-        '<div class="info-kv"><span class="info-kv-label">' + _dezT('cfg_moduli', 'Moduli') + '</span><span class="info-kv-value">' + (s.moduleCount||0) + ' (' + (s.modulesEnabled||0) + ' enabled)</span></div>' +
-        '<div class="info-kv"><span class="info-kv-label">' + _dezT('cfg_provideri', 'Provideri') + '</span><span class="info-kv-value">' + (s.providerCount||0) + ' active</span></div>' +
+        '<div class="info-kv"><span class="info-kv-label">' + _T('cfg_agenti', 'Agenti') + '</span><span class="info-kv-value">' + (s.agentCount||0) + '</span></div>' +
+        '<div class="info-kv"><span class="info-kv-label">' + _T('cfg_moduli', 'Moduli') + '</span><span class="info-kv-value">' + (s.moduleCount||0) + ' (' + (s.modulesEnabled||0) + ' enabled)</span></div>' +
+        '<div class="info-kv"><span class="info-kv-label">' + _T('cfg_provideri', 'Provideri') + '</span><span class="info-kv-value">' + (s.providerCount||0) + ' active</span></div>' +
         '<div class="info-kv"><span class="info-kv-label">Platform</span><span class="info-kv-value">' + (s.platform||'') + '</span></div>';
     }
 
@@ -6970,23 +7105,23 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
 
     function modelSelectHTML(a, models) {
       if (a.fixed) {
-        return '<span title="' + _dezEsc(_dezT('cfg_fiksni_naslov', 'Trajni interface/glavna petlja (npr. Telegram servis, orkestrator) — model se ne bira ovdje; override se ne primjenjuje.')) + '" ' +
+        return '<span title="' + _esc(_T('cfg_fiksni_naslov', 'Trajni interface/glavna petlja (npr. Telegram servis, orkestrator) — model se ne bira ovdje; override se ne primjenjuje.')) + '" ' +
           'style="font-size:0.72rem;color:#8aa0b2;border:1px dashed #3a4a55;border-radius:4px;padding:2px 8px;background:#12283a;white-space:nowrap">' +
-          '&#128274; ' + _dezT('cfg_fiksno', 'interface — fiksno') + ' <span style="color:#6b7d8c">(' + (a.currentModel||'?') + ')</span></span>';
+          '&#128274; ' + _T('cfg_fiksno', 'interface — fiksno') + ' <span style="color:#6b7d8c">(' + (a.currentModel||'?') + ')</span></span>';
       }
       var cur = a.override || '';
-      var opts = '<option value="">⭐ ' + _dezT('cfg_zadano', 'zadano') + ' (' + (a.currentModel||'?') + ')</option>';
+      var opts = '<option value="">⭐ ' + _T('cfg_zadano', 'zadano') + ' (' + (a.currentModel||'?') + ')</option>';
       (models||[]).forEach(function(m){
         var sel = (cur === m.spec) ? ' selected' : '';
-        var tag = m.spawnable ? '' : ' · ' + _dezT('cfg_lokalno', 'lokalno');
+        var tag = m.spawnable ? '' : ' · ' + _T('cfg_lokalno', 'lokalno');
         opts += '<option value="' + m.spec + '"' + sel + '>' + m.label + ' [' + m.tier + ']' + tag + '</option>';
       });
       var isLocal = cur && (models||[]).some(function(m){return m.spec===cur && !m.spawnable;});
-      var ttl = isLocal ? ' title="' + _dezEsc(_dezT('cfg_lokalni_model_naslov', 'Lokalni model (Ollama) preko API spawna — radi, ali tekstualno (bez alata: Bash/datoteke/MCP).')) + '"' : '';
+      var ttl = isLocal ? ' title="' + _esc(_T('cfg_lokalni_model_naslov', 'Lokalni model (Ollama) preko API spawna — radi, ali tekstualno (bez alata: Bash/datoteke/MCP).')) + '"' : '';
       var style = 'font-size:0.72rem;padding:2px 4px;border-radius:4px;background:var(--bg-primary,#111);color:var(--text-primary,#ddd);border:1px solid var(--border-color,#333)';
       if (cur) style += ';border-color:' + (isLocal ? '#f59e0b' : 'var(--accent-blue,#3b82f6)');
       return '<select style="' + style + '"' + ttl + ' onchange="setAgentModel(\\'' + a.id + '\\', this.value, this)">' + opts + '</select>' +
-        (cur ? ' <span style="font-size:0.65rem;color:' + (isLocal?'#f59e0b':'var(--accent-blue)') + '">' + _dezT('cfg_override', 'override') + (isLocal? ' (' + _dezT('cfg_lokalno', 'lokalno') + ')' : '') + '</span>' : '');
+        (cur ? ' <span style="font-size:0.65rem;color:' + (isLocal?'#f59e0b':'var(--accent-blue)') + '">' + _T('cfg_override', 'override') + (isLocal? ' (' + _T('cfg_lokalno', 'lokalno') + ')' : '') + '</span>' : '');
     }
 
     async function setAgentModel(agentId, spec, el) {
@@ -6999,7 +7134,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         if (!res.ok || d.error) throw new Error(d.error || 'save failed');
         fetchInfoData();
       } catch(e) {
-        alert(_dezT('cfg_greska_spremanje_modela', 'Greška pri spremanju modela') + ': ' + e.message);
+        alert(_T('cfg_greska_spremanje_modela', 'Greška pri spremanju modela') + ': ' + e.message);
         if (el) el.disabled = false;
       }
     }
@@ -7009,18 +7144,6 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     // Zadnji odgovor /api/dezurni/config. Cuva se da promjena jezika ponovno iscrta panel
     // BEZ novog poziva: popis modela zna trajati sekundama, a jezik se mijenja u trenu.
     var _dezurniZadnji = null;
-
-    // Prijevod ide kroz ISTI rjecnik i isti obrazac "kljuc + zatecena rijec kao podloga"
-    // koji vec koriste ostali dinamicki dijelovi ploce (rj/rj2 kod popisa i odluka).
-    // Staticki okvir koristi data-i18n; ovdje se HTML sastavlja u JS-u pa se rjecnik cita rukom.
-    function _dezT(k, zad) { return (RJECNIK && RJECNIK[k] != null) ? RJECNIK[k] : zad; }
-    // Podatci (ime modela, staza datoteke, poruka posluzitelja) NISU prijevod -- ulazu se u
-    // prevedenu recenicu kao {oznake}, pa red rijeci ostaje na jeziku prevoditelja.
-    function _dezTv(k, zad, v) {
-      var s = _dezT(k, zad);
-      for (var kk in v) s = s.split('{' + kk + '}').join(v[kk]);
-      return s;
-    }
 
     // Promjena jezika ne smije ponovno zvati posluzitelja -- iscrtava se iz zadnjeg odgovora.
     function osvjeziDezurniJezik() {
@@ -7040,8 +7163,8 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         el.innerHTML = renderDezurni(d);
       } catch(e) {
         el.innerHTML = '<div class="empty">' +
-          _dezTv('dez_greska_citanja', 'Greška pri čitanju postavki dežurnog: {greska}',
-                 { greska: _dezEsc(e.message) }) + '</div>';
+          _Tv('dez_greska_citanja', 'Greška pri čitanju postavki dežurnog: {greska}',
+                 { greska: _esc(e.message) }) + '</div>';
       }
     }
 
@@ -7050,31 +7173,31 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       var st = d.stanje || {};
       var g = d.granice || { okidac_uzastopnih_gresaka: { min:1, max:10 }, razmak_straze_min: { min:5, max:240 } };
       var znacka = st.dezurstvo
-        ? '<span class="info-badge disabled" title="' + _dezEsc(_dezT('dez_naslov_aktivno', 'Primarni model ne radi; dežurni odgovara na Telegramu.')) + '">' +
-          _dezT('dez_dezurstvo_aktivno', 'dežurstvo AKTIVNO') +
-          (st.od ? ' ' + _dezT('dez_od', 'od') + ' ' + String(st.od).replace('T',' ').slice(0,16) : '') + '</span>'
-        : '<span class="info-badge enabled" title="' + _dezEsc(_dezT('dez_naslov_pripravnost', 'Primarni put radi; dežurni čeka.')) + '">' +
-          _dezT('dez_u_pripravnosti', 'u pripravnosti') + '</span>';
+        ? '<span class="info-badge disabled" title="' + _esc(_T('dez_naslov_aktivno', 'Primarni model ne radi; dežurni odgovara na Telegramu.')) + '">' +
+          _T('dez_dezurstvo_aktivno', 'dežurstvo AKTIVNO') +
+          (st.od ? ' ' + _T('dez_od', 'od') + ' ' + String(st.od).replace('T',' ').slice(0,16) : '') + '</span>'
+        : '<span class="info-badge enabled" title="' + _esc(_T('dez_naslov_pripravnost', 'Primarni put radi; dežurni čeka.')) + '">' +
+          _T('dez_u_pripravnosti', 'u pripravnosti') + '</span>';
       var ukljucenZnacka = p.ukljucen
-        ? '' : ' <span class="info-badge disabled" title="' + _dezEsc(_dezT('dez_naslov_iskljucen', 'Okidač je isključen — dežurstvo se neće podići ni nakon praga grešaka.')) + '">' +
-          _dezT('dez_iskljucen', 'isključen') + '</span>';
+        ? '' : ' <span class="info-badge disabled" title="' + _esc(_T('dez_naslov_iskljucen', 'Okidač je isključen — dežurstvo se neće podići ni nakon praga grešaka.')) + '">' +
+          _T('dez_iskljucen', 'isključen') + '</span>';
 
       var davatelj = String(p.provider || 'ollama').toLowerCase();
       var dav = d.davatelji || {};
       var opts = (d.modeli || []).map(function(m) {
-        return '<option value="' + _dezEsc(m) + '"' + (m === p.model ? ' selected' : '') + '>' + _dezEsc(m) + '</option>';
+        return '<option value="' + _esc(m) + '"' + (m === p.model ? ' selected' : '') + '>' + _esc(m) + '</option>';
       }).join('');
       var izvor = d.dostupno
         ? (davatelj === 'ollama'
             ? '<span style="color:var(--text-secondary)">' +
-              _dezTv('dez_izvor_ollama', 'živi popis s {url} ({broj} modela)',
-                     { url: _dezEsc(p.baseUrl), broj: (d.modeli||[]).length }) + '</span>'
+              _Tv('dez_izvor_ollama', 'živi popis s {url} ({broj} modela)',
+                     { url: _esc(p.baseUrl), broj: (d.modeli||[]).length }) + '</span>'
             : '<span style="color:var(--text-secondary)">' +
-              _dezTv('dez_izvor_poznati', '{broj} poznatih modela — može se upisati i drugo ime',
+              _Tv('dez_izvor_poznati', '{broj} poznatih modela — može se upisati i drugo ime',
                      { broj: (d.modeli||[]).length }) + '</span>')
-        : '<span style="color:#f59e0b" title="' + _dezEsc(d.greska) + '">' +
-          _dezTv('dez_izvor_greska', '{greska} — prikazan je samo trenutačno postavljen model',
-                 { greska: _dezEsc(d.greska || _dezT('dez_popis_nedostupan', 'popis nedostupan')) }) + '</span>';
+        : '<span style="color:#f59e0b" title="' + _esc(d.greska) + '">' +
+          _Tv('dez_izvor_greska', '{greska} — prikazan je samo trenutačno postavljen model',
+                 { greska: _esc(d.greska || _T('dez_popis_nedostupan', 'popis nedostupan')) }) + '</span>';
 
       // Davatelji: uključeni u model-config.json I s oblikom poziva koji most zna. Nespremni
       // (nedostaje ključ) ostaju VIDLJIVI ali neizbirljivi — skriveni bi izgledali kao da ne
@@ -7082,77 +7205,71 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       var provOpts = (d.provideri || ['ollama']).map(function(id) {
         var info = dav[id] || {};
         var spreman = info.spreman !== false;
-        var oznaka = id + (spreman ? '' : '  ⚠ ' + (info.zasto || _dezT('dez_nije_spreman', 'nije spreman')));
-        return '<option value="' + _dezEsc(id) + '"' + (id === davatelj ? ' selected' : '') +
-          (spreman ? '' : ' disabled') + '>' + _dezEsc(oznaka) + '</option>';
+        var oznaka = id + (spreman ? '' : '  ⚠ '
+          + (info.zasto ? _Tv(info.zastoKey || '', info.zasto, info.zastoVars || {})
+                        : _T('dez_nije_spreman', 'nije spreman')));
+        return '<option value="' + _esc(id) + '"' + (id === davatelj ? ' selected' : '') +
+          (spreman ? '' : ' disabled') + '>' + _esc(oznaka) + '</option>';
       }).join('');
       var opisDavatelja = davatelj === 'anthropic'
-        ? _dezT('dez_opis_anthropic', 'POZOR: Anthropic ide preko <code>claude -p</code> i troši ISTU kvotu koja je dežurnog i pozvala.')
+        ? _T('dez_opis_anthropic', 'POZOR: Anthropic ide preko <code>claude -p</code> i troši ISTU kvotu koja je dežurnog i pozvala.')
         : (davatelj === 'ollama'
-            ? _dezT('dez_opis_ollama', 'Lokalna Ollama — jedini davatelj koji radi bez ključa i bez interneta.')
-            : _dezT('dez_opis_ostali', 'Izvor popisa: <code>models/model-config.json</code>. Ključ se čita iz <code>credentials.env</code>; vrijednost ploča nikad ne prikazuje.'));
+            ? _T('dez_opis_ollama', 'Lokalna Ollama — jedini davatelj koji radi bez ključa i bez interneta.')
+            : _T('dez_opis_ostali', 'Izvor popisa: <code>models/model-config.json</code>. Ključ se čita iz <code>credentials.env</code>; vrijednost ploča nikad ne prikazuje.'));
 
       var h = '<div style="font-size:0.72rem;color:var(--text-secondary);margin-bottom:0.5rem">' +
-        _dezTv('dez_uvod',
+        _Tv('dez_uvod',
           'Kad <code>claude -p</code> padne {n} puta zaredom, dežurni preuzima odgovaranje na Telegramu ' +
           'i javlja čim se primarni put vrati. Postavke se spremaju u <code>{putanja}</code> i ' +
           '<strong>vrijede odmah, bez ponovnog pokretanja</strong> — most i alat citaju datoteku pri svakom pozivu.',
-          { n: (p.okidac_uzastopnih_gresaka||2), putanja: _dezEsc(d.putanja) }) + ' ' +
+          { n: (p.okidac_uzastopnih_gresaka||2), putanja: _esc(d.putanja) }) + ' ' +
         znacka + ukljucenZnacka + '</div>';
 
       h += '<table class="info-table"><tbody>';
-      h += _dezRed(_dezT('dez_davatelj', 'Davatelj'),
-        '<select style="' + _dezStil() + ';min-width:220px" onchange="spremiDezurni({provider:this.value}, this)">' + provOpts + '</select>',
+      h += _red(_T('dez_davatelj', 'Davatelj'),
+        '<select style="' + _stil() + ';min-width:220px" onchange="spremiDezurni({provider:this.value}, this)">' + provOpts + '</select>',
         opisDavatelja);
-      h += _dezRed(_dezT('dez_model', 'Model dežurnog'),
-        '<select style="' + _dezStil() + ';min-width:220px" onchange="spremiDezurni({model:this.value}, this)">' + opts + '</select>' +
-        ' <input id="dez-model-rucno" placeholder="' + _dezEsc(_dezT('dez_upisi_ime_modela', 'ili upiši ime modela')) + '" style="' + _dezStil() + ';width:150px">' +
-        ' <button style="font-size:.72rem;padding:3px 8px" onclick="spremiDezurni({model:document.getElementById(\\'dez-model-rucno\\').value}, this)">' + _dezT('dez_spremi', 'Spremi') + '</button>',
+      h += _red(_T('dez_model', 'Model dežurnog'),
+        '<select style="' + _stil() + ';min-width:220px" onchange="spremiDezurni({model:this.value}, this)">' + opts + '</select>' +
+        ' <input id="dez-model-rucno" placeholder="' + _esc(_T('dez_upisi_ime_modela', 'ili upiši ime modela')) + '" style="' + _stil() + ';width:150px">' +
+        ' <button style="font-size:.72rem;padding:3px 8px" onclick="spremiDezurni({model:document.getElementById(\\'dez-model-rucno\\').value}, this)">' + _T('dez_spremi', 'Spremi') + '</button>',
         izvor);
-      h += _dezRed(_dezT('dez_provjera', 'Provjera'),
-        '<button id="dez-proba" style="font-size:.72rem;padding:3px 8px" onclick="probajDezurnog(this)">' + _dezT('dez_probni_poziv', 'Probni poziv') + '</button>' +
+      h += _red(_T('dez_provjera', 'Provjera'),
+        '<button id="dez-proba" style="font-size:.72rem;padding:3px 8px" onclick="probajDezurnog(this)">' + _T('dez_probni_poziv', 'Probni poziv') + '</button>' +
         ' <span id="dez-proba-ishod" style="font-size:.7rem"></span>',
-        _dezT('dez_provjera_opis', 'Stvarno pozove odabranog davatelja preko istog mosta koji odgovara na Telegramu. Bez ovoga se pogrešan izbor otkrije tek u kvaru.'));
-      h += _dezRed(_dezT('dez_ollama_posluzitelj', 'Ollama poslužitelj'),
-        '<input id="dez-baseurl" value="' + _dezEsc(p.baseUrl) + '" style="' + _dezStil() + ';min-width:220px">' +
-        ' <button style="font-size:.72rem;padding:3px 8px" onclick="spremiDezurni({baseUrl:document.getElementById(\\'dez-baseurl\\').value}, this)">' + _dezT('dez_spremi', 'Spremi') + '</button>',
-        _dezT('dez_ollama_posluzitelj_opis', 'Odakle se vuče popis modela i kamo idu pitanja dežurnog.'));
-      h += _dezRed(_dezT('dez_ukljuceno', 'Dežurstvo uključeno'),
+        _T('dez_provjera_opis', 'Stvarno pozove odabranog davatelja preko istog mosta koji odgovara na Telegramu. Bez ovoga se pogrešan izbor otkrije tek u kvaru.'));
+      h += _red(_T('dez_ollama_posluzitelj', 'Ollama poslužitelj'),
+        '<input id="dez-baseurl" value="' + _esc(p.baseUrl) + '" style="' + _stil() + ';min-width:220px">' +
+        ' <button style="font-size:.72rem;padding:3px 8px" onclick="spremiDezurni({baseUrl:document.getElementById(\\'dez-baseurl\\').value}, this)">' + _T('dez_spremi', 'Spremi') + '</button>',
+        _T('dez_ollama_posluzitelj_opis', 'Odakle se vuče popis modela i kamo idu pitanja dežurnog.'));
+      h += _red(_T('dez_ukljuceno', 'Dežurstvo uključeno'),
         '<input type="checkbox"' + (p.ukljucen ? ' checked' : '') + ' onchange="spremiDezurni({ukljucen:this.checked}, this)">',
-        _dezT('dez_ukljuceno_opis', 'Isključeno: greške se prijavljuju kao i prije, dežurni se ne javlja.'));
+        _T('dez_ukljuceno_opis', 'Isključeno: greške se prijavljuju kao i prije, dežurni se ne javlja.'));
       if (davatelj !== 'ollama') {
-        h += _dezRed(_dezT('dez_napomena', 'Napomena'),
-          '<span class="info-badge disabled">' + _dezEsc(davatelj) + '</span>',
-          _dezT('dez_napomena_opis',
+        h += _red(_T('dez_napomena', 'Napomena'),
+          '<span class="info-badge disabled">' + _esc(davatelj) + '</span>',
+          _T('dez_napomena_opis',
             'Odabran je davatelj izvan lokalne mreže. Ako ne odgovori, dežurni šalje izmjerenu obavijest ' +
             '— nikad tiho ne prelazi na Ollamu, jer bi korisnik dobio tuđi odgovor pod tuđim potpisom.'));
       }
-      h += _dezRed(_dezT('dez_smije_podici', 'Smije podići servise'),
+      h += _red(_T('dez_smije_podici', 'Smije podići servise'),
         '<input type="checkbox"' + (p.smije_podici ? ' checked' : '') + ' onchange="spremiDezurni({smije_podici:this.checked}, this)">',
-        _dezT('dez_smije_podici_opis', 'Jedina radnja dežurnog s posljedicom. Isključeno: tipka <code>podigni</code> odbija restart i to kaže.'));
-      h += _dezRed(_dezT('dez_prag_gresaka', 'Prag uzastopnih grešaka'),
-        '<input type="number" min="' + g.okidac_uzastopnih_gresaka.min + '" max="' + g.okidac_uzastopnih_gresaka.max + '" value="' + (p.okidac_uzastopnih_gresaka||2) + '" style="' + _dezStil() + ';width:70px" onchange="spremiDezurni({okidac_uzastopnih_gresaka:Number(this.value)}, this)">',
-        _dezTv('dez_prag_gresaka_opis', 'Jedna prolazna greška ne diže dežurstvo; {min}–{max}.',
+        _T('dez_smije_podici_opis', 'Jedina radnja dežurnog s posljedicom. Isključeno: tipka <code>podigni</code> odbija restart i to kaže.'));
+      h += _red(_T('dez_prag_gresaka', 'Prag uzastopnih grešaka'),
+        '<input type="number" min="' + g.okidac_uzastopnih_gresaka.min + '" max="' + g.okidac_uzastopnih_gresaka.max + '" value="' + (p.okidac_uzastopnih_gresaka||2) + '" style="' + _stil() + ';width:70px" onchange="spremiDezurni({okidac_uzastopnih_gresaka:Number(this.value)}, this)">',
+        _Tv('dez_prag_gresaka_opis', 'Jedna prolazna greška ne diže dežurstvo; {min}–{max}.',
                { min: g.okidac_uzastopnih_gresaka.min, max: g.okidac_uzastopnih_gresaka.max }));
-      h += _dezRed(_dezT('dez_razmak_straze', 'Razmak straže (min)'),
-        '<input type="number" min="' + g.razmak_straze_min.min + '" max="' + g.razmak_straze_min.max + '" value="' + (p.razmak_straze_min||30) + '" style="' + _dezStil() + ';width:70px" onchange="spremiDezurni({razmak_straze_min:Number(this.value)}, this)">',
-        _dezT('dez_razmak_straze_opis', 'Koliko često straža provjerava je li se primarni put vratio.'));
+      h += _red(_T('dez_razmak_straze', 'Razmak straže (min)'),
+        '<input type="number" min="' + g.razmak_straze_min.min + '" max="' + g.razmak_straze_min.max + '" value="' + (p.razmak_straze_min||30) + '" style="' + _stil() + ';width:70px" onchange="spremiDezurni({razmak_straze_min:Number(this.value)}, this)">',
+        _T('dez_razmak_straze_opis', 'Koliko često straža provjerava je li se primarni put vratio.'));
       h += '</tbody></table><div id="dez-poruka" style="font-size:.7rem;margin-top:.4rem;min-height:1em"></div>';
       return h;
     }
 
-    // Vrijednosti idu u atribute (value="…") — model i baseUrl dolaze iz datoteke i s
-    // Ollame, pa jedan navodnik ne smije razvaliti oznake.
-    function _dezEsc(v) {
-      return String(v == null ? '' : v)
-        .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-        .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
-    }
-
-    function _dezStil() {
+    function _stil() {
       return 'font-size:0.72rem;padding:2px 4px;border-radius:4px;background:var(--bg-primary,#111);color:var(--text-primary,#ddd);border:1px solid var(--border-color,#333)';
     }
-    function _dezRed(naziv, kontrola, opis) {
+    function _red(naziv, kontrola, opis) {
       return '<tr><td style="width:215px"><strong>' + naziv + '</strong></td>' +
         '<td style="width:290px">' + kontrola + '</td>' +
         '<td style="font-size:0.7rem;color:var(--text-secondary)">' + opis + '</td></tr>';
@@ -7163,24 +7280,24 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     async function probajDezurnog(el) {
       var ishod = document.getElementById('dez-proba-ishod');
       if (el) { el.disabled = true; }
-      if (ishod) ishod.innerHTML = '<span style="color:var(--text-secondary)">' + _dezT('dez_zovem', 'zovem…') + '</span>';
+      if (ishod) ishod.innerHTML = '<span style="color:var(--text-secondary)">' + _T('dez_zovem', 'zovem…') + '</span>';
       try {
         var d = await (await fetch('/api/dezurni/proba', { method: 'POST' })).json();
         if (ishod) {
           ishod.innerHTML = d.ok
             ? '<span style="color:var(--accent-green,#22c55e)">' +
-              _dezTv('dez_radi', 'RADI — {model} za {ms} ms: {odgovor}', {
-                model: _dezEsc(d.provider + '/' + d.model), ms: d.ms,
-                odgovor: _dezEsc(String(d.odgovor||'').slice(0,120)),
+              _Tv('dez_radi', 'RADI — {model} za {ms} ms: {odgovor}', {
+                model: _esc(d.provider + '/' + d.model), ms: d.ms,
+                odgovor: _esc(String(d.odgovor||'').slice(0,120)),
               }) + '</span>'
             : '<span style="color:var(--accent-red,#ef4444)">' +
-              _dezTv('dez_ne_radi', 'NE RADI — {greska}',
-                     { greska: _dezEsc(d.greska || _dezT('dez_bez_odgovora', 'bez odgovora')) }) + '</span>';
+              _Tv('dez_ne_radi', 'NE RADI — {greska}',
+                     { greska: _esc(d.greska || _T('dez_bez_odgovora', 'bez odgovora')) }) + '</span>';
         }
       } catch(e) {
         if (ishod) ishod.innerHTML = '<span style="color:var(--accent-red,#ef4444)">' +
-          _dezTv('dez_proba_nije_prosla', 'proba nije prošla: {greska}',
-                 { greska: _dezEsc(e.message) }) + '</span>';
+          _Tv('dez_proba_nije_prosla', 'proba nije prošla: {greska}',
+                 { greska: _esc(e.message) }) + '</span>';
       }
       if (el) el.disabled = false;
     }
@@ -7193,19 +7310,19 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
           method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(zakrpa)
         });
         var d = await res.json();
-        if (!res.ok || d.error) throw new Error(d.error || _dezT('dez_spremanje_nije_uspjelo', 'spremanje nije uspjelo'));
+        if (!res.ok || d.error) throw new Error(d.error || _T('dez_spremanje_nije_uspjelo', 'spremanje nije uspjelo'));
         // Potvrda se pise TEK nakon ponovnog iscrtavanja: loadDezurni mijenja innerHTML
         // cijele kartice, pa bi poruka ispisana prije toga nestala u istom dahu.
         // (Backtick u komentaru ovdje zatvara predlozak u kojem cijela ploca zivi.)
         await loadDezurni();
         var svjeza = document.getElementById('dez-poruka');
         if (svjeza) svjeza.innerHTML = '<span style="color:var(--accent-green,#22c55e)">' +
-          _dezTv('dez_spremljeno', 'Spremljeno — vrijedi odmah, bez restarta ({vrijeme})',
+          _Tv('dez_spremljeno', 'Spremljeno — vrijedi odmah, bez restarta ({vrijeme})',
                  { vrijeme: new Date().toLocaleTimeString() }) + '</span>';
       } catch(e) {
         if (poruka) poruka.innerHTML = '<span style="color:var(--accent-red,#ef4444)">' +
-          _dezTv('dez_nije_spremljeno', 'Nije spremljeno: {greska}',
-                 { greska: _dezEsc(e.message) }) + '</span>';
+          _Tv('dez_nije_spremljeno', 'Nije spremljeno: {greska}',
+                 { greska: _esc(e.message) }) + '</span>';
         if (el) el.disabled = false;
       }
     }
@@ -7221,25 +7338,25 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         if (d.error) throw new Error(d.error);
         el.innerHTML = renderUlaznaVrata(d);
       } catch(e) {
-        el.innerHTML = '<div class="empty">' + _dezT('cfg_ulaz_greska_citanja', 'Greška pri čitanju ulaznih vrata') + ': ' + _dezEsc(e.message) + '</div>';
+        el.innerHTML = '<div class="empty">' + _T('cfg_ulaz_greska_citanja', 'Greška pri čitanju ulaznih vrata') + ': ' + _esc(e.message) + '</div>';
       }
     }
 
     function _ulazOpisNacina(n) {
-      if (n === 'off') return _dezT('cfg_ulaz_opis_off', 'kao danas — poruka ide izravno u claude -p, ploča se ne dira');
-      if (n === 'shadow') return _dezT('cfg_ulaz_opis_shadow', 'sjena — poruka ide kao danas, ali se zapisuje što bi se otvorilo');
-      return _dezT('cfg_ulaz_opis_on', 'uključeno — poruka ide kroz ploču: zadatak → projekt → izvršitelj → trošak');
+      if (n === 'off') return _T('cfg_ulaz_opis_off', 'kao danas — poruka ide izravno u claude -p, ploča se ne dira');
+      if (n === 'shadow') return _T('cfg_ulaz_opis_shadow', 'sjena — poruka ide kao danas, ali se zapisuje što bi se otvorilo');
+      return _T('cfg_ulaz_opis_on', 'uključeno — poruka ide kroz ploču: zadatak → projekt → izvršitelj → trošak');
     }
 
     function _ulazPrekidac(chat, trenutni, ugasen) {
-      var nazivi = { off: _dezT('cfg_ulaz_off', 'isključeno'), shadow: _dezT('cfg_ulaz_shadow', 'sjena'), on: _dezT('cfg_ulaz_on', 'uključeno') };
+      var nazivi = { off: _T('cfg_ulaz_off', 'isključeno'), shadow: _T('cfg_ulaz_shadow', 'sjena'), on: _T('cfg_ulaz_on', 'uključeno') };
       var h = '<span style="display:inline-flex;gap:2px;border:1px solid var(--border-color,#333);border-radius:6px;padding:2px">';
       ['off','shadow','on'].forEach(function(n) {
         var sel = (trenutni === n);
         var boja = sel ? (n === 'on' ? '#22c55e' : (n === 'shadow' ? '#f59e0b' : '#64748b')) : 'transparent';
-        h += '<label title="' + _dezEsc(_ulazOpisNacina(n)) + '" style="cursor:pointer;font-size:.68rem;padding:2px 8px;border-radius:4px;background:' + boja +
+        h += '<label title="' + _esc(_ulazOpisNacina(n)) + '" style="cursor:pointer;font-size:.68rem;padding:2px 8px;border-radius:4px;background:' + boja +
           ';color:' + (sel ? '#0b1720' : 'var(--text-secondary,#8aa0b2)') + (sel ? ';font-weight:700' : '') + (ugasen ? ';opacity:.55' : '') + '">' +
-          '<input type="radio" style="display:none" name="ulaz-' + _dezEsc(chat) + '" data-chat="' + _dezEsc(chat) + '" value="' + n + '"' +
+          '<input type="radio" style="display:none" name="ulaz-' + _esc(chat) + '" data-chat="' + _esc(chat) + '" value="' + n + '"' +
           (sel ? ' checked' : '') + ' onchange="spremiUlazNacin(this)">' + nazivi[n] + '</label>';
       });
       return h + '</span>';
@@ -7258,64 +7375,64 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       Object.keys(grupe).forEach(function(k) { if (kljucevi.indexOf(k) < 0) kljucevi.push(k); });
 
       var h = '<div style="font-size:0.72rem;color:var(--text-secondary);margin-bottom:0.5rem">' +
-        _dezTv('cfg_ulaz_uvod',
+        _Tv('cfg_ulaz_uvod',
           'Kako telegramska poruka ulazi u ploču — <strong>po grupi, tri položaja</strong> (isključeno / sjena / uključeno). ' +
           'Postavke se spremaju u <code>{putanja}</code> i <strong>vrijede odmah, bez ponovnog pokretanja</strong> — ' +
           'i most i ploča čitaju datoteku pri svakom prolazu. Ručna kočnica (pravilo 17) i dalje zaustavlja sve. ',
-          { putanja: _dezEsc(d.putanja) }) +
+          { putanja: _esc(d.putanja) }) +
         (ugasen
-          ? '<span class="info-badge disabled" title="' + _dezEsc(_dezT('cfg_ulaz_globalno_naslov', 'Globalna sklopka je isključena — sve grupe se ponašaju kao isključene.')) + '">' + _dezT('cfg_ulaz_globalno_off', 'globalno isključeno') + '</span>'
-          : '<span class="info-badge enabled">' + _dezT('cfg_ulaz_globalno_on', 'globalno uključeno') + '</span>') +
+          ? '<span class="info-badge disabled" title="' + _esc(_T('cfg_ulaz_globalno_naslov', 'Globalna sklopka je isključena — sve grupe se ponašaju kao isključene.')) + '">' + _T('cfg_ulaz_globalno_off', 'globalno isključeno') + '</span>'
+          : '<span class="info-badge enabled">' + _T('cfg_ulaz_globalno_on', 'globalno uključeno') + '</span>') +
         '</div>';
 
       h += '<table class="info-table"><tbody>';
-      h += _dezRed(_dezT('cfg_ulaz_ukljucena', 'Ulazna vrata uključena'),
+      h += _red(_T('cfg_ulaz_ukljucena', 'Ulazna vrata uključena'),
         '<input type="checkbox"' + (p.enabled ? ' checked' : '') + ' onchange="spremiUlaz({enabled:this.checked}, this)">',
-        _dezT('cfg_ulaz_ukljucena_opis', 'Isključeno: sve grupe rade kao danas, bez obzira na položaj prekidača ispod.'));
+        _T('cfg_ulaz_ukljucena_opis', 'Isključeno: sve grupe rade kao danas, bez obzira na položaj prekidača ispod.'));
       h += '</tbody></table>';
 
       h += '<table class="info-table" style="margin-top:.4rem"><thead><tr>' +
-        '<th style="text-align:left;font-size:.68rem;width:215px">' + _dezT('cfg_ulaz_stupac_grupa', 'Grupa') + '</th>' +
-        '<th style="text-align:left;font-size:.68rem;width:290px">' + _dezT('cfg_ulaz_stupac_prekidac', 'Prekidač') + '</th>' +
-        '<th style="text-align:left;font-size:.68rem">' + _dezT('cfg_ulaz_stupac_projekt', 'Zadani projekt grupe') + '</th></tr></thead><tbody>';
+        '<th style="text-align:left;font-size:.68rem;width:215px">' + _T('cfg_ulaz_stupac_grupa', 'Grupa') + '</th>' +
+        '<th style="text-align:left;font-size:.68rem;width:290px">' + _T('cfg_ulaz_stupac_prekidac', 'Prekidač') + '</th>' +
+        '<th style="text-align:left;font-size:.68rem">' + _T('cfg_ulaz_stupac_projekt', 'Zadani projekt grupe') + '</th></tr></thead><tbody>';
       kljucevi.forEach(function(chat) {
-        var naziv = grupe[chat] ? grupe[chat] : _dezT('cfg_ulaz_grupa', 'grupa');
+        var naziv = grupe[chat] ? grupe[chat] : _T('cfg_ulaz_grupa', 'grupa');
         var nacin = perGroup[chat] || 'off';
-        h += '<tr><td><strong>' + _dezEsc(naziv) + '</strong><br><span style="font-size:.66rem;color:var(--text-secondary)">' + _dezEsc(chat) + '</span></td>' +
+        h += '<tr><td><strong>' + _esc(naziv) + '</strong><br><span style="font-size:.66rem;color:var(--text-secondary)">' + _esc(chat) + '</span></td>' +
           '<td>' + _ulazPrekidac(chat, nacin, ugasen) + '</td>' +
           '<td>' + _ulazProjektIzbor(chat, projPoGrupi[chat] || '', d.projekti || []) + '</td></tr>';
       });
       h += '</tbody></table>';
 
       h += '<div style="margin-top:.5rem;display:flex;gap:6px;align-items:center;flex-wrap:wrap">' +
-        '<input id="ulaz-nova-grupa" placeholder="' + _dezEsc(_dezT('cfg_ulaz_nova_grupa_ph', 'chatId nove grupe (npr. -5245252755)')) + '" style="' + _dezStil() + ';width:230px">' +
-        '<button style="font-size:.72rem;padding:3px 8px" onclick="dodajUlazGrupu(this)">' + _dezT('cfg_ulaz_dodaj_grupu', 'Dodaj grupu') + '</button>' +
-        '<span style="font-size:.66rem;color:var(--text-secondary)">' + _dezT('cfg_ulaz_nova_grupa_opis', 'Nova grupa kreće na <b>isključeno</b> — nikad sama.') + '</span></div>';
+        '<input id="ulaz-nova-grupa" placeholder="' + _esc(_T('cfg_ulaz_nova_grupa_ph', 'chatId nove grupe (npr. -5245252755)')) + '" style="' + _stil() + ';width:230px">' +
+        '<button style="font-size:.72rem;padding:3px 8px" onclick="dodajUlazGrupu(this)">' + _T('cfg_ulaz_dodaj_grupu', 'Dodaj grupu') + '</button>' +
+        '<span style="font-size:.66rem;color:var(--text-secondary)">' + _T('cfg_ulaz_nova_grupa_opis', 'Nova grupa kreće na <b>isključeno</b> — nikad sama.') + '</span></div>';
 
       h += '<table class="info-table" style="margin-top:.5rem"><tbody>';
-      h += _dezRed(_dezT('cfg_ulaz_prag_a', 'Prag A — otvara se zadatak'),
-        '<input type="number" min="' + g.pragA.min + '" max="' + g.pragA.max + '" value="' + p.pragA + '" style="' + _dezStil() + ';width:70px" onchange="spremiUlaz({pragA:Number(this.value)}, this)">',
-        _dezT('cfg_ulaz_prag_a_opis', 'Ispod praga (pozdrav, pitanje) odgovor ide odmah i ploča ostaje čista. Zadano 16 (E2).'));
-      h += _dezRed(_dezT('cfg_ulaz_prag_b', 'Prag B — puni lanac'),
-        '<input type="number" min="' + g.pragB.min + '" max="' + g.pragB.max + '" value="' + p.pragB + '" style="' + _dezStil() + ';width:70px" onchange="spremiUlaz({pragB:Number(this.value)}, this)">',
-        _dezT('cfg_ulaz_prag_b_opis', 'Ispod praga zadatak dobiva jednog izvršitelja; iznad ide istraživanje → plan → izvedba → provjera. Zadano 36 (E3).'));
-      h += _dezRed(_dezT('cfg_ulaz_prag_c', 'Prag C — potvrda plana'),
-        '<input type="number" min="' + g.pragC.min + '" max="' + g.pragC.max + '" value="' + p.pragC + '" style="' + _dezStil() + ';width:70px" onchange="spremiUlaz({pragC:Number(this.value)}, this)">',
-        _dezT('cfg_ulaz_prag_c_opis', 'Iznad praga plan se šalje na odobrenje, zadatci se otvaraju tek na approve. Zadano 81 (E5).'));
+      h += _red(_T('cfg_ulaz_prag_a', 'Prag A — otvara se zadatak'),
+        '<input type="number" min="' + g.pragA.min + '" max="' + g.pragA.max + '" value="' + p.pragA + '" style="' + _stil() + ';width:70px" onchange="spremiUlaz({pragA:Number(this.value)}, this)">',
+        _T('cfg_ulaz_prag_a_opis', 'Ispod praga (pozdrav, pitanje) odgovor ide odmah i ploča ostaje čista. Zadano 16 (E2).'));
+      h += _red(_T('cfg_ulaz_prag_b', 'Prag B — puni lanac'),
+        '<input type="number" min="' + g.pragB.min + '" max="' + g.pragB.max + '" value="' + p.pragB + '" style="' + _stil() + ';width:70px" onchange="spremiUlaz({pragB:Number(this.value)}, this)">',
+        _T('cfg_ulaz_prag_b_opis', 'Ispod praga zadatak dobiva jednog izvršitelja; iznad ide istraživanje → plan → izvedba → provjera. Zadano 36 (E3).'));
+      h += _red(_T('cfg_ulaz_prag_c', 'Prag C — potvrda plana'),
+        '<input type="number" min="' + g.pragC.min + '" max="' + g.pragC.max + '" value="' + p.pragC + '" style="' + _stil() + ';width:70px" onchange="spremiUlaz({pragC:Number(this.value)}, this)">',
+        _T('cfg_ulaz_prag_c_opis', 'Iznad praga plan se šalje na odobrenje, zadatci se otvaraju tek na approve. Zadano 81 (E5).'));
       h += '</tbody></table>';
-      h += '<div style="font-size:.66rem;color:var(--text-secondary);margin-top:.3rem">' + _dezT('cfg_ulaz_pragovi_rastu', 'Pragovi moraju rasti: A ≤ B ≤ C.') + '</div>';
+      h += '<div style="font-size:.66rem;color:var(--text-secondary);margin-top:.3rem">' + _T('cfg_ulaz_pragovi_rastu', 'Pragovi moraju rasti: A ≤ B ≤ C.') + '</div>';
       h += '<div id="ulaz-poruka" style="font-size:.7rem;margin-top:.4rem;min-height:1em"></div>';
       return h;
     }
 
     function _ulazProjektIzbor(chat, trenutni, projekti) {
-      var opts = '<option value=""' + (trenutni ? '' : ' selected') + '>&mdash; ' + _dezT('cfg_ulaz_bez_zadanog', 'bez zadanog (pretinac PRJ-033)') + '</option>';
+      var opts = '<option value=""' + (trenutni ? '' : ' selected') + '>&mdash; ' + _T('cfg_ulaz_bez_zadanog', 'bez zadanog (pretinac PRJ-033)') + '</option>';
       var popis = projekti.slice();
       if (trenutni && popis.indexOf(trenutni) < 0) popis.unshift(trenutni);
       popis.forEach(function(pid) {
-        opts += '<option value="' + _dezEsc(pid) + '"' + (pid === trenutni ? ' selected' : '') + '>' + _dezEsc(pid) + '</option>';
+        opts += '<option value="' + _esc(pid) + '"' + (pid === trenutni ? ' selected' : '') + '>' + _esc(pid) + '</option>';
       });
-      return '<select data-chat="' + _dezEsc(chat) + '" style="' + _dezStil() + ';min-width:220px" onchange="spremiUlazProjekt(this)">' + opts + '</select>';
+      return '<select data-chat="' + _esc(chat) + '" style="' + _stil() + ';min-width:220px" onchange="spremiUlazProjekt(this)">' + opts + '</select>';
     }
 
     // chatId ide kroz data-atribut, ne kroz onclick argument — tako u predlošku nema
@@ -7333,7 +7450,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       var chat = polje ? String(polje.value || '').trim() : '';
       if (!/^-?[0-9]{5,20}$/.test(chat)) {
         var pk = document.getElementById('ulaz-poruka');
-        if (pk) pk.innerHTML = '<span style="color:var(--accent-red,#ef4444)">' + _dezT('cfg_ulaz_chatid_broj', 'chatId mora biti broj (npr. -5245252755)') + '</span>';
+        if (pk) pk.innerHTML = '<span style="color:var(--accent-red,#ef4444)">' + _T('cfg_ulaz_chatid_broj', 'chatId mora biti broj (npr. -5245252755)') + '</span>';
         return;
       }
       var m = {}; m[chat] = 'off';
@@ -7348,14 +7465,14 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
           method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(zakrpa)
         });
         var d = await res.json();
-        if (!res.ok || d.error) throw new Error(d.error || 'spremanje nije uspjelo');
+        if (!res.ok || d.error) throw new Error(d.error || _T('spremanje_nije_uspjelo', 'spremanje nije uspjelo'));
         // Potvrda se ispisuje TEK nakon ponovnog iscrtavanja — loadUlaznaVrata mijenja
         // innerHTML cijele kartice, pa bi ranija poruka nestala u istom dahu.
         await loadUlaznaVrata();
         var svjeza = document.getElementById('ulaz-poruka');
-        if (svjeza) svjeza.innerHTML = '<span style="color:var(--accent-green,#22c55e)">' + _dezT('cfg_ulaz_spremljeno', 'Spremljeno — vrijedi odmah, bez restarta') + ' (' + new Date().toLocaleTimeString() + ')</span>';
+        if (svjeza) svjeza.innerHTML = '<span style="color:var(--accent-green,#22c55e)">' + _T('cfg_ulaz_spremljeno', 'Spremljeno — vrijedi odmah, bez restarta') + ' (' + new Date().toLocaleTimeString() + ')</span>';
       } catch(e) {
-        if (poruka) poruka.innerHTML = '<span style="color:var(--accent-red,#ef4444)">' + _dezT('cfg_ulaz_nije_spremljeno', 'Nije spremljeno') + ': ' + _dezEsc(e.message) + '</span>';
+        if (poruka) poruka.innerHTML = '<span style="color:var(--accent-red,#ef4444)">' + _T('cfg_ulaz_nije_spremljeno', 'Nije spremljeno') + ': ' + _esc(e.message) + '</span>';
         if (el) el.disabled = false;
       }
     }
@@ -7365,33 +7482,33 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       if (!el) return;
       try {
         var d = await (await fetch('/api/providers/login/status')).json();
-        el.innerHTML = '<div style="font-size:.7rem;color:var(--text-secondary);margin-bottom:.5rem">' + _dezT('cfg_login_uvod', 'Klikni <b>Login</b> → <b>Copy link</b> → otvori link na bilo kojem računalu i prijavi se. Ako login traži kod, zalijepi ga natrag. Nakon prijave provider se pojavi u listi modela agenata.') + '</div>'
+        el.innerHTML = '<div style="font-size:.7rem;color:var(--text-secondary);margin-bottom:.5rem">' + _T('cfg_login_uvod', 'Klikni <b>Login</b> → <b>Copy link</b> → otvori link na bilo kojem računalu i prijavi se. Ako login traži kod, zalijepi ga natrag. Nakon prijave provider se pojavi u listi modela agenata.') + '</div>'
           + (d.providers||[]).map(renderLoginRow).join('');
-      } catch(e){ el.innerHTML = '<div class="empty">' + _dezT('cfg_greska', 'Greška') + ': '+e.message+'</div>'; }
+      } catch(e){ el.innerHTML = '<div class="empty">' + _T('cfg_greska', 'Greška') + ': '+e.message+'</div>'; }
     }
     function renderLoginRow(p) {
-      var badge = p.loggedIn ? '<span class="info-badge enabled">' + _dezT('cfg_login_prijavljen', 'prijavljen') + '</span>'
-        : (p.installed ? '<span class="info-badge disabled">' + _dezT('cfg_login_nije_prijavljen', 'nije prijavljen') + '</span>' : '<span class="info-badge disabled">' + _dezT('cfg_login_nije_instaliran', 'nije instaliran') + '</span>');
+      var badge = p.loggedIn ? '<span class="info-badge enabled">' + _T('cfg_login_prijavljen', 'prijavljen') + '</span>'
+        : (p.installed ? '<span class="info-badge disabled">' + _T('cfg_login_nije_prijavljen', 'nije prijavljen') + '</span>' : '<span class="info-badge disabled">' + _T('cfg_login_nije_instaliran', 'nije instaliran') + '</span>');
       var h = '<div style="border:1px solid var(--border-color);border-radius:6px;padding:0.6rem;margin-bottom:0.5rem">';
       h += '<div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap"><strong>'+p.name+'</strong>'+badge+'<span style="margin-left:auto;display:flex;gap:6px">';
-      if (p.loggedIn) h += '<button onclick="doLogout(\\''+p.id+'\\')" style="font-size:.72rem;padding:4px 8px">' + _dezT('cfg_login_odjava', 'Odjava') + '</button>';
+      if (p.loggedIn) h += '<button onclick="doLogout(\\''+p.id+'\\')" style="font-size:.72rem;padding:4px 8px">' + _T('cfg_login_odjava', 'Odjava') + '</button>';
       else if (p.kind==='oauth-cli' && p.installed) h += '<button onclick="doLoginStart(\\''+p.id+'\\')" style="font-size:.72rem;padding:4px 8px">Login</button>';
       h += '</span></div><div id="login-body-'+p.id+'" style="margin-top:.4rem"></div>';
-      if (p.id==='geminicli') h += '<div style="font-size:.66rem;color:#f59e0b;margin-top:.3rem">' + _dezT('cfg_login_gemini_oauth', 'Google je ukinuo besplatni OAuth (Code Assist) za CLI — koristi <b>API ključ</b> s aistudio.google.com/apikey (besplatan tier).') + '</div>';
+      if (p.id==='geminicli') h += '<div style="font-size:.66rem;color:#f59e0b;margin-top:.3rem">' + _T('cfg_login_gemini_oauth', 'Google je ukinuo besplatni OAuth (Code Assist) za CLI — koristi <b>API ključ</b> s aistudio.google.com/apikey (besplatan tier).') + '</div>';
       if (p.apikey && !p.loggedIn) {
-        var _ph = p.id==='geminicli' ? 'GEMINI_API_KEY (AIza...)' : _dezT('cfg_api_kljuc', 'API ključ') + ' (sk-or-...)';
-        h += '<div style="display:flex;gap:6px;margin-top:.4rem"><input id="login-key-'+p.id+'" type="password" autocomplete="new-password" data-form-type="other" data-lpignore="true" data-1p-ignore placeholder="'+_ph+'" style="flex:1;font-size:.72rem;padding:3px 5px"><button onclick="doApikey(\\''+p.id+'\\')" style="font-size:.72rem;padding:4px 8px">' + _dezT('cfg_login_spremi_kljuc', 'Spremi ključ') + '</button></div>';
+        var _ph = p.id==='geminicli' ? 'GEMINI_API_KEY (AIza...)' : _T('cfg_api_kljuc', 'API ključ') + ' (sk-or-...)';
+        h += '<div style="display:flex;gap:6px;margin-top:.4rem"><input id="login-key-'+p.id+'" type="password" autocomplete="new-password" data-form-type="other" data-lpignore="true" data-1p-ignore placeholder="'+_ph+'" style="flex:1;font-size:.72rem;padding:3px 5px"><button onclick="doApikey(\\''+p.id+'\\')" style="font-size:.72rem;padding:4px 8px">' + _T('cfg_login_spremi_kljuc', 'Spremi ključ') + '</button></div>';
       }
-      if (!p.installed && p.installCmd) h += '<div style="font-size:.66rem;color:var(--text-secondary);margin-top:.3rem">' + _dezT('cfg_login_instaliraj', 'Nije instaliran. Instaliraj (Sigurnost→internet ON):') + ' <code>'+p.installCmd+'</code></div>';
+      if (!p.installed && p.installCmd) h += '<div style="font-size:.66rem;color:var(--text-secondary);margin-top:.3rem">' + _T('cfg_login_instaliraj', 'Nije instaliran. Instaliraj (Sigurnost→internet ON):') + ' <code>'+p.installCmd+'</code></div>';
       h += '</div>';
       return h;
     }
     async function doLoginStart(id) {
       var body = document.getElementById('login-body-'+id); if(!body) return;
-      body.innerHTML = _dezT('cfg_login_pokrecem', 'Pokrećem prijavu…');
+      body.innerHTML = _T('cfg_login_pokrecem', 'Pokrećem prijavu…');
       try {
         var d = await (await fetch('/api/providers/login/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:id})})).json();
-        if (d.error){ body.innerHTML='<span style="color:var(--accent-red)">'+(d.error==='not-installed'? _dezT('cfg_login_nije_instaliran_tocka', 'Nije instaliran.') :d.error)+'</span>'; return; }
+        if (d.error){ body.innerHTML='<span style="color:var(--accent-red)">'+(d.error==='not-installed'? _T('cfg_login_nije_instaliran_tocka', 'Nije instaliran.') :d.error)+'</span>'; return; }
         renderLoginActive(id, d.url); pollLogin(id);
       } catch(e){ body.innerHTML='<span style="color:var(--accent-red)">'+e.message+'</span>'; }
     }
@@ -7401,15 +7518,15 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       if (urlv) {
         h += '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><input id="login-url-'+id+'" value="'+urlv+'" readonly style="flex:1;min-width:220px;font-size:.7rem;padding:3px 5px">';
         h += '<button onclick="copyLoginLink(\\''+id+'\\')" style="font-size:.72rem;padding:4px 8px">📋 Copy link</button>';
-        h += '<a href="'+urlv+'" target="_blank" rel="noopener" style="font-size:.72rem;padding:4px 8px">' + _dezT('cfg_login_otvori', 'Otvori') + '</a></div>';
-        h += '<div style="font-size:.66rem;color:var(--text-secondary);margin-top:.3rem">' + _dezT('cfg_login_otvori_opis', 'Otvori link na bilo kojem računalu i odobri. Ako CLI traži kod, zalijepi ga ispod.') + '</div>';
-      } else { h += '<div style="font-size:.7rem;color:var(--text-secondary)">' + _dezT('cfg_login_cekam_link', 'Čekam link…') + '</div>'; }
-      h += '<div style="display:flex;gap:6px;margin-top:.4rem"><input id="login-paste-'+id+'" autocomplete="off" data-form-type="other" data-lpignore="true" data-1p-ignore placeholder="' + _dezEsc(_dezT('cfg_login_zalijepi_kod', 'Zalijepi kod (ako login traži)')) + '" style="flex:1;font-size:.72rem;padding:3px 5px"><button onclick="doPaste(\\''+id+'\\')" style="font-size:.72rem;padding:4px 8px">' + _dezT('cfg_posalji', 'Pošalji') + '</button></div>';
+        h += '<a href="'+urlv+'" target="_blank" rel="noopener" style="font-size:.72rem;padding:4px 8px">' + _T('cfg_login_otvori', 'Otvori') + '</a></div>';
+        h += '<div style="font-size:.66rem;color:var(--text-secondary);margin-top:.3rem">' + _T('cfg_login_otvori_opis', 'Otvori link na bilo kojem računalu i odobri. Ako CLI traži kod, zalijepi ga ispod.') + '</div>';
+      } else { h += '<div style="font-size:.7rem;color:var(--text-secondary)">' + _T('cfg_login_cekam_link', 'Čekam link…') + '</div>'; }
+      h += '<div style="display:flex;gap:6px;margin-top:.4rem"><input id="login-paste-'+id+'" autocomplete="off" data-form-type="other" data-lpignore="true" data-1p-ignore placeholder="' + _esc(_T('cfg_login_zalijepi_kod', 'Zalijepi kod (ako login traži)')) + '" style="flex:1;font-size:.72rem;padding:3px 5px"><button onclick="doPaste(\\''+id+'\\')" style="font-size:.72rem;padding:4px 8px">' + _T('cfg_posalji', 'Pošalji') + '</button></div>';
       h += '<div id="login-status-'+id+'" style="font-size:.66rem;color:var(--text-secondary);margin-top:.3rem"></div>';
       body.innerHTML = h;
     }
-    function copyLoginLink(id){ var el=document.getElementById('login-url-'+id); if(el){ el.select(); if(navigator.clipboard) navigator.clipboard.writeText(el.value); var s=document.getElementById('login-status-'+id); if(s)s.textContent=_dezT('cfg_login_link_kopiran', 'Link kopiran.'); } }
-    async function doPaste(id){ var v=document.getElementById('login-paste-'+id); if(!v)return; try{ await fetch('/api/providers/login/paste',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:id,code:v.value})}); var s=document.getElementById('login-status-'+id); if(s)s.textContent=_dezT('cfg_login_kod_poslan', 'Kod poslan, čekam potvrdu…'); }catch(e){} }
+    function copyLoginLink(id){ var el=document.getElementById('login-url-'+id); if(el){ el.select(); if(navigator.clipboard) navigator.clipboard.writeText(el.value); var s=document.getElementById('login-status-'+id); if(s)s.textContent=_T('cfg_login_link_kopiran', 'Link kopiran.'); } }
+    async function doPaste(id){ var v=document.getElementById('login-paste-'+id); if(!v)return; try{ await fetch('/api/providers/login/paste',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:id,code:v.value})}); var s=document.getElementById('login-status-'+id); if(s)s.textContent=_T('cfg_login_kod_poslan', 'Kod poslan, čekam potvrdu…'); }catch(e){} }
     var loginPollTimers = {};
     function pollLogin(id){
       clearInterval(loginPollTimers[id]); var tries=0;
@@ -7420,14 +7537,14 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
           var s=document.getElementById('login-status-'+id);
           var u=document.getElementById('login-url-'+id);
           if (d.url && u && !u.value) u.value=d.url;
-          if (d.loggedIn){ clearInterval(loginPollTimers[id]); if(s)s.textContent='✅ ' + _dezT('cfg_login_uspjesna', 'Prijava uspješna.'); setTimeout(fetchInfoData, 800); return; }
-          if (d.done && !d.loggedIn){ clearInterval(loginPollTimers[id]); if(s)s.textContent=_dezT('cfg_login_prekinuta', 'Prijava prekinuta/neuspješna.'); return; }
+          if (d.loggedIn){ clearInterval(loginPollTimers[id]); if(s)s.textContent='✅ ' + _T('cfg_login_uspjesna', 'Prijava uspješna.'); setTimeout(fetchInfoData, 800); return; }
+          if (d.done && !d.loggedIn){ clearInterval(loginPollTimers[id]); if(s)s.textContent=_T('cfg_login_prekinuta', 'Prijava prekinuta/neuspješna.'); return; }
         } catch(e){}
         if (tries>150){ clearInterval(loginPollTimers[id]); }
       }, 2000);
     }
-    async function doApikey(id){ var k=document.getElementById('login-key-'+id); if(!k||!k.value.trim())return; try{ var d=await (await fetch('/api/providers/login/apikey',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:id,key:k.value.trim()})})).json(); if(d.error)throw new Error(d.error); fetchInfoData(); }catch(e){ alert(_dezT('cfg_greska', 'Greška') + ': '+e.message); } }
-    async function doLogout(id){ if(!confirm(_dezTv('cfg_login_odjaviti_pitanje', 'Odjaviti {id}?', { id: id })))return; try{ await fetch('/api/providers/login/logout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:id})}); fetchInfoData(); }catch(e){} }
+    async function doApikey(id){ var k=document.getElementById('login-key-'+id); if(!k||!k.value.trim())return; try{ var d=await (await fetch('/api/providers/login/apikey',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:id,key:k.value.trim()})})).json(); if(d.error)throw new Error(d.error); fetchInfoData(); }catch(e){ alert(_T('cfg_greska', 'Greška') + ': '+e.message); } }
+    async function doLogout(id){ if(!confirm(_Tv('cfg_login_odjaviti_pitanje', 'Odjaviti {id}?', { id: id })))return; try{ await fetch('/api/providers/login/logout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:id})}); fetchInfoData(); }catch(e){} }
 
     // ── Klasifikacijski model (TASK-2635) ────────────────────────────────────────
     // ODVOJENO od dropdowna po agentu: taj bira model kojim agent RADI, a ovaj model
@@ -7441,34 +7558,34 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         if (d.error && !d.models) throw new Error(d.error);
         el.innerHTML = renderClassifier(d);
       } catch(e) {
-        el.innerHTML = '<div class="empty">' + _dezT('cfg_klas_greska_citanje', 'Greška pri čitanju klasifikatora') + ': ' + _dezEsc(e.message) + '</div>';
+        el.innerHTML = '<div class="empty">' + _T('cfg_klas_greska_citanje', 'Greška pri čitanju klasifikatora') + ': ' + _esc(e.message) + '</div>';
       }
     }
 
     function renderClassifier(d) {
-      var izvor = { 'process-env': _dezTv('cfg_klas_izvor_env', 'okolina procesa ({kljuc})', { kljuc: _dezEsc(d.envKey) }), 'config': 'model-config.json → componentOverrides.classifier', 'default': _dezT('cfg_klas_izvor_zadani', 'ugrađeni zadani') }[d.source] || d.source;
+      var izvor = { 'process-env': _Tv('cfg_klas_izvor_env', 'okolina procesa ({kljuc})', { kljuc: _esc(d.envKey) }), 'config': 'model-config.json → componentOverrides.classifier', 'default': _T('cfg_klas_izvor_zadani', 'ugrađeni zadani') }[d.source] || d.source;
       var h = '<div style="font-size:0.72rem;color:var(--text-secondary);margin-bottom:0.5rem">' +
-        _dezTv('cfg_klas_uvod',
+        _Tv('cfg_klas_uvod',
           'REGOČ na <strong>svaku</strong> poruku pokreće klasifikaciju/rutiranje. To NIJE isto što i model kojim agent radi ' +
           '(to je dropdown u tablici agenata gore). Klasifikator mora ostati <strong>brz i lokalan</strong> pa su ponuđeni samo Ollama modeli. ' +
           'Sprema se u <code>{kljuc}</code> (spremište vjerodajnica) i u <code>componentOverrides.classifier</code>; ' +
-          'config vrijedi odmah, okolina tek nakon restarta procesa.', { kljuc: _dezEsc(d.envKey) }) + '</div>';
+          'config vrijedi odmah, okolina tek nakon restarta procesa.', { kljuc: _esc(d.envKey) }) + '</div>';
       h += '<div style="display:flex;gap:0.6rem;flex-wrap:wrap;align-items:center;font-size:0.72rem">';
       h += '<span class="info-dot ' + (d.reachable ? 'online' : 'offline') + '"></span>';
-      h += '<span style="color:var(--text-secondary)">Ollama</span> <span style="font-family:monospace">' + _dezEsc(d.baseUrl) + '</span>';
-      var opts = '<option value="">⭐ ' + _dezT('cfg_zadano', 'zadano') + ' (' + _dezEsc(String(d.defaultSpec || '').replace('ollama:','')) + ')</option>';
+      h += '<span style="color:var(--text-secondary)">Ollama</span> <span style="font-family:monospace">' + _esc(d.baseUrl) + '</span>';
+      var opts = '<option value="">⭐ ' + _T('cfg_zadano', 'zadano') + ' (' + _esc(String(d.defaultSpec || '').replace('ollama:','')) + ')</option>';
       (d.models || []).forEach(function(m) {
-        opts += '<option value="' + _dezEsc(m) + '"' + (m === d.model ? ' selected' : '') + '>' + _dezEsc(m) + '</option>';
+        opts += '<option value="' + _esc(m) + '"' + (m === d.model ? ' selected' : '') + '>' + _esc(m) + '</option>';
       });
       h += '<select id="classifier-select" style="font-size:0.72rem;padding:3px 5px;border-radius:4px;background:var(--bg-primary,#111);color:var(--text-primary,#ddd);border:1px solid var(--border-color,#333)" ' +
         'onchange="setClassifier(this.value, this)">' + opts + '</select>';
-      h += '<span class="info-badge ' + (d.source === 'default' ? 'disabled' : 'enabled') + '" title="' + _dezEsc(_dezT('cfg_klas_izvor_naslov', 'Odakle vrijednost stvarno dolazi')) + '">' + _dezEsc(izvor) + '</span>';
+      h += '<span class="info-badge ' + (d.source === 'default' ? 'disabled' : 'enabled') + '" title="' + _esc(_T('cfg_klas_izvor_naslov', 'Odakle vrijednost stvarno dolazi')) + '">' + _esc(izvor) + '</span>';
       h += '</div>';
       if (!d.reachable) {
-        h += '<div style="font-size:0.66rem;color:var(--accent-red);margin-top:0.35rem">' + _dezT('cfg_klas_ollama_nedostupna', 'Ollama nedostupna — popis modela je nepotpun') + (d.error ? (': ' + _dezEsc(d.error)) : '') + '. ' + _dezT('cfg_klas_svejedno_spremi', 'Postavka se svejedno može spremiti.') + '</div>';
+        h += '<div style="font-size:0.66rem;color:var(--accent-red);margin-top:0.35rem">' + _T('cfg_klas_ollama_nedostupna', 'Ollama nedostupna — popis modela je nepotpun') + (d.error ? (': ' + _esc(d.error)) : '') + '. ' + _T('cfg_klas_svejedno_spremi', 'Postavka se svejedno može spremiti.') + '</div>';
       }
       if (d.storeSet && d.storeMatchesConfig === false) {
-        h += '<div style="font-size:0.66rem;color:#f59e0b;margin-top:0.35rem">' + _dezT('cfg_klas_spremiste_razlika', 'Spremište vjerodajnica ima drukčiju vrijednost od configa — na stroju koji spremište učitava u okolinu ona pobjeđuje nakon restarta.') + '</div>';
+        h += '<div style="font-size:0.66rem;color:#f59e0b;margin-top:0.35rem">' + _T('cfg_klas_spremiste_razlika', 'Spremište vjerodajnica ima drukčiju vrijednost od configa — na stroju koji spremište učitava u okolinu ona pobjeđuje nakon restarta.') + '</div>';
       }
       return h;
     }
@@ -7481,7 +7598,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         if (!r.ok || d.error) throw new Error(d.error || 'save failed');
         loadClassifier();
       } catch(e) {
-        alert(_dezT('cfg_klas_greska_spremanje', 'Greška pri spremanju klasifikatora') + ': ' + e.message);
+        alert(_T('cfg_klas_greska_spremanje', 'Greška pri spremanju klasifikatora') + ': ' + e.message);
         if (el) el.disabled = false;
         loadClassifier();
       }
@@ -7490,45 +7607,45 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     function renderModelSetup(md) {
       var el = document.getElementById('info-modelsetup-content');
       if (!el) return;
-      if (!md || !md.providers) { el.innerHTML = '<div class="empty">' + _dezT('cfg_prov_nema_podataka', 'Nema podataka o providerima') + '</div>'; return; }
+      if (!md || !md.providers) { el.innerHTML = '<div class="empty">' + _T('cfg_prov_nema_podataka', 'Nema podataka o providerima') + '</div>'; return; }
       var h = '<div style="font-size:0.72rem;color:var(--text-secondary);margin-bottom:0.5rem">' +
-        _dezT('cfg_prov_uvod', 'Pretplatnički provideri (Claude) nemaju dodatne postavke. Lokalni (Ollama) traži samo <strong>server IP:port</strong> — kao RAG; token je opcijski (samo iza reverse-proxyja).') + '</div>';
+        _T('cfg_prov_uvod', 'Pretplatnički provideri (Claude) nemaju dodatne postavke. Lokalni (Ollama) traži samo <strong>server IP:port</strong> — kao RAG; token je opcijski (samo iza reverse-proxyja).') + '</div>';
       md.providers.forEach(function(p) {
         var dot = p.enabled ? (p.reachable ? 'online' : 'offline') : 'offline';
-        var statusTxt = !p.enabled ? _dezT('cfg_prov_iskljucen', 'isključen') : (p.kind === 'subscription' ? _dezT('cfg_prov_pretplata', 'pretplata') : (p.reachable ? _dezTv('cfg_prov_broj_modela', '{broj} modela', { broj: p.models.length }) : _dezT('cfg_prov_nedostupan', 'nedostupan')));
+        var statusTxt = !p.enabled ? _T('cfg_prov_iskljucen', 'isključen') : (p.kind === 'subscription' ? _T('cfg_prov_pretplata', 'pretplata') : (p.reachable ? _Tv('cfg_prov_broj_modela', '{broj} modela', { broj: p.models.length }) : _T('cfg_prov_nedostupan', 'nedostupan')));
         var statusBadge = (p.enabled && (p.reachable || p.kind === 'subscription')) ? 'enabled' : 'disabled';
         h += '<div style="border:1px solid var(--border-color);border-radius:6px;padding:0.6rem;margin-bottom:0.6rem">';
         h += '<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.4rem;flex-wrap:wrap">' +
           '<span class="info-dot ' + dot + '"></span>' +
-          '<strong>' + _dezT(p.nameKey, p.name) + '</strong>' +
+          '<strong>' + _T(p.nameKey, p.name) + '</strong>' +
           '<span class="info-badge ' + statusBadge + '">' + statusTxt + '</span>' +
-          '<label style="margin-left:auto;font-size:0.72rem;cursor:pointer"><input type="checkbox" ' + (p.enabled ? 'checked' : '') + ' onchange="setProviderEnabled(\\'' + p.id + '\\', this.checked)"> ' + _dezT('cfg_prov_omogucen', 'omogućen') + '</label>' +
+          '<label style="margin-left:auto;font-size:0.72rem;cursor:pointer"><input type="checkbox" ' + (p.enabled ? 'checked' : '') + ' onchange="setProviderEnabled(\\'' + p.id + '\\', this.checked)"> ' + _T('cfg_prov_omogucen', 'omogućen') + '</label>' +
           '</div>';
         if (p.needsSetup) {
           var inpStyle = 'font-size:0.72rem;padding:3px 5px;background:var(--bg-primary,#111);color:var(--text-primary,#ddd);border:1px solid var(--border-color,#333);border-radius:4px';
           var isCloud = p.kind === 'cloud-key';
-          var keyLabel = isCloud ? _dezT('cfg_api_kljuc', 'API ključ') : _dezT('cfg_prov_token_opcijski', 'Token (opcijski)');
-          var keyPh = p.hasAuth ? '••• ' + _dezT('cfg_prov_spremljeno', 'spremljeno') : (isCloud ? 'sk-or-...' : _dezT('cfg_prov_nije_potrebno', 'nije potrebno'));
+          var keyLabel = isCloud ? _T('cfg_api_kljuc', 'API ključ') : _T('cfg_prov_token_opcijski', 'Token (opcijski)');
+          var keyPh = p.hasAuth ? '••• ' + _T('cfg_prov_spremljeno', 'spremljeno') : (isCloud ? 'sk-or-...' : _T('cfg_prov_nije_potrebno', 'nije potrebno'));
           h += '<div style="display:flex;gap:0.6rem;flex-wrap:wrap;align-items:flex-end;font-size:0.72rem">';
           // Server IP:port samo za lokalne (Ollama)
           if (p.kind === 'local') {
-            h += '<div><div style="color:var(--text-secondary)">' + _dezT('cfg_prov_server', 'Server (IP:port)') + '</div><input id="prov-' + p.id + '-url" value="' + (p.baseUrl || '') + '" placeholder="http://192.168.10.4:11434" style="width:230px;' + inpStyle + '"></div>';
+            h += '<div><div style="color:var(--text-secondary)">' + _T('cfg_prov_server', 'Server (IP:port)') + '</div><input id="prov-' + p.id + '-url" value="' + (p.baseUrl || '') + '" placeholder="http://192.168.10.4:11434" style="width:230px;' + inpStyle + '"></div>';
           }
           // Ključ + 👁 prikaži (maskiran dok se ne stisne)
           h += '<div><div style="color:var(--text-secondary)">' + keyLabel + '</div>' +
             '<div style="display:flex;align-items:center;gap:4px">' +
             '<input id="prov-' + p.id + '-key" type="password" autocomplete="new-password" data-form-type="other" data-lpignore="true" data-1p-ignore placeholder="' + keyPh + '" style="width:' + (isCloud ? '250' : '170') + 'px;' + inpStyle + '">' +
-            '<button type="button" title="' + _dezEsc(_dezT('cfg_prov_prikazi_sakrij', 'Prikaži/sakrij')) + '" onclick="toggleKeyVis(\\'' + p.id + '\\', this)" style="font-size:0.8rem;padding:2px 6px;border-radius:4px;cursor:pointer;background:var(--bg-primary,#111);border:1px solid var(--border-color,#333)">&#128065;</button>' +
+            '<button type="button" title="' + _esc(_T('cfg_prov_prikazi_sakrij', 'Prikaži/sakrij')) + '" onclick="toggleKeyVis(\\'' + p.id + '\\', this)" style="font-size:0.8rem;padding:2px 6px;border-radius:4px;cursor:pointer;background:var(--bg-primary,#111);border:1px solid var(--border-color,#333)">&#128065;</button>' +
             '</div></div>';
-          h += '<button onclick="saveProvider(\\'' + p.id + '\\')" style="font-size:0.72rem;padding:5px 10px;border-radius:4px;cursor:pointer">' + _dezT('cfg_spremi', 'Spremi') + (p.kind === 'local' ? ' + test' : '') + '</button>';
+          h += '<button onclick="saveProvider(\\'' + p.id + '\\')" style="font-size:0.72rem;padding:5px 10px;border-radius:4px;cursor:pointer">' + _T('cfg_spremi', 'Spremi') + (p.kind === 'local' ? ' + test' : '') + '</button>';
           h += '</div>';
-          h += '<div style="font-size:0.66rem;color:var(--text-secondary);margin-top:0.3rem">' + _dezT(p.authNoteKey, p.authNote || '') + (p.error ? (' <span style="color:var(--accent-red)">— ' + p.error + '</span>') : '') + '</div>';
+          h += '<div style="font-size:0.66rem;color:var(--text-secondary);margin-top:0.3rem">' + _T(p.authNoteKey, p.authNote || '') + (p.error ? (' <span style="color:var(--accent-red)">— ' + p.error + '</span>') : '') + '</div>';
         } else {
-          h += '<div style="font-size:0.66rem;color:var(--text-secondary)">' + _dezT(p.authNoteKey, p.authNote || '') + '</div>';
+          h += '<div style="font-size:0.66rem;color:var(--text-secondary)">' + _T(p.authNoteKey, p.authNote || '') + '</div>';
         }
         if (p.models && p.models.length) {
-          h += '<div style="font-size:0.66rem;color:var(--text-secondary);margin-top:0.35rem;line-height:1.6">' + _dezT('cfg_prov_modeli', 'Modeli') + ': ' +
-            p.models.map(function(m) { return '<span style="font-family:monospace">' + m.model + '</span> <span class="info-badge ' + m.tier + '">' + m.tier + '</span>' + (m.spawnable ? '' : ' <span style="color:#f59e0b">' + _dezT('cfg_lokalno', 'lokalno') + '</span>'); }).join(' · ') + '</div>';
+          h += '<div style="font-size:0.66rem;color:var(--text-secondary);margin-top:0.35rem;line-height:1.6">' + _T('cfg_prov_modeli', 'Modeli') + ': ' +
+            p.models.map(function(m) { return '<span style="font-family:monospace">' + m.model + '</span> <span class="info-badge ' + m.tier + '">' + m.tier + '</span>' + (m.spawnable ? '' : ' <span style="color:#f59e0b">' + _T('cfg_lokalno', 'lokalno') + '</span>'); }).join(' · ') + '</div>';
         }
         h += '</div>';
       });
@@ -7541,7 +7658,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         var d = await r.json();
         if (!r.ok || d.error) throw new Error(d.error || 'save failed');
         fetchInfoData();
-      } catch(e) { alert(_dezT('cfg_greska', 'Greška') + ': ' + e.message); }
+      } catch(e) { alert(_T('cfg_greska', 'Greška') + ': ' + e.message); }
     }
 
     function toggleKeyVis(id, btn) {
@@ -7562,7 +7679,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         var d = await r.json();
         if (!r.ok || d.error) throw new Error(d.error || 'save failed');
         fetchInfoData();
-      } catch(e) { alert(_dezT('cfg_prov_greska_spremanje', 'Greška pri spremanju providera') + ': ' + e.message); }
+      } catch(e) { alert(_T('cfg_prov_greska_spremanje', 'Greška pri spremanju providera') + ': ' + e.message); }
     }
 
     function renderInfoAgents(d, modelsData) {
@@ -7574,7 +7691,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       var _extra = (d.availableModels || []).filter(function(m){ return !_base.some(function(b){ return b.spec === m.spec; }); });
       const models = _base.concat(_extra);
       let h = '<div style="font-size:0.72rem;color:var(--text-secondary);margin-bottom:0.4rem">' +
-        _dezT('cfg_agenti_uvod',
+        _T('cfg_agenti_uvod',
         'Model po agentu — “zadano” koristi tier iz registra. Override se sprema u <code>model-config.json → agentOverrides</code> i vrijedi odmah (bez restarta). ' +
         '<strong>lokalno</strong> = Ollama model preko API spawna — radi, ali tekstualno (bez alata: Bash/datoteke/MCP). Claude, Gemini, Kimi i OpenRouter modeli imaju PUNE alate. ' +
         // TASK-2635: REGOČ, Klaudio i Stribor su ODABIRLJIVI (nisu više „fiksni"): Klaudio poštuje
@@ -7584,17 +7701,17 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         '<strong>Rutiranje poruka</strong> (koji agent dobiva posao) NE ide preko ovog izbora — ono ostaje na lokalnom Ollama klasifikatoru, ' +
         'koji se mijenja u kartici „Klasifikacijski model" ispod.') + '</div>';
       h += '<table class="info-table"><thead><tr>' +
-        '<th>' + _dezT('cfg_stupac_agent', 'Agent') + '</th><th>' + _dezT('cfg_stupac_uloga', 'Uloga') + '</th><th>' + _dezT('cfg_stupac_min_tier', 'Min Tier') + '</th><th>' + _dezT('cfg_stupac_model', 'Model (odabir)') + '</th>' +
-        '<th>' + _dezT('cfg_stupac_context', 'Context') + '</th><th>' + _dezT('cfg_stupac_tools', 'Tools') + '</th><th>' + _dezT('cfg_stupac_notes', 'Notes') + '</th></tr></thead><tbody>';
+        '<th>' + _T('cfg_stupac_agent', 'Agent') + '</th><th>' + _T('cfg_stupac_uloga', 'Uloga') + '</th><th>' + _T('cfg_stupac_min_tier', 'Min Tier') + '</th><th>' + _T('cfg_stupac_model', 'Model (odabir)') + '</th>' +
+        '<th>' + _T('cfg_stupac_context', 'Context') + '</th><th>' + _T('cfg_stupac_tools', 'Tools') + '</th><th>' + _T('cfg_stupac_notes', 'Notes') + '</th></tr></thead><tbody>';
       agents.forEach(function(a) {
         const tierBadge = '<span class="info-badge ' + a.minTier + '">' + a.minTier + '</span>';
         h += '<tr><td><strong>' + a.name + '</strong></td>' +
-          '<td>' + _dezT(a.roleKey, a.role) + '</td>' +
+          '<td>' + _T(a.roleKey, a.role) + '</td>' +
           '<td>' + tierBadge + '</td>' +
           '<td>' + modelSelectHTML(a, models) + '</td>' +
           '<td>' + (a.minContext ? (a.minContext/1000) + 'K' : '-') + '</td>' +
-          '<td title="' + _dezEsc(_dezT(a.toolsNoteKey, a.toolsNote || '')) + '">' + (a.requiresTools ? '✅' : '➖') + '</td>' +
-          '<td style="font-size:0.7rem;color:var(--text-secondary)">' + _dezT(a.notesKey, a.notes || '') + '</td></tr>';
+          '<td title="' + _esc(_T(a.toolsNoteKey, a.toolsNote || '')) + '">' + (a.requiresTools ? '✅' : '➖') + '</td>' +
+          '<td style="font-size:0.7rem;color:var(--text-secondary)">' + _T(a.notesKey, a.notes || '') + '</td></tr>';
       });
       h += '</tbody></table>';
       document.getElementById('info-agents-content').innerHTML = h;
@@ -7643,7 +7760,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         var badge = c.status === 'active' ? 'enabled' : 'disabled';
         h += '<tr><td><strong>' + c.name + '</strong></td>' +
           '<td><span class="info-badge ' + badge + '">' + c.status + '</span></td>' +
-          '<td style="font-size:0.75rem;color:var(--text-secondary)">' + _dezT(c.descriptionKey, c.description) + '</td></tr>';
+          '<td style="font-size:0.75rem;color:var(--text-secondary)">' + _T(c.descriptionKey, c.description) + '</td></tr>';
       });
       h += '</tbody></table>';
       document.getElementById('info-components-content').innerHTML = h;
@@ -7804,7 +7921,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       h += '<div class="info-kv"><span class="info-kv-label">In Progress</span><span class="info-kv-value">' + (t.inProgress||0) + '</span></div>';
       h += '<div class="info-kv"><span class="info-kv-label">Pending</span><span class="info-kv-value">' + (t.pending||0) + '</span></div>';
       var c = m.costs || {};
-      h += '<div class="info-kv" style="margin-top:0.5rem;border-top:1px solid var(--border-color);padding-top:0.3rem"><span class="info-kv-label">' + _dezT('cfg_trosak_ukupno', 'Trošak ukupno') + '</span><span class="info-kv-value">' + eur(Number(c.total||0)) + '</span></div>';
+      h += '<div class="info-kv" style="margin-top:0.5rem;border-top:1px solid var(--border-color);padding-top:0.3rem"><span class="info-kv-label">' + _T('cfg_trosak_ukupno', 'Trošak ukupno') + '</span><span class="info-kv-value">' + eur(Number(c.total||0)) + '</span></div>';
       var o = m.observability || {};
       h += '<div class="info-kv"><span class="info-kv-label">Events Total</span><span class="info-kv-value">' + (o.totalEvents||0) + '</span></div>';
       h += '<div class="info-kv"><span class="info-kv-label">Events (24h)</span><span class="info-kv-value">' + (o.last24h||0) + '</span></div>';
@@ -7843,7 +7960,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       odlukeOtvoreno = !odlukeOtvoreno;
       document.getElementById('odluke-popis').style.display = odlukeOtvoreno ? 'flex' : 'none';
       document.getElementById('odluke-odlucitelj').style.display = odlukeOtvoreno ? 'flex' : 'none';
-      this.textContent = odlukeOtvoreno ? 'sakrij' : 'prikaži';
+      this.textContent = odlukeOtvoreno ? _T('sakrij', 'sakrij') : _T('prikazi', 'prikaži');
     });
     ucitajOdluke();
     setInterval(ucitajOdluke, 30000);
@@ -7873,9 +7990,9 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     try {
       connect();
     } catch (e) {
-      console.error('[WS] Zivo osvjezavanje nedostupno, ploca radi na osvjezavanju od 30 s:', e);
+      console.error('[WS] live refresh unavailable, board falls back to 30 s polling:', e);
       const st = document.getElementById('status-text');
-      if (st) st.textContent = 'Bez zive veze — osvjezavam svakih 30 s';
+      if (st) st.textContent = _T('bez_zive_veze', 'Bez žive veze — osvježavam svakih 30 s');
       document.getElementById('connection-status')?.classList.add('disconnected');
     }
   </script>

@@ -132,11 +132,14 @@ describe('paket na disku — jesu li TASK-4709/4710/4720 doista stigli', () => {
     }
   })
 
-  test('ploča i DezurniConfig nose kod TASK-4709/4710 (a ne stari popis)', () => {
+  test('ploča i DezurniConfig nose kod TASK-4709/4710/4721 (a ne stari popis)', () => {
     const fs = require('fs')
     const ui = fs.readFileSync(join(KORIJEN, 'src/TaskWebUI.ts'), 'utf-8') as string
-    // _dezT/_dezTv su prevoditelji panela Dežurni — bez njih je panel opet tvrdi HR tekst.
-    expect(ui.split('_dezT').length - 1).toBeGreaterThan(50)
+    // TASK-4721: prevoditelj više nije po kartici (`_dezT`) nego zajednički za CIJELU ploču
+    // (`_T`/`_Tv`). Bez njega su svi tabovi opet tvrdi hrvatski tekst.
+    expect(ui).not.toContain('_dezT(')
+    expect(ui.split('_T(').length - 1).toBeGreaterThan(200)
+    expect(ui.split('_Tv(').length - 1).toBeGreaterThan(50)
     const dez = fs.readFileSync(join(KORIJEN, 'src/DezurniConfig.ts'), 'utf-8') as string
     // TASK-4709: davatelji se IZVODE iz model-config.json, tvrdi popis je samo zadana vrijednost.
     expect(dez).toContain('export function davateljiDezurnog')

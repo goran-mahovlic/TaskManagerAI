@@ -104,6 +104,11 @@ export interface DavateljDezurnog {
   nacin: NacinPoziva | null
   spreman: boolean
   zasto: string
+  /** Kljuc rjecnika za `zasto` — ploca prevodi razlog, a ne prikazuje tvrdi hrvatski
+   *  (TASK-4721; isti obrazac kao `authNoteKey` u kartici Config). */
+  zastoKey: string
+  /** Podatci koji ulaze u prevedenu recenicu kao {oznake} — ne prevode se. */
+  zastoVars?: Record<string, string>
   baseUrl: string | null
   kljucVarijabla: string | null
 }
@@ -140,19 +145,32 @@ export function davateljiDezurnog(
     const sirovi = String((v as any).apiKey || '')
     const env = sirovi.startsWith('env:') ? sirovi.slice(4) : ''
     const nacin = nacinPoziva(ime, v as Record<string, unknown>)
+    // TASK-4721: uz razlog ide i kljuc rjecnika — ploca na engleskom ne smije ispisati
+    // hrvatsku recenicu koju je sastavio posluzitelj.
+    let zastoKey = 'dez_zasto_spreman'
+    let zastoVars: Record<string, string> | undefined
     let spreman = env ? imaKljuc(env, credPath) : true
     let zasto = spreman ? 'spreman' : `treba ${env} (okolina ili credentials.env)`
-    if (ime === 'ollama') { spreman = true; zasto = 'lokalno, bez ključa' }
+    if (!spreman) { zastoKey = 'dez_zasto_treba_kljuc'; zastoVars = { env } }
+    if (ime === 'ollama') {
+      spreman = true; zasto = 'lokalno, bez ključa'
+      zastoKey = 'dez_zasto_ollama'; zastoVars = undefined
+    }
     if (ime === 'anthropic') {
       spreman = !!Bun.which('claude')
       zasto = spreman
         ? 'Claude CLI (pretplata) — POZOR: troši istu kvotu koja je dežurnog i pozvala'
         : 'nema Claude CLI na ovom stroju'
+      zastoKey = spreman ? 'dez_zasto_anthropic_ok' : 'dez_zasto_anthropic_nema'
+      zastoVars = undefined
     }
-    if (!nacin) { spreman = false; zasto = 'most dežurnog ne zna pozvati ovog davatelja' }
+    if (!nacin) {
+      spreman = false; zasto = 'most dežurnog ne zna pozvati ovog davatelja'
+      zastoKey = 'dez_zasto_nema_nacina'; zastoVars = undefined
+    }
     out[ime] = {
       ukljucen: (v as any).enabled === true,
-      nacin, spreman, zasto,
+      nacin, spreman, zasto, zastoKey, zastoVars,
       baseUrl: (v as any).baseUrl || null,
       kljucVarijabla: env || null,
     }
@@ -162,7 +180,8 @@ export function davateljiDezurnog(
     // jedini koji radi i bez ključa i bez interneta, pa je i jedini ispravan pad.
     out.ollama = {
       ukljucen: true, nacin: 'ollama', spreman: true,
-      zasto: 'lokalno, bez ključa', baseUrl: ZADANE_POSTAVKE.baseUrl, kljucVarijabla: null,
+      zasto: 'lokalno, bez ključa', zastoKey: 'dez_zasto_ollama',
+      baseUrl: ZADANE_POSTAVKE.baseUrl, kljucVarijabla: null,
     }
   }
   return out
