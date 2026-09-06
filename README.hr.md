@@ -82,6 +82,7 @@ TM_AGENTS=ana,ivan,marko bun run start
 | [docs/DATABASE.md](docs/DATABASE.md) | tablice, okidači, kako nastaje baza i kako se mijenja |
 | [docs/API.md](docs/API.md) | svi krajevi API-ja s primjerima |
 | [docs/TOOLS.md](docs/TOOLS.md) | skripte, konzola, periodički poslovi |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | git kuke, pravila za commitove, pokretanje testova |
 | [REGOC/README.md](REGOC/README.md) | kako izgleda pravi sustav agenata izgrađen oko ovoga |
 
 Mapa `REGOC` opisuje sustav iz kojega je TaskManagerAI izvučen: tim agenata s vlastitim ulogama i
@@ -89,6 +90,21 @@ modelima, demon koji radi u pozadini, sjednice koje preživljavaju prekid, kočn
 usmjeravanje poruka, glas i lokalne modele. Nije potrebna za rad TaskManagera; služi kao prikaz
 dokle se s ovim alatom može otići i što se pritom naučilo. Sam REGOČ počiva na
 [PAI — Personal AI Infrastructure](https://github.com/danielmiessler/PAI).
+
+---
+
+## Doprinos
+
+Nakon kloniranja uputi git na kuke iz repozitorija — `.git/hooks` ne putuje s klonom:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+`.githooks/commit-msg` odbija svaki commit čija poruka nosi `Co-Authored-By: … Claude` ili
+`noreply@anthropic.com`, kao i svaki commit čiji autor ili committer nije
+`goran.mahovlic@gmail.com` (druga se adresa otvara izričito). Pojedinosti i pokretanje testova:
+[CONTRIBUTING.md](CONTRIBUTING.md).
 
 ---
 

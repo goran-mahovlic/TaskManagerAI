@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+# commit-msg — vratar identiteta commita (TASK-4723).
+#
+# Povod (Goran, 06.09.2026.): commit 241aa89 je otišao na javni GitHub s
+#   Author/Committer: REGOČ System <regoc@intergalaktik.eu>
+#   Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+# dok svi ostali commiti istog dana nose Goran Mahovlić <goran.mahovlic@gmail.com>
+# bez ijednog traga o alatu. Commit se radi rukom (scripts/uskladi_s_regocem.sh ne
+# commita), pa je dovoljno da jedan agent ne prepiše zadani identitet harnessa —
+# pamćenje nije mehanizam. Ovo jest: git odbija commit prije nego nastane.
+#
+# Aktivacija u svakom klonu (`.git/hooks` NIJE dio `git clone`):
+#     git config core.hooksPath .githooks
+#
+# Izuzetak — ako Goran ikad želi commitati pod drugim identitetom, adresu treba
+# navesti izričito (zarezom odvojen popis):
+#     git config taskmanagerai.dopusteniAutori "netko@example.com,drugi@example.com"
+set -uo pipefail
+
+PORUKA="$1"
+ZADANI_AUTOR="goran.mahovlic@gmail.com"
+
+crveno() { printf '\033[31m%s\033[0m\n' "$1" >&2; }
+
+# ── 1. Trag alata u poruci ────────────────────────────────────────────────────
+# Komentirani redci ispadaju jer ih git ionako reže prije spremanja commita —
+# da hook ne odbija ono što u konačnoj poruci neće ni postojati.
+TIJELO="$(grep -v '^[[:space:]]*#' "$PORUKA" || true)"
+
+if printf '%s' "$TIJELO" | grep -qiE 'co-authored-by.*claude'; then
+  crveno "commit-msg: ODBIJENO — poruka sadrži 'Co-Authored-By: ... Claude'."
+  crveno "  CLAUDE.md: trag alata NIKAD ne ide u povijest ovog repozitorija."
+  crveno "  Makni taj redak iz poruke i ponovi commit."
+  exit 1
+fi
+
+if printf '%s' "$TIJELO" | grep -qiF 'noreply@anthropic.com'; then
+  crveno "commit-msg: ODBIJENO — poruka sadrži 'noreply@anthropic.com'."
+  crveno "  Makni taj redak iz poruke i ponovi commit."
+  exit 1
+fi
+
+# ── 2. Identitet autora i committera ──────────────────────────────────────────
+# `git var` već uvažava GIT_AUTHOR_EMAIL / GIT_COMMITTER_EMAIL, pa hvata i
+# identitet podmetnut kroz okolinu, ne samo onaj iz `git config`.
+adresa() { git var "$1" 2>/dev/null | sed -n 's/.*<\(.*\)>.*/\1/p'; }
+
+DOPUSTENI="$ZADANI_AUTOR,$(git config --get taskmanagerai.dopusteniAutori || true)"
+
+dopusten() {
+  local trazena="$1" e
+  IFS=',' read -ra POPIS <<< "$DOPUSTENI"
+  for e in "${POPIS[@]}"; do
+    e="$(printf '%s' "$e" | tr -d '[:space:]')"
+    [ -n "$e" ] && [ "$e" = "$trazena" ] && return 0
+  done
+  return 1
+}
+
+for ULOGA in AUTHOR COMMITTER; do
+  EMAIL="$(adresa "GIT_${ULOGA}_IDENT")"
+  if ! dopusten "$EMAIL"; then
+    crveno "commit-msg: ODBIJENO — ${ULOGA,,} je '$EMAIL', a očekuje se '$ZADANI_AUTOR'."
+    crveno "  Ispravi identitet:"
+    crveno "    git config user.name  'Goran Mahovlic'"
+    crveno "    git config user.email '$ZADANI_AUTOR'"
+    crveno "  Ako je drugi identitet namjeran, otvori ga izričito:"
+    crveno "    git config taskmanagerai.dopusteniAutori '$EMAIL'"
+    exit 1
+  fi
+done
+
+exit 0

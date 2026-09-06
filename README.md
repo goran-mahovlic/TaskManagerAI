@@ -130,6 +130,7 @@ Details, providers and settings: [docs/ODLUCIVANJE.md](docs/ODLUCIVANJE.md).
 | [docs/TOOLS.md](docs/TOOLS.md) | scripts, console, periodic jobs |
 | [docs/JEZICI.md](docs/JEZICI.md) | interface languages: choosing one, adding one |
 | [docs/ODLUCIVANJE.md](docs/ODLUCIVANJE.md) | tasks that wait for a decision; letting a model decide, and the risk filter |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | git hooks, commit rules, running the tests |
 | [REGOC/README.md](REGOC/README.md) | what a real agent system built around this looks like |
 
 The `REGOC` folder describes the system TaskManagerAI was extracted from: a team of agents with
@@ -137,6 +138,21 @@ their own roles and models, a daemon running in the background, sessions that su
 interruption, autonomy brakes, message routing, voice and local models. It is not needed to run
 TaskManager; it shows how far this tool can be taken and what was learned along the way. REGOČ
 itself rests on [PAI — Personal AI Infrastructure](https://github.com/danielmiessler/PAI).
+
+---
+
+## Contributing
+
+After cloning, point git at the versioned hooks — `.git/hooks` does not travel with a clone:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+`.githooks/commit-msg` then refuses any commit whose message carries a `Co-Authored-By: … Claude`
+trailer or `noreply@anthropic.com`, and any commit whose author or committer is not
+`goran.mahovlic@gmail.com` (a different address can be opened explicitly). Details, and how to
+run the tests, in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ---
 

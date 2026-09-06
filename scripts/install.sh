@@ -118,7 +118,14 @@ if ! bun scripts/provjeri-rjecnike.ts; then
   exit 1
 fi
 
-# ── 5. Provjera da se doista podiže ───────────────────────────────────────────
+# ── 5. Git kuke ───────────────────────────────────────────────────────────────
+# `.git/hooks` nije dio `git clone`, pa kuka iz `.githooks/` ne vrijedi dok se klonu ne
+# kaže gdje je. Bez ovoga vratar identiteta commita (TASK-4723) postoji, ali ne radi.
+if [ -d .git ] && [ -d .githooks ]; then
+  git config core.hooksPath .githooks && echo "  git kuke: core.hooksPath = .githooks"
+fi
+
+# ── 6. Provjera da se doista podiže ───────────────────────────────────────────
 VRATA="${TM_PORT:-17781}"
 echo "  provjera na vratima $VRATA…"
 TM_PORT="$VRATA" nohup bun src/TaskWebUI.ts > /tmp/tmai_install.log 2>&1 &
