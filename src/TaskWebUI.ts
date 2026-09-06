@@ -2376,23 +2376,23 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
           <div id="info-agents-content"><div class="empty" data-i18n="loading">Loading...</div></div>
         </div>
         <div class="info-card info-full" id="info-classifier-card">
-          <div class="info-card-title"><span class="icon">&#8644;</span> Klasifikacijski model &mdash; rutiranje poruka (odvojeno od izvr&#353;nog)</div>
+          <div class="info-card-title"><span class="icon">&#8644;</span> <span data-i18n="cfg_kartica_klasifikator">Klasifikacijski model &mdash; rutiranje poruka (odvojeno od izvr&#353;nog)</span></div>
           <div id="info-classifier-content"><div class="empty" data-i18n="loading">Loading...</div></div>
         </div>
         <div class="info-card info-full" id="info-login-card">
-          <div class="info-card-title"><span class="icon">&#128273;</span> Prijave (login preko linka)</div>
+          <div class="info-card-title"><span class="icon">&#128273;</span> <span data-i18n="cfg_kartica_prijave">Prijave (login preko linka)</span></div>
           <div id="info-login-content"><div class="empty" data-i18n="loading">Loading...</div></div>
         </div>
         <div class="info-card info-full" id="info-modelsetup-card">
-          <div class="info-card-title"><span class="icon">&#9881;</span> Podržani modeli &amp; postavke providera</div>
+          <div class="info-card-title"><span class="icon">&#9881;</span> <span data-i18n="cfg_kartica_modeli">Podržani modeli &amp; postavke providera</span></div>
           <div id="info-modelsetup-content"><div class="empty" data-i18n="loading">Loading...</div></div>
         </div>
         <div class="info-card info-full" id="info-dezurni-card">
-          <div class="info-card-title"><span class="icon">&#9873;</span> De&#382;urni &mdash; rezervni model kad primarni padne</div>
+          <div class="info-card-title"><span class="icon">&#9873;</span> <span data-i18n="cfg_kartica_dezurni">De&#382;urni &mdash; rezervni model kad primarni padne</span></div>
           <div id="info-dezurni-content"><div class="empty" data-i18n="loading">Loading...</div></div>
         </div>
         <div class="info-card info-full" id="info-ulaz-card">
-          <div class="info-card-title"><span class="icon">&#9094;</span> Ulazna vrata &mdash; kako telegramska poruka ulazi u plo&#269;u</div>
+          <div class="info-card-title"><span class="icon">&#9094;</span> <span data-i18n="cfg_kartica_ulaz">Ulazna vrata &mdash; kako telegramska poruka ulazi u plo&#269;u</span></div>
           <div id="info-ulaz-content"><div class="empty" data-i18n="loading">Loading...</div></div>
         </div>
         <div class="info-card info-full" id="info-modules-card">
@@ -3386,6 +3386,10 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         if (typeof ucitajOdluke === 'function') ucitajOdluke();
         if (typeof ucitajOdlucitelja === 'function') ucitajOdlucitelja();
         if (typeof osvjeziDezurniJezik === 'function') osvjeziDezurniJezik();
+        // Kartica Config se u cijelosti sastavlja u JS-u, pa data-i18n prolaz iznad
+        // ne dira ni jedan njezin redak — bez ovoga bi ostala na starom jeziku dok
+        // je korisnik ne osvjezi rukom (TASK-4720).
+        if (typeof fetchInfoData === 'function' && document.getElementById('info-grid')) fetchInfoData();
         return true;
       } catch (e) { console.error('[jezik]', e); return false; }
     }
@@ -6923,11 +6927,11 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       document.getElementById('info-system-content').innerHTML =
         '<div class="info-version">REGOČ v' + (s.version||'?') + '</div>' +
         '<div class="info-subtitle">' + (s.fullName||'') + '</div>' +
-        '<div class="info-kv"><span class="info-kv-label">Princip</span><span class="info-kv-value">' + (s.principle||'') + '</span></div>' +
+        '<div class="info-kv"><span class="info-kv-label">' + _dezT('cfg_princip', 'Princip') + '</span><span class="info-kv-value">' + (s.principle||'') + '</span></div>' +
         '<div class="info-kv"><span class="info-kv-label">Orchestrator Model</span><span class="info-kv-value">' + (s.orchestratorModel||'') + '</span></div>' +
-        '<div class="info-kv"><span class="info-kv-label">Agenti</span><span class="info-kv-value">' + (s.agentCount||0) + '</span></div>' +
-        '<div class="info-kv"><span class="info-kv-label">Moduli</span><span class="info-kv-value">' + (s.moduleCount||0) + ' (' + (s.modulesEnabled||0) + ' enabled)</span></div>' +
-        '<div class="info-kv"><span class="info-kv-label">Provideri</span><span class="info-kv-value">' + (s.providerCount||0) + ' active</span></div>' +
+        '<div class="info-kv"><span class="info-kv-label">' + _dezT('cfg_agenti', 'Agenti') + '</span><span class="info-kv-value">' + (s.agentCount||0) + '</span></div>' +
+        '<div class="info-kv"><span class="info-kv-label">' + _dezT('cfg_moduli', 'Moduli') + '</span><span class="info-kv-value">' + (s.moduleCount||0) + ' (' + (s.modulesEnabled||0) + ' enabled)</span></div>' +
+        '<div class="info-kv"><span class="info-kv-label">' + _dezT('cfg_provideri', 'Provideri') + '</span><span class="info-kv-value">' + (s.providerCount||0) + ' active</span></div>' +
         '<div class="info-kv"><span class="info-kv-label">Platform</span><span class="info-kv-value">' + (s.platform||'') + '</span></div>';
     }
 
@@ -6966,23 +6970,23 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
 
     function modelSelectHTML(a, models) {
       if (a.fixed) {
-        return '<span title="Trajni interface/glavna petlja (npr. Telegram servis, orkestrator) — model se ne bira ovdje; override se ne primjenjuje." ' +
+        return '<span title="' + _dezEsc(_dezT('cfg_fiksni_naslov', 'Trajni interface/glavna petlja (npr. Telegram servis, orkestrator) — model se ne bira ovdje; override se ne primjenjuje.')) + '" ' +
           'style="font-size:0.72rem;color:#8aa0b2;border:1px dashed #3a4a55;border-radius:4px;padding:2px 8px;background:#12283a;white-space:nowrap">' +
-          '&#128274; interface — fiksno <span style="color:#6b7d8c">(' + (a.currentModel||'?') + ')</span></span>';
+          '&#128274; ' + _dezT('cfg_fiksno', 'interface — fiksno') + ' <span style="color:#6b7d8c">(' + (a.currentModel||'?') + ')</span></span>';
       }
       var cur = a.override || '';
-      var opts = '<option value="">⭐ zadano (' + (a.currentModel||'?') + ')</option>';
+      var opts = '<option value="">⭐ ' + _dezT('cfg_zadano', 'zadano') + ' (' + (a.currentModel||'?') + ')</option>';
       (models||[]).forEach(function(m){
         var sel = (cur === m.spec) ? ' selected' : '';
-        var tag = m.spawnable ? '' : ' · lokalno';
+        var tag = m.spawnable ? '' : ' · ' + _dezT('cfg_lokalno', 'lokalno');
         opts += '<option value="' + m.spec + '"' + sel + '>' + m.label + ' [' + m.tier + ']' + tag + '</option>';
       });
       var isLocal = cur && (models||[]).some(function(m){return m.spec===cur && !m.spawnable;});
-      var ttl = isLocal ? ' title="Lokalni model (Ollama) preko API spawna — radi, ali tekstualno (bez alata: Bash/datoteke/MCP)."' : '';
+      var ttl = isLocal ? ' title="' + _dezEsc(_dezT('cfg_lokalni_model_naslov', 'Lokalni model (Ollama) preko API spawna — radi, ali tekstualno (bez alata: Bash/datoteke/MCP).')) + '"' : '';
       var style = 'font-size:0.72rem;padding:2px 4px;border-radius:4px;background:var(--bg-primary,#111);color:var(--text-primary,#ddd);border:1px solid var(--border-color,#333)';
       if (cur) style += ';border-color:' + (isLocal ? '#f59e0b' : 'var(--accent-blue,#3b82f6)');
       return '<select style="' + style + '"' + ttl + ' onchange="setAgentModel(\\'' + a.id + '\\', this.value, this)">' + opts + '</select>' +
-        (cur ? ' <span style="font-size:0.65rem;color:' + (isLocal?'#f59e0b':'var(--accent-blue)') + '">override' + (isLocal?' (lokalno)':'')+ '</span>' : '');
+        (cur ? ' <span style="font-size:0.65rem;color:' + (isLocal?'#f59e0b':'var(--accent-blue)') + '">' + _dezT('cfg_override', 'override') + (isLocal? ' (' + _dezT('cfg_lokalno', 'lokalno') + ')' : '') + '</span>' : '');
     }
 
     async function setAgentModel(agentId, spec, el) {
@@ -6995,7 +6999,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         if (!res.ok || d.error) throw new Error(d.error || 'save failed');
         fetchInfoData();
       } catch(e) {
-        alert('Greska pri spremanju modela: ' + e.message);
+        alert(_dezT('cfg_greska_spremanje_modela', 'Greška pri spremanju modela') + ': ' + e.message);
         if (el) el.disabled = false;
       }
     }
@@ -7217,18 +7221,18 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         if (d.error) throw new Error(d.error);
         el.innerHTML = renderUlaznaVrata(d);
       } catch(e) {
-        el.innerHTML = '<div class="empty">Greška pri čitanju ulaznih vrata: ' + _dezEsc(e.message) + '</div>';
+        el.innerHTML = '<div class="empty">' + _dezT('cfg_ulaz_greska_citanja', 'Greška pri čitanju ulaznih vrata') + ': ' + _dezEsc(e.message) + '</div>';
       }
     }
 
     function _ulazOpisNacina(n) {
-      if (n === 'off') return 'kao danas — poruka ide izravno u claude -p, ploča se ne dira';
-      if (n === 'shadow') return 'sjena — poruka ide kao danas, ali se zapisuje što bi se otvorilo';
-      return 'uključeno — poruka ide kroz ploču: zadatak → projekt → izvršitelj → trošak';
+      if (n === 'off') return _dezT('cfg_ulaz_opis_off', 'kao danas — poruka ide izravno u claude -p, ploča se ne dira');
+      if (n === 'shadow') return _dezT('cfg_ulaz_opis_shadow', 'sjena — poruka ide kao danas, ali se zapisuje što bi se otvorilo');
+      return _dezT('cfg_ulaz_opis_on', 'uključeno — poruka ide kroz ploču: zadatak → projekt → izvršitelj → trošak');
     }
 
     function _ulazPrekidac(chat, trenutni, ugasen) {
-      var nazivi = { off: 'isključeno', shadow: 'sjena', on: 'uključeno' };
+      var nazivi = { off: _dezT('cfg_ulaz_off', 'isključeno'), shadow: _dezT('cfg_ulaz_shadow', 'sjena'), on: _dezT('cfg_ulaz_on', 'uključeno') };
       var h = '<span style="display:inline-flex;gap:2px;border:1px solid var(--border-color,#333);border-radius:6px;padding:2px">';
       ['off','shadow','on'].forEach(function(n) {
         var sel = (trenutni === n);
@@ -7254,26 +7258,28 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       Object.keys(grupe).forEach(function(k) { if (kljucevi.indexOf(k) < 0) kljucevi.push(k); });
 
       var h = '<div style="font-size:0.72rem;color:var(--text-secondary);margin-bottom:0.5rem">' +
-        'Kako telegramska poruka ulazi u ploču — <strong>po grupi, tri položaja</strong> (isključeno / sjena / uključeno). ' +
-        'Postavke se spremaju u <code>' + _dezEsc(d.putanja) + '</code> i <strong>vrijede odmah, bez ponovnog pokretanja</strong> — ' +
-        'i most i ploča čitaju datoteku pri svakom prolazu. Ručna kočnica (pravilo 17) i dalje zaustavlja sve. ' +
+        _dezTv('cfg_ulaz_uvod',
+          'Kako telegramska poruka ulazi u ploču — <strong>po grupi, tri položaja</strong> (isključeno / sjena / uključeno). ' +
+          'Postavke se spremaju u <code>{putanja}</code> i <strong>vrijede odmah, bez ponovnog pokretanja</strong> — ' +
+          'i most i ploča čitaju datoteku pri svakom prolazu. Ručna kočnica (pravilo 17) i dalje zaustavlja sve. ',
+          { putanja: _dezEsc(d.putanja) }) +
         (ugasen
-          ? '<span class="info-badge disabled" title="Globalna sklopka je isključena — sve grupe se ponašaju kao isključene.">globalno isključeno</span>'
-          : '<span class="info-badge enabled">globalno uključeno</span>') +
+          ? '<span class="info-badge disabled" title="' + _dezEsc(_dezT('cfg_ulaz_globalno_naslov', 'Globalna sklopka je isključena — sve grupe se ponašaju kao isključene.')) + '">' + _dezT('cfg_ulaz_globalno_off', 'globalno isključeno') + '</span>'
+          : '<span class="info-badge enabled">' + _dezT('cfg_ulaz_globalno_on', 'globalno uključeno') + '</span>') +
         '</div>';
 
       h += '<table class="info-table"><tbody>';
-      h += _dezRed('Ulazna vrata uključena',
+      h += _dezRed(_dezT('cfg_ulaz_ukljucena', 'Ulazna vrata uključena'),
         '<input type="checkbox"' + (p.enabled ? ' checked' : '') + ' onchange="spremiUlaz({enabled:this.checked}, this)">',
-        'Isključeno: sve grupe rade kao danas, bez obzira na položaj prekidača ispod.');
+        _dezT('cfg_ulaz_ukljucena_opis', 'Isključeno: sve grupe rade kao danas, bez obzira na položaj prekidača ispod.'));
       h += '</tbody></table>';
 
       h += '<table class="info-table" style="margin-top:.4rem"><thead><tr>' +
-        '<th style="text-align:left;font-size:.68rem;width:215px">Grupa</th>' +
-        '<th style="text-align:left;font-size:.68rem;width:290px">Prekidač</th>' +
-        '<th style="text-align:left;font-size:.68rem">Zadani projekt grupe</th></tr></thead><tbody>';
+        '<th style="text-align:left;font-size:.68rem;width:215px">' + _dezT('cfg_ulaz_stupac_grupa', 'Grupa') + '</th>' +
+        '<th style="text-align:left;font-size:.68rem;width:290px">' + _dezT('cfg_ulaz_stupac_prekidac', 'Prekidač') + '</th>' +
+        '<th style="text-align:left;font-size:.68rem">' + _dezT('cfg_ulaz_stupac_projekt', 'Zadani projekt grupe') + '</th></tr></thead><tbody>';
       kljucevi.forEach(function(chat) {
-        var naziv = grupe[chat] ? grupe[chat] : 'grupa';
+        var naziv = grupe[chat] ? grupe[chat] : _dezT('cfg_ulaz_grupa', 'grupa');
         var nacin = perGroup[chat] || 'off';
         h += '<tr><td><strong>' + _dezEsc(naziv) + '</strong><br><span style="font-size:.66rem;color:var(--text-secondary)">' + _dezEsc(chat) + '</span></td>' +
           '<td>' + _ulazPrekidac(chat, nacin, ugasen) + '</td>' +
@@ -7282,28 +7288,28 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       h += '</tbody></table>';
 
       h += '<div style="margin-top:.5rem;display:flex;gap:6px;align-items:center;flex-wrap:wrap">' +
-        '<input id="ulaz-nova-grupa" placeholder="chatId nove grupe (npr. -5245252755)" style="' + _dezStil() + ';width:230px">' +
-        '<button style="font-size:.72rem;padding:3px 8px" onclick="dodajUlazGrupu(this)">Dodaj grupu</button>' +
-        '<span style="font-size:.66rem;color:var(--text-secondary)">Nova grupa kreće na <b>isključeno</b> — nikad sama.</span></div>';
+        '<input id="ulaz-nova-grupa" placeholder="' + _dezEsc(_dezT('cfg_ulaz_nova_grupa_ph', 'chatId nove grupe (npr. -5245252755)')) + '" style="' + _dezStil() + ';width:230px">' +
+        '<button style="font-size:.72rem;padding:3px 8px" onclick="dodajUlazGrupu(this)">' + _dezT('cfg_ulaz_dodaj_grupu', 'Dodaj grupu') + '</button>' +
+        '<span style="font-size:.66rem;color:var(--text-secondary)">' + _dezT('cfg_ulaz_nova_grupa_opis', 'Nova grupa kreće na <b>isključeno</b> — nikad sama.') + '</span></div>';
 
       h += '<table class="info-table" style="margin-top:.5rem"><tbody>';
-      h += _dezRed('Prag A — otvara se zadatak',
+      h += _dezRed(_dezT('cfg_ulaz_prag_a', 'Prag A — otvara se zadatak'),
         '<input type="number" min="' + g.pragA.min + '" max="' + g.pragA.max + '" value="' + p.pragA + '" style="' + _dezStil() + ';width:70px" onchange="spremiUlaz({pragA:Number(this.value)}, this)">',
-        'Ispod praga (pozdrav, pitanje) odgovor ide odmah i ploča ostaje čista. Zadano 16 (E2).');
-      h += _dezRed('Prag B — puni lanac',
+        _dezT('cfg_ulaz_prag_a_opis', 'Ispod praga (pozdrav, pitanje) odgovor ide odmah i ploča ostaje čista. Zadano 16 (E2).'));
+      h += _dezRed(_dezT('cfg_ulaz_prag_b', 'Prag B — puni lanac'),
         '<input type="number" min="' + g.pragB.min + '" max="' + g.pragB.max + '" value="' + p.pragB + '" style="' + _dezStil() + ';width:70px" onchange="spremiUlaz({pragB:Number(this.value)}, this)">',
-        'Ispod praga zadatak dobiva jednog izvršitelja; iznad ide istraživanje → plan → izvedba → provjera. Zadano 36 (E3).');
-      h += _dezRed('Prag C — potvrda plana',
+        _dezT('cfg_ulaz_prag_b_opis', 'Ispod praga zadatak dobiva jednog izvršitelja; iznad ide istraživanje → plan → izvedba → provjera. Zadano 36 (E3).'));
+      h += _dezRed(_dezT('cfg_ulaz_prag_c', 'Prag C — potvrda plana'),
         '<input type="number" min="' + g.pragC.min + '" max="' + g.pragC.max + '" value="' + p.pragC + '" style="' + _dezStil() + ';width:70px" onchange="spremiUlaz({pragC:Number(this.value)}, this)">',
-        'Iznad praga plan se šalje na odobrenje, zadatci se otvaraju tek na approve. Zadano 81 (E5).');
+        _dezT('cfg_ulaz_prag_c_opis', 'Iznad praga plan se šalje na odobrenje, zadatci se otvaraju tek na approve. Zadano 81 (E5).'));
       h += '</tbody></table>';
-      h += '<div style="font-size:.66rem;color:var(--text-secondary);margin-top:.3rem">Pragovi moraju rasti: A ≤ B ≤ C.</div>';
+      h += '<div style="font-size:.66rem;color:var(--text-secondary);margin-top:.3rem">' + _dezT('cfg_ulaz_pragovi_rastu', 'Pragovi moraju rasti: A ≤ B ≤ C.') + '</div>';
       h += '<div id="ulaz-poruka" style="font-size:.7rem;margin-top:.4rem;min-height:1em"></div>';
       return h;
     }
 
     function _ulazProjektIzbor(chat, trenutni, projekti) {
-      var opts = '<option value=""' + (trenutni ? '' : ' selected') + '>&mdash; bez zadanog (pretinac PRJ-033)</option>';
+      var opts = '<option value=""' + (trenutni ? '' : ' selected') + '>&mdash; ' + _dezT('cfg_ulaz_bez_zadanog', 'bez zadanog (pretinac PRJ-033)') + '</option>';
       var popis = projekti.slice();
       if (trenutni && popis.indexOf(trenutni) < 0) popis.unshift(trenutni);
       popis.forEach(function(pid) {
@@ -7327,7 +7333,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       var chat = polje ? String(polje.value || '').trim() : '';
       if (!/^-?[0-9]{5,20}$/.test(chat)) {
         var pk = document.getElementById('ulaz-poruka');
-        if (pk) pk.innerHTML = '<span style="color:var(--accent-red,#ef4444)">chatId mora biti broj (npr. -5245252755)</span>';
+        if (pk) pk.innerHTML = '<span style="color:var(--accent-red,#ef4444)">' + _dezT('cfg_ulaz_chatid_broj', 'chatId mora biti broj (npr. -5245252755)') + '</span>';
         return;
       }
       var m = {}; m[chat] = 'off';
@@ -7347,9 +7353,9 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         // innerHTML cijele kartice, pa bi ranija poruka nestala u istom dahu.
         await loadUlaznaVrata();
         var svjeza = document.getElementById('ulaz-poruka');
-        if (svjeza) svjeza.innerHTML = '<span style="color:var(--accent-green,#22c55e)">Spremljeno — vrijedi odmah, bez restarta (' + new Date().toLocaleTimeString() + ')</span>';
+        if (svjeza) svjeza.innerHTML = '<span style="color:var(--accent-green,#22c55e)">' + _dezT('cfg_ulaz_spremljeno', 'Spremljeno — vrijedi odmah, bez restarta') + ' (' + new Date().toLocaleTimeString() + ')</span>';
       } catch(e) {
-        if (poruka) poruka.innerHTML = '<span style="color:var(--accent-red,#ef4444)">Nije spremljeno: ' + _dezEsc(e.message) + '</span>';
+        if (poruka) poruka.innerHTML = '<span style="color:var(--accent-red,#ef4444)">' + _dezT('cfg_ulaz_nije_spremljeno', 'Nije spremljeno') + ': ' + _dezEsc(e.message) + '</span>';
         if (el) el.disabled = false;
       }
     }
@@ -7359,33 +7365,33 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       if (!el) return;
       try {
         var d = await (await fetch('/api/providers/login/status')).json();
-        el.innerHTML = '<div style="font-size:.7rem;color:var(--text-secondary);margin-bottom:.5rem">Klikni <b>Login</b> → <b>Copy link</b> → otvori link na bilo kojem računalu i prijavi se. Ako login traži kod, zalijepi ga natrag. Nakon prijave provider se pojavi u listi modela agenata.</div>'
+        el.innerHTML = '<div style="font-size:.7rem;color:var(--text-secondary);margin-bottom:.5rem">' + _dezT('cfg_login_uvod', 'Klikni <b>Login</b> → <b>Copy link</b> → otvori link na bilo kojem računalu i prijavi se. Ako login traži kod, zalijepi ga natrag. Nakon prijave provider se pojavi u listi modela agenata.') + '</div>'
           + (d.providers||[]).map(renderLoginRow).join('');
-      } catch(e){ el.innerHTML = '<div class="empty">Greška: '+e.message+'</div>'; }
+      } catch(e){ el.innerHTML = '<div class="empty">' + _dezT('cfg_greska', 'Greška') + ': '+e.message+'</div>'; }
     }
     function renderLoginRow(p) {
-      var badge = p.loggedIn ? '<span class="info-badge enabled">prijavljen</span>'
-        : (p.installed ? '<span class="info-badge disabled">nije prijavljen</span>' : '<span class="info-badge disabled">nije instaliran</span>');
+      var badge = p.loggedIn ? '<span class="info-badge enabled">' + _dezT('cfg_login_prijavljen', 'prijavljen') + '</span>'
+        : (p.installed ? '<span class="info-badge disabled">' + _dezT('cfg_login_nije_prijavljen', 'nije prijavljen') + '</span>' : '<span class="info-badge disabled">' + _dezT('cfg_login_nije_instaliran', 'nije instaliran') + '</span>');
       var h = '<div style="border:1px solid var(--border-color);border-radius:6px;padding:0.6rem;margin-bottom:0.5rem">';
       h += '<div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap"><strong>'+p.name+'</strong>'+badge+'<span style="margin-left:auto;display:flex;gap:6px">';
-      if (p.loggedIn) h += '<button onclick="doLogout(\\''+p.id+'\\')" style="font-size:.72rem;padding:4px 8px">Odjava</button>';
+      if (p.loggedIn) h += '<button onclick="doLogout(\\''+p.id+'\\')" style="font-size:.72rem;padding:4px 8px">' + _dezT('cfg_login_odjava', 'Odjava') + '</button>';
       else if (p.kind==='oauth-cli' && p.installed) h += '<button onclick="doLoginStart(\\''+p.id+'\\')" style="font-size:.72rem;padding:4px 8px">Login</button>';
       h += '</span></div><div id="login-body-'+p.id+'" style="margin-top:.4rem"></div>';
-      if (p.id==='geminicli') h += '<div style="font-size:.66rem;color:#f59e0b;margin-top:.3rem">Google je ukinuo besplatni OAuth (Code Assist) za CLI — koristi <b>API ključ</b> s aistudio.google.com/apikey (besplatan tier).</div>';
+      if (p.id==='geminicli') h += '<div style="font-size:.66rem;color:#f59e0b;margin-top:.3rem">' + _dezT('cfg_login_gemini_oauth', 'Google je ukinuo besplatni OAuth (Code Assist) za CLI — koristi <b>API ključ</b> s aistudio.google.com/apikey (besplatan tier).') + '</div>';
       if (p.apikey && !p.loggedIn) {
-        var _ph = p.id==='geminicli' ? 'GEMINI_API_KEY (AIza...)' : 'API ključ (sk-or-...)';
-        h += '<div style="display:flex;gap:6px;margin-top:.4rem"><input id="login-key-'+p.id+'" type="password" autocomplete="new-password" data-form-type="other" data-lpignore="true" data-1p-ignore placeholder="'+_ph+'" style="flex:1;font-size:.72rem;padding:3px 5px"><button onclick="doApikey(\\''+p.id+'\\')" style="font-size:.72rem;padding:4px 8px">Spremi ključ</button></div>';
+        var _ph = p.id==='geminicli' ? 'GEMINI_API_KEY (AIza...)' : _dezT('cfg_api_kljuc', 'API ključ') + ' (sk-or-...)';
+        h += '<div style="display:flex;gap:6px;margin-top:.4rem"><input id="login-key-'+p.id+'" type="password" autocomplete="new-password" data-form-type="other" data-lpignore="true" data-1p-ignore placeholder="'+_ph+'" style="flex:1;font-size:.72rem;padding:3px 5px"><button onclick="doApikey(\\''+p.id+'\\')" style="font-size:.72rem;padding:4px 8px">' + _dezT('cfg_login_spremi_kljuc', 'Spremi ključ') + '</button></div>';
       }
-      if (!p.installed && p.installCmd) h += '<div style="font-size:.66rem;color:var(--text-secondary);margin-top:.3rem">Nije instaliran. Instaliraj (Sigurnost→internet ON): <code>'+p.installCmd+'</code></div>';
+      if (!p.installed && p.installCmd) h += '<div style="font-size:.66rem;color:var(--text-secondary);margin-top:.3rem">' + _dezT('cfg_login_instaliraj', 'Nije instaliran. Instaliraj (Sigurnost→internet ON):') + ' <code>'+p.installCmd+'</code></div>';
       h += '</div>';
       return h;
     }
     async function doLoginStart(id) {
       var body = document.getElementById('login-body-'+id); if(!body) return;
-      body.innerHTML = 'Pokrećem prijavu…';
+      body.innerHTML = _dezT('cfg_login_pokrecem', 'Pokrećem prijavu…');
       try {
         var d = await (await fetch('/api/providers/login/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:id})})).json();
-        if (d.error){ body.innerHTML='<span style="color:var(--accent-red)">'+(d.error==='not-installed'?'Nije instaliran.':d.error)+'</span>'; return; }
+        if (d.error){ body.innerHTML='<span style="color:var(--accent-red)">'+(d.error==='not-installed'? _dezT('cfg_login_nije_instaliran_tocka', 'Nije instaliran.') :d.error)+'</span>'; return; }
         renderLoginActive(id, d.url); pollLogin(id);
       } catch(e){ body.innerHTML='<span style="color:var(--accent-red)">'+e.message+'</span>'; }
     }
@@ -7395,15 +7401,15 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       if (urlv) {
         h += '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><input id="login-url-'+id+'" value="'+urlv+'" readonly style="flex:1;min-width:220px;font-size:.7rem;padding:3px 5px">';
         h += '<button onclick="copyLoginLink(\\''+id+'\\')" style="font-size:.72rem;padding:4px 8px">📋 Copy link</button>';
-        h += '<a href="'+urlv+'" target="_blank" rel="noopener" style="font-size:.72rem;padding:4px 8px">Otvori</a></div>';
-        h += '<div style="font-size:.66rem;color:var(--text-secondary);margin-top:.3rem">Otvori link na bilo kojem računalu i odobri. Ako CLI traži kod, zalijepi ga ispod.</div>';
-      } else { h += '<div style="font-size:.7rem;color:var(--text-secondary)">Čekam link…</div>'; }
-      h += '<div style="display:flex;gap:6px;margin-top:.4rem"><input id="login-paste-'+id+'" autocomplete="off" data-form-type="other" data-lpignore="true" data-1p-ignore placeholder="Zalijepi kod (ako login traži)" style="flex:1;font-size:.72rem;padding:3px 5px"><button onclick="doPaste(\\''+id+'\\')" style="font-size:.72rem;padding:4px 8px">Pošalji</button></div>';
+        h += '<a href="'+urlv+'" target="_blank" rel="noopener" style="font-size:.72rem;padding:4px 8px">' + _dezT('cfg_login_otvori', 'Otvori') + '</a></div>';
+        h += '<div style="font-size:.66rem;color:var(--text-secondary);margin-top:.3rem">' + _dezT('cfg_login_otvori_opis', 'Otvori link na bilo kojem računalu i odobri. Ako CLI traži kod, zalijepi ga ispod.') + '</div>';
+      } else { h += '<div style="font-size:.7rem;color:var(--text-secondary)">' + _dezT('cfg_login_cekam_link', 'Čekam link…') + '</div>'; }
+      h += '<div style="display:flex;gap:6px;margin-top:.4rem"><input id="login-paste-'+id+'" autocomplete="off" data-form-type="other" data-lpignore="true" data-1p-ignore placeholder="' + _dezEsc(_dezT('cfg_login_zalijepi_kod', 'Zalijepi kod (ako login traži)')) + '" style="flex:1;font-size:.72rem;padding:3px 5px"><button onclick="doPaste(\\''+id+'\\')" style="font-size:.72rem;padding:4px 8px">' + _dezT('cfg_posalji', 'Pošalji') + '</button></div>';
       h += '<div id="login-status-'+id+'" style="font-size:.66rem;color:var(--text-secondary);margin-top:.3rem"></div>';
       body.innerHTML = h;
     }
-    function copyLoginLink(id){ var el=document.getElementById('login-url-'+id); if(el){ el.select(); if(navigator.clipboard) navigator.clipboard.writeText(el.value); var s=document.getElementById('login-status-'+id); if(s)s.textContent='Link kopiran.'; } }
-    async function doPaste(id){ var v=document.getElementById('login-paste-'+id); if(!v)return; try{ await fetch('/api/providers/login/paste',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:id,code:v.value})}); var s=document.getElementById('login-status-'+id); if(s)s.textContent='Kod poslan, čekam potvrdu…'; }catch(e){} }
+    function copyLoginLink(id){ var el=document.getElementById('login-url-'+id); if(el){ el.select(); if(navigator.clipboard) navigator.clipboard.writeText(el.value); var s=document.getElementById('login-status-'+id); if(s)s.textContent=_dezT('cfg_login_link_kopiran', 'Link kopiran.'); } }
+    async function doPaste(id){ var v=document.getElementById('login-paste-'+id); if(!v)return; try{ await fetch('/api/providers/login/paste',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:id,code:v.value})}); var s=document.getElementById('login-status-'+id); if(s)s.textContent=_dezT('cfg_login_kod_poslan', 'Kod poslan, čekam potvrdu…'); }catch(e){} }
     var loginPollTimers = {};
     function pollLogin(id){
       clearInterval(loginPollTimers[id]); var tries=0;
@@ -7414,14 +7420,14 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
           var s=document.getElementById('login-status-'+id);
           var u=document.getElementById('login-url-'+id);
           if (d.url && u && !u.value) u.value=d.url;
-          if (d.loggedIn){ clearInterval(loginPollTimers[id]); if(s)s.textContent='✅ Prijava uspješna.'; setTimeout(fetchInfoData, 800); return; }
-          if (d.done && !d.loggedIn){ clearInterval(loginPollTimers[id]); if(s)s.textContent='Prijava prekinuta/neuspješna.'; return; }
+          if (d.loggedIn){ clearInterval(loginPollTimers[id]); if(s)s.textContent='✅ ' + _dezT('cfg_login_uspjesna', 'Prijava uspješna.'); setTimeout(fetchInfoData, 800); return; }
+          if (d.done && !d.loggedIn){ clearInterval(loginPollTimers[id]); if(s)s.textContent=_dezT('cfg_login_prekinuta', 'Prijava prekinuta/neuspješna.'); return; }
         } catch(e){}
         if (tries>150){ clearInterval(loginPollTimers[id]); }
       }, 2000);
     }
-    async function doApikey(id){ var k=document.getElementById('login-key-'+id); if(!k||!k.value.trim())return; try{ var d=await (await fetch('/api/providers/login/apikey',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:id,key:k.value.trim()})})).json(); if(d.error)throw new Error(d.error); fetchInfoData(); }catch(e){ alert('Greška: '+e.message); } }
-    async function doLogout(id){ if(!confirm('Odjaviti '+id+'?'))return; try{ await fetch('/api/providers/login/logout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:id})}); fetchInfoData(); }catch(e){} }
+    async function doApikey(id){ var k=document.getElementById('login-key-'+id); if(!k||!k.value.trim())return; try{ var d=await (await fetch('/api/providers/login/apikey',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:id,key:k.value.trim()})})).json(); if(d.error)throw new Error(d.error); fetchInfoData(); }catch(e){ alert(_dezT('cfg_greska', 'Greška') + ': '+e.message); } }
+    async function doLogout(id){ if(!confirm(_dezTv('cfg_login_odjaviti_pitanje', 'Odjaviti {id}?', { id: id })))return; try{ await fetch('/api/providers/login/logout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:id})}); fetchInfoData(); }catch(e){} }
 
     // ── Klasifikacijski model (TASK-2635) ────────────────────────────────────────
     // ODVOJENO od dropdowna po agentu: taj bira model kojim agent RADI, a ovaj model
@@ -7435,33 +7441,34 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         if (d.error && !d.models) throw new Error(d.error);
         el.innerHTML = renderClassifier(d);
       } catch(e) {
-        el.innerHTML = '<div class="empty">Greška pri čitanju klasifikatora: ' + _dezEsc(e.message) + '</div>';
+        el.innerHTML = '<div class="empty">' + _dezT('cfg_klas_greska_citanje', 'Greška pri čitanju klasifikatora') + ': ' + _dezEsc(e.message) + '</div>';
       }
     }
 
     function renderClassifier(d) {
-      var izvor = { 'process-env': 'okolina procesa (' + _dezEsc(d.envKey) + ')', 'config': 'model-config.json → componentOverrides.classifier', 'default': 'ugrađeni zadani' }[d.source] || d.source;
+      var izvor = { 'process-env': _dezTv('cfg_klas_izvor_env', 'okolina procesa ({kljuc})', { kljuc: _dezEsc(d.envKey) }), 'config': 'model-config.json → componentOverrides.classifier', 'default': _dezT('cfg_klas_izvor_zadani', 'ugrađeni zadani') }[d.source] || d.source;
       var h = '<div style="font-size:0.72rem;color:var(--text-secondary);margin-bottom:0.5rem">' +
-        'REGOČ na <strong>svaku</strong> poruku pokreće klasifikaciju/rutiranje. To NIJE isto što i model kojim agent radi ' +
-        '(to je dropdown u tablici agenata gore). Klasifikator mora ostati <strong>brz i lokalan</strong> pa su ponuđeni samo Ollama modeli. ' +
-        'Sprema se u <code>' + _dezEsc(d.envKey) + '</code> (spremište vjerodajnica) i u <code>componentOverrides.classifier</code>; ' +
-        'config vrijedi odmah, okolina tek nakon restarta procesa.</div>';
+        _dezTv('cfg_klas_uvod',
+          'REGOČ na <strong>svaku</strong> poruku pokreće klasifikaciju/rutiranje. To NIJE isto što i model kojim agent radi ' +
+          '(to je dropdown u tablici agenata gore). Klasifikator mora ostati <strong>brz i lokalan</strong> pa su ponuđeni samo Ollama modeli. ' +
+          'Sprema se u <code>{kljuc}</code> (spremište vjerodajnica) i u <code>componentOverrides.classifier</code>; ' +
+          'config vrijedi odmah, okolina tek nakon restarta procesa.', { kljuc: _dezEsc(d.envKey) }) + '</div>';
       h += '<div style="display:flex;gap:0.6rem;flex-wrap:wrap;align-items:center;font-size:0.72rem">';
       h += '<span class="info-dot ' + (d.reachable ? 'online' : 'offline') + '"></span>';
       h += '<span style="color:var(--text-secondary)">Ollama</span> <span style="font-family:monospace">' + _dezEsc(d.baseUrl) + '</span>';
-      var opts = '<option value="">⭐ zadano (' + _dezEsc(String(d.defaultSpec || '').replace('ollama:','')) + ')</option>';
+      var opts = '<option value="">⭐ ' + _dezT('cfg_zadano', 'zadano') + ' (' + _dezEsc(String(d.defaultSpec || '').replace('ollama:','')) + ')</option>';
       (d.models || []).forEach(function(m) {
         opts += '<option value="' + _dezEsc(m) + '"' + (m === d.model ? ' selected' : '') + '>' + _dezEsc(m) + '</option>';
       });
       h += '<select id="classifier-select" style="font-size:0.72rem;padding:3px 5px;border-radius:4px;background:var(--bg-primary,#111);color:var(--text-primary,#ddd);border:1px solid var(--border-color,#333)" ' +
         'onchange="setClassifier(this.value, this)">' + opts + '</select>';
-      h += '<span class="info-badge ' + (d.source === 'default' ? 'disabled' : 'enabled') + '" title="Odakle vrijednost stvarno dolazi">' + _dezEsc(izvor) + '</span>';
+      h += '<span class="info-badge ' + (d.source === 'default' ? 'disabled' : 'enabled') + '" title="' + _dezEsc(_dezT('cfg_klas_izvor_naslov', 'Odakle vrijednost stvarno dolazi')) + '">' + _dezEsc(izvor) + '</span>';
       h += '</div>';
       if (!d.reachable) {
-        h += '<div style="font-size:0.66rem;color:var(--accent-red);margin-top:0.35rem">Ollama nedostupna — popis modela je nepotpun' + (d.error ? (': ' + _dezEsc(d.error)) : '') + '. Postavka se svejedno može spremiti.</div>';
+        h += '<div style="font-size:0.66rem;color:var(--accent-red);margin-top:0.35rem">' + _dezT('cfg_klas_ollama_nedostupna', 'Ollama nedostupna — popis modela je nepotpun') + (d.error ? (': ' + _dezEsc(d.error)) : '') + '. ' + _dezT('cfg_klas_svejedno_spremi', 'Postavka se svejedno može spremiti.') + '</div>';
       }
       if (d.storeSet && d.storeMatchesConfig === false) {
-        h += '<div style="font-size:0.66rem;color:#f59e0b;margin-top:0.35rem">Spremište vjerodajnica ima drukčiju vrijednost od configa — na stroju koji spremište učitava u okolinu ona pobjeđuje nakon restarta.</div>';
+        h += '<div style="font-size:0.66rem;color:#f59e0b;margin-top:0.35rem">' + _dezT('cfg_klas_spremiste_razlika', 'Spremište vjerodajnica ima drukčiju vrijednost od configa — na stroju koji spremište učitava u okolinu ona pobjeđuje nakon restarta.') + '</div>';
       }
       return h;
     }
@@ -7474,7 +7481,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         if (!r.ok || d.error) throw new Error(d.error || 'save failed');
         loadClassifier();
       } catch(e) {
-        alert('Greška pri spremanju klasifikatora: ' + e.message);
+        alert(_dezT('cfg_klas_greska_spremanje', 'Greška pri spremanju klasifikatora') + ': ' + e.message);
         if (el) el.disabled = false;
         loadClassifier();
       }
@@ -7483,45 +7490,45 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     function renderModelSetup(md) {
       var el = document.getElementById('info-modelsetup-content');
       if (!el) return;
-      if (!md || !md.providers) { el.innerHTML = '<div class="empty">Nema podataka o providerima</div>'; return; }
+      if (!md || !md.providers) { el.innerHTML = '<div class="empty">' + _dezT('cfg_prov_nema_podataka', 'Nema podataka o providerima') + '</div>'; return; }
       var h = '<div style="font-size:0.72rem;color:var(--text-secondary);margin-bottom:0.5rem">' +
-        'Pretplatnički provideri (Claude) nemaju dodatne postavke. Lokalni (Ollama) traži samo <strong>server IP:port</strong> — kao RAG; token je opcijski (samo iza reverse-proxyja).</div>';
+        _dezT('cfg_prov_uvod', 'Pretplatnički provideri (Claude) nemaju dodatne postavke. Lokalni (Ollama) traži samo <strong>server IP:port</strong> — kao RAG; token je opcijski (samo iza reverse-proxyja).') + '</div>';
       md.providers.forEach(function(p) {
         var dot = p.enabled ? (p.reachable ? 'online' : 'offline') : 'offline';
-        var statusTxt = !p.enabled ? 'isključen' : (p.kind === 'subscription' ? 'pretplata' : (p.reachable ? (p.models.length + ' modela') : 'nedostupan'));
+        var statusTxt = !p.enabled ? _dezT('cfg_prov_iskljucen', 'isključen') : (p.kind === 'subscription' ? _dezT('cfg_prov_pretplata', 'pretplata') : (p.reachable ? _dezTv('cfg_prov_broj_modela', '{broj} modela', { broj: p.models.length }) : _dezT('cfg_prov_nedostupan', 'nedostupan')));
         var statusBadge = (p.enabled && (p.reachable || p.kind === 'subscription')) ? 'enabled' : 'disabled';
         h += '<div style="border:1px solid var(--border-color);border-radius:6px;padding:0.6rem;margin-bottom:0.6rem">';
         h += '<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.4rem;flex-wrap:wrap">' +
           '<span class="info-dot ' + dot + '"></span>' +
-          '<strong>' + p.name + '</strong>' +
+          '<strong>' + _dezT(p.nameKey, p.name) + '</strong>' +
           '<span class="info-badge ' + statusBadge + '">' + statusTxt + '</span>' +
-          '<label style="margin-left:auto;font-size:0.72rem;cursor:pointer"><input type="checkbox" ' + (p.enabled ? 'checked' : '') + ' onchange="setProviderEnabled(\\'' + p.id + '\\', this.checked)"> omogućen</label>' +
+          '<label style="margin-left:auto;font-size:0.72rem;cursor:pointer"><input type="checkbox" ' + (p.enabled ? 'checked' : '') + ' onchange="setProviderEnabled(\\'' + p.id + '\\', this.checked)"> ' + _dezT('cfg_prov_omogucen', 'omogućen') + '</label>' +
           '</div>';
         if (p.needsSetup) {
           var inpStyle = 'font-size:0.72rem;padding:3px 5px;background:var(--bg-primary,#111);color:var(--text-primary,#ddd);border:1px solid var(--border-color,#333);border-radius:4px';
           var isCloud = p.kind === 'cloud-key';
-          var keyLabel = isCloud ? 'API ključ' : 'Token (opcijski)';
-          var keyPh = p.hasAuth ? '••• spremljeno' : (isCloud ? 'sk-or-...' : 'nije potrebno');
+          var keyLabel = isCloud ? _dezT('cfg_api_kljuc', 'API ključ') : _dezT('cfg_prov_token_opcijski', 'Token (opcijski)');
+          var keyPh = p.hasAuth ? '••• ' + _dezT('cfg_prov_spremljeno', 'spremljeno') : (isCloud ? 'sk-or-...' : _dezT('cfg_prov_nije_potrebno', 'nije potrebno'));
           h += '<div style="display:flex;gap:0.6rem;flex-wrap:wrap;align-items:flex-end;font-size:0.72rem">';
           // Server IP:port samo za lokalne (Ollama)
           if (p.kind === 'local') {
-            h += '<div><div style="color:var(--text-secondary)">Server (IP:port)</div><input id="prov-' + p.id + '-url" value="' + (p.baseUrl || '') + '" placeholder="http://192.168.10.4:11434" style="width:230px;' + inpStyle + '"></div>';
+            h += '<div><div style="color:var(--text-secondary)">' + _dezT('cfg_prov_server', 'Server (IP:port)') + '</div><input id="prov-' + p.id + '-url" value="' + (p.baseUrl || '') + '" placeholder="http://192.168.10.4:11434" style="width:230px;' + inpStyle + '"></div>';
           }
           // Ključ + 👁 prikaži (maskiran dok se ne stisne)
           h += '<div><div style="color:var(--text-secondary)">' + keyLabel + '</div>' +
             '<div style="display:flex;align-items:center;gap:4px">' +
             '<input id="prov-' + p.id + '-key" type="password" autocomplete="new-password" data-form-type="other" data-lpignore="true" data-1p-ignore placeholder="' + keyPh + '" style="width:' + (isCloud ? '250' : '170') + 'px;' + inpStyle + '">' +
-            '<button type="button" title="Prikaži/sakrij" onclick="toggleKeyVis(\\'' + p.id + '\\', this)" style="font-size:0.8rem;padding:2px 6px;border-radius:4px;cursor:pointer;background:var(--bg-primary,#111);border:1px solid var(--border-color,#333)">&#128065;</button>' +
+            '<button type="button" title="' + _dezEsc(_dezT('cfg_prov_prikazi_sakrij', 'Prikaži/sakrij')) + '" onclick="toggleKeyVis(\\'' + p.id + '\\', this)" style="font-size:0.8rem;padding:2px 6px;border-radius:4px;cursor:pointer;background:var(--bg-primary,#111);border:1px solid var(--border-color,#333)">&#128065;</button>' +
             '</div></div>';
-          h += '<button onclick="saveProvider(\\'' + p.id + '\\')" style="font-size:0.72rem;padding:5px 10px;border-radius:4px;cursor:pointer">Spremi' + (p.kind === 'local' ? ' + test' : '') + '</button>';
+          h += '<button onclick="saveProvider(\\'' + p.id + '\\')" style="font-size:0.72rem;padding:5px 10px;border-radius:4px;cursor:pointer">' + _dezT('cfg_spremi', 'Spremi') + (p.kind === 'local' ? ' + test' : '') + '</button>';
           h += '</div>';
-          h += '<div style="font-size:0.66rem;color:var(--text-secondary);margin-top:0.3rem">' + (p.authNote || '') + (p.error ? (' <span style="color:var(--accent-red)">— ' + p.error + '</span>') : '') + '</div>';
+          h += '<div style="font-size:0.66rem;color:var(--text-secondary);margin-top:0.3rem">' + _dezT(p.authNoteKey, p.authNote || '') + (p.error ? (' <span style="color:var(--accent-red)">— ' + p.error + '</span>') : '') + '</div>';
         } else {
-          h += '<div style="font-size:0.66rem;color:var(--text-secondary)">' + (p.authNote || '') + '</div>';
+          h += '<div style="font-size:0.66rem;color:var(--text-secondary)">' + _dezT(p.authNoteKey, p.authNote || '') + '</div>';
         }
         if (p.models && p.models.length) {
-          h += '<div style="font-size:0.66rem;color:var(--text-secondary);margin-top:0.35rem;line-height:1.6">Modeli: ' +
-            p.models.map(function(m) { return '<span style="font-family:monospace">' + m.model + '</span> <span class="info-badge ' + m.tier + '">' + m.tier + '</span>' + (m.spawnable ? '' : ' <span style="color:#f59e0b">lokalno</span>'); }).join(' · ') + '</div>';
+          h += '<div style="font-size:0.66rem;color:var(--text-secondary);margin-top:0.35rem;line-height:1.6">' + _dezT('cfg_prov_modeli', 'Modeli') + ': ' +
+            p.models.map(function(m) { return '<span style="font-family:monospace">' + m.model + '</span> <span class="info-badge ' + m.tier + '">' + m.tier + '</span>' + (m.spawnable ? '' : ' <span style="color:#f59e0b">' + _dezT('cfg_lokalno', 'lokalno') + '</span>'); }).join(' · ') + '</div>';
         }
         h += '</div>';
       });
@@ -7534,7 +7541,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         var d = await r.json();
         if (!r.ok || d.error) throw new Error(d.error || 'save failed');
         fetchInfoData();
-      } catch(e) { alert('Greska: ' + e.message); }
+      } catch(e) { alert(_dezT('cfg_greska', 'Greška') + ': ' + e.message); }
     }
 
     function toggleKeyVis(id, btn) {
@@ -7555,7 +7562,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         var d = await r.json();
         if (!r.ok || d.error) throw new Error(d.error || 'save failed');
         fetchInfoData();
-      } catch(e) { alert('Greska pri spremanju providera: ' + e.message); }
+      } catch(e) { alert(_dezT('cfg_prov_greska_spremanje', 'Greška pri spremanju providera') + ': ' + e.message); }
     }
 
     function renderInfoAgents(d, modelsData) {
@@ -7567,6 +7574,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       var _extra = (d.availableModels || []).filter(function(m){ return !_base.some(function(b){ return b.spec === m.spec; }); });
       const models = _base.concat(_extra);
       let h = '<div style="font-size:0.72rem;color:var(--text-secondary);margin-bottom:0.4rem">' +
+        _dezT('cfg_agenti_uvod',
         'Model po agentu — “zadano” koristi tier iz registra. Override se sprema u <code>model-config.json → agentOverrides</code> i vrijedi odmah (bez restarta). ' +
         '<strong>lokalno</strong> = Ollama model preko API spawna — radi, ali tekstualno (bez alata: Bash/datoteke/MCP). Claude, Gemini, Kimi i OpenRouter modeli imaju PUNE alate. ' +
         // TASK-2635: REGOČ, Klaudio i Stribor su ODABIRLJIVI (nisu više „fiksni"): Klaudio poštuje
@@ -7574,19 +7582,19 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         '<strong>REGOČ, Klaudio i Stribor</strong> su ovdje odabirljivi kao i ostali: Klaudio čita override po poruci (bez restarta bota), ' +
         'a REGOČ-u i Striboru vrijedi kad sami izvršavaju zadatak. ' +
         '<strong>Rutiranje poruka</strong> (koji agent dobiva posao) NE ide preko ovog izbora — ono ostaje na lokalnom Ollama klasifikatoru, ' +
-        'koji se mijenja u kartici „Klasifikacijski model" ispod.</div>';
+        'koji se mijenja u kartici „Klasifikacijski model" ispod.') + '</div>';
       h += '<table class="info-table"><thead><tr>' +
-        '<th>Agent</th><th>Uloga</th><th>Min Tier</th><th>Model (odabir)</th>' +
-        '<th>Context</th><th>Tools</th><th>Notes</th></tr></thead><tbody>';
+        '<th>' + _dezT('cfg_stupac_agent', 'Agent') + '</th><th>' + _dezT('cfg_stupac_uloga', 'Uloga') + '</th><th>' + _dezT('cfg_stupac_min_tier', 'Min Tier') + '</th><th>' + _dezT('cfg_stupac_model', 'Model (odabir)') + '</th>' +
+        '<th>' + _dezT('cfg_stupac_context', 'Context') + '</th><th>' + _dezT('cfg_stupac_tools', 'Tools') + '</th><th>' + _dezT('cfg_stupac_notes', 'Notes') + '</th></tr></thead><tbody>';
       agents.forEach(function(a) {
         const tierBadge = '<span class="info-badge ' + a.minTier + '">' + a.minTier + '</span>';
         h += '<tr><td><strong>' + a.name + '</strong></td>' +
-          '<td>' + a.role + '</td>' +
+          '<td>' + _dezT(a.roleKey, a.role) + '</td>' +
           '<td>' + tierBadge + '</td>' +
           '<td>' + modelSelectHTML(a, models) + '</td>' +
           '<td>' + (a.minContext ? (a.minContext/1000) + 'K' : '-') + '</td>' +
-          '<td title="' + (a.toolsNote||'') + '">' + (a.requiresTools ? '✅' : '➖') + '</td>' +
-          '<td style="font-size:0.7rem;color:var(--text-secondary)">' + (a.notes||'') + '</td></tr>';
+          '<td title="' + _dezEsc(_dezT(a.toolsNoteKey, a.toolsNote || '')) + '">' + (a.requiresTools ? '✅' : '➖') + '</td>' +
+          '<td style="font-size:0.7rem;color:var(--text-secondary)">' + _dezT(a.notesKey, a.notes || '') + '</td></tr>';
       });
       h += '</tbody></table>';
       document.getElementById('info-agents-content').innerHTML = h;
@@ -7635,7 +7643,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         var badge = c.status === 'active' ? 'enabled' : 'disabled';
         h += '<tr><td><strong>' + c.name + '</strong></td>' +
           '<td><span class="info-badge ' + badge + '">' + c.status + '</span></td>' +
-          '<td style="font-size:0.75rem;color:var(--text-secondary)">' + c.description + '</td></tr>';
+          '<td style="font-size:0.75rem;color:var(--text-secondary)">' + _dezT(c.descriptionKey, c.description) + '</td></tr>';
       });
       h += '</tbody></table>';
       document.getElementById('info-components-content').innerHTML = h;
@@ -7796,7 +7804,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       h += '<div class="info-kv"><span class="info-kv-label">In Progress</span><span class="info-kv-value">' + (t.inProgress||0) + '</span></div>';
       h += '<div class="info-kv"><span class="info-kv-label">Pending</span><span class="info-kv-value">' + (t.pending||0) + '</span></div>';
       var c = m.costs || {};
-      h += '<div class="info-kv" style="margin-top:0.5rem;border-top:1px solid var(--border-color);padding-top:0.3rem"><span class="info-kv-label">Trošak ukupno</span><span class="info-kv-value">' + eur(Number(c.total||0)) + '</span></div>';
+      h += '<div class="info-kv" style="margin-top:0.5rem;border-top:1px solid var(--border-color);padding-top:0.3rem"><span class="info-kv-label">' + _dezT('cfg_trosak_ukupno', 'Trošak ukupno') + '</span><span class="info-kv-value">' + eur(Number(c.total||0)) + '</span></div>';
       var o = m.observability || {};
       h += '<div class="info-kv"><span class="info-kv-label">Events Total</span><span class="info-kv-value">' + (o.totalEvents||0) + '</span></div>';
       h += '<div class="info-kv"><span class="info-kv-label">Events (24h)</span><span class="info-kv-value">' + (o.last24h||0) + '</span></div>';
@@ -7979,9 +7987,10 @@ async function buildModelsAvailable(): Promise<{ providers: any[]; models: any[]
   const anthEnabled = provCfg.anthropic?.enabled !== false
   const anthModels = AVAILABLE_MODELS.filter(m => m.provider === 'anthropic')
   providers.push({
-    id: 'anthropic', name: 'Anthropic (Claude)', kind: 'subscription',
+    id: 'anthropic', name: 'Anthropic (Claude)', nameKey: 'cfg_prov_ime_anthropic', kind: 'subscription',
     needsSetup: false, enabled: anthEnabled, reachable: anthEnabled,
     baseUrl: null, hasAuth: true,
+    authNoteKey: 'cfg_auth_anthropic',
     authNote: 'Pretplata / ANTHROPIC_API_KEY — bez dodatnih postavki.',
     models: anthModels,
   })
@@ -8009,8 +8018,9 @@ async function buildModelsAvailable(): Promise<{ providers: any[]; models: any[]
     }
   }
   providers.push({
-    id: 'ollama', name: 'Ollama (lokalno)', kind: 'local',
+    id: 'ollama', name: 'Ollama (lokalno)', nameKey: 'cfg_prov_ime_ollama', kind: 'local',
     needsSetup: true, enabled: oEnabled, reachable, baseUrl, hasAuth, error,
+    authNoteKey: 'cfg_auth_ollama',
     authNote: 'Standardni Ollama nema lozinku — dovoljan je IP:port (kao RAG). Token samo ako je iza reverse-proxyja.',
     models: oModels,
   })
@@ -8027,8 +8037,9 @@ async function buildModelsAvailable(): Promise<{ providers: any[]; models: any[]
     { spec: 'openrouter:google/gemini-2.5-pro', provider: 'openrouter', model: 'google/gemini-2.5-pro', tier: 'frontier', label: 'Gemini 2.5 Pro — alati (OpenRouter)', spawnable: true },
   ]
   providers.push({
-    id: 'openrouter', name: 'OpenRouter (cloud)', kind: 'cloud-key',
+    id: 'openrouter', name: 'OpenRouter (cloud)', nameKey: 'cfg_prov_ime_openrouter', kind: 'cloud-key',
     needsSetup: true, enabled: orEnabled, reachable: orEnabled && orHasAuth, baseUrl: 'https://openrouter.ai/api/v1', hasAuth: orHasAuth,
+    authNoteKey: 'cfg_auth_openrouter',
     authNote: 'Treba API ključ (sk-or-...). Agenti dobivaju PUNE alate (bash/read/write) preko agentic tool-loopa. Trošak se naplaćuje po pozivu.',
     models: orEnabled ? OR_CURATED : [],
   })
@@ -8408,6 +8419,7 @@ function buildInfoPayload(): Record<string, unknown> {
           id,
           name: a.name || id,
           role: a.role || '',
+          roleKey: 'cfg_agent_role_' + id,
           minTier: tierMap[a.model] || 'strong',
           currentModel: a.model || 'unknown',
           override: agentOverrides[id] || null,
@@ -8415,7 +8427,9 @@ function buildInfoPayload(): Record<string, unknown> {
           minContext: req.minContext,
           requiresTools: hasTools,
           toolsNote: hasTools ? 'Puni alati (Bash, datoteke, RAG, web…)' : 'lokalno (Ollama) — tekstualno, bez alata',
+          toolsNoteKey: hasTools ? 'cfg_alati_puni' : 'cfg_alati_lokalno',
           notes: req.notes,
+          notesKey: 'cfg_agent_notes_' + id,
         }
       })
     }
@@ -8588,31 +8602,31 @@ function buildInfoPayload(): Record<string, unknown> {
       //   inactive   = kod postoji, 0 živih pozivatelja i nema procesa
       //   ondemand   = CLI koji se pokreće ručno, nije stalni servis
       //   planned    = nije napisano
-      { name: 'RegocDaemon', status: 'active', description: 'Main orchestration daemon — polls MessageQueue, spawns agents, watchdog' },
-      { name: 'UnifiedSpawnPipeline', status: 'deprecated', description: 'NAPUŠTEN (ADR-0004 §5, odluka O3) — 0 pozivatelja iz daemona. Sastavljač verifikacijskog bloka prenesen u SpawnVerificationBlock.ts, koji vozi živi put (RegocDaemon.buildAgentPrompt + AgentDaemon.buildPrompt)' },
-      { name: 'SystemAwarenessBlock', status: 'inactive', description: '0 uvoznika — nijedan daemon ne ubacuje taj blok u prompt (grep "SystemAwarenessBlock" po .ts: samo vlastita datoteka i testovi)' },
-      { name: 'ModelRouter', status: 'active', description: 'AI model-agnostic routing — 4 providera (Anthropic, OpenAI, Google, Ollama). Dosežan: RegocDaemon.ts:22 → LocalOffload.ts:50' },
-      { name: 'ModuleRegistry', status: 'inactive', description: 'Sama klasa ima 0 uvoznika; modules/module-config.json čita izravno TaskWebUI (linije 6601 i 9253), pa registar nije u pogonu' },
-      { name: 'ModeClassifier', status: 'active', description: 'Effort tier routing (E1-E5) — rule-based, bez AI poziva. Dosežan: RegocDaemon.ts:55, AgentDaemon.ts:48' },
-      { name: 'MonitorLoop v4.0', status: 'inactive', description: '7-fazni loop (OBSERVE→…→LEARN) — 0 uvoznika, nije uvezen ni u RegocDaemon ni u AgentDaemon i nema živog procesa (pgrep -af MonitorLoop prazan)' },
-      { name: 'HelpPipeline', status: 'inactive', description: 'Agent-to-agent help requests — jedini uvoznik je MonitorLoop.ts:16, koji je i sam bez pozivatelja. Živa zamjena je tools/consult-potjeh.ts (upućuje se agentima iz RegocDaemon.ts:2344)' },
-      { name: 'AgentSignals (BTW)', status: 'inactive', description: 'File-based signaling — uvoznici su AgentCommunicationBridge.ts:23 i AgentMonitor.ts:39, oba bez pozivatelja; ~/.tmp/agent_signals je prazan od 19.05.2026.' },
-      { name: 'AgentCommunicationBridge', status: 'inactive', description: 'Most HelpPipeline → AgentSignals — 0 uvoznika; oba kraja mosta su također neaktivna' },
-      { name: 'AgentPool', status: 'inactive', description: 'Warm agent pool — 0 uvoznika; u daemonima nema koda za pool (grep "agentPool|warm.?pool" po RegocDaemon.ts i AgentDaemon.ts: 0 pogodaka)' },
-      { name: 'AgentCheckpoint', status: 'inactive', description: 'CHECKPOINT blok s peer porukama — 0 uvoznika. AgentDaemon ima VLASTITI, drugi mehanizam (SQLite checkpoint tablica + AgentResume.ts:41), to nije ovaj modul' },
-      { name: 'AgentLogger', status: 'inactive', description: 'Unified JSONL logging — jedini uvoznik je AgentMonitor.ts:37, koji je bez pozivatelja' },
-      { name: 'SecurityPipeline', status: 'inactive', description: '3 inspektora na tool poziv — 0 uvoznika iz koda i iz hookova. Živi L1 je ~/.claude/hooks/SecurityValidator.hook.ts (settings.json: PreToolUse + UserPromptSubmit), koji NE koristi ovaj modul' },
-      { name: 'PromptGuard', status: 'inactive', description: 'Prompt injection detekcija (13 pravila) — 0 uvoznika izvan vlastite datoteke i testova' },
-      { name: 'AuditLogger', status: 'active', description: 'Centralizirani security audit log (SQLite, 90-day retention). Dosežan: TaskWebUI.ts:9363 (dinamički import)' },
-      { name: 'ISAGenerator', status: 'inactive', description: 'Ideal State Artifact — 0 pozivatelja; jedina pojava izvan testova je komentar u CriticGate.ts:302' },
-      { name: 'KnowledgeGraph', status: 'inactive', description: 'SQLite relacijski graf znanja — jedini uvoznik je KnowledgeHarvester.ts:8, koji je i sam bez pozivatelja' },
-      { name: 'WikilinkParser', status: 'inactive', description: '[[link]] resolution — 0 uvoznika; setup/regoc-setup.ts:83 ga samo spominje u komentaru' },
-      { name: 'KnowledgeHarvester', status: 'inactive', description: 'Ekstrakcija znanja iz sesija — 0 pozivatelja izvan vlastite datoteke i testova' },
-      { name: 'ObservabilityLogger', status: 'active', description: 'JSONL structured logging — tool calls, agent spawns, task updates. Dosežan: TaskWebUI.ts:9330 (dinamički import)' },
-      { name: 'CostTracker', status: 'active', description: 'API token usage i cost tracking per agent/task/model. Dosežan: TaskWebUI.ts:39' },
-      { name: 'HealthSnapshot', status: 'inactive', description: '0 pozivatelja — obećanog "5min intervala" nema; nitko ne zove takeSnapshot() (jedina druga pojava imena bio je ovaj redak)' },
-      { name: 'RegocPulse', status: 'planned', description: 'Unified service manager — health check, auto-restart, circuit breaker (port 17780)' },
-      { name: 'Installer Wizard', status: 'ondemand', description: '10-step interactive CLI setup wizard (setup/regoc-setup.ts, 497 redaka) — pokreće se ručno, nije stalni servis' },
+      { name: 'RegocDaemon', status: 'active', descriptionKey: 'cfg_komp_regocdaemon', description: 'Main orchestration daemon — polls MessageQueue, spawns agents, watchdog' },
+      { name: 'UnifiedSpawnPipeline', status: 'deprecated', descriptionKey: 'cfg_komp_unifiedspawnpipeline', description: 'NAPUŠTEN (ADR-0004 §5, odluka O3) — 0 pozivatelja iz daemona. Sastavljač verifikacijskog bloka prenesen u SpawnVerificationBlock.ts, koji vozi živi put (RegocDaemon.buildAgentPrompt + AgentDaemon.buildPrompt)' },
+      { name: 'SystemAwarenessBlock', status: 'inactive', descriptionKey: 'cfg_komp_systemawarenessblock', description: '0 uvoznika — nijedan daemon ne ubacuje taj blok u prompt (grep "SystemAwarenessBlock" po .ts: samo vlastita datoteka i testovi)' },
+      { name: 'ModelRouter', status: 'active', descriptionKey: 'cfg_komp_modelrouter', description: 'AI model-agnostic routing — 4 providera (Anthropic, OpenAI, Google, Ollama). Dosežan: RegocDaemon.ts:22 → LocalOffload.ts:50' },
+      { name: 'ModuleRegistry', status: 'inactive', descriptionKey: 'cfg_komp_moduleregistry', description: 'Sama klasa ima 0 uvoznika; modules/module-config.json čita izravno TaskWebUI (linije 6601 i 9253), pa registar nije u pogonu' },
+      { name: 'ModeClassifier', status: 'active', descriptionKey: 'cfg_komp_modeclassifier', description: 'Effort tier routing (E1-E5) — rule-based, bez AI poziva. Dosežan: RegocDaemon.ts:55, AgentDaemon.ts:48' },
+      { name: 'MonitorLoop v4.0', status: 'inactive', descriptionKey: 'cfg_komp_monitorloop_v4_0', description: '7-fazni loop (OBSERVE→…→LEARN) — 0 uvoznika, nije uvezen ni u RegocDaemon ni u AgentDaemon i nema živog procesa (pgrep -af MonitorLoop prazan)' },
+      { name: 'HelpPipeline', status: 'inactive', descriptionKey: 'cfg_komp_helppipeline', description: 'Agent-to-agent help requests — jedini uvoznik je MonitorLoop.ts:16, koji je i sam bez pozivatelja. Živa zamjena je tools/consult-potjeh.ts (upućuje se agentima iz RegocDaemon.ts:2344)' },
+      { name: 'AgentSignals (BTW)', status: 'inactive', descriptionKey: 'cfg_komp_agentsignals_btw', description: 'File-based signaling — uvoznici su AgentCommunicationBridge.ts:23 i AgentMonitor.ts:39, oba bez pozivatelja; ~/.tmp/agent_signals je prazan od 19.05.2026.' },
+      { name: 'AgentCommunicationBridge', status: 'inactive', descriptionKey: 'cfg_komp_agentcommunicationbridge', description: 'Most HelpPipeline → AgentSignals — 0 uvoznika; oba kraja mosta su također neaktivna' },
+      { name: 'AgentPool', status: 'inactive', descriptionKey: 'cfg_komp_agentpool', description: 'Warm agent pool — 0 uvoznika; u daemonima nema koda za pool (grep "agentPool|warm.?pool" po RegocDaemon.ts i AgentDaemon.ts: 0 pogodaka)' },
+      { name: 'AgentCheckpoint', status: 'inactive', descriptionKey: 'cfg_komp_agentcheckpoint', description: 'CHECKPOINT blok s peer porukama — 0 uvoznika. AgentDaemon ima VLASTITI, drugi mehanizam (SQLite checkpoint tablica + AgentResume.ts:41), to nije ovaj modul' },
+      { name: 'AgentLogger', status: 'inactive', descriptionKey: 'cfg_komp_agentlogger', description: 'Unified JSONL logging — jedini uvoznik je AgentMonitor.ts:37, koji je bez pozivatelja' },
+      { name: 'SecurityPipeline', status: 'inactive', descriptionKey: 'cfg_komp_securitypipeline', description: '3 inspektora na tool poziv — 0 uvoznika iz koda i iz hookova. Živi L1 je ~/.claude/hooks/SecurityValidator.hook.ts (settings.json: PreToolUse + UserPromptSubmit), koji NE koristi ovaj modul' },
+      { name: 'PromptGuard', status: 'inactive', descriptionKey: 'cfg_komp_promptguard', description: 'Prompt injection detekcija (13 pravila) — 0 uvoznika izvan vlastite datoteke i testova' },
+      { name: 'AuditLogger', status: 'active', descriptionKey: 'cfg_komp_auditlogger', description: 'Centralizirani security audit log (SQLite, 90-day retention). Dosežan: TaskWebUI.ts:9363 (dinamički import)' },
+      { name: 'ISAGenerator', status: 'inactive', descriptionKey: 'cfg_komp_isagenerator', description: 'Ideal State Artifact — 0 pozivatelja; jedina pojava izvan testova je komentar u CriticGate.ts:302' },
+      { name: 'KnowledgeGraph', status: 'inactive', descriptionKey: 'cfg_komp_knowledgegraph', description: 'SQLite relacijski graf znanja — jedini uvoznik je KnowledgeHarvester.ts:8, koji je i sam bez pozivatelja' },
+      { name: 'WikilinkParser', status: 'inactive', descriptionKey: 'cfg_komp_wikilinkparser', description: '[[link]] resolution — 0 uvoznika; setup/regoc-setup.ts:83 ga samo spominje u komentaru' },
+      { name: 'KnowledgeHarvester', status: 'inactive', descriptionKey: 'cfg_komp_knowledgeharvester', description: 'Ekstrakcija znanja iz sesija — 0 pozivatelja izvan vlastite datoteke i testova' },
+      { name: 'ObservabilityLogger', status: 'active', descriptionKey: 'cfg_komp_observabilitylogger', description: 'JSONL structured logging — tool calls, agent spawns, task updates. Dosežan: TaskWebUI.ts:9330 (dinamički import)' },
+      { name: 'CostTracker', status: 'active', descriptionKey: 'cfg_komp_costtracker', description: 'API token usage i cost tracking per agent/task/model. Dosežan: TaskWebUI.ts:39' },
+      { name: 'HealthSnapshot', status: 'inactive', descriptionKey: 'cfg_komp_healthsnapshot', description: '0 pozivatelja — obećanog "5min intervala" nema; nitko ne zove takeSnapshot() (jedina druga pojava imena bio je ovaj redak)' },
+      { name: 'RegocPulse', status: 'planned', descriptionKey: 'cfg_komp_regocpulse', description: 'Unified service manager — health check, auto-restart, circuit breaker (port 17780)' },
+      { name: 'Installer Wizard', status: 'ondemand', descriptionKey: 'cfg_komp_installer_wizard', description: '10-step interactive CLI setup wizard (setup/regoc-setup.ts, 497 redaka) — pokreće se ručno, nije stalni servis' },
     ],
     skills: (() => {
       const skillsDir = join(HOME, '.claude/skills')
