@@ -27,6 +27,7 @@ zapravo su točnije, jer govore o NAŠEM pristupu, a ne o prosjeku svih korisnik
     python3 tools/dezurni.py podigni   # restart daemona i ploče
     python3 tools/dezurni.py javi ["tekst"]   # bez teksta: šalje gotovu obavijest
     python3 tools/dezurni.py straza    # svakih 30 min provjeri; javi kad se oporavi
+    python3 tools/dezurni.py proba     # probni poziv DEZURNOG modela (koji god davatelj)
 """
 from __future__ import annotations
 
@@ -70,6 +71,176 @@ def postavke() -> dict:
         return {**ZADANE_POSTAVKE, **json.loads(POSTAVKE.read_text(encoding="utf-8"))}
     except Exception:
         return dict(ZADANE_POSTAVKE)
+
+
+# ── Davatelji dežurnog (TASK-4709) ───────────────────────────────────────────────────────
+# Goran, 06.09.2026.: „config stranica nudi samo Ollamu, a ne sve providere iz
+# model-config.json." Uzrok nije bio popis nego most: znao je samo Ollamin `/api/chat`.
+#
+# Ovdje je ISTO pravilo kao u `tools/Telegram/dezurni.ts` (`NACIN_POZIVA_MOSTA`), jer isti
+# posao rade dva jezika — TS most odgovara na Telegramu, a ova skripta mjeri stanje i služi
+# kao provjera s ploče (`proba`). Kad se jedan promijeni, mora i drugi; brana je test
+# `DezurniDavatelji.test.ts → BRANA` na TS strani i `proba` ovdje.
+#
+# Ključ se čita iz okoline pa iz spremišta, ide SAMO u zaglavlje zahtjeva i nikad u ispis.
+KONFIG_MODELA = HOME / ".claude/regoc/models/model-config.json"
+CREDENTIALS = Path(os.environ.get("REGOC_CREDENTIALS_PATH")
+                   or (HOME / ".claude/regoc/credentials.env"))
+
+NACIN_PO_IMENU = {
+    "ollama": "ollama",
+    "anthropic": "claude-cli",   # pretplata preko `claude -p`, ne API ključ
+    "openrouter": "openai",
+    "openai": "openai",
+    "google": "google",
+}
+
+
+def _ucitaj_kljuc(ime: str) -> str:
+    if not ime:
+        return ""
+    if os.environ.get(ime):
+        return os.environ[ime]
+    try:
+        for red in CREDENTIALS.read_text(encoding="utf-8").splitlines():
+            red = red.strip()
+            if red.startswith("#") or not red.startswith(f"{ime}="):
+                continue
+            v = red.split("=", 1)[1].strip().strip("\"'")
+            if v:
+                return v
+    except Exception:
+        pass
+    return ""
+
+
+def _konf_davatelja(ime: str) -> dict:
+    try:
+        return json.loads(KONFIG_MODELA.read_text(encoding="utf-8")).get(
+            "providers", {}).get(ime, {}) or {}
+    except Exception:
+        return {}
+
+
+def nacin_za(ime: str, konf: dict) -> str | None:
+    """Koji oblik poziva vrijedi za davatelja. None = most ga ne zna pozvati."""
+    n = NACIN_PO_IMENU.get(str(ime).lower())
+    if n:
+        return n
+    if konf.get("anthropicCompatible") and konf.get("baseUrl"):
+        return "anthropic"
+    return None
+
+
+def _http_json(url: str, tijelo: dict, zaglavlja: dict, rok: int = 120):
+    zahtjev = urllib.request.Request(
+        url, json.dumps(tijelo).encode(), {"Content-Type": "application/json", **zaglavlja})
+    return json.load(urllib.request.urlopen(zahtjev, timeout=rok))
+
+
+def pitaj_model(kartica: str, pitanje: str, tokena: int = 200, p: dict | None = None) -> str | None:
+    """Pošalji pitanje davatelju iz postavki. None = nije odgovorio.
+
+    None NIKAD ne smije postati tihi pad na Ollamu: korisnik bi dobio tuđi odgovor pod
+    potpisom davatelja kojeg je izabrao."""
+    p = p or postavke()
+    ime = str(p.get("provider") or "ollama").lower()
+    model = str(p.get("model") or "")
+    konf = _konf_davatelja(ime)
+    nacin = nacin_za(ime, konf)
+    if not nacin:
+        print(f"most dezurnog ne zna pozvati davatelja {ime}", file=sys.stderr)
+        return None
+    try:
+        if nacin == "ollama":
+            d = _http_json(f"{p.get('baseUrl') or ZADANE_POSTAVKE['baseUrl']}/api/chat", {
+                "model": model, "stream": False, "think": False,
+                "options": {"temperature": 0, "num_predict": tokena},
+                "messages": [{"role": "system", "content": kartica},
+                             {"role": "user", "content": pitanje}],
+            }, {})
+            return ((d.get("message") or {}).get("content") or "").strip() or None
+
+        if nacin == "claude-cli":
+            naredba = ["claude", "-p", f"{kartica}\n\n{pitanje}"]
+            if model:
+                naredba += ["--model", model]
+            pr = subprocess.run(naredba, capture_output=True, timeout=180, text=True)
+            izlaz = (pr.stdout or "").strip()
+            # Hook-blokada izlazi s exit 0 i vrati prompt — to nije odgovor modela.
+            if "operation blocked by hook:" in izlaz.lower():
+                return None
+            return izlaz or None
+
+        if nacin == "openai":
+            url = ("https://openrouter.ai/api/v1/chat/completions" if ime == "openrouter"
+                   else "https://api.openai.com/v1/chat/completions")
+            kljuc = _ucitaj_kljuc("OPENROUTER_API_KEY" if ime == "openrouter" else "OPENAI_API_KEY")
+            if not kljuc:
+                print("nema kljuca za tog davatelja", file=sys.stderr)
+                return None
+            d = _http_json(url, {
+                "model": model, "max_tokens": tokena, "temperature": 0,
+                "messages": [{"role": "system", "content": kartica},
+                             {"role": "user", "content": pitanje}],
+            }, {"Authorization": "Bearer " + kljuc})
+            por = (d.get("choices") or [{}])[0].get("message") or {}
+            return str(por.get("content") or por.get("reasoning") or "").strip() or None
+
+        if nacin == "anthropic":
+            env = str(konf.get("apiKey") or "")
+            kljuc = _ucitaj_kljuc(env[4:] if env.startswith("env:") else "")
+            if not kljuc:
+                print("nema kljuca za tog davatelja", file=sys.stderr)
+                return None
+            d = _http_json(str(konf["baseUrl"]).rstrip("/") + "/v1/messages", {
+                "model": model, "max_tokens": tokena, "system": kartica,
+                "messages": [{"role": "user", "content": pitanje}],
+            }, {"x-api-key": kljuc, "anthropic-version": "2023-06-01"})
+            dijelovi = [c.get("text", "") for c in (d.get("content") or [])
+                        if c.get("type") == "text"]
+            return "\n".join(dijelovi).strip() or None
+
+        if nacin == "google":
+            kljuc = _ucitaj_kljuc("GOOGLE_API_KEY")
+            if not kljuc:
+                print("nema GOOGLE_API_KEY", file=sys.stderr)
+                return None
+            url = ("https://generativelanguage.googleapis.com/v1beta/models/"
+                   f"{model or 'gemini-2.0-flash'}:generateContent?key={kljuc}")
+            d = _http_json(url, {
+                "systemInstruction": {"parts": [{"text": kartica}]},
+                "contents": [{"parts": [{"text": pitanje}]}],
+                "generationConfig": {"temperature": 0, "maxOutputTokens": tokena},
+            }, {})
+            kand = (d.get("candidates") or [{}])[0]
+            dijelovi = [x.get("text", "") for x in ((kand.get("content") or {}).get("parts") or [])]
+            return "\n".join(dijelovi).strip() or None
+    except Exception as e:
+        print(f"davatelj ne odgovara: {str(e)[:160]}", file=sys.stderr)
+        return None
+    return None
+
+
+def proba() -> str:
+    """Probni poziv trenutačno postavljenog dežurnog — jedini dokaz da izbor stvarno radi.
+
+    Popis davatelja koji nudi nekoga koga most ne može dozvati gori je od popisa s jednim
+    davateljem, jer se laž otkrije tek u kvaru. Zato ovo mora biti pokretljivo rukom."""
+    p = postavke()
+    ime = str(p.get("provider") or "ollama").lower()
+    nacin = nacin_za(ime, _konf_davatelja(ime))
+    if not nacin:
+        return f"NE RADI: most dezurnog ne zna pozvati davatelja {ime}"
+    t0 = time.time()
+    # 200 tokena, ne 40: modeli koji „misle naglas" potrose mali proracun na razmisljanje i
+    # vrate prazan sadrzaj — probni poziv bi ispao neuspjesan iako davatelj radi.
+    o = pitaj_model("Ti si dezurni agent. Odgovaraj kratko.",
+                    "Odgovori jednom rijecju: radi.", 200, p)
+    ms = int((time.time() - t0) * 1000)
+    if not o:
+        return f"NE RADI: {ime}/{p.get('model')} (oblik {nacin}) nije odgovorio nakon {ms} ms"
+    return f"RADI: {ime}/{p.get('model')} (oblik {nacin}) odgovorio za {ms} ms: {o[:200]}"
 
 
 def _sat(iso: str | None) -> str:
@@ -397,7 +568,7 @@ def kartica() -> str:
 
 
 TIPKE = {"stanje": stanje, "zasto": zasto, "probaj": probaj, "podigni": podigni,
-         "kartica": kartica, "obavijest": obavijest,
+         "kartica": kartica, "obavijest": obavijest, "proba": proba,
          "straza": lambda: straza()}
 
 

@@ -93,9 +93,11 @@ import {
 import { RAGFilterSchema, RAGDeleteRequestSchema } from './zod/schemas/rag'
 import { resolveSessionUsage, createDefaultDeps, type UsageState } from './SessionUsage'
 // D4/TASK-4633: postavke dežurnog (rezervnog modela) — izbor modela s ploče, bez restarta.
+// TASK-4709: davatelji dežurnog više nisu tvrdi popis nego izvod iz `model-config.json`.
 import {
-  DEZURNI_CONFIG_PATH, GRANICE, PODRZANI_PROVIDERI,
-  loadDezurniConfig, saveDezurniConfig, validateDezurniPatch,
+  DEZURNI_CONFIG_PATH, GRANICE, POZNATI_MODELI_DEZURNI,
+  davateljiDezurnog, loadDezurniConfig, podrzaniProvideri, saveDezurniConfig,
+  upotrebljiviProvideri, validateDezurniPatch, zadaniModelZa,
 } from './DezurniConfig'
 // U6/TASK-4266: generički ulaz `POST /api/ingest` — source/externalId/replyTo/text/senderName.
 // Ništa u njemu ne zna za Telegram; most, pretinac e-pošte i konzola su obični pozivatelji.
@@ -3383,6 +3385,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         primijeniJezik();
         if (typeof ucitajOdluke === 'function') ucitajOdluke();
         if (typeof ucitajOdlucitelja === 'function') ucitajOdlucitelja();
+        if (typeof osvjeziDezurniJezik === 'function') osvjeziDezurniJezik();
         return true;
       } catch (e) { console.error('[jezik]', e); return false; }
     }
@@ -6999,6 +7002,28 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
 
     // ── Dežurni (D4/TASK-4633) — model se bira ovdje, ne uređivanjem dezurni.json ────────
     var _dezurniGranice = null;
+    // Zadnji odgovor /api/dezurni/config. Cuva se da promjena jezika ponovno iscrta panel
+    // BEZ novog poziva: popis modela zna trajati sekundama, a jezik se mijenja u trenu.
+    var _dezurniZadnji = null;
+
+    // Prijevod ide kroz ISTI rjecnik i isti obrazac "kljuc + zatecena rijec kao podloga"
+    // koji vec koriste ostali dinamicki dijelovi ploce (rj/rj2 kod popisa i odluka).
+    // Staticki okvir koristi data-i18n; ovdje se HTML sastavlja u JS-u pa se rjecnik cita rukom.
+    function _dezT(k, zad) { return (RJECNIK && RJECNIK[k] != null) ? RJECNIK[k] : zad; }
+    // Podatci (ime modela, staza datoteke, poruka posluzitelja) NISU prijevod -- ulazu se u
+    // prevedenu recenicu kao {oznake}, pa red rijeci ostaje na jeziku prevoditelja.
+    function _dezTv(k, zad, v) {
+      var s = _dezT(k, zad);
+      for (var kk in v) s = s.split('{' + kk + '}').join(v[kk]);
+      return s;
+    }
+
+    // Promjena jezika ne smije ponovno zvati posluzitelja -- iscrtava se iz zadnjeg odgovora.
+    function osvjeziDezurniJezik() {
+      var el = document.getElementById('info-dezurni-content');
+      if (!el || !_dezurniZadnji) return;   // panel jos nije ucitan -- nema sto prevesti
+      el.innerHTML = renderDezurni(_dezurniZadnji);
+    }
 
     async function loadDezurni() {
       var el = document.getElementById('info-dezurni-content');
@@ -7007,9 +7032,12 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         var d = await (await fetch('/api/dezurni/config')).json();
         if (d.error) throw new Error(d.error);
         _dezurniGranice = d.granice || null;
+        _dezurniZadnji = d;
         el.innerHTML = renderDezurni(d);
       } catch(e) {
-        el.innerHTML = '<div class="empty">Greška pri čitanju postavki dežurnog: ' + _dezEsc(e.message) + '</div>';
+        el.innerHTML = '<div class="empty">' +
+          _dezTv('dez_greska_citanja', 'Greška pri čitanju postavki dežurnog: {greska}',
+                 { greska: _dezEsc(e.message) }) + '</div>';
       }
     }
 
@@ -7018,47 +7046,93 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       var st = d.stanje || {};
       var g = d.granice || { okidac_uzastopnih_gresaka: { min:1, max:10 }, razmak_straze_min: { min:5, max:240 } };
       var znacka = st.dezurstvo
-        ? '<span class="info-badge disabled" title="Primarni model ne radi; dežurni odgovara na Telegramu.">dežurstvo AKTIVNO' + (st.od ? ' od ' + String(st.od).replace('T',' ').slice(0,16) : '') + '</span>'
-        : '<span class="info-badge enabled" title="Primarni put radi; dežurni čeka.">u pripravnosti</span>';
+        ? '<span class="info-badge disabled" title="' + _dezEsc(_dezT('dez_naslov_aktivno', 'Primarni model ne radi; dežurni odgovara na Telegramu.')) + '">' +
+          _dezT('dez_dezurstvo_aktivno', 'dežurstvo AKTIVNO') +
+          (st.od ? ' ' + _dezT('dez_od', 'od') + ' ' + String(st.od).replace('T',' ').slice(0,16) : '') + '</span>'
+        : '<span class="info-badge enabled" title="' + _dezEsc(_dezT('dez_naslov_pripravnost', 'Primarni put radi; dežurni čeka.')) + '">' +
+          _dezT('dez_u_pripravnosti', 'u pripravnosti') + '</span>';
       var ukljucenZnacka = p.ukljucen
-        ? '' : ' <span class="info-badge disabled" title="Okidač je isključen — dežurstvo se neće podići ni nakon praga grešaka.">isključen</span>';
+        ? '' : ' <span class="info-badge disabled" title="' + _dezEsc(_dezT('dez_naslov_iskljucen', 'Okidač je isključen — dežurstvo se neće podići ni nakon praga grešaka.')) + '">' +
+          _dezT('dez_iskljucen', 'isključen') + '</span>';
 
+      var davatelj = String(p.provider || 'ollama').toLowerCase();
+      var dav = d.davatelji || {};
       var opts = (d.modeli || []).map(function(m) {
         return '<option value="' + _dezEsc(m) + '"' + (m === p.model ? ' selected' : '') + '>' + _dezEsc(m) + '</option>';
       }).join('');
       var izvor = d.dostupno
-        ? '<span style="color:var(--text-secondary)">živi popis s ' + _dezEsc(p.baseUrl) + ' (' + (d.modeli||[]).length + ' modela)</span>'
-        : '<span style="color:#f59e0b" title="' + _dezEsc(d.greska) + '">poslužitelj nedostupan — prikazan je samo trenutačno postavljen model</span>';
+        ? (davatelj === 'ollama'
+            ? '<span style="color:var(--text-secondary)">' +
+              _dezTv('dez_izvor_ollama', 'živi popis s {url} ({broj} modela)',
+                     { url: _dezEsc(p.baseUrl), broj: (d.modeli||[]).length }) + '</span>'
+            : '<span style="color:var(--text-secondary)">' +
+              _dezTv('dez_izvor_poznati', '{broj} poznatih modela — može se upisati i drugo ime',
+                     { broj: (d.modeli||[]).length }) + '</span>')
+        : '<span style="color:#f59e0b" title="' + _dezEsc(d.greska) + '">' +
+          _dezTv('dez_izvor_greska', '{greska} — prikazan je samo trenutačno postavljen model',
+                 { greska: _dezEsc(d.greska || _dezT('dez_popis_nedostupan', 'popis nedostupan')) }) + '</span>';
+
+      // Davatelji: uključeni u model-config.json I s oblikom poziva koji most zna. Nespremni
+      // (nedostaje ključ) ostaju VIDLJIVI ali neizbirljivi — skriveni bi izgledali kao da ne
+      // postoje, a izbirljivi bi značili dežurnog koji šuti baš u kvaru.
+      var provOpts = (d.provideri || ['ollama']).map(function(id) {
+        var info = dav[id] || {};
+        var spreman = info.spreman !== false;
+        var oznaka = id + (spreman ? '' : '  ⚠ ' + (info.zasto || _dezT('dez_nije_spreman', 'nije spreman')));
+        return '<option value="' + _dezEsc(id) + '"' + (id === davatelj ? ' selected' : '') +
+          (spreman ? '' : ' disabled') + '>' + _dezEsc(oznaka) + '</option>';
+      }).join('');
+      var opisDavatelja = davatelj === 'anthropic'
+        ? _dezT('dez_opis_anthropic', 'POZOR: Anthropic ide preko <code>claude -p</code> i troši ISTU kvotu koja je dežurnog i pozvala.')
+        : (davatelj === 'ollama'
+            ? _dezT('dez_opis_ollama', 'Lokalna Ollama — jedini davatelj koji radi bez ključa i bez interneta.')
+            : _dezT('dez_opis_ostali', 'Izvor popisa: <code>models/model-config.json</code>. Ključ se čita iz <code>credentials.env</code>; vrijednost ploča nikad ne prikazuje.'));
 
       var h = '<div style="font-size:0.72rem;color:var(--text-secondary);margin-bottom:0.5rem">' +
-        'Kad <code>claude -p</code> padne ' + (p.okidac_uzastopnih_gresaka||2) + ' puta zaredom, dežurni preuzima odgovaranje na Telegramu ' +
-        'i javlja čim se primarni put vrati. Postavke se spremaju u <code>' + _dezEsc(d.putanja) + '</code> i ' +
-        '<strong>vrijede odmah, bez ponovnog pokretanja</strong> — most i alat citaju datoteku pri svakom pozivu. ' +
+        _dezTv('dez_uvod',
+          'Kad <code>claude -p</code> padne {n} puta zaredom, dežurni preuzima odgovaranje na Telegramu ' +
+          'i javlja čim se primarni put vrati. Postavke se spremaju u <code>{putanja}</code> i ' +
+          '<strong>vrijede odmah, bez ponovnog pokretanja</strong> — most i alat citaju datoteku pri svakom pozivu.',
+          { n: (p.okidac_uzastopnih_gresaka||2), putanja: _dezEsc(d.putanja) }) + ' ' +
         znacka + ukljucenZnacka + '</div>';
 
       h += '<table class="info-table"><tbody>';
-      h += _dezRed('Model dežurnog',
-        '<select style="' + _dezStil() + ';min-width:220px" onchange="spremiDezurni({model:this.value}, this)">' + opts + '</select>',
+      h += _dezRed(_dezT('dez_davatelj', 'Davatelj'),
+        '<select style="' + _dezStil() + ';min-width:220px" onchange="spremiDezurni({provider:this.value}, this)">' + provOpts + '</select>',
+        opisDavatelja);
+      h += _dezRed(_dezT('dez_model', 'Model dežurnog'),
+        '<select style="' + _dezStil() + ';min-width:220px" onchange="spremiDezurni({model:this.value}, this)">' + opts + '</select>' +
+        ' <input id="dez-model-rucno" placeholder="' + _dezEsc(_dezT('dez_upisi_ime_modela', 'ili upiši ime modela')) + '" style="' + _dezStil() + ';width:150px">' +
+        ' <button style="font-size:.72rem;padding:3px 8px" onclick="spremiDezurni({model:document.getElementById(\\'dez-model-rucno\\').value}, this)">' + _dezT('dez_spremi', 'Spremi') + '</button>',
         izvor);
-      h += _dezRed('Davatelj',
-        '<span style="font-size:0.72rem;color:#8aa0b2;border:1px dashed #3a4a55;border-radius:4px;padding:2px 8px;background:#12283a">' + _dezEsc(p.provider||'ollama') + ' &mdash; fiksno</span>',
-        'Most prema dežurnom zna govoriti samo Ollamin <code>/api/chat</code>; drugi davatelj traži novi pozivatelj.');
-      h += _dezRed('Ollama poslužitelj',
+      h += _dezRed(_dezT('dez_provjera', 'Provjera'),
+        '<button id="dez-proba" style="font-size:.72rem;padding:3px 8px" onclick="probajDezurnog(this)">' + _dezT('dez_probni_poziv', 'Probni poziv') + '</button>' +
+        ' <span id="dez-proba-ishod" style="font-size:.7rem"></span>',
+        _dezT('dez_provjera_opis', 'Stvarno pozove odabranog davatelja preko istog mosta koji odgovara na Telegramu. Bez ovoga se pogrešan izbor otkrije tek u kvaru.'));
+      h += _dezRed(_dezT('dez_ollama_posluzitelj', 'Ollama poslužitelj'),
         '<input id="dez-baseurl" value="' + _dezEsc(p.baseUrl) + '" style="' + _dezStil() + ';min-width:220px">' +
-        ' <button style="font-size:.72rem;padding:3px 8px" onclick="spremiDezurni({baseUrl:document.getElementById(\\'dez-baseurl\\').value}, this)">Spremi</button>',
-        'Odakle se vuče popis modela i kamo idu pitanja dežurnog.');
-      h += _dezRed('Dežurstvo uključeno',
+        ' <button style="font-size:.72rem;padding:3px 8px" onclick="spremiDezurni({baseUrl:document.getElementById(\\'dez-baseurl\\').value}, this)">' + _dezT('dez_spremi', 'Spremi') + '</button>',
+        _dezT('dez_ollama_posluzitelj_opis', 'Odakle se vuče popis modela i kamo idu pitanja dežurnog.'));
+      h += _dezRed(_dezT('dez_ukljuceno', 'Dežurstvo uključeno'),
         '<input type="checkbox"' + (p.ukljucen ? ' checked' : '') + ' onchange="spremiDezurni({ukljucen:this.checked}, this)">',
-        'Isključeno: greške se prijavljuju kao i prije, dežurni se ne javlja.');
-      h += _dezRed('Smije podići servise',
+        _dezT('dez_ukljuceno_opis', 'Isključeno: greške se prijavljuju kao i prije, dežurni se ne javlja.'));
+      if (davatelj !== 'ollama') {
+        h += _dezRed(_dezT('dez_napomena', 'Napomena'),
+          '<span class="info-badge disabled">' + _dezEsc(davatelj) + '</span>',
+          _dezT('dez_napomena_opis',
+            'Odabran je davatelj izvan lokalne mreže. Ako ne odgovori, dežurni šalje izmjerenu obavijest ' +
+            '— nikad tiho ne prelazi na Ollamu, jer bi korisnik dobio tuđi odgovor pod tuđim potpisom.'));
+      }
+      h += _dezRed(_dezT('dez_smije_podici', 'Smije podići servise'),
         '<input type="checkbox"' + (p.smije_podici ? ' checked' : '') + ' onchange="spremiDezurni({smije_podici:this.checked}, this)">',
-        'Jedina radnja dežurnog s posljedicom. Isključeno: tipka <code>podigni</code> odbija restart i to kaže.');
-      h += _dezRed('Prag uzastopnih grešaka',
+        _dezT('dez_smije_podici_opis', 'Jedina radnja dežurnog s posljedicom. Isključeno: tipka <code>podigni</code> odbija restart i to kaže.'));
+      h += _dezRed(_dezT('dez_prag_gresaka', 'Prag uzastopnih grešaka'),
         '<input type="number" min="' + g.okidac_uzastopnih_gresaka.min + '" max="' + g.okidac_uzastopnih_gresaka.max + '" value="' + (p.okidac_uzastopnih_gresaka||2) + '" style="' + _dezStil() + ';width:70px" onchange="spremiDezurni({okidac_uzastopnih_gresaka:Number(this.value)}, this)">',
-        'Jedna prolazna greška ne diže dežurstvo; ' + g.okidac_uzastopnih_gresaka.min + '–' + g.okidac_uzastopnih_gresaka.max + '.');
-      h += _dezRed('Razmak straže (min)',
+        _dezTv('dez_prag_gresaka_opis', 'Jedna prolazna greška ne diže dežurstvo; {min}–{max}.',
+               { min: g.okidac_uzastopnih_gresaka.min, max: g.okidac_uzastopnih_gresaka.max }));
+      h += _dezRed(_dezT('dez_razmak_straze', 'Razmak straže (min)'),
         '<input type="number" min="' + g.razmak_straze_min.min + '" max="' + g.razmak_straze_min.max + '" value="' + (p.razmak_straze_min||30) + '" style="' + _dezStil() + ';width:70px" onchange="spremiDezurni({razmak_straze_min:Number(this.value)}, this)">',
-        'Koliko često straža provjerava je li se primarni put vratio.');
+        _dezT('dez_razmak_straze_opis', 'Koliko često straža provjerava je li se primarni put vratio.'));
       h += '</tbody></table><div id="dez-poruka" style="font-size:.7rem;margin-top:.4rem;min-height:1em"></div>';
       return h;
     }
@@ -7080,6 +7154,33 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         '<td style="font-size:0.7rem;color:var(--text-secondary)">' + opis + '</td></tr>';
     }
 
+    // Probni poziv: ishod se ispisuje doslovno, i kad je loš. Zeleno "spremljeno" bez ovoga
+    // znači samo da je datoteka zapisana, a ne da davatelj odgovara.
+    async function probajDezurnog(el) {
+      var ishod = document.getElementById('dez-proba-ishod');
+      if (el) { el.disabled = true; }
+      if (ishod) ishod.innerHTML = '<span style="color:var(--text-secondary)">' + _dezT('dez_zovem', 'zovem…') + '</span>';
+      try {
+        var d = await (await fetch('/api/dezurni/proba', { method: 'POST' })).json();
+        if (ishod) {
+          ishod.innerHTML = d.ok
+            ? '<span style="color:var(--accent-green,#22c55e)">' +
+              _dezTv('dez_radi', 'RADI — {model} za {ms} ms: {odgovor}', {
+                model: _dezEsc(d.provider + '/' + d.model), ms: d.ms,
+                odgovor: _dezEsc(String(d.odgovor||'').slice(0,120)),
+              }) + '</span>'
+            : '<span style="color:var(--accent-red,#ef4444)">' +
+              _dezTv('dez_ne_radi', 'NE RADI — {greska}',
+                     { greska: _dezEsc(d.greska || _dezT('dez_bez_odgovora', 'bez odgovora')) }) + '</span>';
+        }
+      } catch(e) {
+        if (ishod) ishod.innerHTML = '<span style="color:var(--accent-red,#ef4444)">' +
+          _dezTv('dez_proba_nije_prosla', 'proba nije prošla: {greska}',
+                 { greska: _dezEsc(e.message) }) + '</span>';
+      }
+      if (el) el.disabled = false;
+    }
+
     async function spremiDezurni(zakrpa, el) {
       var poruka = document.getElementById('dez-poruka');
       if (el) el.disabled = true;
@@ -7088,15 +7189,19 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
           method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(zakrpa)
         });
         var d = await res.json();
-        if (!res.ok || d.error) throw new Error(d.error || 'spremanje nije uspjelo');
+        if (!res.ok || d.error) throw new Error(d.error || _dezT('dez_spremanje_nije_uspjelo', 'spremanje nije uspjelo'));
         // Potvrda se pise TEK nakon ponovnog iscrtavanja: loadDezurni mijenja innerHTML
         // cijele kartice, pa bi poruka ispisana prije toga nestala u istom dahu.
         // (Backtick u komentaru ovdje zatvara predlozak u kojem cijela ploca zivi.)
         await loadDezurni();
         var svjeza = document.getElementById('dez-poruka');
-        if (svjeza) svjeza.innerHTML = '<span style="color:var(--accent-green,#22c55e)">Spremljeno — vrijedi odmah, bez restarta (' + new Date().toLocaleTimeString() + ')</span>';
+        if (svjeza) svjeza.innerHTML = '<span style="color:var(--accent-green,#22c55e)">' +
+          _dezTv('dez_spremljeno', 'Spremljeno — vrijedi odmah, bez restarta ({vrijeme})',
+                 { vrijeme: new Date().toLocaleTimeString() }) + '</span>';
       } catch(e) {
-        if (poruka) poruka.innerHTML = '<span style="color:var(--accent-red,#ef4444)">Nije spremljeno: ' + _dezEsc(e.message) + '</span>';
+        if (poruka) poruka.innerHTML = '<span style="color:var(--accent-red,#ef4444)">' +
+          _dezTv('dez_nije_spremljeno', 'Nije spremljeno: {greska}',
+                 { greska: _dezEsc(e.message) }) + '</span>';
         if (el) el.disabled = false;
       }
     }
@@ -7943,14 +8048,30 @@ async function handleDezurniConfigGet(): Promise<Response> {
     new Response(JSON.stringify(o), { status: s, headers: { 'Content-Type': 'application/json' } })
   try {
     const postavke = loadDezurniConfig()
+    const davatelj = String(postavke.provider || 'ollama').toLowerCase()
     let modeli: string[] = []
     let dostupno = false
     let greska: string | null = null
-    try {
-      modeli = await fetchOllamaModels(String(postavke.baseUrl))
-      dostupno = true
-    } catch (e: any) {
-      greska = String(e && e.message ? e.message : e)
+
+    if (davatelj === 'ollama') {
+      // Ollamin popis je ŽIV (s njezina `/api/tags`) — popis koji laže gori je od nikakvog.
+      try {
+        modeli = await fetchOllamaModels(String(postavke.baseUrl))
+        dostupno = true
+      } catch (e: any) {
+        greska = String(e && e.message ? e.message : e)
+      }
+    } else if (davatelj === 'openrouter') {
+      modeli = (await openrouterModeli()).slice(0, 60)
+      dostupno = modeli.length > 0
+      if (!dostupno) greska = 'katalog OpenRoutera nije dostupan'
+    } else {
+      // Ostali davatelji nemaju javni katalog: nudi se poznat popis, a ploča dopušta i
+      // ručno upisano ime modela — polazište, ne ograda.
+      modeli = POZNATI_MODELI_DEZURNI[davatelj] || []
+      const d = davateljiDezurnog()[davatelj]
+      dostupno = !!d?.spreman
+      if (!dostupno) greska = d?.zasto || 'davatelj nije spreman'
     }
     // Trenutačni model mora ostati u popisu i kad je poslužitelj nedostupan — inače bi
     // dropdown pri prvom otvaranju tiho pokazao tuđu vrijednost.
@@ -7958,12 +8079,40 @@ async function handleDezurniConfigGet(): Promise<Response> {
     return json({
       postavke, modeli, dostupno, greska,
       putanja: DEZURNI_CONFIG_PATH,
-      provideri: PODRZANI_PROVIDERI,
+      provideri: podrzaniProvideri(),
+      upotrebljivi: upotrebljiviProvideri(),
+      davatelji: davateljiDezurnog(),
+      poznatiModeli: POZNATI_MODELI_DEZURNI,
       granice: GRANICE,
       stanje: citajDezurniStanje(),
     })
   } catch (err) {
     return json({ error: String(err) }, 500)
+  }
+}
+
+/**
+ * Probni poziv dežurnog — jedini dokaz da odabrani davatelj STVARNO odgovara.
+ * Zove se sam most (`tools/Telegram/dezurni.ts`), ne preslika njegove logike: preslika bi
+ * mogla proći dok pravi put ne radi, a to je točno kvar koji ovo treba otkriti.
+ */
+async function handleDezurniProba(): Promise<Response> {
+  const json = (o: unknown, s = 200) =>
+    new Response(JSON.stringify(o), { status: s, headers: { 'Content-Type': 'application/json' } })
+  const put = join(process.env.HOME || '/home/klaudio', '.claude/tools/Telegram/dezurni.ts')
+  if (!existsSync(put)) {
+    return json({ ok: false, greska: `most dežurnog nije na ovom stroju (${put})` }, 200)
+  }
+  try {
+    const most = await import(put)
+    if (typeof most.probaModela !== 'function') {
+      return json({ ok: false, greska: 'most nema probaModela() — stara inačica datoteke' }, 200)
+    }
+    const r = await most.probaModela()
+    console.log(`[DEZURNI] proba: ${r.ok ? 'RADI' : 'NE RADI'} ${r.provider}/${r.model} (${r.ms} ms)`)
+    return json(r)
+  } catch (e: any) {
+    return json({ ok: false, greska: String(e && e.message ? e.message : e) }, 200)
   }
 }
 
@@ -7994,8 +8143,16 @@ async function handleDezurniConfigPut(req: Request): Promise<Response> {
   const provjera = validateDezurniPatch(tijelo)
   if (!provjera.ok) return json({ error: provjera.greske.join('; '), greske: provjera.greske }, 400)
   try {
-    const postavke = saveDezurniConfig(provjera.zakrpa)
-    console.log(`[DEZURNI] postavke promijenjene s ploče: ${JSON.stringify(provjera.zakrpa)}`)
+    const zakrpa = { ...provjera.zakrpa }
+    // Model prethodnog davatelja kod novoga ne postoji (`qwen3:8b` nije model na Anthropicu).
+    // Bez ovoga bi promjena davatelja ostavila postavku koja izgleda ispravno, a u kvaru bi
+    // dala 404 s druge strane — tiha smrt dežurnog točno kad treba raditi.
+    const staro = loadDezurniConfig()
+    if (zakrpa.provider && zakrpa.provider !== staro.provider && !zakrpa.model) {
+      zakrpa.model = zadaniModelZa(zakrpa.provider) || String(staro.model || '')
+    }
+    const postavke = saveDezurniConfig(zakrpa)
+    console.log(`[DEZURNI] postavke promijenjene s ploče: ${JSON.stringify(zakrpa)}`)
     return json({ ok: true, postavke })
   } catch (err) {
     return json({ error: String(err) }, 500)
@@ -12783,6 +12940,12 @@ const server = Bun.serve({
     // PUT /api/dezurni/config — izbor modela i ostale postavke dežurnog (D4)
     if (url.pathname === '/api/dezurni/config' && req.method === 'PUT') {
       return handleDezurniConfigPut(req)
+    }
+
+    // POST /api/dezurni/proba — probni poziv odabranog davatelja (TASK-4709). Izbor koji se
+    // ne može isprobati nije izbor nego obećanje koje se provjerava tek u kvaru.
+    if (url.pathname === '/api/dezurni/proba' && req.method === 'POST') {
+      return handleDezurniProba()
     }
 
     // GET /api/ingest-gate — ulazna vrata za Telegram: prekidač po grupi + pragovi (U1)

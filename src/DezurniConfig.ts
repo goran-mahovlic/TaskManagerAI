@@ -41,8 +41,158 @@ export const ZADANE_POSTAVKE: DezurniPostavke = {
   razmak_straze_min: 30,
 }
 
-/** Most prema modelu zna govoriti samo Ollamin `/api/chat` (`dezurni.ts → ollama()`).
- *  Dok se ne napiše drugi pozivatelj, ponuditi drugog davatelja značilo bi ponuditi kvar. */
+// ── Davatelji (TASK-4709) ───────────────────────────────────────────────────────────────
+// Goran, 06.09.2026.: ploča je nudila samo Ollamu jer je most znao samo njezin `/api/chat`.
+// Most sada zna pet oblika poziva (`dezurni.ts → NACIN_POZIVA_MOSTA`), pa se popis davatelja
+// više NE piše rukom nego IZVODI iz `models/model-config.json`. Ručni popis je jednom već
+// zaostao za mostom; izvod ne može.
+
+export const MODEL_CONFIG_PATH = join(
+  process.env.HOME || '/home/klaudio', '.claude/regoc/models/model-config.json')
+export const CREDENTIALS_PATH = join(
+  process.env.HOME || '/home/klaudio', '.claude/regoc/credentials.env')
+
+/** Oblici poziva koje most implementira. Ista imena moraju postojati u `dezurni.ts`
+ *  (`NACIN_POZIVA_MOSTA`) — to čuva test `DezurniDavatelji.test.ts → BRANA`. */
+export type NacinPoziva = 'ollama' | 'claude-cli' | 'openai' | 'anthropic' | 'google'
+
+/** Davatelji čiji oblik poziva ne piše u konfiguraciji nego ga znamo po imenu. */
+const NACIN_PO_IMENU: Record<string, NacinPoziva> = {
+  ollama: 'ollama',
+  anthropic: 'claude-cli',   // pretplata preko `claude -p`, ne API ključ
+  openrouter: 'openai',
+  openai: 'openai',
+  google: 'google',
+}
+
+/**
+ * Jedino pravilo o tome koga most zna pozvati. `null` = ne zna → davatelj se NE nudi.
+ * `anthropicCompatible` + `baseUrl` pokriva GLM, Kimi, MiniMax, Qwen i DeepSeek bez ijednog
+ * novog retka koda; `kimicli` (OAuth CLI) i `custom` namjerno ostaju vani.
+ */
+export function nacinPoziva(ime: string, konf: Record<string, unknown> | undefined | null):
+  NacinPoziva | null {
+  const poImenu = NACIN_PO_IMENU[String(ime).toLowerCase()]
+  if (poImenu) return poImenu
+  if (konf && konf.anthropicCompatible && typeof konf.baseUrl === 'string' && konf.baseUrl) {
+    return 'anthropic'
+  }
+  return null
+}
+
+/** Polazni model po davatelju. Nije ograda — ploča dopušta i vlastito ime modela — nego
+ *  polazište, da promjena davatelja ne ostavi `qwen3:8b` upisan kod Anthropica. */
+export const POZNATI_MODELI_DEZURNI: Record<string, string[]> = {
+  ollama: ['qwen3:8b'],
+  anthropic: ['claude-haiku-4-5-20251001', 'claude-sonnet-5', 'claude-opus-5'],
+  openrouter: ['z-ai/glm-4.6', 'google/gemini-2.5-flash', 'deepseek/deepseek-chat'],
+  openai: ['gpt-4o-mini', 'gpt-4o'],
+  google: ['gemini-2.0-flash', 'gemini-2.5-flash', 'gemini-2.5-pro'],
+  glm: ['glm-4.6', 'glm-4.7-flash'],
+  kimi: ['kimi-k2-0905-preview', 'kimi-k2.6'],
+  minimax: ['MiniMax-M2'],
+  qwen: ['qwen3-coder-plus'],
+  deepseek: ['deepseek-chat', 'deepseek-reasoner'],
+}
+
+export function zadaniModelZa(provider: string): string {
+  return POZNATI_MODELI_DEZURNI[String(provider).toLowerCase()]?.[0] || ''
+}
+
+export interface DavateljDezurnog {
+  ukljucen: boolean
+  nacin: NacinPoziva | null
+  spreman: boolean
+  zasto: string
+  baseUrl: string | null
+  kljucVarijabla: string | null
+}
+
+/** Postoji li ključ — provjerava se SAMO postojanje retka/varijable. Vrijednost se ne čita
+ *  dalje, ne vraća i ne zapisuje: ploča nikad ne smije postati mjesto curenja tajne. */
+function imaKljuc(ime: string, credPath: string): boolean {
+  if (!ime) return true
+  if (process.env[ime]) return true
+  try {
+    return new RegExp('^' + ime + '=\\S', 'm').test(readFileSync(credPath, 'utf-8'))
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Svi davatelji iz `model-config.json` + je li svaki stvarno upotrebljiv.
+ * Davatelj bez ključa se NE skriva nego pošteno prijavi — skriven bi izgledao kao da ga nema,
+ * a prijavljen kaže Goranu točno koji redak fali u `credentials.env`.
+ */
+export function davateljiDezurnog(
+  mcPath: string = MODEL_CONFIG_PATH,
+  credPath: string = CREDENTIALS_PATH,
+): Record<string, DavateljDezurnog> {
+  let konf: Record<string, any> = {}
+  try {
+    konf = JSON.parse(readFileSync(mcPath, 'utf-8'))?.providers || {}
+  } catch { /* bez konfiguracije ostaje samo lokalni put — vidi niže */ }
+
+  const out: Record<string, DavateljDezurnog> = {}
+  for (const [ime, v] of Object.entries(konf)) {
+    if (!v || typeof v !== 'object' || Array.isArray(v)) continue
+    const sirovi = String((v as any).apiKey || '')
+    const env = sirovi.startsWith('env:') ? sirovi.slice(4) : ''
+    const nacin = nacinPoziva(ime, v as Record<string, unknown>)
+    let spreman = env ? imaKljuc(env, credPath) : true
+    let zasto = spreman ? 'spreman' : `treba ${env} (okolina ili credentials.env)`
+    if (ime === 'ollama') { spreman = true; zasto = 'lokalno, bez ključa' }
+    if (ime === 'anthropic') {
+      spreman = !!Bun.which('claude')
+      zasto = spreman
+        ? 'Claude CLI (pretplata) — POZOR: troši istu kvotu koja je dežurnog i pozvala'
+        : 'nema Claude CLI na ovom stroju'
+    }
+    if (!nacin) { spreman = false; zasto = 'most dežurnog ne zna pozvati ovog davatelja' }
+    out[ime] = {
+      ukljucen: (v as any).enabled === true,
+      nacin, spreman, zasto,
+      baseUrl: (v as any).baseUrl || null,
+      kljucVarijabla: env || null,
+    }
+  }
+  if (!out.ollama) {
+    // Nečitljiva konfiguracija ne smije ostaviti ploču bez ijednog izbora: lokalni put je
+    // jedini koji radi i bez ključa i bez interneta, pa je i jedini ispravan pad.
+    out.ollama = {
+      ukljucen: true, nacin: 'ollama', spreman: true,
+      zasto: 'lokalno, bez ključa', baseUrl: ZADANE_POSTAVKE.baseUrl, kljucVarijabla: null,
+    }
+  }
+  return out
+}
+
+/** Redoslijed: ollama prva (jedina bez ključa i bez interneta), ostali abecedno. */
+function poredaj(imena: string[]): string[] {
+  return imena.sort((a, b) =>
+    a === 'ollama' ? -1 : b === 'ollama' ? 1 : a.localeCompare(b))
+}
+
+/** Davatelji koje ploča smije PONUDITI: uključeni u konfiguraciji i s oblikom poziva. */
+export function podrzaniProvideri(
+  mcPath: string = MODEL_CONFIG_PATH,
+  credPath: string = CREDENTIALS_PATH,
+): string[] {
+  const d = davateljiDezurnog(mcPath, credPath)
+  return poredaj(Object.keys(d).filter(k => d[k].ukljucen && d[k].nacin))
+}
+
+/** Davatelji koje ploča smije SPREMITI: uz to i spremni (ključ/CLI postoji). */
+export function upotrebljiviProvideri(
+  mcPath: string = MODEL_CONFIG_PATH,
+  credPath: string = CREDENTIALS_PATH,
+): string[] {
+  const d = davateljiDezurnog(mcPath, credPath)
+  return poredaj(Object.keys(d).filter(k => d[k].ukljucen && d[k].nacin && d[k].spreman))
+}
+
+/** @deprecated Zadržano da stari pozivatelji ne puknu; popis je sada izvod, ne konstanta. */
 export const PODRZANI_PROVIDERI = ['ollama'] as const
 
 export const GRANICE = {
@@ -73,7 +223,14 @@ export interface Provjera {
  * Provjeri zakrpu s ploče. Prihvaća SAMO poznata polja — tipfeler u imenu polja tiho bi
  * stvorio mrtvu postavku koju nitko ne čita (isti kvar koji je `progress_notes` gutao).
  */
-export function validateDezurniPatch(tijelo: unknown): Provjera {
+export interface OpcijeProvjere {
+  mcPath?: string
+  credPath?: string
+}
+
+export function validateDezurniPatch(tijelo: unknown, opcije: OpcijeProvjere = {}): Provjera {
+  const mcPath = opcije.mcPath || MODEL_CONFIG_PATH
+  const credPath = opcije.credPath || CREDENTIALS_PATH
   const greske: string[] = []
   const zakrpa: Record<string, unknown> = {}
   if (!tijelo || typeof tijelo !== 'object' || Array.isArray(tijelo)) {
@@ -96,10 +253,19 @@ export function validateDezurniPatch(tijelo: unknown): Provjera {
   }
 
   if ('provider' in t) {
-    const v = String(t.provider || '').trim()
-    if (!(PODRZANI_PROVIDERI as readonly string[]).includes(v)) {
-      greske.push(`provider mora biti jedan od: ${PODRZANI_PROVIDERI.join(', ')} ` +
-        '(most prema modelu zna samo Ollamin /api/chat)')
+    const v = String(t.provider || '').trim().toLowerCase()
+    const dav = davateljiDezurnog(mcPath, credPath)
+    const d = dav[v]
+    const ponudjeni = podrzaniProvideri(mcPath, credPath)
+    if (!d || !d.nacin) {
+      greske.push(`provider "${v}": most dežurnog ga ne zna pozvati. ` +
+        `Ponuđeni: ${ponudjeni.join(', ')}`)
+    } else if (!d.ukljucen) {
+      greske.push(`provider "${v}" je isključen u models/model-config.json (enabled:false)`)
+    } else if (!d.spreman) {
+      // Spremiti davatelja bez ključa značilo bi da dežurni šuti baš u trenutku kvara —
+      // a tišina je jedini ishod koji korisnik ne smije dobiti.
+      greske.push(`provider "${v}" nije spreman: ${d.zasto}`)
     } else zakrpa.provider = v
   }
 
