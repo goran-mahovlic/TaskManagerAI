@@ -51,7 +51,7 @@ done
 #     instalaciji ih nema ili ondje imaju putanje na `~/.claude/regoc`. Otkrivanje po
 #     uvozima ih ne bi ni našlo, ali `IngestGateConfig.ts` bi se vratio kroz uvoz iz
 #     prekopiranog `TaskWebUI.ts` — a on nosi putanju koja izvan REGOČ stroja ne postoji.
-VLASTITO_U_PAKETU="src/core/Ingest.ts src/core/IngestConfig.ts src/core/IngestTemplate.ts"
+VLASTITO_U_PAKETU="src/core/Ingest.ts src/core/IngestConfig.ts src/core/IngestTemplate.ts src/core/Rjecnici.ts"
 
 # 2) Jezgra: moduli se OTKRIVAJU iz uvoza, ne održavaju ručnim popisom.
 #

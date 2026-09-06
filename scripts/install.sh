@@ -107,7 +107,18 @@ if [ "$BEZ_BAZE" = "0" ]; then
   fi
 fi
 
-# ── 4. Provjera da se doista podiže ───────────────────────────────────────────
+# ── 4. Rječnici sučelja ───────────────────────────────────────────────────────
+# TASK-4713 (prenesen u paket TASK-4719): kod zna doći bez `locales/` i `config/jezik.json`,
+# a ploča se u tom slučaju uredno digne i `/health` vrati 200 — samo što u pregledniku nema
+# izbornika jezika, nego goli ključevi. Provjera zato ide PRIJE nego instalacija javi „U REDU".
+echo "  rječnici sučelja…"
+if ! bun scripts/provjeri-rjecnike.ts; then
+  echo "  GREŠKA: rječnici sučelja nisu na svom mjestu (locales/, config/jezik.json)"
+  echo "         vrati ih iz gita ili prijenosom: bash scripts/uskladi_s_regocem.sh"
+  exit 1
+fi
+
+# ── 5. Provjera da se doista podiže ───────────────────────────────────────────
 VRATA="${TM_PORT:-17781}"
 echo "  provjera na vratima $VRATA…"
 TM_PORT="$VRATA" nohup bun src/TaskWebUI.ts > /tmp/tmai_install.log 2>&1 &
