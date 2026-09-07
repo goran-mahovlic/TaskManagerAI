@@ -46,7 +46,17 @@ bun run init         # creates the database from db/schema.sql
 bun run start        # starts the board and the API
 ```
 
-Open `http://localhost:17781`.
+Open `http://localhost:17781`. The board has seven tabs:
+
+| Tab | What is on it |
+|---|---|
+| **Tasks** | the kanban board — by state, priority, assignee, project |
+| **Projects** | project list, each with its own specification |
+| **RAG** | search over the knowledge base, if it is turned on |
+| **Console** | live stream of events, a place to message an agent, and (optional) run a command |
+| **Spending** | cost per task and project, weekly review, value of requests vs. cost |
+| **Status** | service health, token usage, the execution queue, the manual pause |
+| **Config** | model providers and how to log them in, the reserve/fallback model, the decision-gate model, interface language, `PLAN`/`WORK` mode |
 
 Your first task through the API:
 

@@ -11,6 +11,7 @@ Sve što dolazi uz sustav i sve što ti treba da ga držiš u pogonu.
 | `bun run health` | provjerava odgovara li poslužitelj i broji zadatke | nadzor, prije i poslije nadogradnje |
 | `bun scripts/backup.ts` | sigurnosna preslika baze | dnevno, periodičkim poslom |
 | `bun test` | testovi | prije izmjene koda |
+| `python3 tools/dezurni.py` | CLI za postavke i probu dežurnog (rezervnog) modela — vidi [API.md](API.md#dežurni-rezervni-model) | kad se konfigurira izvan ploče, npr. sa stroja bez preglednika |
 
 Svaka skripta poštuje `TM_HOME`, `TM_DB` i `TM_PORT`, pa se bez problema drži više odvojenih
 instanci na istom stroju:
@@ -68,4 +69,8 @@ Da ne bude nesporazuma — ovo je upravitelj zadataka, ne cijeli sustav agenata.
 - raspoređivač koji sam odlučuje što je sljedeće.
 
 Sve se to gradi **oko** njega. Kako to izgleda u praksi opisano je u
-[REGOC/README.md](../REGOC/README.md).
+[REGOC/README.md](../REGOC/README.md). Iznimka koju vrijedi znati: **ploča ima gotove krajeve
+za dežurni (rezervni) model i za slikovni servis Gita** ([API.md](API.md#dežurni-rezervni-model),
+[API.md](API.md#gita-slike)) — kod je u paketu, ali dežurni pretpostavlja `~/.claude/regoc/`
+raspored datoteka, a Gita pretpostavlja servis na `localhost:8889`. Bez njih ti krajevi javljaju
+čitljivu grešku, ne padaju ploču.

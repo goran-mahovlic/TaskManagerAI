@@ -22,6 +22,8 @@ prešao s datoteka na SQL, jer su zadatke počeli otvarati i zatvarati programi,
 | **Ručna kočnica** | pauza globalno ili po zadatku, bez gubitka stanja |
 | **Živa konzola** | tijek rada preko web utičnice, bez osvježavanja stranice |
 | **Graf znanja** | bilješke i veze među njima, neobavezno uz semantičko pretraživanje |
+| **Jezici sučelja** | hrvatski i engleski; svaki novi jezik je jedna JSON datoteka |
+| **Vratar odluke** | zadatci s oznakom `needs-decision` čekaju čovjeka — ili model kojeg izabereš |
 
 Sve radi bez ijedne vanjske usluge. RAG (semantičko pretraživanje) je neobavezan dodatak.
 
@@ -40,7 +42,17 @@ bun run init         # stvara bazu iz db/schema.sql
 bun run start        # pokreće ploču i API
 ```
 
-Otvori `http://localhost:17781`.
+Otvori `http://localhost:17781`. Ploča ima sedam kartica:
+
+| Kartica | Što je na njoj |
+|---|---|
+| **Zadatci** | kanban ploča — po stanju, prioritetu, nositelju, projektu |
+| **Projekti** | popis projekata, svaki sa svojom specifikacijom |
+| **RAG** | pretraga po znanju, ako je uključena |
+| **Konzola** | živi tijek događaja, mjesto za poruku agentu i (neobavezno) pokretanje naredbe |
+| **Potrošnja** | trošak po zadatku i projektu, tjedni pregled, vrijednost upita naspram troška |
+| **Stanje** | stanje servisa, potrošnja žetona, red za izvršavanje, ručna kočnica |
+| **Postavke** | davatelji modela i prijava na njih, dežurni (rezervni) model, model za vratara odluke, jezik sučelja, način `PLAN`/`WORK` |
 
 Prvi zadatak preko API-ja:
 
@@ -64,6 +76,7 @@ Sve je neobavezno; bez ijedne postavke radi na zadanim vrijednostima. Kopiraj `e
 | `TM_DB` | `$TM_HOME/data/tasks.db` | putanja do baze, ako je držiš drugdje |
 | `TM_AGENTS` | ugrađeni popis | imena agenata koji smiju biti nositelji, odvojena zarezom |
 | `TM_EXTERNAL_HOST` | `localhost` | ime poslužitelja koje se prikazuje u sučelju |
+| `TM_LANG` | `hr` | zadani jezik sučelja (`en`, `hr`, ili bilo koja datoteka u `locales/`) |
 | `TM_CHROMA_HOST`, `TM_OLLAMA_URL` | — | uključuju RAG; bez njih je isključen |
 
 **Vlastiti sastav tima** postavlja se ovako — `user` i `scheduler` uvijek se dodaju sami:
@@ -71,6 +84,45 @@ Sve je neobavezno; bez ijedne postavke radi na zadanim vrijednostima. Kopiraj `e
 ```bash
 TM_AGENTS=ana,ivan,marko bun run start
 ```
+
+---
+
+## Jezik sučelja
+
+Ploča dolazi s hrvatskim i engleskim. Odaberi jedan u izborniku u zaglavlju; izbor pamti
+preglednik. Za jezik koji svi vide prije nego što išta izaberu, koristi `TM_LANG` ili
+`config/jezik.json`.
+
+Dodavanje jezika ne treba nikakav kod. Kopiraj postojeću datoteku u `locales/`, prevedi
+vrijednosti — nikad ključeve — i jezik se pojavi u izborniku nakon idućeg pokretanja:
+
+```bash
+cp locales/en.json locales/de.json
+$EDITOR locales/de.json          # prevedi samo vrijednosti
+TM_LANG=de bun run start
+```
+
+Ključ bez prijevoda pada na engleski, pa je i djelomičan prijevod upotrebljiv. Naslovi zadataka,
+opisi i bilješke se **nikad** ne prevode: to su tvoji podatci, ne sučelje.
+
+---
+
+## Odluka o pokretanju
+
+Zadatak s oznakom `needs-decision` svaka automatika ostavlja na miru dok ga netko ne otključa.
+Ploča ih skuplja u traku iznad stupaca, s poljem za odluku i gumbom **Nastavi**; ono što upišeš
+ostaje uz zadatak.
+
+To prosuđivanje možeš prepustiti i modelu — bilo kojem davatelju iz `models/model-config.json`,
+od lokalnog Ollama modela do OpenRoutera ili Anthropica. Prvo prolazi odredišni filtar koji
+sve što dira novac, brisanje, tajne, vanjski učinak ili nejasan opis vraća izravno tebi; model
+vidi samo ostatak i ne može nadglasati filtar.
+
+Ta podjela je namjerna. Mjereno na malom lokalnom modelu, kad je sam prosuđivao rizik, na 6 od 7
+rizičnih zadataka odgovorio je „kreni" — svaki put uvjerljivo obrazloženo. S filtrom: 7 od 7
+točno.
+
+Pojedinosti, davatelji i postavke: [docs/ODLUCIVANJE.md](docs/ODLUCIVANJE.md).
 
 ---
 
@@ -82,6 +134,8 @@ TM_AGENTS=ana,ivan,marko bun run start
 | [docs/DATABASE.md](docs/DATABASE.md) | tablice, okidači, kako nastaje baza i kako se mijenja |
 | [docs/API.md](docs/API.md) | svi krajevi API-ja s primjerima |
 | [docs/TOOLS.md](docs/TOOLS.md) | skripte, konzola, periodički poslovi |
+| [docs/JEZICI.md](docs/JEZICI.md) | jezici sučelja: odabir, dodavanje |
+| [docs/ODLUCIVANJE.md](docs/ODLUCIVANJE.md) | zadatci koji čekaju odluku; kad odlučuje model, i filtar rizika |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | git kuke, pravila za commitove, pokretanje testova |
 | [REGOC/README.md](REGOC/README.md) | kako izgleda pravi sustav agenata izgrađen oko ovoga |
 

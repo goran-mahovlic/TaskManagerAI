@@ -364,6 +364,13 @@ to je konačno stanje iz kojega se ne vraća.
 zadatkom nemaju veze. Postoji provjera koja to zaustavlja — jer je najskuplja vrsta pogreške ona
 koju nitko nije tražio.
 
+**Dežurni.** Sve dosad opisano pretpostavlja da glavni model radi, samo da ne smije raditi
+previše. Kad glavni model **ne odgovara uopće** — kvar kod davatelja, istekla prijava, iscrpljena
+kvota, pao naš servis — kočnice ne pomažu, jer nema tko da ih poštuje. Za to postoji dežurni:
+rezervni model koji sam utvrdi uzrok, javi ga i, ako je tako postavljeno, privremeno preuzme
+razgovor. Ključna razlika od stupnjeva autonomije: stupnjevi gase koliko sustav sam sebi daje
+posla, a dežurni brine da sustav uopće ostane čujan dok se glavni put ne vrati.
+
 ---
 
 ## 13. Provjere prije nego što se nešto proglasi gotovim

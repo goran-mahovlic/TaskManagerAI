@@ -68,6 +68,18 @@ curl http://localhost:17781/api/pause          # stanje
 
 Dok je uključena, sustav ne preuzima nove zadatke ni iz reda ni na zahtjev.
 
+### Odluka o pokretanju (`needs-decision`)
+
+Zadatak s oznakom `needs-decision` (ili `no-autonomy`, `waiting-for-human`, `interactive`) čeka
+dok ga netko — čovjek ili model kojem se to povjeri — ne otključa. Koncept, filtar rizika i
+primjeri s ploče su u [ODLUCIVANJE.md](ODLUCIVANJE.md); ovdje su samo krajevi:
+
+| Kraj | Metoda | Što radi |
+|---|---|---|
+| `/api/odluke` | GET | popis zadataka koji čekaju odluku |
+| `/api/odlucitelj/config` | GET / PUT | postavke modela-odlučitelja (`config/odlucitelj.json`) |
+| `/api/odlucitelj/pokreni` | POST | pokreni prolaz odlučivanja; s `{"suho": true}` samo pokaže što bi odlučio, ništa ne mijenja |
+
 ## Ulaz (`/api/ingest`)
 
 Generički ulaz za poruke izvana. Umjesto da svaki kanal (most za dopisivanje, pretinac
@@ -182,6 +194,15 @@ nosi i odluku i njezin razlog.
 | `GET /api/modules` | učitani moduli i njihovo stanje |
 | `GET /api/session-usage` | potrošnja tekuće sjednice, ako je mjerenje uključeno |
 | `GET /api/security` | zapisi revizije, ako je modul postavljen |
+| `GET /api/info` | popis agenata, modula i pravila sustava na jednom mjestu |
+| `GET /api/critic/unverified` | zadatci zatvoreni danas koje vratar dovršetka nije uspio provjeriti |
+| `GET /api/pregled/tjedni` | kartica „Potrošnja" — pregled po tjednima |
+| `GET /api/tecaj` | tečaj USD→EUR korišten za prikaz troška (mjerenje ostaje u dolarima) |
+| `GET /api/vrijednost-inputa` | procijenjena vrijednost korisničkih upita po cjeniku, za usporedbu s troškom |
+| `GET`/`PUT` `/api/system/mode` | globalni način rada `PLAN`/`WORK`; promjena se javlja timu porukom |
+| `GET`/`PUT` `/api/system/persistent` | koji agenti smiju ostati dugotrajan proces umjesto pokretanja na zahtjev (vidi upozorenje u [REGOC/README.md](../REGOC/README.md#5-demon--dio-koji-radi-kad-nitko-ne-gleda)) |
+| `PUT /api/agents/<id>/persistent` | uključi/isključi dugotrajni način za jednog agenta |
+| `GET /api/jezici`, `GET /api/jezik/<kod>` | popis jezika sučelja i pojedini rječnik — vidi [JEZICI.md](JEZICI.md) |
 
 ## Projekti
 
@@ -192,7 +213,9 @@ curl -X POST http://localhost:17781/api/projects \
   -d '{"name":"Mjerni lanac","description":"...","lead_agent":"ana"}'
 ```
 
-Filtri: `status`, `lead_agent`, `projectId`.
+Filtri: `status`, `lead_agent`, `projectId`. `GET /api/projects/trosak` vraća ukupnu potrošnju
+po projektu iz zapisa troška (mora se pitati prije `/api/projects/:id`, inače bi ga ta ruta
+progutala).
 
 ## Znanje (RAG)
 
@@ -204,6 +227,68 @@ da je značajka isključena, što nije pogreška.
 | `GET /api/rag/health` | je li pretraživanje dostupno |
 | `GET /api/rag/collections` | popis zbirki |
 | `GET /api/rag/entries?collection=…&search=…` | pretraga zapisa |
+| `GET /api/rag/projects` | broj dokumenata po projektu |
+
+## Modeli i davatelji
+
+| Kraj | Metoda | Što radi |
+|---|---|---|
+| `/api/models/available` | GET | davatelji iz `models/model-config.json` + živi popis modela (za Ollamu čita `/api/tags`) |
+| `/api/models/classifier` | GET / PUT | model koji razvrstava/usmjerava poruke — odvojen od modela koji posao izvršava |
+| `/api/models/providers/<id>` | PUT | uključi/isključi davatelja, promijeni `baseUrl` ili ključ |
+| `/api/providers/login/status` | GET | je li koji davatelj prijavljen preko linka (OAuth-nalik tijek), a ne samo ključem |
+| `/api/providers/login/start` | POST | pokreni prijavu za davatelja; vraća poveznicu na koju treba otvoriti preglednik |
+| `/api/providers/login/poll` | GET | provjeri je li prijava dovršena (klijent zove periodički) |
+| `/api/providers/login/paste` | POST | dovrši prijavu kodom zalijepljenim iz preglednika, umjesto čekanja na `poll` |
+| `/api/providers/login/apikey` | POST | postavi davatelja izravno API ključem, bez tijeka prijave |
+| `/api/providers/login/logout` | POST | odjava davatelja |
+
+## Dežurni (rezervni) model
+
+> **Ovo je REGOČ-specifično, ne prenosivo bez izmjene.** Ploča i alat isporučuju se u paketu, ali
+> putanje su tvrdo upisane na `~/.claude/regoc/config/dezurni.json`,
+> `~/.claude/regoc/models/model-config.json` i `~/.claude/regoc/credentials.env` — ne poštuju
+> `TM_HOME`. `POST /api/dezurni/proba` uz to poziva `~/.claude/tools/Telegram/dezurni.ts`, most
+> koji **nije dio ovog paketa**; bez njega proba vraća čitljivu grešku, ne pad.
+
+Zamisao: kad primarni davatelj (kod nas Anthropic/Claude) prestane odgovarati, dežurni je model
+koji preuzme razgovor — javi razlog (kvar kod davatelja, istekla prijava, iscrpljena kvota, pao
+naš servis) i, ako je `smije_podici` uključen, sam nastavi umjesto njega. Bez njega poruka u
+kvaru ostane bez odgovora, a nitko to ne primijeti dok netko ne pita.
+
+| Kraj | Metoda | Što radi |
+|---|---|---|
+| `/api/dezurni/config` | GET | postavke + živ popis modela odabranog davatelja |
+| `/api/dezurni/config` | PUT | promjena davatelja, modela, praga i ostalog |
+| `/api/dezurni/proba` | POST | probni poziv odabranog davatelja — jedini dokaz da izbor stvarno radi, ne samo da izgleda ispravno |
+
+Postavke (`config/dezurni.json`):
+
+```json
+{
+  "ukljucen": true,
+  "provider": "ollama",
+  "model": "qwen3:8b",
+  "baseUrl": "http://192.168.10.4:11434",
+  "okidac_uzastopnih_gresaka": 2,
+  "smije_podici": true,
+  "razmak_straze_min": 30
+}
+```
+
+`okidac_uzastopnih_gresaka` (1–10) je koliko uzastopnih kvarova pokreće dežurnog;
+`razmak_straze_min` (5–240) je koliko rijetko straža provjerava stanje. CLI inačica istoga:
+`tools/dezurni.py` (vidi [TOOLS.md](TOOLS.md)).
+
+## Gita (slike)
+
+Prosljeđuje zahtjev na neovisan servis za generiranje slika na `localhost:8889`, ako postoji —
+nije dio ovog paketa i nije obavezan.
+
+| Kraj | Metoda | Što radi |
+|---|---|---|
+| `/api/gita/generate` | POST | proslijedi zahtjev za generiranje slike; `503` ako servis ne radi |
+| `/api/gita/health` | GET | je li servis dostupan |
 
 ## Konzola
 
@@ -213,7 +298,9 @@ da je značajka isključena, što nije pogreška.
 | `GET /api/konzola/status` | stanje konzole |
 | `GET /api/konzola/logs?lines=200` | zadnji zapisi |
 | `POST /api/konzola/message` | poruka agentu |
+| `POST /api/konzola/mode` | prebaci konzolu između `plan` (samo prijedlog) i `work` (izvršava) |
 | `POST /api/konzola/exec` | pokretanje naredbe (vidi upozorenje niže) |
+| `GET /api/files/download?path=…` | preuzimanje dokumenta na koji zadatak upućuje; ograničeno na `$HOME` |
 
 > `POST /api/konzola/exec` izvršava naredbu na stroju. Nema prijave, pa vrata ne smiju biti
 > dostupna izvan tvoje mreže. Ako ti ta mogućnost ne treba, najsigurnije je zatvoriti pristup
