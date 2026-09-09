@@ -108,6 +108,8 @@
   "cfg_login_nije_prijavljen": "not signed in",
   "cfg_login_odjava": "Sign out",
   "cfg_login_odjaviti_pitanje": "Sign {id} out?",
+  "cfg_login_odjava_kljuc_pitanje": "Sign {id} out? This DELETES the stored API key — you will have to enter it again.",
+  "cfg_login_odjava_neuspjela": "Sign-out failed — the credential is still stored.",
   "cfg_login_otvori": "Open",
   "cfg_login_otvori_opis": "Open the link on any computer and approve it. If the CLI asks for a code, paste it below.",
   "cfg_login_pokrecem": "Starting the sign-in…",

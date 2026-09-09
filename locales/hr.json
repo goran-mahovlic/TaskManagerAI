@@ -108,6 +108,8 @@
   "cfg_login_nije_prijavljen": "nije prijavljen",
   "cfg_login_odjava": "Odjava",
   "cfg_login_odjaviti_pitanje": "Odjaviti {id}?",
+  "cfg_login_odjava_kljuc_pitanje": "Odjaviti {id}? Ovo BRIŠE spremljeni API ključ — za povratak ga moraš unijeti ponovno.",
+  "cfg_login_odjava_neuspjela": "Odjava nije uspjela — vjerodajnica je i dalje spremljena.",
   "cfg_login_otvori": "Otvori",
   "cfg_login_otvori_opis": "Otvori link na bilo kojem računalu i odobri. Ako CLI traži kod, zalijepi ga ispod.",
   "cfg_login_pokrecem": "Pokrećem prijavu…",

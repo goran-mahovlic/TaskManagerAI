@@ -31,6 +31,7 @@ import { unverifiedBoardState } from './core/UnverifiedReport'
 import { getProjectManager } from './core/ProjectManager'
 import { getMessageQueue } from './core/MessageQueue'
 import { getRAGService } from './RAGService'
+import { kljucPrisutanUDatoteci, ukloniKljucIzDatoteke } from './LoginCreds'
 import { tecajOdgovor } from './Tecaj'
 import type { Task, AgentId, TaskFilter } from './types/task-types'
 import { CreateTaskInputSchema, UpdateTaskInputSchema, TaskFilterSchema } from './zod/schemas/task'
@@ -7491,7 +7492,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         : (p.installed ? '<span class="info-badge disabled">' + _T('cfg_login_nije_prijavljen', 'nije prijavljen') + '</span>' : '<span class="info-badge disabled">' + _T('cfg_login_nije_instaliran', 'nije instaliran') + '</span>');
       var h = '<div style="border:1px solid var(--border-color);border-radius:6px;padding:0.6rem;margin-bottom:0.5rem">';
       h += '<div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap"><strong>'+p.name+'</strong>'+badge+'<span style="margin-left:auto;display:flex;gap:6px">';
-      if (p.loggedIn) h += '<button onclick="doLogout(\\''+p.id+'\\')" style="font-size:.72rem;padding:4px 8px">' + _T('cfg_login_odjava', 'Odjava') + '</button>';
+      if (p.loggedIn) h += '<button onclick="doLogout(\\''+p.id+'\\','+(p.apikey?1:0)+')" style="font-size:.72rem;padding:4px 8px">' + _T('cfg_login_odjava', 'Odjava') + '</button>';
       else if (p.kind==='oauth-cli' && p.installed) h += '<button onclick="doLoginStart(\\''+p.id+'\\')" style="font-size:.72rem;padding:4px 8px">Login</button>';
       h += '</span></div><div id="login-body-'+p.id+'" style="margin-top:.4rem"></div>';
       if (p.id==='geminicli') h += '<div style="font-size:.66rem;color:#f59e0b;margin-top:.3rem">' + _T('cfg_login_gemini_oauth', 'Google je ukinuo besplatni OAuth (Code Assist) za CLI — koristi <b>API ključ</b> s aistudio.google.com/apikey (besplatan tier).') + '</div>';
@@ -7544,7 +7545,19 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       }, 2000);
     }
     async function doApikey(id){ var k=document.getElementById('login-key-'+id); if(!k||!k.value.trim())return; try{ var d=await (await fetch('/api/providers/login/apikey',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:id,key:k.value.trim()})})).json(); if(d.error)throw new Error(d.error); fetchInfoData(); }catch(e){ alert(_T('cfg_greska', 'Greška') + ': '+e.message); } }
-    async function doLogout(id){ if(!confirm(_Tv('cfg_login_odjaviti_pitanje', 'Odjaviti {id}?', { id: id })))return; try{ await fetch('/api/providers/login/logout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:id})}); fetchInfoData(); }catch(e){} }
+    // Odjava davatelja s API ključem BRIŠE tajnu koju je korisnik ručno unio (nije isto što
+    // i OAuth odjava, koja miče samo keširan token) — zato drukčije pitanje (TASK-4796).
+    async function doLogout(id, imaKljuc){
+      var pitanje = imaKljuc
+        ? _Tv('cfg_login_odjava_kljuc_pitanje', 'Odjaviti {id}? Ovo BRIŠE spremljeni API ključ — za povratak ga moraš unijeti ponovno.', { id: id })
+        : _Tv('cfg_login_odjaviti_pitanje', 'Odjaviti {id}?', { id: id });
+      if(!confirm(pitanje))return;
+      try{
+        var d = await (await fetch('/api/providers/login/logout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:id})})).json();
+        if(d && d.ok===false) alert(_T('cfg_login_odjava_neuspjela', 'Odjava nije uspjela — vjerodajnica je i dalje spremljena.'));
+        fetchInfoData();
+      }catch(e){}
+    }
 
     // ── Klasifikacijski model (TASK-2635) ────────────────────────────────────────
     // ODVOJENO od dropdowna po agentu: taj bira model kojim agent RADI, a ovaj model
@@ -9380,17 +9393,15 @@ function loginBinPath(bin?: string): string | null {
   }
   return null
 }
+// Mjerilo prijavljenosti i odjava dijele `src/LoginCreds.ts` — dok su bila dva prepisana
+// izraza, odjava je brisala OAuth datoteku a mjerilo gledalo ključ, pa je gumb zauvijek
+// ostajao „prijavljen" (TASK-4796).
+function loginStorePath(): string { return loginHomeExpand('~/.claude/regoc/credentials.env') }
 function loginCredsPresent(def: LoginProviderDef): boolean {
   try {
-    if (def.kind === 'apikey') {
-      const f = loginHomeExpand('~/.claude/regoc/credentials.env')
-      return existsSync(f) && new RegExp('^' + def.envKey + '=.+', 'm').test(readFileSync(f, 'utf-8'))
-    }
-    // oauth-cli s envKey (npr. Gemini): smatra se konfiguriranim i ako je API ključ u credentials.env
-    if (def.envKey) {
-      const f = loginHomeExpand('~/.claude/regoc/credentials.env')
-      if (existsSync(f) && new RegExp('^' + def.envKey + '=.+', 'm').test(readFileSync(f, 'utf-8'))) return true
-    }
+    if (def.kind === 'apikey') return kljucPrisutanUDatoteci(loginStorePath(), def.envKey || '')
+    // oauth-cli s envKey (npr. Gemini): smatra se konfiguriranim i ako je API ključ u spremištu
+    if (def.envKey && kljucPrisutanUDatoteci(loginStorePath(), def.envKey)) return true
     const p = loginHomeExpand(def.creds)
     if (!existsSync(p)) return false
     const st = statSync(p)
@@ -9754,8 +9765,14 @@ async function handleLoginLogout(req: Request): Promise<Response> {
     if (!def) return json({ error: 'unknown' }, 404)
     const s = loginSessions.get(id); if (s && !s.done) { try { s.proc.kill() } catch {} ; s.done = true }
     if (def.kind === 'oauth-cli' && def.creds) { try { rmSync(loginHomeExpand(def.creds), { recursive: true, force: true }) } catch {} }
+    // Odjava mora maknuti ONO ŠTO MJERILO GLEDA. Za davatelje s `envKey` (Gemini, OpenRouter)
+    // to je ključ u spremištu: bez ovoga je odjava kozmetička — gumb ostane „prijavljen" i
+    // tajna ostaje na disku iako korisnik misli da je odjavljen (TASK-4796).
+    let kljucUklonjen = false
+    if (def.envKey) { try { kljucUklonjen = ukloniKljucIzDatoteke(loginStorePath(), def.envKey) } catch {} }
     loginSetProviderEnabled(id, false)
-    return json({ ok: true })
+    const loggedIn = loginCredsPresent(def)
+    return json({ ok: !loggedIn, kljucUklonjen, loggedIn })
   } catch (e: any) { return json({ error: String(e?.message || e) }, 500) }
 }
 
