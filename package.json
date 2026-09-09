@@ -15,6 +15,7 @@
     "test": "bun test"
   },
   "dependencies": {
+    "cohere-ai": "^8.1.0",
     "zod": "^3.23.8"
   },
   "optionalDependencies": {

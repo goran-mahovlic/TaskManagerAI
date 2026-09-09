@@ -100,6 +100,14 @@ import {
   davateljiDezurnog, loadDezurniConfig, podrzaniProvideri, saveDezurniConfig,
   upotrebljiviProvideri, validateDezurniPatch, zadaniModelZa,
 } from './DezurniConfig'
+// TELEGRAM integracija (Kosjenka, 09.09.2026.): minimalna, samostana Telegram sposobnost
+// u paketu — bot token + chat id + slanje obavijesti o završenom zadatku. NE ovisi o
+// ~/.claude/tools/Telegram/ (to je Klaudio agent, glavni stroj). Ovo je NOVI modul u paketu.
+import {
+  TELEGRAM_CONFIG_PATH, GRANICE as TELEGRAM_GRANICE,
+  loadTelegramConfig, saveTelegramConfig, validateTelegramPatch,
+  posaljiTelegramPoruku, obavijestiZadatak,
+} from './TelegramConfig'
 // U6/TASK-4266: generički ulaz `POST /api/ingest` — source/externalId/replyTo/text/senderName.
 // Ništa u njemu ne zna za Telegram; most, pretinac e-pošte i konzola su obični pozivatelji.
 import {
@@ -2392,6 +2400,10 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         <div class="info-card info-full" id="info-dezurni-card">
           <div class="info-card-title"><span class="icon">&#9873;</span> <span data-i18n="cfg_kartica_dezurni">De&#382;urni &mdash; rezervni model kad primarni padne</span></div>
           <div id="info-dezurni-content"><div class="empty" data-i18n="loading">Loading...</div></div>
+        </div>
+        <div class="info-card info-full" id="info-telegram-card">
+          <div class="info-card-title"><span class="icon">&#9993;</span> <span data-i18n="cfg_kartica_telegram">Telegram obavijesti &mdash; bot token + chat id (u paketu)</span></div>
+          <div id="info-telegram-content"><div class="empty" data-i18n="loading">Loading...</div></div>
         </div>
         <div class="info-card info-full" id="info-ulaz-card">
           <div class="info-card-title"><span class="icon">&#9094;</span> <span data-i18n="cfg_kartica_ulaz">Ulazna vrata &mdash; kako telegramska poruka ulazi u plo&#269;u</span></div>
@@ -7045,6 +7057,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         loadClassifier();
         loadLoginProviders();
         loadDezurni();
+        loadTelegram();
         loadUlaznaVrata();
         renderInfoModules(d);
         renderInfoInfra(d);
@@ -7326,6 +7339,113 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
                  { greska: _esc(e.message) }) + '</span>';
         if (el) el.disabled = false;
       }
+    }
+
+
+    // ── Telegram obavijesti (Kosjenka, 09.09.2026.) — bot token + chat id u paketu ──────
+    var _telegramZadnji = null;
+
+    function osvjeziTelegramJezik() {
+      var el = document.getElementById('info-telegram-content');
+      if (!el || !_telegramZadnji) return;
+      el.innerHTML = renderTelegram(_telegramZadnji);
+    }
+
+    async function loadTelegram() {
+      var el = document.getElementById('info-telegram-content');
+      if (!el) return;
+      try {
+        var d = await (await fetch('/api/telegram/config')).json();
+        if (d.error) throw new Error(d.error);
+        _telegramZadnji = d;
+        el.innerHTML = renderTelegram(d);
+      } catch(e) {
+        el.innerHTML = '<div class="empty">' +
+          _Tv('tel_greska_citanja', 'Greška pri čitanju Telegram postavki: {greska}',
+                 { greska: _esc(e.message) }) + '</div>';
+      }
+    }
+
+    function renderTelegram(d) {
+      var p = d.postavke || {};
+      var st = d.stanje || {};
+      var znacka = p.ukljucen
+        ? '<span class="info-badge enabled">' + _T('tel_aktivno', 'aktivno') + '</span>'
+        : '<span class="info-badge disabled">' + _T('tel_iskljuceno', 'isključeno') + '</span>';
+
+      var tokenPrikaz = p.botToken
+        ? '<span style="color:var(--text-secondary)">' +
+          _Tv('tel_token_postavljen', 'token postavljen ({n} znakova)', { n: p.botToken.length }) + '</span>'
+        : '<span style="color:#f59e0b">' + _T('tel_token_nema', 'token NIJE postavljen') + '</span>';
+
+      var h = '<div style="font-size:0.72rem;color:var(--text-secondary);margin-bottom:0.5rem">' +
+        _Tv('tel_uvod',
+          'Slanje obavijesti o završenim/neuspjelim zadacima na Telegram. Postavke se spremaju u ' +
+          '<code>{putanja}</code> i vrijede odmah, bez ponovnog pokretanja.',
+          { putanja: _esc(d.putanja || '') }) + ' ' + znacka + '</div>';
+
+      h += '<table class="info-table"><tbody>';
+      h += _red(_T('tel_ukljuceno', 'Telegram uključen'),
+        '<input type="checkbox"' + (p.ukljucen ? ' checked' : '') + ' onchange="spremiTelegram({ukljucen:this.checked}, this)">',
+        _T('tel_ukljuceno_opis', 'Isključeno: nikakve poruke se ne šalju.'));
+      h += _red(_T('tel_bot_token', 'Bot token'),
+        '<input id="tel-token" type="password" value="' + _esc(p.botToken || '') + '" style="' + _stil() + ';min-width:280px" placeholder="123456:ABC-DEF...">' +
+        ' <button style="font-size:.72rem;padding:3px 8px" onclick="spremiTelegram({botToken:document.getElementById(\'tel-token\').value}, this)">' + _T('tel_spremi', 'Spremi') + '</button>',
+        tokenPrikaz);
+      h += _red(_T('tel_chat_id', 'Chat ID'),
+        '<input id="tel-chatid" value="' + _esc(p.chatId || '') + '" style="' + _stil() + ';min-width:220px" placeholder="-1001234567890">' +
+        ' <button style="font-size:.72rem;padding:3px 8px" onclick="spremiTelegram({chatId:document.getElementById(\'tel-chatid\').value}, this)">' + _T('tel_spremi', 'Spremi') + '</button>',
+        _T('tel_chat_id_opis', 'ID grupe ili kanala kojem se šalju obavijesti.'));
+      h += _red(_T('tel_obavijest_zavrseno', 'Obavijest: završeno'),
+        '<input type="checkbox"' + (p.obavijestZavrseno ? ' checked' : '') + ' onchange="spremiTelegram({obavijestZavrseno:this.checked}, this)">',
+        _T('tel_obavijest_zavrseno_opis', 'Šalje poruku kad zadatak prijeđe u completed.'));
+      h += _red(_T('tel_obavijest_greska', 'Obavijest: greška'),
+        '<input type="checkbox"' + (p.obavijestGreska ? ' checked' : '') + ' onchange="spremiTelegram({obavijestGreska:this.checked}, this)">',
+        _T('tel_obavijest_greska_opis', 'Šalje poruku kad zadatak prijeđe u failed/error.'));
+      h += _red(_T('tel_prefix', 'Prefix poruke'),
+        '<input id="tel-prefix" value="' + _esc(p.prefix || '') + '" style="' + _stil() + ';width:80px">' +
+        ' <button style="font-size:.72rem;padding:3px 8px" onclick="spremiTelegram({prefix:document.getElementById(\'tel-prefix\').value}, this)">' + _T('tel_spremi', 'Spremi') + '</button>',
+        _T('tel_prefix_opis', 'Emoji ili kratki tekst koji prethodi poruci.'));
+      h += _red(_T('tel_provjera', 'Provjera'),
+        '<button id="tel-proba" style="font-size:.72rem;padding:3px 8px" onclick="probajTelegram(this)">' + _T('tel_probni_slanje', 'Probno slanje') + '</button>' +
+        ' <span id="tel-proba-ishod" style="font-size:.7rem"></span>',
+        _T('tel_provjera_opis', 'Pošalje testnu poruku na postavljeni chat ID.'));
+      h += '</tbody></table>';
+      return h;
+    }
+
+    async function spremiTelegram(zakrpa, btn) {
+      if (btn) btn.disabled = true;
+      try {
+        var res = await fetch('/api/telegram/config', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(zakrpa),
+        });
+        var d = await res.json();
+        if (d.error) throw new Error(d.error);
+        await loadTelegram();
+      } catch(e) {
+        alert('Telegram: ' + e.message);
+      }
+      if (btn) btn.disabled = false;
+    }
+
+    async function probajTelegram(btn) {
+      btn.disabled = true;
+      var ishod = document.getElementById('tel-proba-ishod');
+      if (ishod) ishod.textContent = '...';
+      try {
+        var res = await fetch('/api/telegram/proba', { method: 'POST' });
+        var d = await res.json();
+        if (ishod) {
+          ishod.textContent = d.ok ? '✅ ' + _T('tel_poslano', 'poslano') : '❌ ' + _esc(d.greska || 'greška');
+          ishod.style.color = d.ok ? '#22c55e' : '#ef4444';
+        }
+      } catch(e) {
+        if (ishod) { ishod.textContent = '❌ ' + e.message; ishod.style.color = '#ef4444'; }
+      }
+      btn.disabled = false;
     }
 
     // ── Ulazna vrata (U1/TASK-4261) — prekidač po grupi s TRI položaja ──────────────────
@@ -8297,6 +8417,63 @@ async function handleDezurniConfigPut(req: Request): Promise<Response> {
     return json({ ok: true, postavke })
   } catch (err) {
     return json({ error: String(err) }, 500)
+  }
+}
+
+// Bot token + chat id + slanje obavijesti. NE ovisi o ~/.claude/tools/Telegram/ (Klaudio).
+// Koristi izravni fetch prema https://api.telegram.org/bot<token>/sendMessage.
+
+function handleTelegramConfigGet(): Response {
+  const json = (o: unknown, s = 200) =>
+    new Response(JSON.stringify(o), { status: s, headers: { 'Content-Type': 'application/json' } })
+  try {
+    const postavke = loadTelegramConfig()
+    // Stanje: je li token postavljen? Je li chatId postavljen? (NE otkrivaj vrijednost!)
+    const stanje = {
+      tokenPostavljen: !!postavke.botToken,
+      chatIdPostavljen: !!postavke.chatId,
+      spreman: postavke.ukljucen && !!postavke.botToken && !!postavke.chatId,
+    }
+    return json({
+      postavke,
+      stanje,
+      putanja: TELEGRAM_CONFIG_PATH,
+      granice: TELEGRAM_GRANICE,
+    })
+  } catch (err) {
+    return json({ error: String(err) }, 500)
+  }
+}
+
+async function handleTelegramConfigPut(req: Request): Promise<Response> {
+  const json = (o: unknown, s = 200) =>
+    new Response(JSON.stringify(o), { status: s, headers: { 'Content-Type': 'application/json' } })
+  let tijelo: unknown
+  try {
+    tijelo = await req.json()
+  } catch {
+    return json({ error: 'Neispravan JSON' }, 400)
+  }
+  const provjera = validateTelegramPatch(tijelo)
+  if (!provjera.ok) return json({ error: provjera.greske.join('; '), greske: provjera.greske }, 400)
+  try {
+    const postavke = saveTelegramConfig(provjera.zakrpa)
+    console.log(`[TELEGRAM] postavke promijenjene s ploče: ${JSON.stringify(provjera.zakrpa)}`)
+    return json({ ok: true, postavke })
+  } catch (err) {
+    return json({ error: String(err) }, 500)
+  }
+}
+
+async function handleTelegramProba(): Promise<Response> {
+  const json = (o: unknown, s = 200) =>
+    new Response(JSON.stringify(o), { status: s, headers: { 'Content-Type': 'application/json' } })
+  try {
+    const r = await posaljiTelegramPoruku('🧪 Testna poruka iz TaskManagerAI — Telegram integracija radi!')
+    console.log(`[TELEGRAM] probno slanje: ${r.ok ? 'RADI' : 'NE RADI'} — ${r.greska || ''}`)
+    return json(r)
+  } catch (e: any) {
+    return json({ ok: false, greska: String(e && e.message ? e.message : e) }, 200)
   }
 }
 
@@ -10030,6 +10207,22 @@ async function handleUpdateTask(taskId: string, req: Request): Promise<Response>
       // I zadržane dojave idu u dnevnik: „zašto korisnik nije ništa dobio" mora imati
       // odgovor na jednom mjestu, inače se šutnja sustava ne da razlikovati od kvara.
       for (const h of rez.held) console.warn(`[API] report-back: HELD ${h.id} ${h.code} — ${h.reason}`)
+    }
+
+    // ─── Telegram obavijest (Kosjenka, 09.09.2026.) ──────────────────────
+    // Kad zadatak prijeđe u completed/failed, pošalji obavijest na Telegram.
+    // Nikad ne ruši PUT — neuspjeh slanja se samo logira.
+    if (task.status === 'completed' || task.status === 'failed') {
+      try {
+        const tgRez = await obavijestiZadatak(taskId, String(task.title || ''), task.status)
+        if (tgRez.ok) {
+          console.log(`[TELEGRAM] obavijest poslana: ${taskId} → ${task.status}`)
+        } else {
+          console.log(`[TELEGRAM] obavijest nije poslana: ${tgRez.greska}`)
+        }
+      } catch (e: any) {
+        console.warn(`[TELEGRAM] greška pri slanju obavijesti: ${String(e && e.message ? e.message : e)}`)
+      }
     }
 
     // Broadcast to WebSocket clients
@@ -13094,6 +13287,21 @@ const server = Bun.serve({
     // ne može isprobati nije izbor nego obećanje koje se provjerava tek u kvaru.
     if (url.pathname === '/api/dezurni/proba' && req.method === 'POST') {
       return handleDezurniProba()
+    }
+
+    // GET /api/telegram/config — postavke Telegram integracije (Kosjenka, 09.09.2026.)
+    if (url.pathname === '/api/telegram/config' && req.method === 'GET') {
+      return handleTelegramConfigGet()
+    }
+
+    // PUT /api/telegram/config — spremanje bot tokena, chat id, prekidača
+    if (url.pathname === '/api/telegram/config' && req.method === 'PUT') {
+      return handleTelegramConfigPut(req)
+    }
+
+    // POST /api/telegram/proba — probno slanje testne poruke na Telegram
+    if (url.pathname === '/api/telegram/proba' && req.method === 'POST') {
+      return handleTelegramProba()
     }
 
     // GET /api/ingest-gate — ulazna vrata za Telegram: prekidač po grupi + pragovi (U1)
