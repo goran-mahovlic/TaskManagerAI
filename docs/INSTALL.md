@@ -125,6 +125,11 @@ bun scripts/orchestrator.ts --jednom    # točno jedan prolaz — ispis što bi 
 bun scripts/orchestrator.ts             # petlja
 ```
 
+**Imena agenata moraju se poklapati s `TM_AGENTS`** (§5.1). `id` iz `agents.json` ploča
+provjerava kao nositelja zadatka; ako ga ondje nema, `POST /api/tasks` vraća
+`Invalid enum value` i orkestrator nema što pokrenuti. Dvije istine o tome tko postoji su
+najčešći kvar pri prvom postavljanju.
+
 **Izvođač (`executors`) je podatak, ne kod.** Paket isporučuje dvije izvedbe:
 
 | `kind` | za koga | što treba upisati |

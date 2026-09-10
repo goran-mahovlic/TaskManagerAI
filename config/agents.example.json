@@ -2,6 +2,8 @@
   "_opis": [
     "Registar agenata za orkestrator (ADR-0001 O5). Kopiraj u config/agents.json i uredi.",
     "Bez ove datoteke jezgra radi, ali ništa ne pokreće — i to kaže u dnevniku.",
+    "VAŽNO: 'id' mora postojati u popisu nositelja koji ploča prihvaća (TM_AGENTS u .env),",
+    "inače POST /api/tasks odbija zadatak s 'Invalid enum value' i orkestrator nema što raditi.",
     "keywords: ključne riječi po kojima poruka/zadatak dolazi ovom agentu; '*' je catch-all.",
     "Pobjeđuje NAJDUŽA pogođena ključna riječ; '*' tek kad nijedna druga ne pogodi.",
     "model: ime modela koje razumije izvođač iz orchestrator.json (npr. 'qwen3:8b').",
