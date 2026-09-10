@@ -17,9 +17,10 @@
 
 import { watch, existsSync, readFileSync, readdirSync, statSync, writeFileSync, mkdirSync, rmSync } from 'fs'
 import { join, resolve } from 'path'
-import { hostname as osHostname, networkInterfaces as osNetworkInterfaces } from 'os'
+import { hostname as osHostname, networkInterfaces as osNetworkInterfaces, homedir } from 'os'
 // SQL-Only TaskManager (v2.0) - replaces MD+SQLite dual-write
 import { getTaskManagerSQL, INBOX_PROJECT_ID } from './core/TaskManagerSQL'
+import { konfigPutanja } from './core/paths'
 // TASK-3047: ručna kočnica — globalna pauza dijeljena s RegocDaemonom preko datoteke stanja.
 import { readPauseState, writePauseState, describePause } from './core/PauseControl'
 // TASK-3461: stanje MJERILA potrošnje (razlikuje „čekam kvotu" od „mjerilo ne radi").
@@ -146,28 +147,30 @@ const EXTERNAL_PORT = Number(process.env.TM_EXTERNAL_PORT) || Number(process.env
 // bazom — E2E se tako vozi bez ijednog fixture-zapisa u živoj regoc.db (usp. TASK-2701).
 const PORT = Number(process.env.REGOC_TASKWEBUI_PORT) || Number(process.env.TM_PORT) || 17781
 const HOST = '0.0.0.0'       // Bind to all interfaces for external access
+/** Ime/adresa koja se ISPISUJE korisniku. Nikad tuđe ime stroja — env ili vlastiti hostname. */
+const EXTERNAL_HOST = process.env.TM_EXTERNAL_HOST || osHostname()
 const TASKS_DIR = process.env.TM_TASKS_DIR
-  || join(process.env.HOME || '/home/klaudio', '.claude/tasks')
+  || join(process.env.HOME || homedir(), '.claude/tasks')
 const AGENTS_DIR = join(TASKS_DIR, 'agents')
 
 // Allowed hosts for external access (both internal and external ports)
 // Also allow old port 17779 for backwards compatibility during migration
 //
 // TASK-3577: popis je bio tvrdo kodiran na dell-home adrese, a ISTU datoteku vrte i
-// cvorovi (node-A 192.168.10.20, node-B 192.168.10.11) — pa je svaki dolazak na
+// cvorovi u LAN-u ili iza NAT-a — pa je svaki dolazak na
 // VLASTITU LAN adresu cvora zavrsavao s 403. Sada se popis slaze iz tri izvora:
 //   1. zadane vrijednosti (dell-home / localhost) — ponasanje na dell-home nepromijenjeno,
-//   2. TM_ALLOWED_HOSTS — zarezom odvojen popis (npr. "192.168.10.20,node-a"),
+//   2. TM_ALLOWED_HOSTS — zarezom odvojen popis (npr. "10.0.0.5,node-a"),
 //   3. vlastito ime i IPv4 adrese sucelja OVOG stroja (os.hostname / networkInterfaces),
 //      cime svaki cvor bez ikakve konfiguracije prihvaca vlastitu adresu.
 // Uz TM_ALLOW_PRIVATE_HOSTS=1 dodatno prolazi bilo koja privatna IPv4 adresa
 // (10./172.16-31./192.168.) — iskljucivo za zatvorene LAN-ove.
+// ADR-0001 O1: popis više ne nosi imena i adrese jednog konkretnog stroja. Ostaje samo
+// ono što vrijedi na svakoj instalaciji; vlastito ime i IPv4 adrese ovog stroja dodaju se
+// automatski (izvor 3 gore), a sve ostalo ide kroz TM_ALLOWED_HOSTS.
 const DEFAULT_ALLOWED_HOSTS = [
   'localhost',
   '127.0.0.1',
-  '192.168.10.200',
-  'dell-home',
-  'dell-home.tailc98738.ts.net'
 ]
 
 /** 'ime' -> ['ime', 'ime:PORT', 'ime:EXTERNAL_PORT']; unos koji vec nosi port ide kakav jest. */
@@ -228,7 +231,7 @@ const messageQueue = getMessageQueue()
 
 // Read-only DB for konzola streaming (MQ + event_log)
 import { Database } from 'bun:sqlite'
-const MESSAGES_DB_PATH = join(process.env.HOME || '/home/klaudio', '.claude/regoc/messages.db')
+const MESSAGES_DB_PATH = join(process.env.HOME || homedir(), '.claude/regoc/messages.db')
 let konzolaDb: Database | null = null
 try {
   konzolaDb = new Database(MESSAGES_DB_PATH, { readonly: true })
@@ -268,7 +271,7 @@ function getTaskCreateBreaker(): TaskCreateBreaker | null {
 function notifyGoranTaskBurst(text: string): void {
   console.warn(`[TaskWebUI] TASK-4628 DOJAVA:\n${text}`)
   try {
-    const script = join(process.env.HOME || '/home/klaudio', '.tmp/agent_telegram_send.sh')
+    const script = join(process.env.HOME || homedir(), '.tmp/agent_telegram_send.sh')
     if (!existsSync(script)) return
     Bun.spawn(['bash', script, text.slice(0, 4000), 'regoc'], { stdout: 'ignore', stderr: 'ignore' })
   } catch { /* dojava nije kritični put — zapis je već otišao */ }
@@ -280,16 +283,16 @@ function notifyGoranTaskBurst(text: string): void {
 
 let konzolaMode: 'plan' | 'work' = 'plan'
 
-const DAEMON_LOG_FILE = join(process.env.HOME || '/home/klaudio', '.tmp/regoc_daemon.log')
-const STATUS_FILE = join(process.env.HOME || '/home/klaudio', '.tmp/regoc_status.json')
+const DAEMON_LOG_FILE = join(process.env.HOME || homedir(), '.tmp/regoc_daemon.log')
+const STATUS_FILE = join(process.env.HOME || homedir(), '.tmp/regoc_status.json')
 /** Zamrznut 23.02.2026. — od K7 samo fallback dok se `cost_log` ne napuni. */
-const STATS_CACHE_FILE = join(process.env.HOME || '/home/klaudio', '.claude/stats-cache.json')
+const STATS_CACHE_FILE = join(process.env.HOME || homedir(), '.claude/stats-cache.json')
 /** Prozor za prikaz potrošnje na ploči (dana). */
 const TOKEN_WINDOW_DAYS = 30
-const SCHEDULER_STATE_FILE = join(process.env.HOME || '/home/klaudio', '.tmp/regoc_scheduler_state.json')
-const REGOC_SERVICES_SCRIPT = join(process.env.HOME || '/home/klaudio', 'app/regoc_system/regoc-services.sh')
+const SCHEDULER_STATE_FILE = join(process.env.HOME || homedir(), '.tmp/regoc_scheduler_state.json')
+const REGOC_SERVICES_SCRIPT = join(process.env.HOME || homedir(), 'app/regoc_system/regoc-services.sh')
 /** PID koji piše RegocDaemon — tvrdi signal živosti uz (meku) starost status datoteke. */
-const DAEMON_PID_FILE = join(process.env.HOME || '/home/klaudio', '.claude/regoc/daemon.pid')
+const DAEMON_PID_FILE = join(process.env.HOME || homedir(), '.claude/regoc/daemon.pid')
 
 /**
  * Produkcijske ovisnosti za DaemonLiveness (TASK-2991). Sama logika resolvera je bez I/O
@@ -409,7 +412,7 @@ async function getCachedHealthCheck(): Promise<any> {
   try {
     const proc = Bun.spawn([REGOC_SERVICES_SCRIPT, 'health'], {
       stdout: 'pipe', stderr: 'pipe',
-      env: { HOME: process.env.HOME || '/home/klaudio', PATH: process.env.PATH || '/usr/local/bin:/usr/bin:/bin', USER: process.env.USER || 'klaudio' }
+      env: { HOME: process.env.HOME || homedir(), PATH: process.env.PATH || '/usr/local/bin:/usr/bin:/bin', USER: process.env.USER || 'klaudio' }
     })
     const output = await new Response(proc.stdout).text()
     cachedHealth = JSON.parse(output)
@@ -7762,7 +7765,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
           h += '<div style="display:flex;gap:0.6rem;flex-wrap:wrap;align-items:flex-end;font-size:0.72rem">';
           // Server IP:port samo za lokalne (Ollama)
           if (p.kind === 'local') {
-            h += '<div><div style="color:var(--text-secondary)">' + _T('cfg_prov_server', 'Server (IP:port)') + '</div><input id="prov-' + p.id + '-url" value="' + (p.baseUrl || '') + '" placeholder="http://192.168.10.4:11434" style="width:230px;' + inpStyle + '"></div>';
+            h += '<div><div style="color:var(--text-secondary)">' + _T('cfg_prov_server', 'Server (IP:port)') + '</div><input id="prov-' + p.id + '-url" value="' + (p.baseUrl || '') + '" placeholder="http://127.0.0.1:11434" style="width:230px;' + inpStyle + '"></div>';
           }
           // Ključ + 👁 prikaži (maskiran dok se ne stisne)
           h += '<div><div style="color:var(--text-secondary)">' + keyLabel + '</div>' +
@@ -8223,7 +8226,7 @@ async function fetchOllamaModels(baseUrl: string, apiKey?: string): Promise<stri
 
 // Providers + živi popis modela — hrani i dropdown po agentu i setup panel.
 async function buildModelsAvailable(): Promise<{ providers: any[]; models: any[] }> {
-  const HOME = process.env.HOME || '/home/klaudio'
+  const HOME = process.env.HOME || homedir()
   let provCfg: Record<string, any> = {}
   try {
     const mc = JSON.parse(readFileSync(join(HOME, '.claude/regoc/models/model-config.json'), 'utf-8'))
@@ -8249,13 +8252,15 @@ async function buildModelsAvailable(): Promise<{ providers: any[]; models: any[]
   // Ollama — lokalno, treba IP:port (token opcijski, samo iza proxyja)
   const oCfg = provCfg.ollama || {}
   const oEnabled = oCfg.enabled !== false
-  const baseUrl = oCfg.baseUrl || 'http://192.168.10.4:11434'
+  // ADR-0001 §5.1: bez postavke i bez `TM_OLLAMA_URL` Ollama jednostavno nije podešena —
+  // ne pokušavamo pogoditi tuđu adresu (prije je ovdje stajao IP našeg poslužitelja).
+  const baseUrl = oCfg.baseUrl || process.env.TM_OLLAMA_URL || ''
   const apiKey = typeof oCfg.apiKey === 'string' && oCfg.apiKey && !oCfg.apiKey.startsWith('env:') ? oCfg.apiKey : undefined
   const hasAuth = !!(oCfg.apiKey && oCfg.apiKey !== '')
   let oModels: any[] = []
   let reachable = false
   let error: string | null = null
-  if (oEnabled) {
+  if (oEnabled && baseUrl) {
     try {
       const names = await fetchOllamaModels(baseUrl, apiKey)
       reachable = true
@@ -8360,7 +8365,7 @@ async function handleDezurniConfigGet(): Promise<Response> {
 async function handleDezurniProba(): Promise<Response> {
   const json = (o: unknown, s = 200) =>
     new Response(JSON.stringify(o), { status: s, headers: { 'Content-Type': 'application/json' } })
-  const put = join(process.env.HOME || '/home/klaudio', '.claude/tools/Telegram/dezurni.ts')
+  const put = join(process.env.HOME || homedir(), '.claude/tools/Telegram/dezurni.ts')
   if (!existsSync(put)) {
     return json({ ok: false, greska: `most dežurnog nije na ovom stroju (${put})` }, 200)
   }
@@ -8380,7 +8385,7 @@ async function handleDezurniProba(): Promise<Response> {
 /** Radi li dežurstvo upravo sada — isti zapis koji piše `dezurni.ts` (data/dezurni.stanje.json). */
 function citajDezurniStanje(): { dezurstvo: boolean; uzastopnihGresaka: number; od?: string } {
   try {
-    const p = join(process.env.HOME || '/home/klaudio', '.claude/regoc/data/dezurni.stanje.json')
+    const p = join(process.env.HOME || homedir(), '.claude/regoc/data/dezurni.stanje.json')
     const s = JSON.parse(readFileSync(p, 'utf-8'))
     return {
       dezurstvo: !!s.dezurstvo,
@@ -8655,7 +8660,7 @@ async function handleSetProvider(providerId: string, req: Request): Promise<Resp
   }
   try {
     const body = (await req.json()) as { enabled?: boolean; baseUrl?: string; apiKey?: string }
-    const HOME = process.env.HOME || '/home/klaudio'
+    const HOME = process.env.HOME || homedir()
     const mcPath = join(HOME, '.claude/regoc/models/model-config.json')
     if (!existsSync(mcPath)) return json({ error: 'model-config.json not found' }, 500)
     const mc = JSON.parse(readFileSync(mcPath, 'utf-8'))
@@ -8683,7 +8688,7 @@ async function handleSetProvider(providerId: string, req: Request): Promise<Resp
 }
 
 function buildInfoPayload(): Record<string, unknown> {
-  const HOME = process.env.HOME || '/home/klaudio'
+  const HOME = process.env.HOME || homedir()
   const agentOverrides = loadAgentOverrides(HOME)
 
   // Load agent registry
@@ -8889,8 +8894,12 @@ function buildInfoPayload(): Record<string, unknown> {
       { name: 'TaskWebUI', endpoint: 'localhost:17781' },
       { name: 'VoiceServer', endpoint: 'localhost:8888' },
       { name: 'RegocPulse', endpoint: 'localhost:17780 (planned)' },
-      { name: 'ChromaDB', endpoint: '192.168.10.200:18765' },
-      { name: 'Ollama', endpoint: '192.168.10.4:11434' },
+      // ADR-0001 §5.1: adresa se ČITA iz okoline, ne piše u kodu. Bez postavke se
+      // pošteno kaže da servis nije podešen, umjesto da se prikaže tuđi poslužitelj.
+      { name: 'ChromaDB', endpoint: process.env.TM_CHROMA_HOST
+          ? `${process.env.TM_CHROMA_HOST}:${process.env.TM_CHROMA_PORT || '8000'}`
+          : 'nije podešeno (TM_CHROMA_HOST)' },
+      { name: 'Ollama', endpoint: process.env.TM_OLLAMA_URL || 'nije podešeno (TM_OLLAMA_URL)' },
       { name: 'STT Server', endpoint: 'localhost:8787 (disabled)' },
     ],
     databases: [
@@ -8999,7 +9008,7 @@ async function handleSetAgentModel(agentId: string, req: Request): Promise<Respo
       if (!known) return json({ error: `Unknown model spec '${raw}'` }, 400)
     }
 
-    const HOME = process.env.HOME || '/home/klaudio'
+    const HOME = process.env.HOME || homedir()
     const mcPath = join(HOME, '.claude/regoc/models/model-config.json')
     if (!existsSync(mcPath)) return json({ error: 'model-config.json not found' }, 500)
 
@@ -9029,7 +9038,7 @@ async function handleSetAgentModel(agentId: string, req: Request): Promise<Respo
 async function handleGetClassifier(): Promise<Response> {
   const json = (o: unknown, status = 200) =>
     new Response(JSON.stringify(o), { status, headers: { 'Content-Type': 'application/json' } })
-  const HOME = process.env.HOME || '/home/klaudio'
+  const HOME = process.env.HOME || homedir()
   try {
     const cur = readClassifier(HOME)
     let models: string[] = []
@@ -9060,7 +9069,7 @@ async function handleGetClassifier(): Promise<Response> {
 async function handleSetClassifier(req: Request): Promise<Response> {
   const json = (o: unknown, status = 200) =>
     new Response(JSON.stringify(o), { status, headers: { 'Content-Type': 'application/json' } })
-  const HOME = process.env.HOME || '/home/klaudio'
+  const HOME = process.env.HOME || homedir()
   try {
     const body = (await req.json()) as { model?: string | null }
     const raw = (body.model ?? '').toString().trim()
@@ -10404,10 +10413,10 @@ function handleTaskPause(taskId: string, paused: boolean, req: Request): Promise
  * filtar u `tools/odlucitelj.py` ih zadrži prije njega (mjereno: bez filtra qwen3:8b kaže
  * „kreni" na 6 od 7 rizičnih, s filtrom 7/7 točno).
  */
-const ODLUCITELJ_CONFIG_PATH = `${process.env.HOME}/.claude/regoc/config/odlucitelj.json`
+const ODLUCITELJ_CONFIG_PATH = konfigPutanja('odlucitelj.json', 'TM_ODLUCITELJ_CONFIG')
 const ODLUCITELJ_ZADANE = {
   ukljucen: false, provider: 'ollama', model: 'qwen3:8b',
-  baseUrl: 'http://192.168.10.4:11434', najvise_po_prolazu: 3, smije_kreni: true,
+  baseUrl: process.env.TM_OLLAMA_URL || '', najvise_po_prolazu: 3, smije_kreni: true,
   // Koliko čovjek ima vremena prije nego model odluči (i koliko traje odgoda). Stari naziv
   // `odgoda_sati` se i dalje čita u `tools/odlucitelj.py`.
   cekanje_sati: 1,
@@ -11045,7 +11054,7 @@ let trosakDb: Database | null = null
 function getTrosakDb(): Database | null {
   if (trosakDb) return trosakDb
   try {
-    trosakDb = new Database(join(process.env.HOME || '/home/klaudio', '.claude/regoc/data/regoc.db'), { readonly: true })
+    trosakDb = new Database(join(process.env.HOME || homedir(), '.claude/regoc/data/regoc.db'), { readonly: true })
   } catch {
     trosakDb = null
   }
@@ -11074,7 +11083,7 @@ async function handleVrijednostInputa(url: URL): Promise<Response> {
   // 503 jer ondje `~/app/regoc_system` ne postoji.
   const kandidati = [
     join(import.meta.dir, '..', 'tools', 'vrijednost_inputa.py'),
-    join(process.env.HOME || '/home/klaudio', 'app/regoc_system/tools/vrijednost_inputa.py'),
+    join(process.env.HOME || homedir(), 'app/regoc_system/tools/vrijednost_inputa.py'),
   ]
   const alat = kandidati.find(p => existsSync(p))
   if (!alat) return json({ error: 'alat nije pronađen', trazeno: kandidati }, 503)
@@ -11287,7 +11296,7 @@ async function handleUpdateProject(projectId: string, req: Request): Promise<Res
 // SPEC DISPATCH-UPGRADE + TEMPLATES
 // ============================================
 
-const TEMPLATES_DIR = join(process.env.HOME || '/home/klaudio', '.claude/regoc/templates')
+const TEMPLATES_DIR = join(process.env.HOME || homedir(), '.claude/regoc/templates')
 
 // Hardcoded fallback ako spec-upgrade.md fizički nestane (dispatch mora preživjeti).
 const FALLBACK_SPEC_TEMPLATE = '[[AGENT:$agent]]\nNadogradi projekt $projekt po specifikaciji:\n\n$spec'
@@ -11299,7 +11308,7 @@ const FALLBACK_SPEC_TEMPLATE = '[[AGENT:$agent]]\nNadogradi projekt $projekt po 
  */
 function loadKnownAgentIds(): Set<string> {
   try {
-    const regPath = join(process.env.HOME || '/home/klaudio', '.claude/regoc/REGOC_AGENTS.json')
+    const regPath = join(process.env.HOME || homedir(), '.claude/regoc/REGOC_AGENTS.json')
     const reg = JSON.parse(readFileSync(regPath, 'utf-8'))
     return new Set(Object.keys(reg.agents || {}))
   } catch {
@@ -11816,9 +11825,9 @@ async function handleKonzolaExec(req: Request): Promise<Response> {
 async function executeKonzolaCommand(cmdArgs: string[]): Promise<Response> {
   try {
     const proc = Bun.spawn(cmdArgs, {
-      cwd: process.env.HOME ? join(process.env.HOME, 'app/regoc_system') : '/home/klaudio/app/regoc_system',
+      cwd: process.env.TM_SERVICES_DIR || process.cwd(),
       stdout: 'pipe', stderr: 'pipe',
-      env: { HOME: process.env.HOME || '/home/klaudio', PATH: process.env.PATH || '/usr/local/bin:/usr/bin:/bin', USER: process.env.USER || 'klaudio', LANG: 'en_US.UTF-8' }
+      env: { HOME: process.env.HOME || homedir(), PATH: process.env.PATH || '/usr/local/bin:/usr/bin:/bin', USER: process.env.USER || 'klaudio', LANG: 'en_US.UTF-8' }
     })
 
     const timeout = setTimeout(() => { try { proc.kill() } catch {} }, 30000)
@@ -11862,9 +11871,9 @@ async function handleKonzolaLogs(url: URL): Promise<Response> {
   const lines = parseInt(url.searchParams.get('lines') || '50')
   let logFile: string
   switch (source) {
-    case 'voiceserver': logFile = join(process.env.HOME || '/home/klaudio', '.tmp/regoc_logs/voiceserver.log'); break
-    case 'taskwebui': logFile = join(process.env.HOME || '/home/klaudio', '.tmp/regoc_logs/taskwebui.log'); break
-    case 'klaudio': logFile = join(process.env.HOME || '/home/klaudio', '.tmp/regoc_logs/klaudio.log'); break
+    case 'voiceserver': logFile = join(process.env.HOME || homedir(), '.tmp/regoc_logs/voiceserver.log'); break
+    case 'taskwebui': logFile = join(process.env.HOME || homedir(), '.tmp/regoc_logs/taskwebui.log'); break
+    case 'klaudio': logFile = join(process.env.HOME || homedir(), '.tmp/regoc_logs/klaudio.log'); break
     default: logFile = DAEMON_LOG_FILE
   }
   try {
@@ -11937,12 +11946,12 @@ async function handleKonzolaMessage(req: Request): Promise<Response> {
 // Track file positions per source
 const logSources: Record<string, { file: string, position: number }> = {
   daemon: { file: DAEMON_LOG_FILE, position: 0 },
-  klaudio: { file: join(process.env.HOME || '/home/klaudio', '.tmp/regoc_logs/klaudio.log'), position: 0 },
+  klaudio: { file: join(process.env.HOME || homedir(), '.tmp/regoc_logs/klaudio.log'), position: 0 },
   // TASK-3095: rad GLAVNE REGOC sesije (Claude Code) — dosad se u konzoli nije vidjelo
   // NISTA od onoga sto REGOC radi izmedju dvije poruke, jer on ne prolazi kroz daemon.
   // Puni ga hooks/RegocConsoleLog.hook.ts (PostToolUse).
-  regoc: { file: join(process.env.HOME || '/home/klaudio', '.tmp/regoc_logs/regoc.log'), position: 0 },
-  voiceserver: { file: join(process.env.HOME || '/home/klaudio', '.tmp/regoc_logs/voiceserver.log'), position: 0 },
+  regoc: { file: join(process.env.HOME || homedir(), '.tmp/regoc_logs/regoc.log'), position: 0 },
+  voiceserver: { file: join(process.env.HOME || homedir(), '.tmp/regoc_logs/voiceserver.log'), position: 0 },
 }
 
 // Dedup: track last N messages to suppress scheduler spam
@@ -12157,7 +12166,7 @@ function formatObsEvent(ev: any) {
 }
 
 // --- Stream 5: Session JSONL watcher (agent reasoning/thinking) ---
-const CLAUDE_PROJECTS_DIR = join(process.env.HOME || '/home/klaudio', '.claude/projects')
+const CLAUDE_PROJECTS_DIR = join(process.env.HOME || homedir(), '.claude/projects')
 const sessionFilePositions: Record<string, number> = {}
 let activeSessionFiles: string[] = []
 let lastSessionScan = 0
@@ -12476,7 +12485,7 @@ async function handleStatusDashboard(): Promise<Response> {
 // ============================================
 
 function handleGetAgents(): Response {
-  const HOME = process.env.HOME || '/home/klaudio'
+  const HOME = process.env.HOME || homedir()
   try {
     const regPath = join(HOME, '.claude/regoc/REGOC_AGENTS.json')
     const tierMap: Record<string, string> = { opus: 'frontier', sonnet: 'strong', haiku: 'basic' }
@@ -12550,7 +12559,7 @@ function handleGetAgents(): Response {
 // ============================================
 
 function handleGetModules(): Response {
-  const HOME = process.env.HOME || '/home/klaudio'
+  const HOME = process.env.HOME || homedir()
   try {
     const modPath = join(HOME, '.claude/regoc/modules/module-config.json')
     if (!existsSync(modPath)) {
@@ -12676,14 +12685,14 @@ async function handleGetSecurity(): Promise<Response> {
   // PromptGuard availability
   let promptGuard = { available: false }
   try {
-    const pgPath = join(process.env.HOME || '/home/klaudio', '.claude/regoc/security/PromptGuard.ts')
+    const pgPath = join(process.env.HOME || homedir(), '.claude/regoc/security/PromptGuard.ts')
     promptGuard = { available: existsSync(pgPath) }
   } catch {}
 
   // SecurityPipeline availability
   let securityPipeline: any = { available: false, mode: 'unknown' }
   try {
-    const spPath = join(process.env.HOME || '/home/klaudio', '.claude/regoc/security/SecurityPipeline.ts')
+    const spPath = join(process.env.HOME || homedir(), '.claude/regoc/security/SecurityPipeline.ts')
     securityPipeline = { available: existsSync(spPath), mode: 'localSafe' }
   } catch {}
 
@@ -12699,9 +12708,9 @@ async function handleGetSecurity(): Promise<Response> {
 // TASK-623/624: SYSTEM MODE & PERSISTENT AGENTS API HANDLERS
 // ============================================
 
-const SYSTEM_MODE_FILE = join(process.env.HOME || '/home/klaudio', '.tmp/regoc_mode.json')
-const PERSISTENT_CONFIG_FILE = join(process.env.HOME || '/home/klaudio', '.tmp/regoc_persistent_config.json')
-const AGENTS_REGISTRY_FILE = join(process.env.HOME || '/home/klaudio', '.claude/regoc/REGOC_AGENTS.json')
+const SYSTEM_MODE_FILE = join(process.env.HOME || homedir(), '.tmp/regoc_mode.json')
+const PERSISTENT_CONFIG_FILE = join(process.env.HOME || homedir(), '.tmp/regoc_persistent_config.json')
+const AGENTS_REGISTRY_FILE = join(process.env.HOME || homedir(), '.claude/regoc/REGOC_AGENTS.json')
 
 function handleGetSystemMode(): Response {
   try {
@@ -12832,7 +12841,7 @@ async function handleToggleAgentPersistent(agentId: string, req: Request): Promi
 }
 
 function handleStopAgent(agentId: string): Response {
-  const signalFile = join(process.env.HOME || '/home/klaudio', `.tmp/agent_stop_${agentId}`)
+  const signalFile = join(process.env.HOME || homedir(), `.tmp/agent_stop_${agentId}`)
   try {
     const { writeFileSync: wfs } = require('fs')
     wfs(signalFile, '')
@@ -13350,7 +13359,7 @@ const server = Bun.serve({
     }
     if (wfGetMatch && req.method === 'GET') {
       const [, skill, name] = wfGetMatch
-      const _home = process.env.HOME || '/home/klaudio'
+      const _home = process.env.HOME || homedir()
       const wfPath = join(_home, '.claude/skills', skill, 'Workflows', name + '.md')
       if (!existsSync(wfPath)) {
         return new Response(JSON.stringify({ error: 'Workflow not found' }), { status: 404, headers: { 'Content-Type': 'application/json' } })
@@ -13370,7 +13379,7 @@ const server = Bun.serve({
     // PUT /api/workflow/:skill/:name — Save workflow markdown
     if (wfGetMatch && req.method === 'PUT') {
       const [, skill, name] = wfGetMatch
-      const _home2 = process.env.HOME || '/home/klaudio'
+      const _home2 = process.env.HOME || homedir()
       const wfPath = join(_home2, '.claude/skills', skill, 'Workflows', name + '.md')
       const wfDir = join(_home2, '.claude/skills', skill, 'Workflows')
       if (!existsSync(wfDir)) {
@@ -13460,8 +13469,8 @@ console.log(`
 ║  External:  :${EXTERNAL_PORT} (mapped by Docker)                               ║
 ╠───────────────────────────────────────────────────────────────────────────╣
 ║  Local:     http://localhost:${EXTERNAL_PORT}                                   ║
-║  LAN:       http://192.168.10.200:${EXTERNAL_PORT}                              ║
-║  Tailscale: http://dell-home.tailc98738.ts.net:${EXTERNAL_PORT}                 ║
+║  Mreža:     http://${EXTERNAL_HOST}:${EXTERNAL_PORT}
+
 ╠───────────────────────────────────────────────────────────────────────────╣
 ║  Tasks API:    /api/tasks                                                 ║
 ║  Projects API: /api/projects                                              ║

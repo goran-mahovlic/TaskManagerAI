@@ -21,12 +21,13 @@
  *   - Rok od 3 min: mrezni model koji visi ne smije zaustaviti daemonovu petlju.
  */
 import { existsSync, readFileSync, writeFileSync, mkdirSync, renameSync } from 'fs'
+import { homedir } from 'os'
 import { dirname } from 'path'
 // Isti popisi kojima se ravna red autonomije — da se „tko se smije spawnati" ne razidje
 // na dva mjesta. Puštanje koje red ne bi podigao mora se ovdje prepoznati kao neizvedivo.
 import { ORCHESTRATOR_ASSIGNEES, DEFAULT_HUMAN_ASSIGNEES } from './AutonomyQueue'
 
-const HOME = process.env.HOME || '/home/klaudio'
+const HOME = process.env.HOME || homedir()
 export const ODLUCITELJ_CONFIG = `${HOME}/.claude/regoc/config/odlucitelj.json`
 export const ODLUCITELJ_ZAPIS = `${HOME}/.claude/regoc/data/odlucitelj_zadnji.json`
 /** Odgodjeni zadatci: {TASK-ID: {do: iso, puta: n}} — pise ih `tools/odlucitelj.py`. */

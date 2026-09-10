@@ -34,6 +34,7 @@
  *     BLOCKED: ...        → fali sposobnost/alat/pristup (popravlja se drugim runnerom)
  */
 
+import { konfigPutanja } from './paths'
 import {
   loadStepSchemaConfig,
   ocijeniIzlazKoraka,
@@ -491,7 +492,7 @@ function gateConfigPath(): string {
   // REGOC_COMPLETION_GATE_CONFIG: override SAMO za testove/alat.
   return (
     process.env.REGOC_COMPLETION_GATE_CONFIG ||
-    `${process.env.HOME || '/home/klaudio'}/.claude/regoc/config/completion-gate.json`
+    konfigPutanja('completion-gate.json')
   )
 }
 

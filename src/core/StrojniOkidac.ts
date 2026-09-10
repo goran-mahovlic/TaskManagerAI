@@ -47,10 +47,10 @@ export interface SudCinjenice {
 /** Oblici koje poslužitelj zna provjeriti. Ispisuju se u odbijenici da pozivatelj zna što smije. */
 export const OBLICI_CINJENICE = [
   'poslije:<ISO trenutak>  — npr. poslije:2026-09-07T17:44:00Z (prošao je taj trenutak)',
-  'datoteka:<putanja>      — npr. datoteka:/home/klaudio/.claude/regoc/data/x.json (postoji)',
+  'datoteka:<putanja>      — npr. datoteka:$TM_HOME/data/x.json (postoji)',
   'zadatak:<TASK-ID>       — npr. zadatak:TASK-4641 (dovršen je)',
   'zapis:<putanja>#<ključ>=<vrijednost> — npr. '
-    + 'zapis:/home/klaudio/.claude/regoc/data/spawn_breaker_arhiv.state.json#last_ishod=PASS',
+    + 'zapis:$TM_HOME/data/spawn_breaker_arhiv.state.json#last_ishod=PASS',
 ]
 
 export interface KontekstProvjere {

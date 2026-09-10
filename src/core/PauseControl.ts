@@ -24,9 +24,10 @@
  */
 
 import { existsSync, readFileSync, writeFileSync, renameSync, mkdirSync } from 'fs'
+import { homedir } from 'os'
 import { dirname, join } from 'path'
 
-const HOME = process.env.HOME || '/home/klaudio'
+const HOME = process.env.HOME || homedir()
 
 /** Testni harnessi preusmjeravaju stanje da ne diraju živu kočnicu. */
 export const PAUSE_STATE_FILE =

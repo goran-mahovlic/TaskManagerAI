@@ -30,6 +30,8 @@
  * daemona, baze i mreže.
  */
 
+import { konfigPutanja } from './paths'
+
 // ─── Rječnik ─────────────────────────────────────────────────────────────────
 
 /**
@@ -203,7 +205,7 @@ let _loadedFrom = ''
 function configPath(): string {
   return (
     process.env.REGOC_RESEARCH_GATE_CONFIG ||
-    `${process.env.HOME || '/home/klaudio'}/.claude/regoc/config/research-rag-gate.json`
+    konfigPutanja('research-rag-gate.json')
   )
 }
 

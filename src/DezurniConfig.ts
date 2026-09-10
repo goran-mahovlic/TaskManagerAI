@@ -14,10 +14,14 @@
  */
 
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'fs'
-import { dirname, join } from 'path'
+import { dirname } from 'path'
+import { konfigPutanja } from './core/paths'
 
-export const DEZURNI_CONFIG_PATH = join(
-  process.env.HOME || '/home/klaudio', '.claude/regoc/config/dezurni.json')
+/**
+ * ADR-0001 O1.4: `TM_DEZURNI_CONFIG` → `$TM_HOME/config/dezurni.json` → `config/` uz paket.
+ * Prije je ovdje pisala mapa jednog konkretnog stroja; na tuđoj instalaciji je nema.
+ */
+export const DEZURNI_CONFIG_PATH = konfigPutanja('dezurni.json', 'TM_DEZURNI_CONFIG')
 
 export interface DezurniPostavke {
   ukljucen: boolean
@@ -35,7 +39,9 @@ export const ZADANE_POSTAVKE: DezurniPostavke = {
   ukljucen: true,
   provider: 'ollama',
   model: 'qwen3:8b',
-  baseUrl: 'http://192.168.10.4:11434',
+  // ADR-0001 §5.1: adresa NIKAD nije naša vrijednost. Prazno = dežurni nije podešen;
+  // `TM_OLLAMA_URL` (env.example) je jedini zadani izvor.
+  baseUrl: process.env.TM_OLLAMA_URL || '',
   okidac_uzastopnih_gresaka: 2,
   smije_podici: true,
   razmak_straze_min: 30,
@@ -47,10 +53,9 @@ export const ZADANE_POSTAVKE: DezurniPostavke = {
 // više NE piše rukom nego IZVODI iz `models/model-config.json`. Ručni popis je jednom već
 // zaostao za mostom; izvod ne može.
 
-export const MODEL_CONFIG_PATH = join(
-  process.env.HOME || '/home/klaudio', '.claude/regoc/models/model-config.json')
-export const CREDENTIALS_PATH = join(
-  process.env.HOME || '/home/klaudio', '.claude/regoc/credentials.env')
+export const MODEL_CONFIG_PATH = konfigPutanja('model-config.json', 'TM_MODEL_CONFIG')
+/** Datoteka s tajnama (`IME=vrijednost`). Prava 0600; nikad u repozitorij. */
+export const CREDENTIALS_PATH = konfigPutanja('credentials.env', 'TM_CREDENTIALS')
 
 /** Oblici poziva koje most implementira. Ista imena moraju postojati u `dezurni.ts`
  *  (`NACIN_POZIVA_MOSTA`) — to čuva test `DezurniDavatelji.test.ts → BRANA`. */

@@ -27,6 +27,8 @@
  */
 
 import { CHAIN_TAG, TEXT_ONLY_TAG, branchName, gitCommitCommand, isTextOnly } from './WorkflowTemplate'
+import { konfigPutanja } from './paths'
+import { homedir } from 'os'
 
 // ─── Prepoznavanje commita u tekstu ──────────────────────────────────────────
 
@@ -174,7 +176,7 @@ let _loadedFrom = ''
 function configPath(): string {
   return (
     process.env.REGOC_GIT_COMMIT_GATE_CONFIG ||
-    `${process.env.HOME || '/home/klaudio'}/.claude/regoc/config/git-commit-gate.json`
+    konfigPutanja('git-commit-gate.json')
   )
 }
 
@@ -222,7 +224,7 @@ export function shouldEnforceCommit(
 // ─── Dokaz iz gita (tanak I/O sloj) ──────────────────────────────────────────
 
 function expandHome(p: string): string {
-  const home = process.env.HOME || '/home/klaudio'
+  const home = process.env.HOME || homedir()
   return p.startsWith('~') ? p.replace(/^~/, home) : p
 }
 

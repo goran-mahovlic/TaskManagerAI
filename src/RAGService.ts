@@ -5,8 +5,8 @@
  * Wrapper for ChromaDB operations.
  * Provides collection listing, entry retrieval, and deletion for the RAG WebUI.
  *
- * Based on: ~/.claude/skills/CORE/Tools/lib/rag-memory.ts
- * ChromaDB: 192.168.10.200:18765
+ * Based on: src/rag/rag-memory.ts
+ * ChromaDB: adresa iz okoline (TM_CHROMA_HOST / TM_CHROMA_PORT) — v. env.example
  *
  * Author: Jelena Kovacevic (Engineer Agent)
  * Version: 1.0.0
@@ -48,11 +48,26 @@ import {
 // CONFIGURATION
 // ============================================
 
+/**
+ * ADR-0001 O1.2: adresa NIKAD nije zadana vrijednost u kodu — inače svaka tuđa instalacija
+ * pri prvom pokretanju zove NAŠ poslužitelj. Prazan `chromaHost` znači „RAG nije podešen";
+ * ploča to i kaže, a sve ostalo radi normalno. Postavlja se u `.env` (v. `env.example`):
+ *
+ *   TM_CHROMA_HOST=127.0.0.1
+ *   TM_CHROMA_PORT=8000
+ *   TM_OLLAMA_URL=http://127.0.0.1:11434
+ *   TM_EMBED_MODEL=qwen3-embedding:8b
+ */
 const DEFAULT_RAG_CONFIG: RAGConfig = {
-  chromaHost: '192.168.10.200',
-  chromaPort: 18765,
-  ollamaHost: 'http://192.168.10.4:11434',
-  embedModel: 'qwen3-embedding:8b'
+  chromaHost: process.env.TM_CHROMA_HOST || '',
+  chromaPort: Number(process.env.TM_CHROMA_PORT) || 8000,
+  ollamaHost: process.env.TM_OLLAMA_URL || '',
+  embedModel: process.env.TM_EMBED_MODEL || 'qwen3-embedding:8b'
+}
+
+/** Je li RAG uopće podešen? Bez adresa nema smisla ni pokušavati mrežni poziv. */
+export function ragPodesen(cfg: RAGConfig = DEFAULT_RAG_CONFIG): boolean {
+  return !!(cfg.chromaHost && cfg.ollamaHost)
 }
 
 // ============================================

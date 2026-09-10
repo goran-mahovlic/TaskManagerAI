@@ -41,6 +41,7 @@
  */
 
 import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync } from 'fs'
+import { homedir } from 'os'
 import { dirname, join, resolve } from 'path'
 
 import { isTestRuntime, realHomedir } from './LiveDbGuard'
@@ -63,7 +64,7 @@ export const BEZ_WORKFLOWA_OZNAKA = 'bez-workflowa'
 /** Prefiks izričite oznake tijeka: `workflow:bug-fix`. */
 export const OZNAKA_PREFIKS = 'workflow:'
 
-const HOME = process.env.HOME || '/home/klaudio'
+const HOME = process.env.HOME || homedir()
 
 export const WORKFLOW_GATE_CONFIG_PATH =
   process.env.REGOC_WORKFLOW_GATE_CONFIG || join(HOME, '.claude/regoc/config/workflow-gate.json')

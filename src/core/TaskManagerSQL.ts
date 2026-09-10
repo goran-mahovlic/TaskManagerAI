@@ -12,6 +12,7 @@
  */
 
 import Database, { type Statement } from "bun:sqlite";
+import { homedir } from 'os'
 import { TaskIdAllocator } from "./TaskIdAllocator";
 import { assertNotLiveDbInTest } from "./LiveDbGuard";
 import { TM_DB } from "./paths";
@@ -183,7 +184,7 @@ const ValidStatusTransitions: Record<string, string[]> = {
 // DB PATH
 // ============================================
 
-const HOME = process.env.HOME || '/home/klaudio';
+const HOME = process.env.HOME || homedir();
 
 // U6/TASK-4266: paket mora raditi i ondje gdje `~/.claude/regoc` uopće ne postoji.
 // `TM_DB` (ili `TM_HOME`) je jedini prekidač; BEZ NJIH je putanja doslovno ista kao

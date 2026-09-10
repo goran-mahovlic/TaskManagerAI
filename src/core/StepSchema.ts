@@ -34,6 +34,8 @@
  * Autorica: Kosjenka (Architect), TASK-4615.
  */
 
+import { konfigPutanja } from './paths'
+
 // ─── Ugovor ───────────────────────────────────────────────────────────────────
 
 /** Inačica sheme — mjerenje mora znati po kojim je pravilima redak ocijenjen. */
@@ -419,7 +421,7 @@ let _cfg: { v: StepSchemaConfig; put: string; u: number; mtime: number; vel: num
 export function stepSchemaConfigPath(): string {
   return (
     process.env.REGOC_STEP_SCHEMA_CONFIG ||
-    `${process.env.HOME || '/home/klaudio'}/.claude/regoc/config/step-schema.json`
+    konfigPutanja('step-schema.json')
   )
 }
 
@@ -483,7 +485,7 @@ ${SHEMA_MARKER}
   "napravljeno": "<što je konkretno napravljeno, jedna rečenica>",
   "dokaz": [
     {"vrsta": "naredba", "naredba": "bun test tests/x.test.ts", "izlaz": "24 pass, 0 fail"},
-    {"vrsta": "datoteka", "datoteka": "/home/klaudio/.claude/regoc/X.ts", "izlaz": "312 redaka"}
+    {"vrsta": "datoteka", "datoteka": "src/core/X.ts", "izlaz": "312 redaka"}
   ],
   "datoteke": ["/putanja/koju/si/dirao.ts"],
   "sljedeci_korak": "<što slijedi, ili null>",

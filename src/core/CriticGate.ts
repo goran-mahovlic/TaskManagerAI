@@ -34,12 +34,13 @@
  */
 
 import { existsSync, readFileSync, readdirSync, statSync, appendFileSync, mkdirSync } from 'fs'
+import { homedir } from 'os'
 import { join, dirname, relative, basename, extname, resolve, isAbsolute, sep } from 'path'
 import { isTestRuntime } from './LiveDbGuard'
 // W3/TASK-4615: unakrsna provjera tvrdnji gleda POLJE `datoteke` kad ga ima (v. crossCheckClaims).
 import { ocijeniIzlazKoraka } from './StepSchema'
 
-const HOME = process.env.HOME || '/home/klaudio'
+const HOME = process.env.HOME || homedir()
 
 export const CRITIC_CONFIG_PATH = join(HOME, '.claude', 'regoc', 'config', 'critic-gate.json')
 

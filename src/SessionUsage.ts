@@ -11,8 +11,9 @@
  * ostane zapis stvarnih sesijskih koraka, a ne UI pollinga svake minute.
  */
 import { join } from 'path'
+import { homedir } from 'os'
 
-const HOME = process.env.HOME || '/home/klaudio'
+const HOME = process.env.HOME || homedir()
 
 export const SESSION_USAGE_CACHE_FILE = join(HOME, '.claude/regoc/data/session_usage.cache.json')
 export const SESSION_USAGE_SCRIPT = join(HOME, 'app/regoc_system/tools/session_usage.py')

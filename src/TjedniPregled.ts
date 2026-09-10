@@ -26,9 +26,10 @@
  *      latenciju, trajanje i alate — pregled bez nazivnika nije provjerljiv (zahtjev T5).
  */
 import { join } from 'path'
+import { homedir } from 'os'
 import { existsSync } from 'fs'
 
-const HOME = process.env.HOME || '/home/klaudio'
+const HOME = process.env.HOME || homedir()
 
 /** Isti odabir kao u TaskTelemetry: paket prvo gleda uz sebe, pa u REGOČ instalaciju. */
 function prviPostojeci(putovi: string[]): string {

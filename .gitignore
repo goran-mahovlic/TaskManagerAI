@@ -30,6 +30,26 @@ tmp/
 *.lock
 !bun.lock
 
+# ── Interni alati održavanja (ROADMAP_SAMOSTALNOST §5) ─────────────────────
+# Skripta koja prenosi izmjene IZ žive instalacije U paket. Korisniku koji nema
+# tu instalaciju ne znači ništa, a otkriva unutarnji raspored privatnog sustava.
+# Ostaje lokalno, izvan git indeksa (`git rm --cached`, 10.09.2026., TASK-4800).
+scripts/uskladi_s_regocem.sh
+
+# ── Konfiguracija s korisničkim tajnama ────────────────────────────────────
+# JSON postavke integracija nastaju pri prvom spremanju s ploče i nose adrese,
+# korisnička imena i IMENA varijabli s tajnama. Same tajne idu u credentials.env
+# (prava 0600) — ni jedno ni drugo ne ide u repozitorij.
+config/telegram.json
+config/dezurni.json
+config/nextcloud.json
+config/email.json
+config/gitlab.json
+config/github.json
+config/orchestrator.json
+config/agents.json
+config/credentials.env
+
 # ── Uređivači i sustav ─────────────────────────────────────────────────────
 .DS_Store
 .idea/

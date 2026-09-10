@@ -9,6 +9,7 @@
  */
 
 import { ChromaClient, Collection } from "chromadb";
+import { homedir } from 'os'
 import { Ollama } from "ollama";
 import { loadMemoryConfig, isRagEnabled } from "./memory-config";
 
@@ -106,7 +107,7 @@ export async function withRetry<T>(
 import { existsSync, unlinkSync, writeFileSync, readFileSync } from "fs";
 import { join } from "path";
 
-const LOCK_FILE = `${process.env.HOME || "/home/klaudio"}/.tmp/ollama_embedding.lock`;
+const LOCK_FILE = `${process.env.HOME || homedir()}/.tmp/ollama_embedding.lock`;
 const LOCK_TIMEOUT_MS = 30000; // 30 seconds max lock hold
 const LOCK_WAIT_MS = 100; // Poll interval
 const MAX_WAIT_MS = 60000; // 60 seconds max wait

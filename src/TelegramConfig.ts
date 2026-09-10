@@ -16,11 +16,16 @@
  * Autor: Kosjenka (Architect), 09.09.2026.
  */
 
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'fs'
-import { dirname, join } from 'path'
+import { readFileSync, renameSync, writeFileSync } from 'fs'
+import { konfigPutanja, osigurajMapu } from './core/paths'
 
-export const TELEGRAM_CONFIG_PATH = join(
-  process.env.HOME || '/home/klaudio', '.claude/regoc/config/telegram.json')
+/**
+ * ADR-0001 O1.4: postavke se traže obrascem `TM_TELEGRAM_CONFIG` → `$TM_HOME/config/`
+ * → `config/` uz paket. Prije je ovdje pisala mapa jednog konkretnog stroja, koja na
+ * tuđoj instalaciji ne postoji. Nadogradnja postojeće instalacije: prekopiraj datoteku
+ * na novo mjesto ili postavi `TM_TELEGRAM_CONFIG` na staru putanju.
+ */
+export const TELEGRAM_CONFIG_PATH = konfigPutanja('telegram.json', 'TM_TELEGRAM_CONFIG')
 
 export interface TelegramPostavke {
   /** Je li Telegram obavijesti uključen? */
@@ -134,8 +139,7 @@ export function saveTelegramConfig(
 ): TelegramPostavke & Record<string, unknown> {
   const trenutno = loadTelegramConfig(path)
   const novo = { ...trenutno, ...zakrpa }
-  const dir = dirname(path)
-  if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+  osigurajMapu(path)
   const tmp = `${path}.tmp-${process.pid}`
   writeFileSync(tmp, JSON.stringify(novo, null, 2) + '\n', 'utf-8')
   renameSync(tmp, path)

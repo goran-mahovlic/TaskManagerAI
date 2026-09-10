@@ -33,6 +33,8 @@
  * Autorica: Kosjenka (Architect), TASK-4264.
  */
 
+import { konfigPutanja } from './paths'
+
 // ─── Rječnik ─────────────────────────────────────────────────────────────────
 
 /** Oznaka koja zadatak čini zadatkom dojave. Doseg pometnje je isključivo ona. */
@@ -316,7 +318,7 @@ let _loadedFrom = ''
 function configPath(): string {
   return (
     process.env.REGOC_REPORT_BACK_CONFIG ||
-    `${process.env.HOME || '/home/klaudio'}/.claude/regoc/config/report-back.json`
+    konfigPutanja('report-back.json')
   )
 }
 

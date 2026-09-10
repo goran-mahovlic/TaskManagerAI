@@ -16,13 +16,14 @@
  */
 
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'fs'
+import { homedir } from 'os'
 import { dirname, join } from 'path'
 import {
   CLOSED_STATUSES, isReportBackTask, runReportBackSweep,
   type ReportBackTaskView, type SweepDeps, type SweepResult,
 } from './ReportBackTask'
 
-const HOME = process.env.HOME || '/home/klaudio'
+const HOME = process.env.HOME || homedir()
 
 /** Dnevnik isporučenih poruka — jedini izvor istine o tome je li korisnik nešto DOBIO. */
 export function sentLogPath(): string {

@@ -25,6 +25,7 @@
  */
 
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
+import { homedir } from 'os'
 import { join, dirname } from 'path'
 import {
   criticLedgerPath,
@@ -33,7 +34,7 @@ import {
 } from './CriticGate'
 import { isTestRuntime } from './LiveDbGuard'
 
-const HOME = process.env.HOME || '/home/klaudio'
+const HOME = process.env.HOME || homedir()
 
 export const UNVERIFIED_CONFIG_PATH = join(HOME, '.claude', 'regoc', 'config', 'unverified-alert.json')
 

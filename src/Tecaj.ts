@@ -16,9 +16,10 @@
  *   3. JEDAN DOHVAT NA DAN. Tečaj se mijenja jednom dnevno (ECB), pa ga i mi tako čitamo.
  */
 import { existsSync, readFileSync, writeFileSync, mkdirSync, renameSync } from 'fs'
+import { homedir } from 'os'
 import { join, dirname } from 'path'
 
-const HOME = process.env.HOME || '/home/klaudio'
+const HOME = process.env.HOME || homedir()
 
 export const TECAJ_PUT = process.env.TM_TECAJ_FILE
   || join(HOME, '.claude', 'regoc', 'data', 'tecaj_usd_eur.json')

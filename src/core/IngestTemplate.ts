@@ -22,7 +22,7 @@ import { readFileSync } from 'fs'
 import { join } from 'path'
 
 import {
-  GIT_IDENTITY, TEXT_ONLY_TAG, WORKFLOW_STEPS, branchName, gitBranchCommands,
+  opisGitIdentiteta, TEXT_ONLY_TAG, WORKFLOW_STEPS, branchName, gitBranchCommands,
   gitCommitCommand, grillLevel, scaleSteps,
   type Obveznost, type WorkflowStep,
 } from './WorkflowTemplate'
@@ -139,7 +139,7 @@ function blokGita(ulaz: OpisUlaz): string {
   return [
     'GIT JE OBVEZAN — napredak mora biti durabilan.',
     `  grana:     ${branchName(taskId)}`,
-    `  identitet: ${GIT_IDENTITY.name} <${GIT_IDENTITY.email}> — NIKAD Co-Authored-By`,
+    `  identitet: ${opisGitIdentiteta()}`,
     '  commit:    POSLIJE SVAKOG KORAKA, poruka počinje ID-em zadatka:',
     gitCommitCommand(taskId, 6).split('\n').map(r => '             ' + r.trim()).join('\n'),
     '',

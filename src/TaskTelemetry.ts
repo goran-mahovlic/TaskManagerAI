@@ -17,9 +17,10 @@
  *      počinje crticom python bi pročitao kao opciju.
  */
 import { join } from 'path'
+import { homedir } from 'os'
 import { existsSync } from 'fs'
 
-const HOME = process.env.HOME || '/home/klaudio'
+const HOME = process.env.HOME || homedir()
 
 /**
  * Putanja alata. U REGOČ instalaciji stoji u `~/app/regoc_system/tools/`, a u portabilnom

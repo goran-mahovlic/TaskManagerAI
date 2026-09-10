@@ -54,8 +54,37 @@ export function isChainTask(tags?: string[] | null): boolean {
 
 // ─── Git (razrada §4: obavezno i mjerljivo) ──────────────────────────────────
 
-/** Identitet u commitima — Goranova odluka; NIKAD `Co-Authored-By`. */
-export const GIT_IDENTITY = { name: 'Goran Mahovlic', email: 'goran.mahovlic@gmail.com' } as const
+/**
+ * Identitet u commitima. NIKAD `Co-Authored-By`.
+ *
+ * ADR-0001 O1.3: prije je ovdje kao KONSTANTA stajalo ime i e-pošta autora ovog paketa —
+ * pa bi se tuđi rad potpisivao njegovim identitetom. Sada je to konfiguracija bez zadane
+ * vrijednosti: `TM_GIT_NAME` / `TM_GIT_EMAIL` (ili `git.identity` u `orchestrator.json`).
+ * Bez njih se `git config` NE dira i nasljeđuje se korisnikov globalni identitet.
+ */
+export const GIT_IDENTITY: { name: string; email: string } = {
+  name: process.env.TM_GIT_NAME || '',
+  email: process.env.TM_GIT_EMAIL || '',
+}
+
+/** Je li identitet zadan? Ako nije, naredbe idu bez `-c user.*` (ADR-0001 O1.3). */
+export function imaGitIdentitet(): boolean {
+  return !!(GIT_IDENTITY.name && GIT_IDENTITY.email)
+}
+
+/** `-c user.name=… -c user.email=…` ili prazno kad identitet nije konfiguriran. */
+export function gitIdentityArgs(): string {
+  return imaGitIdentitet()
+    ? `-c user.name='${GIT_IDENTITY.name}' -c user.email='${GIT_IDENTITY.email}' `
+    : ''
+}
+
+/** Redak za prompt: tko potpisuje commit. Bez konfiguracije — korisnikov vlastiti git. */
+export function opisGitIdentiteta(): string {
+  return imaGitIdentitet()
+    ? `${GIT_IDENTITY.name} <${GIT_IDENTITY.email}> — NIKAD Co-Authored-By`
+    : 'tvoj vlastiti git identitet (TM_GIT_NAME/TM_GIT_EMAIL nisu postavljeni) — NIKAD Co-Authored-By'
+}
 
 /** Grana po zadatku. Isti oblik očekuje `MergeGate` i vratar commita. */
 export function branchName(taskId: string): string {
@@ -65,14 +94,14 @@ export function branchName(taskId: string): string {
 /** Naredbe koraka 5 — doslovno, da izvršitelj ne izmišlja svoju inačicu. */
 export function gitBranchCommands(taskId: string): string {
   return [
-    `git -c user.name='${GIT_IDENTITY.name}' -c user.email='${GIT_IDENTITY.email}' \\`,
+    `git ${gitIdentityArgs()}\\`,
     `    checkout -b ${branchName(taskId)}`,
   ].join('\n')
 }
 
 /** Naredba commita koraka 6 — ID zadatka je PRVI u poruci (po njemu vratar traži dokaz). */
 export function gitCommitCommand(taskId: string, korak: number | string = '<korak>'): string {
-  return `git -c user.name='${GIT_IDENTITY.name}' -c user.email='${GIT_IDENTITY.email}' \\\n` +
+  return `git ${gitIdentityArgs()}\\\n` +
     `    commit -m "${String(taskId).toUpperCase()} korak ${korak}: <što je napravljeno>"`
 }
 
@@ -296,7 +325,7 @@ export function buildFirstTaskDescription(input: FirstTaskInput): string {
     : [
         `GIT JE OBVEZAN (razrada §4, pravilo 15 — napredak mora biti durabilan).`,
         `  grana:    ${branchName(taskId)}`,
-        `  identitet: ${GIT_IDENTITY.name} <${GIT_IDENTITY.email}> — NIKAD Co-Authored-By`,
+        `  identitet: ${opisGitIdentiteta()}`,
         `  commit:   POSLIJE SVAKOG KORAKA, poruka počinje ID-em zadatka:`,
         `${gitCommitCommand(taskId, 6).split('\n').map(r => '            ' + r.trim()).join('\n')}`,
         ``,
