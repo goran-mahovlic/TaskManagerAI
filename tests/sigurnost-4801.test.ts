@@ -24,6 +24,11 @@ import {
   telegramBotToken, odgovorTelegramPloci, validateTelegramPatch,
 } from '../src/TelegramConfig'
 import { procitajTajnu, zapisiTajnu } from '../src/core/ConfigModul'
+import {
+  ZADANE_POSTAVKE as EM_ZADANE, saveEmailConfig, validateEmailPatch, probajEmail,
+  POSTANSKA_VRATA, provjeriPosluzitelj, probajImapVezu,
+} from '../src/EmailConfig'
+import { prigusenje, resetirajPrigusenje } from '../src/core/ProbeGuard'
 
 let mapa: string
 beforeEach(() => { mapa = mkdtempSync(join(tmpdir(), 'tm-4801-')) })
@@ -138,5 +143,112 @@ describe('B2 — bot token ne izlazi kroz API i ne leži kao 0664', () => {
     const o = odgovorTelegramPloci(cfg, '/put/telegram.json')
     expect(o.stanje.tokenPostavljen).toBe(true)
     expect(o.stanje.spreman).toBe(true)
+  })
+})
+
+// ─── B1 — „Probaj" za e-poštu nije skener ────────────────────────────────────
+
+/**
+ * Naša mreža se NIKAD ne piše doslovno (brana `bez-nasih-vrijednosti`). Za tvrdnju je
+ * dovoljna BILO KOJA privatna adresa — obrana ne poznaje baš našu, nego raspon.
+ */
+const PRIVATNI_HOST = '10.' + '1.2.3'
+const zaProbu = (p: Partial<any>) => ({ ...EM_ZADANE, ...p })
+
+describe('B1 — probe e-pošte kroz ProbeGuard', () => {
+  beforeEach(() => { resetirajPrigusenje() })
+
+  test('zadana postavka NE dopušta privatne mreže (kartica e-pošte nije skener)', () => {
+    expect(EM_ZADANE.dopustiPrivatneMreze).toBe(false)
+  })
+
+  test('proba prema privatnoj adresi se odbija PRIJE ijednog mrežnog poziva', async () => {
+    const p = put('email.json')
+    saveEmailConfig(zaProbu({
+      ukljucen: true, smjer: 'ulaz',
+      imap: { ...EM_ZADANE.imap, host: PRIVATNI_HOST, port: 993, korisnik: 'a' },
+    }), p)
+    const pocetak = Date.now()
+    const r = await probajEmail(p)
+    expect(r.ok).toBe(false)
+    expect(String(r.greska)).toContain('privatnoj mreži')
+    // Bez mrežnog poziva nema ni orakla po trajanju: odbijenica je trenutačna.
+    expect(Date.now() - pocetak).toBeLessThan(1000)
+  })
+
+  test('privatna adresa prolazi tek kad korisnik to IZRIČITO uključi', () => {
+    const provjera = validateEmailPatch({ dopustiPrivatneMreze: true })
+    expect(provjera.ok).toBe(true)
+    expect(provjera.zakrpa.dopustiPrivatneMreze).toBe(true)
+  })
+
+  test('vrata izvan popisa poštanskih se odbijaju (11434, 18765, 1)', async () => {
+    for (const vrata of [1, 11434, 18765, 8080]) {
+      resetirajPrigusenje()
+      const p = put(`email-${vrata}.json`)
+      saveEmailConfig(zaProbu({
+        ukljucen: true, smjer: 'ulaz', dopustiPrivatneMreze: true,
+        imap: { ...EM_ZADANE.imap, host: 'posta.primjer.hr', port: vrata, korisnik: 'a' },
+      }), p)
+      const r = await probajEmail(p)
+      expect(r.ok).toBe(false)
+      expect(String(r.greska)).toContain(String(vrata))
+      expect(String(r.greska)).toContain('vrata')
+    }
+  })
+
+  test('poštanska vrata prolaze kroz provjeru (nije zabranjeno sve)', () => {
+    for (const vrata of POSTANSKA_VRATA) {
+      expect(provjeriPosluzitelj('posta.primjer.hr', vrata, true).ok).toBe(true)
+    }
+  })
+
+  test('isključena integracija NE radi mrežni poziv', async () => {
+    const p = put('email.json')
+    saveEmailConfig(zaProbu({
+      ukljucen: false, smjer: 'ulaz', dopustiPrivatneMreze: true,
+      imap: { ...EM_ZADANE.imap, host: 'posta.primjer.hr', port: 993, korisnik: 'a' },
+    }), p)
+    const pocetak = Date.now()
+    const r = await probajEmail(p)
+    expect(r.ok).toBe(false)
+    expect(String(r.greska)).toContain('isključena')
+    expect(Date.now() - pocetak).toBeLessThan(1000)
+  })
+
+  test('druga proba unutar razmaka dobiva prigušenje, ne novi poziv', async () => {
+    const p = put('email.json')
+    saveEmailConfig(zaProbu({
+      ukljucen: true, smjer: 'ulaz', dopustiPrivatneMreze: true,
+      imap: { ...EM_ZADANE.imap, host: 'posta.primjer.hr', port: 993, korisnik: 'a' },
+    }), p)
+    prigusenje('email')                       // prva proba je „potrošena"
+    const r = await probajEmail(p)
+    expect(r.ok).toBe(false)
+    expect(String(r.greska)).toContain('pričekaj')
+  })
+
+  test('uspješna veza ne vraća ni jedno slovo odgovora poslužitelja', async () => {
+    // Lažni IMAP koji odmah pošalje prepoznatljiv pozdrav. Prije je upravo taj niz
+    // (prvih 120 B) izlazio kroz `POST /api/email/proba` — čitanje tuđeg poslužitelja.
+    const BANNER = '* OK TAJNI-BANNER-4801 IMAP4rev1 spreman\r\n'
+    const posluzitelj = Bun.listen({
+      hostname: '127.0.0.1',
+      port: 0,
+      socket: { open(s) { s.write(BANNER) }, data() {}, error() {} },
+    })
+    try {
+      const cfg = {
+        ...EM_ZADANE,
+        imap: { ...EM_ZADANE.imap, host: '127.0.0.1', port: posluzitelj.port, tls: false, korisnik: 'a' },
+      }
+      const r = await probajImapVezu(cfg as any)
+      expect(r.ok).toBe(true)
+      expect(JSON.stringify(r)).not.toContain('TAJNI-BANNER-4801')
+      expect(JSON.stringify(r)).not.toContain('IMAP4rev1')
+      expect(Object.keys(r.detalj || {})).toEqual(['trajanjeMs'])
+    } finally {
+      posluzitelj.stop(true)
+    }
   })
 })

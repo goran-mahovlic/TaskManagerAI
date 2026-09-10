@@ -18,6 +18,7 @@
  */
 
 import { ConfigModul, tajnaPostavljena, type StanjeIntegracije } from './core/ConfigModul'
+import { prigusenje, provjeriUrl } from './core/ProbeGuard'
 
 export interface SmtpPostavke {
   host: string
@@ -43,6 +44,12 @@ export interface ImapPostavke {
 export interface EmailPostavke {
   ukljucen: boolean
   smjer: 'izlaz' | 'ulaz' | 'oba'
+  /**
+   * Smije li „Probaj" ići na privatnu/lokalnu adresu? Zadano `false` — v. `probajEmail`.
+   * (Nextcloud i GitLab imaju isto polje sa `true`, jer tamo je samostalno hostanje pravilo,
+   * a ne iznimka; poštanski poslužitelj na kućnoj mreži jest iznimka i traži svjestan klik.)
+   */
+  dopustiPrivatneMreze: boolean
   smtp: SmtpPostavke
   imap: ImapPostavke
   primatelji: string[]
@@ -51,6 +58,7 @@ export interface EmailPostavke {
 export const ZADANE_POSTAVKE: EmailPostavke = {
   ukljucen: false,
   smjer: 'izlaz',
+  dopustiPrivatneMreze: false,
   smtp: { host: '', port: 587, tls: true, korisnik: '', lozinkaEnv: 'SMTP_PASSWORD', posiljatelj: '' },
   imap: {
     host: '', port: 993, tls: true, korisnik: '', lozinkaEnv: 'IMAP_PASSWORD',
@@ -91,6 +99,7 @@ const modul = new ConfigModul<EmailPostavke>({
   shema: {
     ukljucen: { tip: 'bool' },
     smjer: { tip: 'izbor', vrijednosti: ['izlaz', 'ulaz', 'oba'] },
+    dopustiPrivatneMreze: { tip: 'bool' },
     smtp: {
       tip: 'objekt',
       polja: {
@@ -247,11 +256,52 @@ export async function obavijestiZadatakEmail(
 // ─── Proba ───────────────────────────────────────────────────────────────────
 
 /**
+ * Vrata koja „Probaj" smije dodirnuti. Popis, ne raspon.
+ *
+ * KVAR KOJI OVO ZATVARA (revizija TASK-4801, nalaz B1): shema pušta vrata 1–65535, pa je
+ * gumb „Probaj" bio skener vrata s odgovorom natrag u tijelu API-ja — izmjereno 5030 ms na
+ * otvorenima naspram 24 ms na zatvorenima, i to na DRUGIM strojevima u mreži, bez ijedne
+ * prijave. Samo slanje i dalje smije koristiti bilo koja vrata (ima instalacija na 2525);
+ * ograničen je isključivo put koji stranac može pokrenuti.
+ */
+export const POSTANSKA_VRATA: readonly number[] = [25, 143, 465, 587, 993] as const
+
+/**
+ * Provjeri par (host, vrata) PRIJE ijednog mrežnog poziva.
+ *
+ * Host nije URL nego golo ime, pa se za `provjeriUrl` sastavlja privremena adresa — time
+ * e-pošta dobiva istu obranu (sheme, privatni rasponi, vjerodajnice u adresi) koju
+ * Nextcloud već ima, umjesto druge preslike pravila koja bi se razišla s prvom.
+ */
+export function provjeriPosluzitelj(
+  host: string, port: number, dopustiPrivatneMreze: boolean,
+): { ok: boolean; greska?: string } {
+  const h = String(host || '').trim()
+  if (!h) return { ok: false, greska: 'poslužitelj nije upisan' }
+  if (!POSTANSKA_VRATA.includes(Number(port))) {
+    return {
+      ok: false,
+      greska: `vrata ${port} nisu poštanska — proba ide samo na ${POSTANSKA_VRATA.join(', ')}`,
+    }
+  }
+  // `https://` je ovdje samo nosač imena: nikakav HTTP zahtjev ne slijedi.
+  const provjera = provjeriUrl(`https://${h}`, { dopustiPrivatneMreze })
+  if (!provjera.ok) return { ok: false, greska: provjera.greska }
+  return { ok: true }
+}
+
+/**
  * SMTP: `EHLO` + `AUTH`, BEZ slanja poruke (proba koja šalje poštu je slanje, ne proba).
- * IMAP: veza + `LOGIN` + `SELECT` pa `LOGOUT`.
+ * IMAP: veza pa odmah prekid.
  *
  * Bez `nodemailer`-a proba za izlaz vraća uputu za instalaciju; ulaz se provjerava golom
  * TLS vezom, pa za njega knjižnica nije potrebna.
+ *
+ * TRI OBRANE IZ REVIZIJE TASK-4801 (nalaz B1), redom kojim se izvode:
+ *   1. isključena integracija ne dira mrežu — prekidač na kartici mora nešto značiti;
+ *   2. `provjeriPosluzitelj` (privatne mreže + popis poštanskih vrata) PRIJE poziva;
+ *   3. `prigusenje('email')` — jedna proba u 5 s, da nizanje ne postane skener.
+ * Ishod nosi samo `ok`/`trajanjeMs`: pozdrav poslužitelja se više ne vraća pozivatelju.
  */
 export async function probajEmail(path?: string): Promise<Ishod> {
   const cfg = loadEmailConfig(path)
@@ -259,6 +309,23 @@ export async function probajEmail(path?: string): Promise<Ishod> {
   const trebaUlaz = cfg.smjer === 'ulaz' || cfg.smjer === 'oba'
   const detalj: Record<string, unknown> = {}
   const greske: string[] = []
+
+  // 1) Prekidač na kartici gasi i probu. Prije je proba radila i uz `ukljucen: false`.
+  if (!cfg.ukljucen) return { ok: false, greska: 'e-pošta je isključena — uključi ju pa probaj' }
+
+  // 2) Adrese se provjere PRIJE prigušenja: odbijenica po pravilu ne troši dopusnicu.
+  const provjere = [
+    trebaIzlaz && cfg.smtp.host
+      ? provjeriPosluzitelj(cfg.smtp.host, cfg.smtp.port, cfg.dopustiPrivatneMreze) : null,
+    trebaUlaz && cfg.imap.host
+      ? provjeriPosluzitelj(cfg.imap.host, cfg.imap.port, cfg.dopustiPrivatneMreze) : null,
+  ]
+  const odbijena = provjere.find(p => p && !p.ok)
+  if (odbijena) return { ok: false, greska: odbijena.greska }
+
+  // 3) Prigušenje. Bez njega je pet proba za redom savršen skener (izmjereno u reviziji).
+  const p = prigusenje('email')
+  if (!p.ok) return { ok: false, greska: `pričekaj još ${Math.ceil(p.cekajMs / 1000)} s prije nove probe` }
 
   if (trebaIzlaz) {
     if (!cfg.smtp.host) greske.push('SMTP poslužitelj nije upisan')
@@ -291,7 +358,7 @@ export async function probajEmail(path?: string): Promise<Ishod> {
     if (!cfg.imap.host) greske.push('IMAP poslužitelj nije upisan')
     else {
       const r = await probajImapVezu(cfg)
-      if (r.ok) detalj.imap = r.detalj?.pozdrav || 'veza uspostavljena'
+      if (r.ok) detalj.imap = 'veza uspostavljena'
       else greske.push(`IMAP: ${r.greska}`)
     }
   }
@@ -300,30 +367,44 @@ export async function probajEmail(path?: string): Promise<Ishod> {
 }
 
 /**
- * Gola TLS veza do IMAP-a: pročita pozdrav poslužitelja i odmah se odspoji.
+ * Gola TLS veza do IMAP-a: čeka da se poslužitelj javi i odmah se odspoji.
+ *
+ * ŠTO SE VRAĆA: samo `ok` i `trajanjeMs`. Prije se vraćalo prvih 120 B pozdrava
+ * poslužitelja (revizija TASK-4801, B1) — to je čitanje tuđeg odgovora kroz našu ploču,
+ * suprotno pravilu iz `ProbeGuard`: „proba vraća SAŽETAK, nikad sirovo tijelo".
+ *
  * Namjerno NE šalje `LOGIN` bez knjižnice — ručno sastavljena IMAP naredba s korisničkim
  * nizom je upravo ona injekcija koju `filtar` provjerom sprječavamo.
  */
-async function probajImapVezu(cfg: EmailPostavke): Promise<Ishod> {
+export async function probajImapVezu(cfg: EmailPostavke): Promise<Ishod> {
+  const pocetak = Date.now()
+  // Rukovatelji se PREDAJU `Bun.connect`-u unaprijed. Prijašnja izvedba pridruživala je
+  // `socket.data = …` NAKON spajanja — to se nikad nije okinulo, pa je svaka otvorena
+  // vrata čekala punih 5 s (upravo onih „5030 ms" iz revizije, koje su i bile orakl).
+  let javise: (v: boolean) => void = () => { /* postavlja se odmah niže */ }
+  const cekaj = new Promise<boolean>((resolve) => { javise = resolve })
+  let socket: any = null
   try {
-    const socket: any = await Bun.connect({
+    socket = await Bun.connect({
       hostname: cfg.imap.host,
       port: cfg.imap.port,
       tls: cfg.imap.tls,
-      socket: { data() { /* pozdrav čitamo niže */ }, error() { /* obrađeno kroz iznimku */ } },
+      socket: {
+        // Sadržaj se NAMJERNO ne čita: zanima nas samo je li se poslužitelj javio.
+        data() { javise(true) },
+        error() { javise(false) },
+        close() { javise(false) },
+      },
     })
-    const pozdrav = await new Promise<string>((resolve) => {
-      const rok = setTimeout(() => resolve(''), 5000)
-      socket.data = (_s: unknown, podatci: Uint8Array) => {
-        clearTimeout(rok)
-        resolve(new TextDecoder().decode(podatci).slice(0, 120))
-      }
-    })
-    try { socket.end() } catch { /* već zatvoren */ }
-    return pozdrav
-      ? { ok: true, detalj: { pozdrav: pozdrav.trim() } }
+    const rok = setTimeout(() => javise(false), 5000)
+    const javio = await cekaj
+    clearTimeout(rok)
+    return javio
+      ? { ok: true, detalj: { trajanjeMs: Date.now() - pocetak } }
       : { ok: false, greska: 'poslužitelj se nije javio u 5 s' }
   } catch (e: any) {
-    return { ok: false, greska: String(e?.message || e) }
+    return { ok: false, greska: String(e?.message || e).slice(0, 200) }
+  } finally {
+    try { socket?.end() } catch { /* već zatvoren */ }
   }
 }

@@ -129,6 +129,8 @@ import {
   loadTelegramConfig, saveTelegramConfig, validateTelegramPatch,
   posaljiTelegramPoruku, obavijestiZadatak, odgovorTelegramPloci,
 } from './TelegramConfig'
+// Prigusenje proba (DIZAJN-integracije §1.4 t.3) — jedno mjesto za svih pet kartica.
+import { prigusenje } from './core/ProbeGuard'
 // U6/TASK-4266: generički ulaz `POST /api/ingest` — source/externalId/replyTo/text/senderName.
 // Ništa u njemu ne zna za Telegram; most, pretinac e-pošte i konzola su obični pozivatelji.
 import {
@@ -7408,7 +7410,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         ? '<span class="info-badge enabled">' + _T('tel_aktivno', 'aktivno') + '</span>'
         : '<span class="info-badge disabled">' + _T('tel_iskljuceno', 'isključeno') + '</span>';
 
-      // Kartica NE dobiva vrijednost tokena (revizija TASK-4801, B2) — samo `stanje`.
+      // Kartica NE dobiva vrijednost tokena (revizija TASK-4801, B2) — samo stanje.
       // Zato prikaz zna reci JE LI postavljen, a polje za unos je uvijek prazno: ono sto
       // se ne posalje pregledniku ne moze ni procuriti iz njega.
       var tokenPrikaz = st.tokenPostavljen
@@ -8855,6 +8857,11 @@ async function handleTelegramProba(): Promise<Response> {
   const json = (o: unknown, s = 200) =>
     new Response(JSON.stringify(o), { status: s, headers: { 'Content-Type': 'application/json' } })
   try {
+    // Peta proba dobiva prigusenje (revizija TASK-4801, S3). Ovdje nema SSRF-a — odrediste
+    // je uvijek `api.telegram.org` — ali gumb bez ogranicenja jest slanje poruka u nizu na
+    // tudji chat, dakle nas bot kao posrednik.
+    const p = prigusenje('telegram')
+    if (!p.ok) return json({ ok: false, greska: `pricekaj jos ${Math.ceil(p.cekajMs / 1000)} s prije nove probe` })
     const r = await posaljiTelegramPoruku('🧪 Testna poruka iz TaskManagerAI — Telegram integracija radi!')
     console.log(`[TELEGRAM] probno slanje: ${r.ok ? 'RADI' : 'NE RADI'} — ${r.greska || ''}`)
     return json(r)

@@ -24,6 +24,13 @@ export interface GitLabPostavke {
   projekt: string
   /** IME varijable okoline s tokenom — koristi se SAMO uz `nacin: 'api'`. */
   tokenEnv: string
+  /**
+   * Smije li „Probaj" ići na privatnu/lokalnu adresu? Zadano `true`, jer lokalni GitLab
+   * jest česta instalacija. Prije (revizija TASK-4801, S2) je to bilo tvrdo upisano u
+   * `IssueSync`, pa se obrana nije mogla ni uključiti — a u tom pozivu korisnikov token
+   * ide na host iz konfiguracije.
+   */
+  dopustiPrivatneMreze: boolean
   otvarajIssue: boolean
   zatvarajIssue: boolean
   oznakaSinkro: string
@@ -35,6 +42,7 @@ export const ZADANE_POSTAVKE: GitLabPostavke = {
   host: '',
   projekt: '',
   tokenEnv: 'GITLAB_TOKEN',
+  dopustiPrivatneMreze: true,
   otvarajIssue: false,
   zatvarajIssue: false,
   oznakaSinkro: 'gitlab',
@@ -71,6 +79,7 @@ const modul = new ConfigModul<GitLabPostavke>({
       uzorak: /^[A-Z][A-Z0-9_]*$/,
       uzorakPoruka: 'upiši IME varijable okoline (npr. GITLAB_TOKEN), ne sam token',
     },
+    dopustiPrivatneMreze: { tip: 'bool' },
     otvarajIssue: { tip: 'bool' },
     zatvarajIssue: { tip: 'bool' },
     oznakaSinkro: { tip: 'tekst', maxDuljina: GRANICE.oznakaSinkro.maxDuljina },
@@ -94,6 +103,7 @@ export function vezaGitLab(cfg: GitLabPostavke = loadGitLabConfig()): IssueVeza 
   return {
     davatelj: 'gitlab', nacin: cfg.nacin, projekt: cfg.projekt,
     host: cfg.host || 'gitlab.com', tokenEnv: cfg.tokenEnv,
+    dopustiPrivatneMreze: cfg.dopustiPrivatneMreze,
   }
 }
 

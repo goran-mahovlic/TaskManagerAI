@@ -82,6 +82,10 @@ export function vezaGitHub(cfg: GitHubPostavke = loadGitHubConfig()): IssueVeza 
   return {
     davatelj: 'github', nacin: cfg.nacin, projekt: cfg.repo,
     host: 'github.com', tokenEnv: cfg.tokenEnv,
+    // GitHub nema polje za host — API je uvijek `api.github.com`, koji NIJE privatna
+    // adresa. Zato ovdje nema prekidača nego tvrda zabrana (revizija TASK-4801, S2):
+    // ako proba ikad krene prema privatnom rasponu, to je preusmjeravanje, ne postavka.
+    dopustiPrivatneMreze: false,
   }
 }
 

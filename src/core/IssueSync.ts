@@ -15,7 +15,7 @@
  */
 
 import { procitajTajnu } from './ConfigModul'
-import { probaj as probajUrl } from './ProbeGuard'
+import { probaj as probajUrl, prigusenje } from './ProbeGuard'
 
 export type Davatelj = 'gitlab' | 'github'
 export type Nacin = 'cli' | 'api'
@@ -28,6 +28,15 @@ export interface IssueVeza {
   /** GitLab: `gitlab.com` ili vlastiti poslužitelj. GitHub: uvijek `github.com`. */
   host: string
   tokenEnv: string
+  /**
+   * Smije li proba na privatnu/lokalnu adresu? Dolazi IZ KONFIGURACIJE.
+   *
+   * Revizija TASK-4801, nalaz S2: ovdje je stajalo tvrdo upisano `true`, pa korisnik obranu
+   * nije mogao ni uključiti — a u tom istom pozivu NJEGOV token ide na host koji je upisan u
+   * konfiguraciji. Zadano ostaje `true` (lokalni GitLab je česta instalacija), ali sada je to
+   * odluka koja se vidi na kartici i može se isključiti.
+   */
+  dopustiPrivatneMreze?: boolean
 }
 
 export interface Ishod {
@@ -129,8 +138,16 @@ export async function probajVezu(veza: IssueVeza): Promise<Ishod> {
 
   const zaglavlja = apiZaglavlja(veza)
   if (!zaglavlja) return { ok: false, greska: `token nije postavljen (varijabla ${veza.tokenEnv})` }
+
+  // Prigusenje po davatelju (nalaz S3): bez njega je „Probaj" niz poziva bez ogranicenja.
+  const p = prigusenje(veza.davatelj)
+  if (!p.ok) return { ok: false, greska: `pricekaj jos ${Math.ceil(p.cekajMs / 1000)} s prije nove probe` }
+
   const url = apiKorijen(veza) + apiPutProjekta(veza)
-  const ishod = await probajUrl(url, { headers: zaglavlja, dopustiPrivatneMreze: true })
+  const ishod = await probajUrl(url, {
+    headers: zaglavlja,
+    dopustiPrivatneMreze: veza.dopustiPrivatneMreze !== false,
+  })
   const status = ishod.detalj?.status
   if (status === 401 || status === 403) return { ok: false, greska: 'token nije valjan ili nema prava', detalj: ishod.detalj }
   if (status === 404) return { ok: false, greska: 'repozitorij ne postoji ili nije vidljiv ovom tokenu', detalj: ishod.detalj }
