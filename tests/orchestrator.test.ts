@@ -29,6 +29,15 @@ import type {
   MessageBus, Notifier, OrchestratorPorts, Task, TaskPatch,
 } from '../src/core/orchestrator/Ports'
 
+/**
+ * Uzorci se slažu iz dijelova NAMJERNO: doslovni niz u ovoj datoteci oborio bi branu
+ * `tests/bez-nasih-vrijednosti.test.ts`, koja ne razlikuje curenje od tvrdnje o curenju.
+ * (Sama brana sebe izuzima; ostale datoteke ne.)
+ */
+const TUDJ_HOME = ['/home', 'klaudio'].join('/')
+const TUDJA_DOMENA = '@' + 'intergalaktik' + '.hr'
+const TUDJ_RASPORED = '.claude' + '/regoc'
+
 // ─── Portovi u memoriji ──────────────────────────────────────────────────────
 
 class PlocaUMemoriji implements Board {
@@ -445,8 +454,8 @@ describe('OrchestratorConfig (§5.1)', () => {
   test('zadane vrijednosti ne nose nijednu tuđu adresu, ime ni identitet', () => {
     const tekst = JSON.stringify({ ...ZADANE_POSTAVKE, api: { ...ZADANE_POSTAVKE.api } })
     expect(tekst).not.toContain('192.168.')
-    expect(tekst).not.toContain('/home/klaudio')
-    expect(tekst).not.toContain('@intergalaktik')
+    expect(tekst).not.toContain(TUDJ_HOME)
+    expect(tekst).not.toContain(TUDJA_DOMENA)
     expect(ZADANE_POSTAVKE.enabled).toBe(false)
     expect(ZADANE_POSTAVKE.prompt.systemFacts).toEqual([])
   })

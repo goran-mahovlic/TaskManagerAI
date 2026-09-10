@@ -40,6 +40,46 @@ export interface TelegramPostavke {
   obavijestGreska: boolean
   /** Prefix poruke — npr. emoji ili oznaka sustava. */
   prefix: string
+  /** ULAZNI smjer (poller). Zaseban prekidač — v. `ulaz.ukljucen`. */
+  ulaz: TelegramUlaz
+}
+
+/**
+ * Ulazni smjer živi kao POTPOLJE, a ne kao zasebna datoteka: isti bot token vrijedi za oba
+ * smjera, a dvije datoteke značile bi dvije istine o istom tokenu.
+ *
+ * Instalacija koja upiše samo bot token dobiva IZLAZ; ulaz se pali izričito. Bot koji sam
+ * otvara zadatke iz svake poruke koju vidi je iznenađenje, ne značajka.
+ */
+export interface TelegramUlaz {
+  ukljucen: boolean
+  /** Razmak između poziva `getUpdates` (1–60 s). */
+  intervalSek: number
+  /** Rok dugog čekanja; Telegram dopušta najviše 50. */
+  timeoutSek: number
+  /** Prazno = sve što bot vidi; inače popis dopuštenih chatova. */
+  dopusteniChatovi: string[]
+  /** Prazno = svi; inače popis `user_id`-eva. */
+  dopusteniKorisnici: string[]
+  /** Prazno = svaka poruka; npr. `/zadatak`. */
+  okidac: string
+  /** U grupi reagiraj samo kad je bot spomenut. */
+  sameSpomeni: boolean
+  /** Pošalji natrag broj otvorenog zadatka. */
+  potvrdaUChat: boolean
+  maxDuljina: number
+}
+
+export const ZADANI_ULAZ: TelegramUlaz = {
+  ukljucen: false,
+  intervalSek: 3,
+  timeoutSek: 25,
+  dopusteniChatovi: [],
+  dopusteniKorisnici: [],
+  okidac: '',
+  sameSpomeni: false,
+  potvrdaUChat: true,
+  maxDuljina: 4000,
 }
 
 export const ZADANE_POSTAVKE: TelegramPostavke = {
@@ -49,12 +89,18 @@ export const ZADANE_POSTAVKE: TelegramPostavke = {
   obavijestZavrseno: true,
   obavijestGreska: true,
   prefix: '📋',
+  ulaz: ZADANI_ULAZ,
 }
 
 export const GRANICE = {
   prefix: { maxDuljina: 20 },
   botToken: { maxDuljina: 200 },
   chatId: { maxDuljina: 50 },
+  intervalSek: { min: 1, max: 60 },
+  timeoutSek: { min: 0, max: 50 },
+  okidac: { maxDuljina: 40 },
+  maxDuljina: { min: 100, max: 20000 },
+  popis: { maxStavki: 50 },
 } as const
 
 /** Uvijek svjež pročitaj s diska. Nepoznata polja se ČUVAJU. */
@@ -65,7 +111,13 @@ export function loadTelegramConfig(
     const sirovo = JSON.parse(readFileSync(path, 'utf-8'))
     if (!sirovo || typeof sirovo !== 'object' || Array.isArray(sirovo))
       return { ...ZADANE_POSTAVKE }
-    return { ...ZADANE_POSTAVKE, ...sirovo }
+    // `ulaz` se spaja po DUBINI: plitki spoj bi datoteci koja ima samo `ulaz.ukljucen`
+    // pobrisao sva ostala polja ulaza i vratio ih na nedefinirano.
+    return {
+      ...ZADANE_POSTAVKE,
+      ...sirovo,
+      ulaz: { ...ZADANI_ULAZ, ...(sirovo.ulaz && typeof sirovo.ulaz === 'object' ? sirovo.ulaz : {}) },
+    }
   } catch {
     return { ...ZADANE_POSTAVKE }
   }
@@ -126,6 +178,55 @@ export function validateTelegramPatch(tijelo: unknown): Provjera {
     }
   }
 
+  // ULAZ — ugniježđeni objekt. Do TASK-4800 je `dopustena` pokrivala samo prvu razinu, pa
+  // bi tipfeler u `ulaz` tiho stvorio mrtvu postavku; sada se odbija imenom, kao i gore.
+  if ('ulaz' in t) {
+    if (!t.ulaz || typeof t.ulaz !== 'object' || Array.isArray(t.ulaz)) {
+      greske.push('ulaz mora biti objekt')
+    } else {
+      const u = t.ulaz as Record<string, unknown>
+      const dopusteniUlaz = Object.keys(ZADANI_ULAZ)
+      const izlaz: Record<string, unknown> = {}
+      for (const k of Object.keys(u)) {
+        if (!dopusteniUlaz.includes(k)) {
+          greske.push(`Nepoznato polje: ulaz.${k} (dopušteno: ${dopusteniUlaz.join(', ')})`)
+        }
+      }
+      for (const k of ['ukljucen', 'sameSpomeni', 'potvrdaUChat'] as const) {
+        if (!(k in u)) continue
+        if (typeof u[k] !== 'boolean') greske.push(`ulaz.${k} mora biti true ili false`)
+        else izlaz[k] = u[k]
+      }
+      const brojevi: [string, { min: number; max: number }][] = [
+        ['intervalSek', GRANICE.intervalSek],
+        ['timeoutSek', GRANICE.timeoutSek],
+        ['maxDuljina', GRANICE.maxDuljina],
+      ]
+      for (const [k, g] of brojevi) {
+        if (!(k in u)) continue
+        const n = Number(u[k])
+        if (!Number.isFinite(n) || n < g.min || n > g.max) {
+          greske.push(`ulaz.${k} mora biti broj između ${g.min} i ${g.max}`)
+        } else izlaz[k] = n
+      }
+      if ('okidac' in u) {
+        const v = String(u.okidac ?? '').trim()
+        if (v.length > GRANICE.okidac.maxDuljina) {
+          greske.push(`ulaz.okidac je predugačak (najviše ${GRANICE.okidac.maxDuljina} znakova)`)
+        } else izlaz.okidac = v
+      }
+      for (const k of ['dopusteniChatovi', 'dopusteniKorisnici'] as const) {
+        if (!(k in u)) continue
+        if (!Array.isArray(u[k])) { greske.push(`ulaz.${k} mora biti popis`); continue }
+        const popis = (u[k] as unknown[]).map(x => String(x).trim()).filter(Boolean)
+        if (popis.length > GRANICE.popis.maxStavki) {
+          greske.push(`ulaz.${k}: najviše ${GRANICE.popis.maxStavki} stavki`)
+        } else izlaz[k] = popis
+      }
+      if (Object.keys(izlaz).length) zakrpa.ulaz = izlaz
+    }
+  }
+
   if (!greske.length && !Object.keys(zakrpa).length) {
     greske.push('Nijedna postavka nije poslana')
   }
@@ -138,7 +239,11 @@ export function saveTelegramConfig(
   path: string = TELEGRAM_CONFIG_PATH,
 ): TelegramPostavke & Record<string, unknown> {
   const trenutno = loadTelegramConfig(path)
-  const novo = { ...trenutno, ...zakrpa }
+  // Spoj po dubini za `ulaz` — zakrpa s jednim poljem ne smije pregaziti cijelu granu.
+  const novo = {
+    ...trenutno, ...zakrpa,
+    ulaz: { ...trenutno.ulaz, ...(zakrpa.ulaz || {}) },
+  }
   osigurajMapu(path)
   const tmp = `${path}.tmp-${process.pid}`
   writeFileSync(tmp, JSON.stringify(novo, null, 2) + '\n', 'utf-8')
