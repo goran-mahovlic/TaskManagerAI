@@ -17,14 +17,24 @@ import { readFileSync } from 'fs'
 import { konfigPutanja } from '../paths'
 import type { AgentDirectory, AgentInfo, Ruta } from './Ports'
 
-export const AGENTS_CONFIG_PATH = konfigPutanja('agents.json', 'TM_AGENTS_CONFIG')
+/**
+ * Putanja se razrjesava PRI SVAKOM CITANJU: registar smije nastati POSLIJE pokretanja
+ * ploce (korisnik ga stvara u koraku 6 instalacije), a zamrznuta vrijednost bi tada
+ * zauvijek pokazivala da agenata nema.
+ */
+export function agentsConfigPath(): string {
+  return konfigPutanja('agents.json', 'TM_AGENTS_CONFIG')
+}
+
+/** Zamrznuto pri pokretanju — samo za prikaz. */
+export const AGENTS_CONFIG_PATH = agentsConfigPath()
 
 export interface AgentsDatoteka {
   agents: AgentInfo[]
 }
 
 /** Pročitaj registar. Neispravna datoteka = prazan registar (i redak u dnevniku). */
-export function loadAgents(path: string = AGENTS_CONFIG_PATH): AgentInfo[] {
+export function loadAgents(path: string = agentsConfigPath()): AgentInfo[] {
   try {
     const sirovo = JSON.parse(readFileSync(path, 'utf-8'))
     const popis = Array.isArray(sirovo) ? sirovo : sirovo?.agents
@@ -60,7 +70,7 @@ export class KonfiguracijskiRegistar implements AgentDirectory {
     this.popis = popis
   }
 
-  static izDatoteke(path: string = AGENTS_CONFIG_PATH): KonfiguracijskiRegistar {
+  static izDatoteke(path: string = agentsConfigPath()): KonfiguracijskiRegistar {
     return new KonfiguracijskiRegistar(loadAgents(path))
   }
 

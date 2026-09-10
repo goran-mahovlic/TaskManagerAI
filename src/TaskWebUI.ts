@@ -51,7 +51,7 @@ import { formatLocalTime } from './core/QuotaWakeup'
 import { unverifiedBoardState } from './core/UnverifiedReport'
 import { getProjectManager } from './core/ProjectManager'
 import { getMessageQueue } from './core/MessageQueue'
-import { getRAGService } from './RAGService'
+import { getRAGService, ragPodesen } from './RAGService'
 import { kljucPrisutanUDatoteci, ukloniKljucIzDatoteke } from './LoginCreds'
 import { tecajOdgovor } from './Tecaj'
 import type { Task, AgentId, TaskFilter } from './types/task-types'
@@ -12293,6 +12293,16 @@ async function handleDeleteRAGEntries(req: Request): Promise<Response> {
 
 async function handleRAGHealth(): Promise<Response> {
   try {
+    // ADR-0001 O1.2: bez adresa RAG jednostavno NIJE podešen. Prije bi se ovdje pokušao
+    // mrežni poziv na zadanu adresu i korisnik bi dobio istek veze umjesto rečenice
+    // „nisi to postavio" — a to je razlika između kvara i zatečenog stanja.
+    if (!ragPodesen()) {
+      return new Response(JSON.stringify({
+        status: 'nije podešeno',
+        healthy: false,
+        detalj: 'postavi TM_CHROMA_HOST i TM_OLLAMA_URL (v. env.example); bez njih RAG je isključen',
+      }), { headers: { 'Content-Type': 'application/json' } })
+    }
     const health = await ragService.healthCheck()
     return new Response(JSON.stringify(health), {
       headers: { 'Content-Type': 'application/json' }
