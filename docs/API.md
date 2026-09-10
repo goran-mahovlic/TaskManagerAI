@@ -167,6 +167,12 @@ Gdje datoteka živi, tim redom: `$TM_INGEST_GATE_CONFIG` → `$TM_HOME/config/in
 (ako postoji) → `config/ingest-gate.json` uz paket. Svaki poziv se dopisuje u
 `$TM_INGEST_LOG` (zadano `$TM_HOME/data/ingest.jsonl`), jedan JSON po retku.
 
+Sama datoteka **nije u repozitoriju** i ne treba ju stvarati rukom: bez nje vrijede zadane
+vrijednosti, a prvi pomak prekidača s ploče ju napiše. Paket isporučuje samo obrazac —
+`config/ingest-gate.example.json`. Razlog je što je to *živa* konfiguracija: `projectBySource`
+nosi ključeve izvora (za Telegram id-eve chatova), pa bi praćena datoteka svakom korisniku
+u prvi commit unijela njegov popis (revizija TASK-4801, nalaz B4).
+
 ### Predložak koraka: `templates/`
 
 Opis zadatka otvorenog kroz ulaz nije prepričana poruka nego popis koraka s izvršiteljem,

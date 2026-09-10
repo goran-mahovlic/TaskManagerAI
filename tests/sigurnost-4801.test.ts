@@ -29,6 +29,9 @@ import {
   POSTANSKA_VRATA, provjeriPosluzitelj, probajImapVezu,
 } from '../src/EmailConfig'
 import { prigusenje, resetirajPrigusenje } from '../src/core/ProbeGuard'
+import {
+  ZADANE_POSTAVKE as ING_ZADANE, loadIngestConfig,
+} from '../src/core/IngestConfig'
 
 let mapa: string
 beforeEach(() => { mapa = mkdtempSync(join(tmpdir(), 'tm-4801-')) })
@@ -228,6 +231,11 @@ describe('B1 — probe e-pošte kroz ProbeGuard', () => {
     expect(String(r.greska)).toContain('pričekaj')
   })
 
+  test('zadana konfiguracija e-pošte ne nosi nijednu adresu', () => {
+    expect(EM_ZADANE.smtp.host).toBe('')
+    expect(EM_ZADANE.imap.host).toBe('')
+  })
+
   test('uspješna veza ne vraća ni jedno slovo odgovora poslužitelja', async () => {
     // Lažni IMAP koji odmah pošalje prepoznatljiv pozdrav. Prije je upravo taj niz
     // (prvih 120 B) izlazio kroz `POST /api/email/proba` — čitanje tuđeg poslužitelja.
@@ -250,5 +258,36 @@ describe('B1 — probe e-pošte kroz ProbeGuard', () => {
     } finally {
       posluzitelj.stop(true)
     }
+  })
+})
+
+// --- B4 -- ziva konfiguracija ulaza nije u paketu ----------------------------
+
+describe('B4 -- vrata ulaza se ne isporucuju kao pracena datoteka', () => {
+  const KORIJEN = join(import.meta.dir, '..')
+  const ZIVA = 'config/ingest-gate.json'
+  const OBRAZAC = 'config/ingest-gate.example.json'
+
+  const git = (...argv: string[]) => Bun.spawnSync(['git', ...argv], { cwd: KORIJEN })
+
+  test('ziva datoteka je ignorirana i git ju vise ne prati', () => {
+    expect(git('check-ignore', '-q', ZIVA).exitCode).toBe(0)
+    const pracene = git('ls-files').stdout.toString().split('\n')
+    expect(pracene).not.toContain(ZIVA)
+    expect(pracene).not.toContain('config/ingest.json')
+  })
+
+  test('obrazac se isporucuje, prati i ne nosi nicije kljuceve izvora', () => {
+    expect(git('ls-files').stdout.toString().split('\n')).toContain(OBRAZAC)
+    const o = JSON.parse(readFileSync(join(KORIJEN, OBRAZAC), 'utf-8'))
+    expect(o.projectBySource).toEqual({})
+    // Ulaz u obrascu stoji zatvoren: '*': 'on' znaci da svatko otvara zadatke (nalaz S6).
+    expect(o.perSource['*']).toBe('off')
+  })
+
+  test('bez datoteke ulaz i dalje radi (zadane vrijednosti, ne pad)', () => {
+    const cfg = loadIngestConfig(put('nema-me.json'))
+    expect(cfg.enabled).toBe(ING_ZADANE.enabled)
+    expect(cfg.pragA).toBe(ING_ZADANE.pragA)
   })
 })

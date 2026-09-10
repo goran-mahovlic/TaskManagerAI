@@ -48,6 +48,13 @@ config/gitlab.json
 config/github.json
 config/orchestrator.json
 config/agents.json
+# Vrata ulaza (ingest) nisu tajna, ali JESU ziva runtime konfiguracija: `IngestConfig`
+# pise upravo ovamo kad `TM_HOME` nije postavljen (zadano), pa svaki pomak prekidaca s
+# ploce prlja radno stablo. `projectBySource` uz to nosi kljuceve izvora — za Telegram su
+# to id-evi chatova. Isporucuje se `config/ingest-gate.example.json`.
+# (`git rm --cached`, 10.09.2026., revizija TASK-4801 nalaz B4.)
+config/ingest-gate.json
+config/ingest.json
 config/credentials.env
 
 # ── Uređivači i sustav ─────────────────────────────────────────────────────

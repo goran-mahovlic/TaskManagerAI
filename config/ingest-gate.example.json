@@ -1,0 +1,25 @@
+{
+  "_opis": [
+    "Vrata generičkog ulaza POST /api/ingest (U6). Kopiraj u config/ingest-gate.json i uredi,",
+    "ili postavi TM_INGEST_GATE_CONFIG na vlastitu putanju. Živa datoteka NIJE u gitu:",
+    "nosi tvoje ključeve izvora (npr. telegram:<chatId>) i mijenja se s ploče.",
+    "enabled: globalna sklopka; false = svi izvori se ponašaju kao 'off'.",
+    "perSource: položaj po izvoru — 'off' | 'shadow' | 'on'. Ključ je izvor:",
+    "  'email', 'telegram:-1001234567890', 'konzola', ili '*' za sve.",
+    "  POZOR: '*': 'on' znači da SVAKA poruka bilo kojeg pošiljatelja otvara zadatak.",
+    "  Za Telegram uz to popuni ulaz.dopusteniChatovi u config/telegram.json.",
+    "projectBySource: zadani projekt po izvoru, isti ključevi kao perSource.",
+    "defaultProject: projekt kad nijedan ključ ne odgovara (pretinac, nikad prazno).",
+    "pragA/pragB/pragC: težina od koje se otvara zadatak / ide puni lanac / traži",
+    "  ljudska potvrda plana. Zadano 16 / 36 / 81 (v. docs/API.md)."
+  ],
+  "enabled": true,
+  "perSource": {
+    "*": "off"
+  },
+  "projectBySource": {},
+  "defaultProject": "PRJ-000",
+  "pragA": 16,
+  "pragB": 36,
+  "pragC": 81
+}
