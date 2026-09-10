@@ -236,8 +236,21 @@ export function evaluateReportBack(
 /** Telegram propušta ~4096 znakova; ostatak se reže, ne šalje se druga poruka. */
 export const MAX_MSG_LEN = 3900
 
-/** Ploča kakvu korisnik otvara s vlastitog stroja (v. `docker-port-mapping`). */
-export const BOARD_URL = 'http://dell-home.tailc98738.ts.net:17781'
+/**
+ * Adresa ploče kakvu korisnik otvara s VLASTITOG stroja — iz `TM_BOARD_URL`, bez zadane
+ * vrijednosti.
+ *
+ * KVAR KOJI OVO ZATVARA (revizija TASK-4801, nalaz B3): ovdje je stajala tvrdo upisana
+ * adresa našeg tailneta, pa je svaki korisnik paketa u svojoj dojavi dobivao poveznicu na
+ * TUĐI stroj. Zadana vrijednost ovdje ne postoji ni kao `localhost`: poslužitelj ne zna na
+ * kojem imenu i kojim vratima ga korisnik doista otvara (obrnuti posrednik, Docker,
+ * preusmjerena vrata). Kad varijabla nije postavljena, redak „Ploča:" se izostavlja —
+ * poruka bez poveznice je točna, poruka s tuđom poveznicom nije.
+ */
+export function boardUrl(): string | null {
+  const v = String(process.env.TM_BOARD_URL || '').trim()
+  return v || null
+}
 
 function sazetakRetka(t: ChainTaskView, maxLen: number): string {
   const izvor = String(t.resultSummary || t.blockedReason || '').replace(/\s+/g, ' ').trim()
@@ -253,6 +266,17 @@ export interface ReportBackMessageInput {
   /** ID zadatka dojave — da se poruka može povezati s pločom. */
   reportBackId?: string | null
   maxLen?: number
+}
+
+/**
+ * Zadnji redak poruke. Bez `TM_BOARD_URL` nema poveznice, ali oznaka dojave ostaje —
+ * po njoj se poruka i dalje može naći na ploči koju korisnik ionako zna otvoriti.
+ */
+function podnozjePloce(reportBackId?: string | null): string {
+  const url = boardUrl()
+  const dojava = reportBackId ? `dojava ${reportBackId}` : ''
+  if (url) return `Ploča: ${url}${dojava ? ` (${dojava})` : ''}`
+  return dojava ? `Dojava: ${reportBackId}` : ''
 }
 
 /**
@@ -275,7 +299,7 @@ export function buildReportBackMessage(input: ReportBackMessageInput): string {
     (input.missing && input.missing.length)
       ? `⚠️ Zadataka više nema na ploči: ${input.missing.join(', ')}`
       : '',
-    `Ploča: ${BOARD_URL}${input.reportBackId ? ` (dojava ${input.reportBackId})` : ''}`,
+    podnozjePloce(input.reportBackId),
   ].filter(Boolean).join('\n')
 
   // Prostor za tijelo je ono što ostane; po zadatku dijelimo ravnomjerno, ali nikad ispod

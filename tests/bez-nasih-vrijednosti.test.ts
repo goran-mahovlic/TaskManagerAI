@@ -50,6 +50,17 @@ interface Pravilo {
 
 const PRAVILA: Pravilo[] = [
   {
+    ime: 'naš tailnet (Tailscale MagicDNS)',
+    // Uzorak se slaže iz dijelova: doslovan niz u ovoj datoteci pao bi na `git grep`
+    // kojim se nalaz B3 provjerava (brana sebe izuzima iz skeniranja, `git grep` ne).
+    uzorak: ['tailc', '\\d+|', '\\.', 'ts', '\\.', 'net'].join(''),
+    objasnjenje:
+      'naziv tailneta je globalno jedinstven i vodi na NAŠ stroj — adresa ploče ide iz '
+      + '`TM_BOARD_URL`, bez zadane vrijednosti (v. `boardUrl()` u src/core/ReportBackTask.ts)',
+    osnovicaPojava: 0,
+    osnovicaDatoteka: [],
+  },
+  {
     ime: 'naš HOME kao zadana vrijednost',
     uzorak: '/home/klaudio',
     objasnjenje: 'koristi `src/core/paths.ts` (TM_ROOT), nikad tuđi $HOME kao rezervu (ADR-0001 O1.1)',
