@@ -87,7 +87,7 @@ curl http://localhost:17781/health
 # {"status":"healthy","watcher":false,"clients":0,"timestamp":"..."}
 ```
 
-## 5. Postavke
+## 5.1. Postavke
 
 ```bash
 cp env.example .env
@@ -102,7 +102,68 @@ TM_AGENTS=ana,ivan,marko
 
 Bez nje vrijedi ugrađeni popis imena i API će odbiti zadatak s nepoznatim nositeljem.
 
-## 6. Trajni rad (systemd)
+## 6. Sloj 1 — pokreni orkestrator (neobavezno)
+
+Dosad si dobio **ploču**: zadatke, projekte, API i vratare. Orkestrator je sloj koji **sam
+uzima zadatke s ploče i pokreće agenta na njima**. Svježa instalacija ga **ne pali sama** —
+paket koji bez pitanja počne trošiti tvoj model nije usluga nego iznenađenje.
+
+Tri koraka, i nijedan ne traži uređivanje koda (dizajn: `docs/adr/ADR-0001-orchestrator-core.md`):
+
+```bash
+# 1. Tko su tvoji agenti (bez ovoga orkestrator radi, ali ništa ne pokreće — i to kaže)
+cp config/agents.example.json config/agents.json
+$EDITOR config/agents.json        # id, uloga, model, keywords ('*' = catch-all)
+
+# 2. Kako se model uopće pokreće i što smije
+cp config/orchestrator.example.json config/orchestrator.json
+$EDITOR config/orchestrator.json  # enabled: true, executors, spawn.maxConcurrent
+
+# 3. Provjeri što je podešeno, pa pokreni
+bun scripts/orchestrator.ts --stanje    # popis onoga što nedostaje, izlazni kod 1 ako fali
+bun scripts/orchestrator.ts --jednom    # točno jedan prolaz — ispis što bi se dogodilo
+bun scripts/orchestrator.ts             # petlja
+```
+
+**Izvođač (`executors`) je podatak, ne kod.** Paket isporučuje dvije izvedbe:
+
+| `kind` | za koga | što treba upisati |
+|---|---|---|
+| `cli` | bilo koji CLI koji već imaš (`claude`, `gemini`, vlastita skripta) | `command`, `args`, `promptChannel` (`arg`/`stdin`/`file`) |
+| `http` | Ollama ili bilo koji OpenAI-kompatibilan poslužitelj | `baseUrl`, `path`, `apiKeyEnv` (IME varijable, ne ključ) |
+
+**Ništa o tvojoj infrastrukturi nije upisano u paket.** Rečenice koje agent treba vidjeti
+(adresa Ollame, adresa RAG-a, gdje su podatci) upisuješ u `prompt.systemFacts` — na ploči,
+kartica **Orkestrator**, ili izravno u `orchestrator.json`. Prazan popis je ispravno
+zatečeno stanje.
+
+**Čistači kreću u sjeni.** `watchdog.*.mode` je zadano `shadow`: sud o zaglavljenom zadatku
+se zapisuje, ali se ništa ne dira. Prebaci na `live` tek kad u dnevniku (`$TM_HOME/data/orchestrator.log`)
+vidiš da su nalazi točni — čistač koji pogriješi ubija tuđi rad, a to se vidi tek poslije.
+
+Za trajni rad vrijedi ista `systemd` datoteka kao za ploču, samo s
+`ExecStart=/usr/local/bin/bun scripts/orchestrator.ts`.
+
+## 7. Integracije: Nextcloud, e-pošta, GitLab, GitHub, Telegram (neobavezno)
+
+Sve četiri se podešavaju **s ploče** (Config → Integracije) ili u `config/<ime>.json`.
+Zajedničko pravilo: **tajne ne idu u JSON** — ondje stoji samo IME varijable okoline.
+Detaljne upute, uključujući kako prijaviti **vlastiti** `gh` / `glab` nalog, su u
+[docs/INTEGRACIJE.md](INTEGRACIJE.md).
+
+Telegram ima i **ulazni** smjer (poruka → zadatak). Pali se odvojeno od obavijesti:
+
+```bash
+# u procesu ploče (zadano): uključi Config → Telegram → Ulaz
+# ili kao zaseban proces:
+bun scripts/telegram-poller.ts --proba    # koliko poruka čeka i iz kojih chatova
+bun scripts/telegram-poller.ts            # petlja
+```
+
+Oba načina drži ista datoteka-brava, pa se ne mogu pokrenuti zajedno — dva pollera s istim
+bot tokenom međusobno si kradu poruke i gubitak je nevidljiv.
+
+## 8. Trajni rad (systemd)
 
 Za stroj koji treba držati ploču stalno uključenom:
 
@@ -134,7 +195,7 @@ sudo systemctl status taskmanager
 Ako nemaš systemd, jednako dobro posluži `nohup bun src/TaskWebUI.ts &` ili pokretanje u
 `tmux`/`screen` sjednici.
 
-## 7. Pričuve
+## 9. Pričuve
 
 Baza je jedna datoteka, ali je u WAL načinu, pa je **ne kopiraj običnim `cp`** dok poslužitelj
 radi — dobiješ nedovršeno stanje. Ispravno:
@@ -146,7 +207,7 @@ TM_HOME=/var/lib/taskmanager bun scripts/backup.ts
 
 Skripta koristi SQLite naredbu za sigurnosnu presliku, koja radi i dok se piše.
 
-## 8. Nadogradnja
+## 10. Nadogradnja
 
 ```bash
 git pull
@@ -158,7 +219,7 @@ sudo systemctl restart taskmanager
 Korak s `init` je bezopasan i na nepromijenjenoj shemi — ako nema ničega novog, ništa se ne
 dogodi.
 
-## 9. Kad nešto ne radi
+## 11. Kad nešto ne radi
 
 | Znak | Uzrok i rješenje |
 |---|---|
@@ -176,7 +237,7 @@ Ploča odbija zahtjeve čije `Host` zaglavlje ne prepoznaje — odgovori s
 nije dovoljno kad se do nje dolazi preko adrese koju stroj **ne vidi**:
 
 - virtualni stroj iza NAT-a: iznutra se javlja kao `10.0.2.15`, a dostupan je na
-  `192.168.10.11` preko preusmjerenja vrata s domaćina;
+  adresi domaćina preko preusmjerenja vrata;
 - obrnuti posrednik ili tunel (Tailscale, nginx) koji prosljeđuje drugo ime;
 - pristup preko DNS imena koje stroj ne poznaje.
 
@@ -184,7 +245,7 @@ Rješenje je nabrojati imena:
 
 ```bash
 cp config/postavke.env.primjer config/postavke.env
-$EDITOR config/postavke.env      # TM_ALLOWED_HOSTS=192.168.10.11,taskmanager.lokalno
+$EDITOR config/postavke.env      # TM_ALLOWED_HOSTS=10.0.0.5,taskmanager.lokalno
 bash scripts/start.sh            # ispisuje koja su imena dopuštena
 ```
 

@@ -99,5 +99,18 @@ naredbu koja je pokušava stvoriti.
 
 ## Pričuve
 
-Vidi [INSTALL.md](INSTALL.md#7-pričuve). Ukratko: `bun scripts/backup.ts`, nikada `cp` dok
+Vidi [INSTALL.md](INSTALL.md#9-pričuve). Ukratko: `bun scripts/backup.ts`, nikada `cp` dok
 poslužitelj radi.
+
+## Zašto je `cohere-ai` u ovisnostima (a nitko ga ne zove)
+
+Kratko: **ne briši ga.** `cohere-ai` nije mrtav kod nego **posredna ovisnost o kojoj ovisi
+izgradnja**: `chromadb` (neobavezna ovisnost za RAG) interno pokušava učitati `cohere-ai`
+kao jednog od embedding-davatelja, i bez njegove prisutnosti `bun build` ne daje izlaz.
+
+Nijedna datoteka u `src/` ga ne uvozi, pa svako buduće „čišćenje neiskorištenih paketa"
+izgleda kao dobra ideja — a razbije izgradnju na način koji se vidi tek pri sljedećem
+`bun build`. Isti komentar stoji i u `package.json` (`_komentar_cohere-ai`), da ga vidi i
+onaj tko dođe do popisa ovisnosti prije nego do ove datoteke.
+
+Podrijetlo nalaza: `docs/ROADMAP_SAMOSTALNOST.md` §4 (commit `36da968`, 09.09.2026.).

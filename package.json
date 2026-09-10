@@ -14,6 +14,7 @@
     "health": "bash scripts/health.sh",
     "test": "bun test"
   },
+  "_komentar_cohere-ai": "NE BRISATI: nitko ga ne uvozi izravno, ali chromadb ga interno pokušava učitati kao jednog od embedding-davatelja i bez njega `bun build` ne daje izlaz. Posredna ovisnost o kojoj ovisi izgradnja, ne mrtav kod — v. docs/ROADMAP_SAMOSTALNOST.md §4 i docs/DATABASE.md.",
   "dependencies": {
     "cohere-ai": "^8.1.0",
     "zod": "^3.23.8"
