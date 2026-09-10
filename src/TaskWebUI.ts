@@ -8103,13 +8103,13 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         : (p.installed ? '<span class="info-badge disabled">' + _T('cfg_login_nije_prijavljen', 'nije prijavljen') + '</span>' : '<span class="info-badge disabled">' + _T('cfg_login_nije_instaliran', 'nije instaliran') + '</span>');
       var h = '<div style="border:1px solid var(--border-color);border-radius:6px;padding:0.6rem;margin-bottom:0.5rem">';
       h += '<div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap"><strong>'+p.name+'</strong>'+badge+'<span style="margin-left:auto;display:flex;gap:6px">';
-      if (p.loggedIn) h += '<button onclick="doLogout(\\''+p.id+'\\','+(p.apikey?1:0)+')" style="font-size:.72rem;padding:4px 8px">' + _T('cfg_login_odjava', 'Odjava') + '</button>';
-      else if (p.kind==='oauth-cli' && p.installed) h += '<button onclick="doLoginStart(\\''+p.id+'\\')" style="font-size:.72rem;padding:4px 8px">Login</button>';
+      if (p.loggedIn) h += '<button class="cfg-btn" onclick="doLogout(\\''+p.id+'\\','+(p.apikey?1:0)+')">' + _T('cfg_login_odjava', 'Odjava') + '</button>';
+      else if (p.kind==='oauth-cli' && p.installed) h += '<button class="cfg-btn" onclick="doLoginStart(\\''+p.id+'\\')">Login</button>';
       h += '</span></div><div id="login-body-'+p.id+'" style="margin-top:.4rem"></div>';
       if (p.id==='geminicli') h += '<div style="font-size:.66rem;color:#f59e0b;margin-top:.3rem">' + _T('cfg_login_gemini_oauth', 'Google je ukinuo besplatni OAuth (Code Assist) za CLI — koristi <b>API ključ</b> s aistudio.google.com/apikey (besplatan tier).') + '</div>';
       if (p.apikey && !p.loggedIn) {
         var _ph = p.id==='geminicli' ? 'GEMINI_API_KEY (AIza...)' : _T('cfg_api_kljuc', 'API ključ') + ' (sk-or-...)';
-        h += '<div style="display:flex;gap:6px;margin-top:.4rem"><input id="login-key-'+p.id+'" type="password" autocomplete="new-password" data-form-type="other" data-lpignore="true" data-1p-ignore placeholder="'+_ph+'" style="flex:1;font-size:.72rem;padding:3px 5px"><button onclick="doApikey(\\''+p.id+'\\')" style="font-size:.72rem;padding:4px 8px">' + _T('cfg_login_spremi_kljuc', 'Spremi ključ') + '</button></div>';
+        h += '<div style="display:flex;gap:6px;margin-top:.4rem"><input id="login-key-'+p.id+'" type="password" autocomplete="new-password" data-form-type="other" data-lpignore="true" data-1p-ignore placeholder="'+_ph+'" class="cfg-polje" style="flex:1"><button class="cfg-btn" onclick="doApikey(\\''+p.id+'\\')">' + _T('cfg_login_spremi_kljuc', 'Spremi ključ') + '</button></div>';
       }
       if (!p.installed && p.installCmd) h += '<div style="font-size:.66rem;color:var(--text-secondary);margin-top:.3rem">' + _T('cfg_login_instaliraj', 'Nije instaliran. Instaliraj (Sigurnost→internet ON):') + ' <code>'+p.installCmd+'</code></div>';
       h += '</div>';
@@ -8129,7 +8129,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       var h = '';
       if (urlv) {
         h += '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><input id="login-url-'+id+'" value="'+urlv+'" readonly style="flex:1;min-width:220px;font-size:.7rem;padding:3px 5px">';
-        h += '<button onclick="copyLoginLink(\\''+id+'\\')" style="font-size:.72rem;padding:4px 8px">📋 Copy link</button>';
+        h += '<button class="cfg-btn" onclick="copyLoginLink(\\''+id+'\\')">📋 Copy link</button>';
         h += '<a href="'+urlv+'" target="_blank" rel="noopener" style="font-size:.72rem;padding:4px 8px">' + _T('cfg_login_otvori', 'Otvori') + '</a></div>';
         h += '<div style="font-size:.66rem;color:var(--text-secondary);margin-top:.3rem">' + _T('cfg_login_otvori_opis', 'Otvori link na bilo kojem računalu i odobri. Ako CLI traži kod, zalijepi ga ispod.') + '</div>';
       } else { h += '<div style="font-size:.7rem;color:var(--text-secondary)">' + _T('cfg_login_cekam_link', 'Čekam link…') + '</div>'; }
@@ -8259,9 +8259,9 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
           h += '<div><div style="color:var(--text-secondary)">' + keyLabel + '</div>' +
             '<div style="display:flex;align-items:center;gap:4px">' +
             '<input id="prov-' + p.id + '-key" type="password" autocomplete="new-password" data-form-type="other" data-lpignore="true" data-1p-ignore placeholder="' + keyPh + '" style="width:' + (isCloud ? '250' : '170') + 'px;' + inpStyle + '">' +
-            '<button type="button" title="' + _esc(_T('cfg_prov_prikazi_sakrij', 'Prikaži/sakrij')) + '" onclick="toggleKeyVis(\\'' + p.id + '\\', this)" style="font-size:0.8rem;padding:2px 6px;border-radius:4px;cursor:pointer;background:var(--bg-primary,#111);border:1px solid var(--border-color,#333)">&#128065;</button>' +
+            '<button type="button" title="' + _esc(_T('cfg_prov_prikazi_sakrij', 'Prikaži/sakrij')) + '" class="cfg-btn" onclick="toggleKeyVis(\\'' + p.id + '\\', this)">&#9678;</button>' +
             '</div></div>';
-          h += '<button onclick="saveProvider(\\'' + p.id + '\\')" style="font-size:0.72rem;padding:5px 10px;border-radius:4px;cursor:pointer">' + _T('cfg_spremi', 'Spremi') + (p.kind === 'local' ? ' + test' : '') + '</button>';
+          h += '<button class="cfg-btn" onclick="saveProvider(\\'' + p.id + '\\')">' + _T('cfg_spremi', 'Spremi') + (p.kind === 'local' ? ' + test' : '') + '</button>';
           h += '</div>';
           h += '<div style="font-size:0.66rem;color:var(--text-secondary);margin-top:0.3rem">' + _T(p.authNoteKey, p.authNote || '') + (p.error ? (' <span style="color:var(--accent-red)">— ' + p.error + '</span>') : '') + '</div>';
         } else {
