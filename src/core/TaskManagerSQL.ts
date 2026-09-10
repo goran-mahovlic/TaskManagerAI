@@ -18,6 +18,7 @@ import { assertNotLiveDbInTest } from "./LiveDbGuard";
 import { TM_DB } from "./paths";
 // TASK-3516: jedno pravilo poretka za cijeli TaskManager — najnovije na vrhu.
 import { TASKS_ORDER_BY } from "./ChronoOrder";
+import { dopusteniAgenti } from "./AgentIds";
 
 /**
  * TASK-3599 (P5c): oznake koje znace „ovo ceka covjeka". Drzane usklađeno s
@@ -45,16 +46,22 @@ export function humanGatedTask(tags?: string[] | null): boolean {
 export type TaskStatus = 'pending' | 'in_progress' | 'blocked' | 'completed' | 'cancelled';
 export type TaskPriority = 1 | 2 | 3 | 4 | 5;
 
-export type AgentId =
-  | 'regoc' | 'klaudio' | 'stribor' | 'kosjenka' | 'jelena'
-  | 'malik' | 'manda' | 'potjeh' | 'dora' | 'gita' | 'grga'
-  | 'pai' | 'user' | 'scheduler';
+/**
+ * Nositelj zadatka je `string`, a NE unija imena (TASK-4809).
+ *
+ * Do 10.09.2026. su ovdje bila nabrojana imena NAŠIH agenata, pa je paket u tipovima nosio
+ * jednu instalaciju. Koja imena postoje zna tek `config/agents.json` odn. `TM_AGENTS`;
+ * provjeru radi `jeDopustenAgent()` pri upisu, gdje se popis MOŽE razriješiti — tip ne može.
+ */
+export type AgentId = string;
 
-export const AGENT_IDS: string[] = [
-  'regoc', 'klaudio', 'stribor', 'kosjenka', 'jelena',
-  'malik', 'manda', 'potjeh', 'dora', 'gita', 'grga',
-  'pai', 'user', 'scheduler'
-];
+/**
+ * Dopušteni nositelji u OVOJ instalaciji (prazno = popis nije zatvoren).
+ * Funkcija, a ne konstanta: registar smije nastati POSLIJE pokretanja ploče.
+ */
+export function agentIds(): string[] {
+  return dopusteniAgenti().popis;
+}
 
 /**
  * TASK-3009: pretinac za zadatke koji nisu dobili projekt.
@@ -695,7 +702,9 @@ export class TaskManagerSQL {
     // Handle progress notes addition
     let progressNotes = existing.progressNotes;
     if (updates.progressNotes && Array.isArray(updates.progressNotes) && updates.progressNotes.length > 0) {
-      const agent = updates.assignee || existing.assignee || 'regoc';
+      // TASK-4809: bez nositelja biljesku potpisuje `changedBy` ('system'), ne ime
+      // agenta iz NASE instalacije — tuda ploca takvog agenta uopce nema.
+      const agent = changedBy;
       for (const noteText of updates.progressNotes) {
         progressNotes.push({
           timestamp: now,

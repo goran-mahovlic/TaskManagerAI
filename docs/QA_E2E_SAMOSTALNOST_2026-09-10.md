@@ -102,6 +102,27 @@ pretpostavke poput zatvorenog enuma imena.
 > Zatvoreno 10.09.2026.: brana je dobila strukturno pravilo — pada na svakoj NOVOJ
 > datoteci koja nabraja tri ili više naših imena (osnovica: 21 datoteka; `src/zod/schemas/task.ts`
 > ispao s popisa) i na povratku doslovnog imena u shemu zadatka.
+>
+> **Nastavak, TASK-4809 (10.09.2026.):** runtime su vrata bila zatvorena, ali su naša imena
+> ostala u JOŠ TRI datoteke — kao TIP i kao PRIKAZ. Maknuto:
+> `src/types/task-types.ts` (`AgentId` unija naših imena → `string`; `ALL_AGENTS`,
+> `AGENT_NAMES` i `AGENT_CAPABILITIES` s našim ulogama → `allAgents()`/`agentNames()`/
+> `agentName()` iz registra, matrica sposobnosti obrisana kao politika instalacije),
+> `src/core/TaskManagerSQL.ts` (`AgentId`, `AGENT_IDS` → `agentIds()`; zadani autor bilješke
+> napretka bio `'regoc'` → `changedBy`, tj. `'system'`) i `src/core/MessageQueue.ts`
+> (`VALID_AGENTS` — mrtav popis, jer `isValidAgent()` odavno ide kroz `AgentIdSchema` →
+> `validAgents()`; primjeri u CLI-ju s našim imenima → `scheduler`/`assistant`).
+> Osnovica strukturne brane: **21 → 18 datoteka**; dodan test koji za te četiri datoteke pada
+> već na PRVOM našem imenu u kodu (zapor s pragom 3 ne bi vidio povratak jednog imena).
+> `bun test`: **211 pass / 0 fail** (bilo 208).
+>
+> **Dokaz (živa sjena, port 17795, tuđi tim `ana`/`bruno` u `config/agents.json`):**
+> ```
+> POST /api/tasks {"assignee":"ana"}    → 201 TASK-001
+> POST /api/tasks {"assignee":"jelena"} → 400 nositelj „jelena" nije na popisu [ana, bruno, scheduler, user]
+> PUT  /api/tasks/TASK-002 {"progressNotes":[...]} bez nositelja → agent: "system" (prije: "regoc")
+> allAgents() = [ana, bruno, scheduler, user]; agentNames() = {ana: "Ana Anić", bruno: "Bruno Brnić"}
+> ```
 
 Dodatna zabuna: **tri različita značenja pod istim/sličnim imenom**:
 - `docs/INSTALL.md` — `TM_AGENTS` = CSV popis dopuštenih imena (ne postoji u kodu).

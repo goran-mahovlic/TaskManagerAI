@@ -10,7 +10,7 @@
  * Usage:
  *   import { getMessageQueue } from '~/.claude/regoc/MessageQueue'
  *   const mq = getMessageQueue()
- *   mq.sendMessage('klaudio', 'stribor', 'Hello!')
+ *   mq.sendMessage('scheduler', 'assistant', 'Hello!')
  */
 
 import { Database } from 'bun:sqlite'
@@ -19,6 +19,7 @@ import { dirname, join } from 'path'
 import { TM_DB } from './paths'
 import { randomUUID } from 'crypto'
 import { AgentIdSchema, SendMessageInputSchema } from '../zod/schemas/index'
+import { dopusteniAgenti } from './AgentIds'
 
 // ============================================
 // Configuration
@@ -35,14 +36,21 @@ const DB_PATH = join(REGOC_DIR, 'messages.db')
 const SCHEMA_PATH = join(REGOC_DIR, 'schema.sql')
 if (!existsSync(REGOC_DIR)) { try { mkdirSync(REGOC_DIR, { recursive: true }) } catch { /* pada na otvaranju */ } }
 
-// Valid agents (whitelist for security)
-const VALID_AGENTS = [
-  'regoc', 'klaudio', 'stribor', 'kosjenka', 'jelena',
-  'malik', 'manda', 'potjeh', 'dora', 'gita', 'grga', 'pai', 'user',
-  'scheduler'  // Added for BUG-001 fix - task scheduler integration
-] as const
+/**
+ * Tko smije slati i primati poruke (TASK-4809).
+ *
+ * Do 10.09.2026. je ovdje stajao `VALID_AGENTS` — doslovan popis imena NAŠIH agenata. Bio
+ * je i MRTAV: `isValidAgent()` odavno provjerava kroz `AgentIdSchema`, dakle kroz
+ * `jeDopustenAgent()` iz `src/core/AgentIds.ts`, koji popis čita iz `config/agents.json`
+ * odn. `TM_AGENTS`. Popis je zato maknut, a ime je zadržano kao funkcija koja pita isti
+ * izvor istine — dvije istine o tome tko postoji su kvar, ne udobnost.
+ */
+export function validAgents(): string[] {
+  return dopusteniAgenti().popis
+}
 
-type AgentId = typeof VALID_AGENTS[number]
+/** Ime agenta; oblik i pripadnost popisu provjerava `AgentIdSchema` pri upisu. */
+type AgentId = string
 
 // ============================================
 // Types
@@ -529,7 +537,7 @@ export function getMessageQueue(): MessageQueue {
   return MessageQueue.getInstance()
 }
 
-export { MessageQueue, type AgentId, VALID_AGENTS }
+export { MessageQueue, type AgentId }
 
 // ============================================
 // CLI Interface
@@ -597,8 +605,8 @@ Commands:
   cleanup [days]              Clean up old messages (default: 7 days)
 
 Examples:
-  bun MessageQueue.ts send klaudio stribor "Pozdrav!"
-  bun MessageQueue.ts pending stribor
+  bun MessageQueue.ts send scheduler assistant "Pozdrav!"
+  bun MessageQueue.ts pending assistant
   bun MessageQueue.ts stats
 `)
   }

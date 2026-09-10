@@ -8,7 +8,16 @@
  * These type definitions are the foundation for the entire Tasks.md
  * integration system. All components (TaskManager, Scheduler, Notifications)
  * depend on these types.
+ *
+ * TASK-4809: tko su agenti VIŠE NE PIŠE ovdje. Do 10.09.2026. je ova datoteka nosila
+ * `AgentId` kao uniju imena JEDNE instalacije, `ALL_AGENTS`, `AGENT_NAMES` s hrvatskim
+ * nazivima tih agenata i `AGENT_CAPABILITIES` s njihovim ulogama — dakle naš tim ugrađen
+ * u tipove paketa. Popis i imena sada dolaze iz `config/agents.json` odn. `TM_AGENTS`
+ * (v. `src/core/AgentIds.ts`, ADR-0001 O5, `docs/ROADMAP_SAMOSTALNOST.md`).
  */
+
+import { dopusteniAgenti, jeDopustenAgent } from '../core/AgentIds';
+import { loadAgents } from '../core/orchestrator/AgentRegistry';
 
 // ============================================================================
 // ENUMS & LITERAL TYPES
@@ -53,48 +62,48 @@ export const PRIORITY_LABELS: Record<TaskPriority, string> = {
 };
 
 /**
- * All valid agent IDs in the REGOC system.
- * 'user' represents human interaction (Goran/Klaudio).
+ * Identifikator nositelja zadatka.
+ *
+ * Namjerno `string`, a NE unija imena: koja imena postoje zna tek instalacija, i to u
+ * `config/agents.json` (ili `TM_AGENTS`). Zatvorena unija ovdje značila bi da paket u
+ * tipovima nosi tuđi tim — tuđem korisniku ne bi prošao ni vlastiti nositelj (nalaz N1,
+ * `docs/QA_E2E_SAMOSTALNOST_2026-09-10.md`).
+ *
+ * Higijenu i pripadnost popisu provjerava `jeDopustenAgent()` u trenutku upisa
+ * (`AgentIdSchema`), gdje se popis MOŽE razriješiti — tip to ne može.
  */
-export type AgentId =
-  | 'regoc'     // Orchestrator daemon
-  | 'klaudio'   // Telegram agent
-  | 'stribor'   // Voice & speech analysis expert
-  | 'kosjenka'  // Architect agent
-  | 'jelena'    // Engineer agent
-  | 'malik'     // Security agent
-  | 'manda'     // Documentation agent
-  | 'potjeh'    // QA/Intern agent
-  | 'dora'      // Data agent
-  | 'gita'      // Git/Version control agent
-  | 'grga'      // UI/UX Designer agent
-  | 'user';     // Human user (Goran)
+export type AgentId = string;
 
 /**
- * List of all agent IDs for iteration purposes.
+ * Dopušteni nositelji u OVOJ instalaciji, poredani.
+ *
+ * Prazan niz znači „popis nije zatvoren" (nema ni registra ni `TM_AGENTS`) — tada je
+ * dopušten svaki ispravan oblik imena, pa nabrajanje ni nema smisla.
+ * Funkcija, a ne konstanta: registar smije nastati POSLIJE pokretanja ploče.
  */
-export const ALL_AGENTS: AgentId[] = [
-  'regoc', 'klaudio', 'stribor', 'kosjenka', 'jelena',
-  'malik', 'manda', 'potjeh', 'dora', 'gita', 'grga', 'user'
-];
+export function allAgents(): AgentId[] {
+  return dopusteniAgenti().popis;
+}
 
 /**
- * Agent display names in Croatian.
+ * Imena za PRIKAZ, `{ id → ime }`, iz registra (`config/agents.json`, polje `ime`).
+ *
+ * Agent bez `ime` u registru ne dobiva izmišljeno ime nego se u mapi ne pojavljuje —
+ * pozivatelj tada prikazuje sam `id`. Bez registra je mapa prazna.
  */
-export const AGENT_NAMES: Record<AgentId, string> = {
-  regoc: 'REGOC Orkestrator',
-  klaudio: 'Klaudio (Telegram)',
-  stribor: 'Stribor (analiza glasa i govora)',
-  kosjenka: 'Kosjenka (Architect)',
-  jelena: 'Jelena (Engineer)',
-  malik: 'Malik (Security)',
-  manda: 'Manda (Dokumentacija)',
-  potjeh: 'Potjeh (QA)',
-  dora: 'Dora (Data)',
-  gita: 'Gita (Git)',
-  grga: 'Grga (UI/UX)',
-  user: 'Korisnik (Goran)'
-};
+export function agentNames(): Record<string, string> {
+  const mapa: Record<string, string> = {};
+  for (const a of loadAgents()) {
+    if (a.ime) mapa[a.id.toLowerCase()] = a.ime;
+  }
+  return mapa;
+}
+
+/** Ime za prikaz, uz `id` kao rezervu. */
+export function agentName(id: string): string {
+  const ime = String(id ?? '').trim();
+  return agentNames()[ime.toLowerCase()] || ime;
+}
 
 // ============================================================================
 // CORE INTERFACES
@@ -380,125 +389,15 @@ export interface AgentCapability {
 }
 
 /**
- * Default capability matrix for all agents.
+ * Nema ugrađene matrice sposobnosti.
+ *
+ * Do 10.09.2026. je ovdje stajao `AGENT_CAPABILITIES` — po zapis za svakog od NAŠIH
+ * jedanaest agenata, s njihovim ulogama u `specializations` („architecture", „security",
+ * „intern_tasks"…). To je politika JEDNE instalacije, a ne činjenica o zadatcima: tko što
+ * smije i u čemu je specijaliziran opisuje orkestrator u `config/agents.json` (polje
+ * `uloga`, `keywords`). Tip `AgentCapability` ostaje kao OBLIK koji takva politika može
+ * popuniti; jezgra sama nikoga ne nabraja (TASK-4809).
  */
-export const AGENT_CAPABILITIES: Record<AgentId, AgentCapability> = {
-  regoc: {
-    agentId: 'regoc',
-    capabilities: [
-      'create_task', 'update_task', 'delete_task', 'assign_task',
-      'complete_task', 'block_task', 'unblock_task', 'view_all_tasks',
-      'manage_scheduler', 'send_notifications', 'archive_tasks'
-    ],
-    autonomous: true,
-    maxConcurrentTasks: 999, // Orchestrator has no limit
-    specializations: ['orchestration', 'scheduling', 'coordination']
-  },
-  klaudio: {
-    agentId: 'klaudio',
-    capabilities: [
-      'create_task', 'update_task', 'view_all_tasks', 'send_notifications'
-    ],
-    autonomous: true,
-    maxConcurrentTasks: 5,
-    specializations: ['telegram', 'messaging', 'user_interaction']
-  },
-  stribor: {
-    agentId: 'stribor',
-    capabilities: [
-      'create_task', 'update_task', 'view_all_tasks', 'send_notifications'
-    ],
-    autonomous: true,
-    maxConcurrentTasks: 3,
-    specializations: ['voice', 'speech', 'audio', 'stt', 'prosody']
-  },
-  kosjenka: {
-    agentId: 'kosjenka',
-    capabilities: [
-      'create_task', 'update_task', 'assign_task', 'complete_task',
-      'block_task', 'view_all_tasks'
-    ],
-    autonomous: false,
-    maxConcurrentTasks: 5,
-    specializations: ['architecture', 'design', 'planning']
-  },
-  jelena: {
-    agentId: 'jelena',
-    capabilities: [
-      'create_task', 'update_task', 'complete_task', 'block_task',
-      'view_all_tasks'
-    ],
-    autonomous: false,
-    maxConcurrentTasks: 5,
-    specializations: ['engineering', 'implementation', 'coding']
-  },
-  malik: {
-    agentId: 'malik',
-    capabilities: [
-      'create_task', 'update_task', 'complete_task', 'block_task',
-      'view_all_tasks'
-    ],
-    autonomous: false,
-    maxConcurrentTasks: 3,
-    specializations: ['security', 'validation', 'audit']
-  },
-  manda: {
-    agentId: 'manda',
-    capabilities: [
-      'create_task', 'update_task', 'complete_task', 'view_all_tasks'
-    ],
-    autonomous: false,
-    maxConcurrentTasks: 5,
-    specializations: ['documentation', 'writing', 'knowledge_base']
-  },
-  potjeh: {
-    agentId: 'potjeh',
-    capabilities: [
-      'create_task', 'update_task', 'complete_task', 'view_all_tasks'
-    ],
-    autonomous: false,
-    maxConcurrentTasks: 3,
-    specializations: ['testing', 'qa', 'intern_tasks']
-  },
-  dora: {
-    agentId: 'dora',
-    capabilities: [
-      'create_task', 'update_task', 'complete_task', 'view_all_tasks'
-    ],
-    autonomous: false,
-    maxConcurrentTasks: 5,
-    specializations: ['data', 'analysis', 'reports']
-  },
-  gita: {
-    agentId: 'gita',
-    capabilities: [
-      'create_task', 'update_task', 'complete_task', 'view_all_tasks'
-    ],
-    autonomous: false,
-    maxConcurrentTasks: 5,
-    specializations: ['git', 'version_control', 'deployment']
-  },
-  grga: {
-    agentId: 'grga',
-    capabilities: [
-      'create_task', 'update_task', 'complete_task', 'view_all_tasks'
-    ],
-    autonomous: false,
-    maxConcurrentTasks: 5,
-    specializations: ['ui', 'ux', 'design', 'frontend']
-  },
-  user: {
-    agentId: 'user',
-    capabilities: [
-      'create_task', 'update_task', 'delete_task', 'assign_task',
-      'complete_task', 'block_task', 'unblock_task', 'view_all_tasks',
-      'archive_tasks'
-    ],
-    autonomous: false, // User is human
-    maxConcurrentTasks: 999,
-    specializations: ['everything'] // Human can do anything
-  }
-};
 
 // ============================================================================
 // NOTIFICATION TYPES
@@ -703,10 +602,13 @@ export function isTaskPriority(value: number): value is TaskPriority {
 }
 
 /**
- * Check if a string is a valid AgentId.
+ * Smije li `value` biti nositelj u OVOJ instalaciji?
+ *
+ * Delegira na `jeDopustenAgent` (`src/core/AgentIds.ts`) — jedan izvor istine s Zod
+ * shemom, pa se provjera u kodu i provjera na ulazu API-ja ne mogu razići.
  */
 export function isAgentId(value: string): value is AgentId {
-  return ALL_AGENTS.includes(value as AgentId);
+  return jeDopustenAgent(value);
 }
 
 /**
@@ -732,10 +634,12 @@ export default {
 
   // Constants
   PRIORITY_LABELS,
-  ALL_AGENTS,
-  AGENT_NAMES,
-  AGENT_CAPABILITIES,
   DEFAULT_SCHEDULER_CONFIG,
+
+  // Agenti — razrješavaju se iz konfiguracije, pa su funkcije, ne konstante
+  allAgents,
+  agentNames,
+  agentName,
 
   // Type guards
   isTaskStatus,

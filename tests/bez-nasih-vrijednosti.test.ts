@@ -227,6 +227,11 @@ describe('paket ne smije nositi naše vrijednosti (ADR-0001 §8)', () => {
  * Osnovica izmjerena 10.09.2026. nakon popravka N1: `src/zod/schemas/task.ts` je ispao s
  * popisa jer popis nositelja sada dolazi iz `config/agents.json`/`TM_AGENTS`
  * (v. `src/core/AgentIds.ts`, `tests/agent-ids.test.ts`).
+ *
+ * TASK-4809 spušta osnovicu s 21 na 18: ispali su `src/types/task-types.ts` (tip `AgentId`,
+ * `ALL_AGENTS`, `AGENT_NAMES`, `AGENT_CAPABILITIES`), `src/core/TaskManagerSQL.ts`
+ * (`AgentId`, `AGENT_IDS`, zadani autor bilješke) i `src/core/MessageQueue.ts`
+ * (`VALID_AGENTS`, primjeri u CLI-ju).
  */
 const NASA_IMENA = [
   'regoc', 'klaudio', 'stribor', 'kosjenka', 'jelena',
@@ -246,12 +251,9 @@ const OSNOVICA_POPISI: string[] = [
   'locales/hr.json',
   'src/TaskWebUI.ts',
   'src/core/DispatchGuard.ts',
-  'src/core/MessageQueue.ts',
   'src/core/ModeClassifier.ts',
   'src/core/ReportBackSweepLive.ts',
-  'src/core/TaskManagerSQL.ts',
   'src/core/WorkflowTemplate.ts',
-  'src/types/task-types.ts',
   'tests/integracije.test.ts',
   'tests/orchestrator.test.ts',
   'tools/rag_izdvoji.py',
@@ -284,13 +286,32 @@ describe('strukturna brana — naš tim ugrađen kao popis, ne kao tekst (N1)', 
     expect(popisiTima().length).toBeLessThanOrEqual(OSNOVICA_POPISI.length)
   })
 
-  test('shema zadatka NE smije nositi zatvoren popis nositelja (regresija N1)', () => {
-    const shema = readFileSync(join(KORIJEN, 'src/zod/schemas/task.ts'), 'utf-8')
-    const kod = shema.split('\n').filter(r => !r.trim().startsWith('//') && !r.trim().startsWith('*'))
+  /**
+   * Datoteke jezgre koje su NEKAD nabrajale naš tim i sada ga NE SMIJU vratiti.
+   *
+   * `src/zod/schemas/task.ts` — nalaz N1 (TASK-4808): zatvoren `z.enum` nositelja.
+   * Ostale tri — TASK-4809: `AgentId` kao unija naših imena, `ALL_AGENTS`/`AGENT_NAMES`/
+   * `AGENT_CAPABILITIES` s NAŠIM ulogama, `AGENT_IDS`, `VALID_AGENTS`. Popis nositelja i
+   * njihova imena dolaze iz `config/agents.json` (v. `src/core/AgentIds.ts`).
+   *
+   * Zašto poseban test uz zapor iznad: zapor broji datoteke s ≥3 imena, pa bi povratak
+   * JEDNOG imena („samo zadana vrijednost `|| 'regoc'`") prošao nezapaženo. Ovdje pada već
+   * na prvom imenu u KODU (komentari smiju citirati kvar koji opisuju).
+   */
+  const BEZ_UGRADENOG_POPISA = [
+    'src/zod/schemas/task.ts',
+    'src/types/task-types.ts',
+    'src/core/TaskManagerSQL.ts',
+    'src/core/MessageQueue.ts',
+  ]
+
+  test.each(BEZ_UGRADENOG_POPISA)('%s NE smije nositi naša imena u kodu (regresija N1)', rel => {
+    const izvor = readFileSync(join(KORIJEN, rel), 'utf-8')
+    const kod = izvor.split('\n').filter(r => !r.trim().startsWith('//') && !r.trim().startsWith('*'))
     for (const ime of NASA_IMENA) {
       expect(
         kod.some(r => new RegExp(`['"\`]${ime}['"\`]`).test(r))
-          ? `ime „${ime}" je opet doslovno u src/zod/schemas/task.ts`
+          ? `ime „${ime}" je opet doslovno u ${rel}`
           : 'čisto',
       ).toBe('čisto')
     }
