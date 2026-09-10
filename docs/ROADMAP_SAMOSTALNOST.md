@@ -90,10 +90,22 @@ neopraćen alat ili premjestiti u `regoc_system/tools/` (privatni repo).
 
 ## 6. Implementacijski plan po agentima
 
-1. **Kosjenka (Arhitekt)** — puna revizija `RegocDaemon.ts` (redak po redak, ne samo grep), ADR:
+1. ~~**Kosjenka (Arhitekt)** — puna revizija `RegocDaemon.ts` (redak po redak, ne samo grep), ADR:
    točan popis modula/funkcija koje se sele u paket kao "Orchestrator core", što ostaje env/config,
    dizajn config sheme za Nextcloud/Email/GitLab/GitHub (isti obrazac kao Dežurni/Telegram) i
-   dizajn Telegram-poller adaptera na `/api/ingest`.
+   dizajn Telegram-poller adaptera na `/api/ingest`.~~ **GOTOVO 10.09.2026. (TASK-4799):**
+   - `docs/adr/ADR-0001-orchestrator-core.md` — revizija svih 7 340 redaka, 24 nalaza kategorije S
+     (naše vrijednosti u kodu), 13 kategorije L (pretpostavke o stroju), 3 kategorije D (mrtav kod),
+     podjela O0–O6, config/env shema, portovi, redoslijed izvedbe;
+   - `docs/DIZAJN-integracije.md` — shema za Nextcloud/e-poštu/GitLab/GitHub + `ProbeGuard` (SSRF);
+   - `docs/DIZAJN-telegram-poller.md` — poller na `POST /api/ingest`;
+   - `tests/bez-nasih-vrijednosti.test.ts` — brana (zapor) protiv naših vrijednosti u paketu.
+
+   **Nalaz koji mijenja redoslijed:** paket VEĆ nosi naše vrijednosti — 148 pojava
+   `.claude/regoc` u 47 datoteka, 73 pojave `/home/klaudio` u 25, naši IP-ovi u 10, Goranov
+   git identitet kao konstanta u `src/core/WorkflowTemplate.ts:58`. Zato korak 2 (Jelena)
+   **počinje čišćenjem (ADR-0001 O1)**, a tek onda seli orkestrator — inače novi modul
+   nasljeđuje istu bolest. Otvoreno pitanje O0 (§7 ADR-a) čeka Goranovu potvrdu.
 2. **Jelena (Inženjer)** — implementacija po Kosjenkinom dizajnu: Orchestrator core modul,
    4 nova integracijska modula + Config kartice, Telegram poller, uklanjanje
    `uskladi_s_regocem.sh` iz javnog indeksa, dopuna `docs/INSTALL.md` za sve novo, komentar o
