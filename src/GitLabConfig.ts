@@ -71,7 +71,7 @@ const modul = new ConfigModul<GitLabPostavke>({
       uzorakPoruka: 'npr. gitlab.com ili gitlab.tvrtka.hr',
     },
     projekt: {
-      tip: 'tekst', maxDuljina: GRANICE.projekt.maxDuljina,
+      tip: 'tekst', obavezno: true, maxDuljina: GRANICE.projekt.maxDuljina,
       uzorak: RE_PROJEKT, uzorakPoruka: 'oblik je grupa/repozitorij',
     },
     tokenEnv: {

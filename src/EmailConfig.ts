@@ -81,12 +81,12 @@ const RE_EPOSTA = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const RE_ENV = /^[A-Z][A-Z0-9_]*$/
 
 const posluziteljPolja = (tajna: string) => ({
-  host: { tip: 'tekst' as const, maxDuljina: GRANICE.host.maxDuljina },
+  host: { tip: 'tekst' as const, obavezno: true, maxDuljina: GRANICE.host.maxDuljina },
   port: { tip: 'broj' as const, min: GRANICE.port.min, max: GRANICE.port.max },
   tls: { tip: 'bool' as const },
-  korisnik: { tip: 'tekst' as const, maxDuljina: 200 },
+  korisnik: { tip: 'tekst' as const, obavezno: true, maxDuljina: 200 },
   lozinkaEnv: {
-    tip: 'tekst' as const, maxDuljina: 64, tajnaEnv: true, uzorak: RE_ENV,
+    tip: 'tekst' as const, obavezno: true, maxDuljina: 64, tajnaEnv: true, uzorak: RE_ENV,
     uzorakPoruka: `upiši IME varijable okoline (npr. ${tajna}), ne lozinku`,
   },
 })
@@ -105,7 +105,7 @@ const modul = new ConfigModul<EmailPostavke>({
       polja: {
         ...posluziteljPolja('SMTP_PASSWORD'),
         posiljatelj: {
-          tip: 'tekst', maxDuljina: 200, uzorak: RE_EPOSTA,
+          tip: 'tekst', obavezno: true, maxDuljina: 200, uzorak: RE_EPOSTA,
           uzorakPoruka: 'mora biti adresa e-pošte',
         },
       },
@@ -123,7 +123,7 @@ const modul = new ConfigModul<EmailPostavke>({
         oznaciProcitano: { tip: 'bool' },
       },
     },
-    primatelji: { tip: 'popis' },
+    primatelji: { tip: 'popis', obavezno: true },
   },
 })
 

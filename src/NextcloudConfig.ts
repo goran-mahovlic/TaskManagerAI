@@ -60,12 +60,12 @@ const modul = new ConfigModul<NextcloudPostavke>({
   shema: {
     ukljucen: { tip: 'bool' },
     baseUrl: {
-      tip: 'tekst', maxDuljina: GRANICE.baseUrl.maxDuljina,
+      tip: 'tekst', obavezno: true, maxDuljina: GRANICE.baseUrl.maxDuljina,
       uzorak: /^https?:\/\/[^\s]+$/, uzorakPoruka: 'mora biti oblika https://oblak.primjer.hr',
     },
-    korisnik: { tip: 'tekst', maxDuljina: GRANICE.korisnik.maxDuljina },
+    korisnik: { tip: 'tekst', obavezno: true, maxDuljina: GRANICE.korisnik.maxDuljina },
     lozinkaEnv: {
-      tip: 'tekst', maxDuljina: GRANICE.lozinkaEnv.maxDuljina, tajnaEnv: true,
+      tip: 'tekst', obavezno: true, maxDuljina: GRANICE.lozinkaEnv.maxDuljina, tajnaEnv: true,
       uzorak: /^[A-Z][A-Z0-9_]*$/, uzorakPoruka: 'upiši IME varijable okoline (VELIKIM_SLOVIMA), ne lozinku',
     },
     korijenskaMapa: {

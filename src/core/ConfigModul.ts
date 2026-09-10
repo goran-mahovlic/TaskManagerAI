@@ -38,6 +38,15 @@ export interface Polje {
   polja?: Shema
   /** Polje nosi IME varijable okoline s tajnom (nikad vrijednost). */
   tajnaEnv?: boolean
+  /**
+   * Bez ovog polja integracija ne može raditi (TASK-4803).
+   *
+   * Ploča je dosad znala samo reći ŠTO PRVO fali (`zastoKey`), pa je korisnik pred praznim
+   * obrascem od desetak polja pogađao koje od njih mora ispuniti. Oznaka stoji ovdje, uz
+   * shemu, a ne u ploči — inače bi popis obveznih polja živio u dvije preslike koje se
+   * razilaze čim se modulu doda polje.
+   */
+  obavezno?: boolean
 }
 
 export type Shema = Record<string, Polje>
@@ -98,6 +107,28 @@ export class ConfigModul<T extends Record<string, any>> {
    * datoteku uz paket.
    */
   get putanjaPisanja(): string { return konfigPutanjaZaPisanje(this.datoteka, this.envVar) }
+
+  /**
+   * Shema u obliku koji smije preko žice: bez regularnih izraza (nisu JSON) i bez ičega
+   * što ploča ne crta. Ploča iz ovoga zna je li polje obvezno, je li izbor iz popisa i
+   * koje su granice broja — dok je crtala samo po TIPU VRIJEDNOSTI, polje `smjer` s tri
+   * dopuštene vrijednosti izgledalo je kao obično tekstualno polje.
+   */
+  opisSheme(shema: Shema = this.shema): Record<string, unknown> {
+    const izlaz: Record<string, unknown> = {}
+    for (const [ime, polje] of Object.entries(shema)) {
+      izlaz[ime] = {
+        tip: polje.tip,
+        ...(polje.obavezno ? { obavezno: true } : {}),
+        ...(polje.tajnaEnv ? { tajnaEnv: true } : {}),
+        ...(polje.vrijednosti ? { vrijednosti: [...polje.vrijednosti] } : {}),
+        ...(polje.min != null ? { min: polje.min } : {}),
+        ...(polje.max != null ? { max: polje.max } : {}),
+        ...(polje.polja ? { polja: this.opisSheme(polje.polja) } : {}),
+      }
+    }
+    return izlaz
+  }
 
   /** Uvijek svjež pročitaj s diska. Nepoznata polja iz datoteke se ČUVAJU. */
   load(path: string = this.putanja): T & Record<string, unknown> {

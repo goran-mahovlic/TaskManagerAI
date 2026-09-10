@@ -24,16 +24,19 @@ import { konfigPutanja, osigurajMapu, stanjePutanja } from './core/paths'
 // Integracije (TASK-4800): četiri modula po istom obrascu + orkestrator + ulazni Telegram.
 import {
   loadNextcloudConfig, validateNextcloudPatch, saveNextcloudConfig, stanjeNextcloud,
-  probajNextcloud, NEXTCLOUD_CONFIG_PATH,
+  probajNextcloud, NEXTCLOUD_CONFIG_PATH, nextcloudKonfigModul,
 } from './NextcloudConfig'
 import {
   loadEmailConfig, validateEmailPatch, saveEmailConfig, stanjeEmail, probajEmail, EMAIL_CONFIG_PATH,
+  emailKonfigModul,
 } from './EmailConfig'
 import {
   loadGitLabConfig, validateGitLabPatch, saveGitLabConfig, stanjeGitLab, probajGitLab, GITLAB_CONFIG_PATH,
+  gitlabKonfigModul,
 } from './GitLabConfig'
 import {
   loadGitHubConfig, validateGitHubPatch, saveGitHubConfig, stanjeGitHub, probajGitHub, GITHUB_CONFIG_PATH,
+  githubKonfigModul,
 } from './GitHubConfig'
 import { probajUlaz, stanjeUlaza, pokreniTelegramPoller } from './TelegramPoller'
 import {
@@ -513,6 +516,14 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       --accent-yellow: #eab308;
       --accent-red: #ef4444;
       --accent-purple: #a855f7;
+      /* TASK-4803: obrub i podloga kartice. Do sada su se rabile (38 mjesta), ali nikad
+         nisu bile definirane — a nepoznata varijabla u kratici border ne pada natrag na
+         zadanu boju: cijelo svojstvo postaje nevaljano i border-style ispadne none.
+         Kartice Configa zato nisu imale ni obrub ni podlogu. Vrijednosti nisu nove boje
+         nego postojeće vrijednosti ploče, da kartica izgleda kao .column na Tasks.
+         (Bez obrnutih navodnika: ovaj je stil unutar predloška koji oni zatvaraju.) */
+      --border-color: #334155;
+      --card-bg: #1e293b;
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -1957,6 +1968,35 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     .info-card { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 8px; padding: 1rem; }
     .info-card-title { font-size: 0.85rem; font-weight: 700; color: var(--accent-blue); margin-bottom: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px; display: flex; align-items: center; gap: 0.5rem; }
     .info-card-title .icon { font-size: 1rem; }
+
+    /* Kontrole na Config stranici (TASK-4803).
+       Prije ovoga je isti niz inline stilova stajao u 19 preslika, a gumbi nisu imali
+       nikakav stil — preglednik ih je crtao svojim svijetlim kromom nasred tamne ploče.
+       Klasa je jedno mjesto istine, pa nova kartica ne može odstupiti od obrasca. */
+    .cfg-polje { font-size: 0.72rem; padding: 3px 6px; border-radius: 4px; background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--border-color); }
+    .cfg-polje:focus { outline: none; border-color: var(--accent-blue); }
+    .cfg-btn { font-size: 0.72rem; padding: 3px 10px; border-radius: 4px; background: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border-color); cursor: pointer; }
+    .cfg-btn:hover:enabled { background: var(--accent-blue); border-color: var(--accent-blue); color: #fff; }
+    .cfg-btn:disabled { opacity: 0.5; cursor: default; }
+    /* Polje i njegov gumb Spremi ostaju u istom retku. Dok je ćelija bila tvrdih 290 px,
+       polje od 260 px gurnulo bi gumb u sljedeći red i SVAKI redak bio bi dvostruko visok
+       (kartica Integracije mjerila je 2565 px). */
+    .info-table td.cfg-kontrola { white-space: nowrap; width: 1%; }
+    .cfg-obavezno { color: var(--accent-yellow); font-weight: 700; margin-left: 0.15rem; }
+    /* Podnaslov skupine unutar kartice: bez njega su se dva polja imena Host (SMTP i IMAP)
+       nizala jedno ispod drugoga bez ičega što bi reklo koje je koje. */
+    .info-table tr.cfg-skupina td { padding-top: 0.8rem; color: var(--accent-blue); font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700; border-bottom-color: var(--border-color); }
+    /* Odjeljak integracije unutar zajedničke kartice. */
+    .cfg-odjeljak { margin: 0.7rem 0; padding: 0.6rem; border: 1px solid var(--border-color); border-radius: 6px; background: rgba(0,0,0,0.15); }
+    .cfg-odjeljak-glava { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.35rem; }
+    .cfg-legenda { font-size: 0.68rem; color: var(--text-secondary); margin-bottom: 0.6rem; }
+    /* Naslov skupine kartica (TASK-4803). Osamnaest kartica bez ijedne podjele citalo se
+       kao jedan zid: podesavanje i puki ispis stanja stajali su izmijesano, pa se nije
+       vidjelo gdje se sto MIJENJA a gdje se samo CITA. */
+    .info-skupina { grid-column: 1 / -1; margin: 0.5rem 0 0; border-top: 1px solid var(--border-color); padding-top: 0.9rem; }
+    .info-skupina:first-child { border-top: none; margin-top: 0; padding-top: 0; }
+    .info-skupina h3 { margin: 0; font-size: 0.9rem; color: var(--text-primary); letter-spacing: 0.3px; }
+    .info-skupina p { margin: 0.2rem 0 0; font-size: 0.72rem; color: var(--text-secondary); }
     .info-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
     .info-table th { text-align: left; padding: 0.4rem 0.5rem; color: var(--text-secondary); font-size: 0.7rem; text-transform: uppercase; border-bottom: 1px solid var(--border-color); }
     .info-table td { padding: 0.4rem 0.5rem; border-bottom: 1px solid rgba(255,255,255,0.04); vertical-align: top; }
@@ -2398,29 +2438,21 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         <button id="info-refresh-btn" class="konzola-mode-btn plan-mode" style="border-color:var(--accent-blue);color:var(--accent-blue);" data-i18n="refresh">Refresh</button>
       </div>
       <div class="info-grid" id="info-grid">
-        <div class="info-card" id="info-system-card">
-          <div class="info-card-title"><span class="icon">&#9646;</span> System</div>
-          <div id="info-system-content"><div class="empty" data-i18n="loading">Loading...</div></div>
-        </div>
-        <div class="info-card" id="info-providers-card">
-          <div class="info-card-title"><span class="icon">&#9881;</span> AI Providers</div>
-          <div id="info-providers-content"><div class="empty" data-i18n="loading">Loading...</div></div>
-        </div>
-        <div class="info-card info-full" id="info-agents-card">
-          <div class="info-card-title"><span class="icon">&#9733;</span> Agents &amp; Model Requirements</div>
-          <div id="info-agents-content"><div class="empty" data-i18n="loading">Loading...</div></div>
-        </div>
-        <div class="info-card info-full" id="info-classifier-card">
-          <div class="info-card-title"><span class="icon">&#8644;</span> <span data-i18n="cfg_kartica_klasifikator">Klasifikacijski model &mdash; rutiranje poruka (odvojeno od izvr&#353;nog)</span></div>
-          <div id="info-classifier-content"><div class="empty" data-i18n="loading">Loading...</div></div>
+        <div class="info-skupina info-full">
+          <h3 data-i18n="cfg_skupina_podesavanje">Pode&#353;avanje &mdash; ovo mijenja&#353; ti</h3>
+          <p data-i18n="cfg_skupina_podesavanje_opis">Kartice u kojima se ne&#353;to upisuje ili prebacuje. Promjena vrijedi odmah, bez ponovnog pokretanja.</p>
         </div>
         <div class="info-card info-full" id="info-login-card">
-          <div class="info-card-title"><span class="icon">&#128273;</span> <span data-i18n="cfg_kartica_prijave">Prijave (login preko linka)</span></div>
+          <div class="info-card-title"><span class="icon">&#8599;</span> <span data-i18n="cfg_kartica_prijave">Prijave (login preko linka)</span></div>
           <div id="info-login-content"><div class="empty" data-i18n="loading">Loading...</div></div>
         </div>
         <div class="info-card info-full" id="info-modelsetup-card">
           <div class="info-card-title"><span class="icon">&#9881;</span> <span data-i18n="cfg_kartica_modeli">Podržani modeli &amp; postavke providera</span></div>
           <div id="info-modelsetup-content"><div class="empty" data-i18n="loading">Loading...</div></div>
+        </div>
+        <div class="info-card info-full" id="info-classifier-card">
+          <div class="info-card-title"><span class="icon">&#8644;</span> <span data-i18n="cfg_kartica_klasifikator">Klasifikacijski model &mdash; rutiranje poruka (odvojeno od izvr&#353;nog)</span></div>
+          <div id="info-classifier-content"><div class="empty" data-i18n="loading">Loading...</div></div>
         </div>
         <div class="info-card info-full" id="info-dezurni-card">
           <div class="info-card-title"><span class="icon">&#9873;</span> <span data-i18n="cfg_kartica_dezurni">De&#382;urni &mdash; rezervni model kad primarni padne</span></div>
@@ -2431,20 +2463,28 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
           <div id="info-telegram-content"><div class="empty" data-i18n="loading">Loading...</div></div>
         </div>
         <div class="info-card info-full" id="info-ulaz-card">
-          <div class="info-card-title"><span class="icon">&#9094;</span> <span data-i18n="cfg_kartica_ulaz">Ulazna vrata &mdash; kako telegramska poruka ulazi u plo&#269;u</span></div>
+          <div class="info-card-title"><span class="icon">&#8623;</span> <span data-i18n="cfg_kartica_ulaz">Ulazna vrata &mdash; kako telegramska poruka ulazi u plo&#269;u</span></div>
           <div id="info-ulaz-content"><div class="empty" data-i18n="loading">Loading...</div></div>
         </div>
         <div class="info-card info-full" id="info-integracije-card">
-          <div class="info-card-title"><span class="icon">&#128279;</span> <span data-i18n="cfg_kartica_integracije">Integracije &mdash; Nextcloud, e-po&#353;ta, GitLab, GitHub</span></div>
+          <div class="info-card-title"><span class="icon">&#8853;</span> <span data-i18n="cfg_kartica_integracije">Integracije &mdash; Nextcloud, e-po&#353;ta, GitLab, GitHub</span></div>
           <div id="info-integracije-content"><div class="empty" data-i18n="loading">Loading...</div></div>
         </div>
         <div class="info-card info-full" id="info-orkestrator-card">
           <div class="info-card-title"><span class="icon">&#9881;</span> <span data-i18n="cfg_kartica_orkestrator">Orkestrator &mdash; sloj koji sam pokre&#263;e agente na zadatku</span></div>
           <div id="info-orkestrator-content"><div class="empty" data-i18n="loading">Loading...</div></div>
         </div>
-        <div class="info-card info-full" id="info-modules-card">
-          <div class="info-card-title"><span class="icon">&#9670;</span> Modules</div>
-          <div id="info-modules-content"><div class="empty" data-i18n="loading">Loading...</div></div>
+        <div class="info-skupina info-full">
+          <h3 data-i18n="cfg_skupina_stanje">Stanje sustava &mdash; ovo se samo &#269;ita</h3>
+          <p data-i18n="cfg_skupina_stanje_opis">Ispis zate&#269;enog stanja: ina&#269;ice, moduli, baze, mjere. Ovdje se ni&#353;ta ne mijenja.</p>
+        </div>
+        <div class="info-card" id="info-system-card">
+          <div class="info-card-title"><span class="icon">&#9646;</span> System</div>
+          <div id="info-system-content"><div class="empty" data-i18n="loading">Loading...</div></div>
+        </div>
+        <div class="info-card" id="info-providers-card">
+          <div class="info-card-title"><span class="icon">&#9881;</span> AI Providers</div>
+          <div id="info-providers-content"><div class="empty" data-i18n="loading">Loading...</div></div>
         </div>
         <div class="info-card" id="info-infra-card">
           <div class="info-card-title"><span class="icon">&#9729;</span> Infrastructure</div>
@@ -2453,6 +2493,14 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         <div class="info-card" id="info-databases-card">
           <div class="info-card-title"><span class="icon">&#9744;</span> Databases</div>
           <div id="info-databases-content"><div class="empty" data-i18n="loading">Loading...</div></div>
+        </div>
+        <div class="info-card info-full" id="info-agents-card">
+          <div class="info-card-title"><span class="icon">&#9733;</span> Agents &amp; Model Requirements</div>
+          <div id="info-agents-content"><div class="empty" data-i18n="loading">Loading...</div></div>
+        </div>
+        <div class="info-card info-full" id="info-modules-card">
+          <div class="info-card-title"><span class="icon">&#9670;</span> Modules</div>
+          <div id="info-modules-content"><div class="empty" data-i18n="loading">Loading...</div></div>
         </div>
         <div class="info-card" id="info-metrics-card">
           <div class="info-card-title"><span class="icon">&#9776;</span> Metrics Summary</div>
@@ -4576,7 +4624,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       var udio = function (x) { return st.ukupno > 0 ? telPostotak(x / st.ukupno) : '—'; };
       var mali = function (x) { return ' <span class="tel-muted" style="font-size:0.7rem;">' + udio(x) + '</span>'; };
       var ishodi = u && u.ishodi ? u.ishodi : {};
-      var razlomljeno = Object.keys(ishodi).map(function (k) { return k + ' ' + ishodi[k]; }).join(' \u00B7 ') || '—';
+      var razlomljeno = Object.keys(ishodi).map(function (k) { return k + ' ' + ishodi[k]; }).join(' · ') || '—';
       return '<div class="tel-sec"><div class="tel-sec-title">'
         + _Tv('pot_ishodi_naslov', 'Ishodi izvođenja — iz {broj} izvođenja', { broj: telBroj(st.ukupno, 0) })
         + '</div><div class="tel-grid">'
@@ -6766,13 +6814,16 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       'regoc-services','regoc-services.sh'];
 
     function isCommand(input) {
-      const firstWord = input.split(/\s+/)[0].toLowerCase();
+      // DVOSTRUKI backslash (v. gore): jednostruki bi dao /s+/, izraz koji dijeli po slovu
+      // „s" — pa je „ls -la" davalo prvu rijec „l" i konzola bi ga poslala REGOCU kao
+      // recenicu umjesto da ga izvede kao naredbu.
+      const firstWord = input.split(/\\s+/)[0].toLowerCase();
       // Starts with / = explicit command prefix
       if (input.startsWith('/')) return true;
       // Starts with known command
       if (KNOWN_COMMANDS.includes(firstWord)) return true;
       // Starts with ./ or ~/ or / = path/command
-      if (/^[.~\/]/.test(input)) return true;
+      if (/^[.~\\/]/.test(input)) return true;
       // Otherwise it's natural language → message to REGOČ
       return false;
     }
@@ -7281,15 +7332,15 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       h += _red(_T('dez_model', 'Model dežurnog'),
         '<select style="' + _stil() + ';min-width:220px" onchange="spremiDezurni({model:this.value}, this)">' + opts + '</select>' +
         ' <input id="dez-model-rucno" placeholder="' + _esc(_T('dez_upisi_ime_modela', 'ili upiši ime modela')) + '" style="' + _stil() + ';width:150px">' +
-        ' <button style="font-size:.72rem;padding:3px 8px" onclick="spremiDezurni({model:document.getElementById(\\'dez-model-rucno\\').value}, this)">' + _T('dez_spremi', 'Spremi') + '</button>',
+        ' <button class="cfg-btn" onclick="spremiDezurni({model:document.getElementById(\\'dez-model-rucno\\').value}, this)">' + _T('dez_spremi', 'Spremi') + '</button>',
         izvor);
       h += _red(_T('dez_provjera', 'Provjera'),
-        '<button id="dez-proba" style="font-size:.72rem;padding:3px 8px" onclick="probajDezurnog(this)">' + _T('dez_probni_poziv', 'Probni poziv') + '</button>' +
+        '<button id="dez-proba" class="cfg-btn" onclick="probajDezurnog(this)">' + _T('dez_probni_poziv', 'Probni poziv') + '</button>' +
         ' <span id="dez-proba-ishod" style="font-size:.7rem"></span>',
         _T('dez_provjera_opis', 'Stvarno pozove odabranog davatelja preko istog mosta koji odgovara na Telegramu. Bez ovoga se pogrešan izbor otkrije tek u kvaru.'));
       h += _red(_T('dez_ollama_posluzitelj', 'Ollama poslužitelj'),
         '<input id="dez-baseurl" value="' + _esc(p.baseUrl) + '" style="' + _stil() + ';min-width:220px">' +
-        ' <button style="font-size:.72rem;padding:3px 8px" onclick="spremiDezurni({baseUrl:document.getElementById(\\'dez-baseurl\\').value}, this)">' + _T('dez_spremi', 'Spremi') + '</button>',
+        ' <button class="cfg-btn" onclick="spremiDezurni({baseUrl:document.getElementById(\\'dez-baseurl\\').value}, this)">' + _T('dez_spremi', 'Spremi') + '</button>',
         _T('dez_ollama_posluzitelj_opis', 'Odakle se vuče popis modela i kamo idu pitanja dežurnog.'));
       h += _red(_T('dez_ukljuceno', 'Dežurstvo uključeno'),
         '<input type="checkbox"' + (p.ukljucen ? ' checked' : '') + ' onchange="spremiDezurni({ukljucen:this.checked}, this)">',
@@ -7320,8 +7371,13 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     }
     function _red(naziv, kontrola, opis) {
       return '<tr><td style="width:215px"><strong>' + naziv + '</strong></td>' +
-        '<td style="width:290px">' + kontrola + '</td>' +
+        '<td class="cfg-kontrola">' + kontrola + '</td>' +
         '<td style="font-size:0.7rem;color:var(--text-secondary)">' + opis + '</td></tr>';
+    }
+
+    /** Podnaslov skupine unutar tablice kartice (npr. SMTP i IMAP unutar e-pošte). */
+    function _redSkupina(naziv) {
+      return '<tr class="cfg-skupina"><td colspan="3">' + naziv + '</td></tr>';
     }
 
     // Probni poziv: ishod se ispisuje doslovno, i kad je loš. Zeleno "spremljeno" bez ovoga
@@ -7431,11 +7487,11 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       h += _red(_T('tel_bot_token', 'Bot token'),
         '<input id="tel-token" type="password" value="" style="' + _stil() + ';min-width:280px" placeholder="' +
           (st.tokenPostavljen ? _T('tel_token_zamjena', 'upisi novi token samo ako ga mijenjas') : '123456:ABC-DEF...') + '">' +
-        ' <button style="font-size:.72rem;padding:3px 8px" onclick="spremiTelegram({botToken:document.getElementById(\'tel-token\').value}, this)">' + _T('tel_spremi', 'Spremi') + '</button>',
+        ' <button class="cfg-btn" onclick="spremiTelegram({botToken:document.getElementById(\\'tel-token\\').value}, this)">' + _T('tel_spremi', 'Spremi') + '</button>',
         tokenPrikaz);
       h += _red(_T('tel_chat_id', 'Chat ID'),
         '<input id="tel-chatid" value="' + _esc(p.chatId || '') + '" style="' + _stil() + ';min-width:220px" placeholder="-1001234567890">' +
-        ' <button style="font-size:.72rem;padding:3px 8px" onclick="spremiTelegram({chatId:document.getElementById(\'tel-chatid\').value}, this)">' + _T('tel_spremi', 'Spremi') + '</button>',
+        ' <button class="cfg-btn" onclick="spremiTelegram({chatId:document.getElementById(\\'tel-chatid\\').value}, this)">' + _T('tel_spremi', 'Spremi') + '</button>',
         _T('tel_chat_id_opis', 'ID grupe ili kanala kojem se šalju obavijesti.'));
       h += _red(_T('tel_obavijest_zavrseno', 'Obavijest: završeno'),
         '<input type="checkbox"' + (p.obavijestZavrseno ? ' checked' : '') + ' onchange="spremiTelegram({obavijestZavrseno:this.checked}, this)">',
@@ -7445,10 +7501,10 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         _T('tel_obavijest_greska_opis', 'Šalje poruku kad zadatak prijeđe u failed/error.'));
       h += _red(_T('tel_prefix', 'Prefix poruke'),
         '<input id="tel-prefix" value="' + _esc(p.prefix || '') + '" style="' + _stil() + ';width:80px">' +
-        ' <button style="font-size:.72rem;padding:3px 8px" onclick="spremiTelegram({prefix:document.getElementById(\'tel-prefix\').value}, this)">' + _T('tel_spremi', 'Spremi') + '</button>',
+        ' <button class="cfg-btn" onclick="spremiTelegram({prefix:document.getElementById(\\'tel-prefix\\').value}, this)">' + _T('tel_spremi', 'Spremi') + '</button>',
         _T('tel_prefix_opis', 'Emoji ili kratki tekst koji prethodi poruci.'));
       h += _red(_T('tel_provjera', 'Provjera'),
-        '<button id="tel-proba" style="font-size:.72rem;padding:3px 8px" onclick="probajTelegram(this)">' + _T('tel_probni_slanje', 'Probno slanje') + '</button>' +
+        '<button id="tel-proba" class="cfg-btn" onclick="probajTelegram(this)">' + _T('tel_probni_slanje', 'Probno slanje') + '</button>' +
         ' <span id="tel-proba-ishod" style="font-size:.7rem"></span>',
         _T('tel_provjera_opis', 'Pošalje testnu poruku na postavljeni chat ID.'));
       h += '</tbody></table>';
@@ -7468,7 +7524,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
           ? '<span class="info-badge enabled">' + _T('tel_ulaz_radi', 'radi') + '</span>'
           : '<span class="info-badge disabled">' + _T('tel_ulaz_stoji', 'stoji') + '</span>');
 
-      var h = '<div style="margin-top:0.8rem;padding-top:0.5rem;border-top:1px solid var(--border)">';
+      var h = '<div style="margin-top:0.8rem;padding-top:0.5rem;border-top:1px solid var(--border-color)">';
       h += '<div style="font-size:0.74rem;font-weight:600;margin-bottom:0.3rem">' +
         _T('tel_ulaz_naslov', 'Ulaz — poruka postaje zadatak') + ' ' + znacka + '</div>';
       h += '<div style="font-size:0.7rem;color:var(--text-secondary);margin-bottom:0.4rem">' +
@@ -7482,15 +7538,15 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         _T('tel_ulaz_ukljucen_opis', 'Odvojeno od izlaznih obavijesti.'));
       h += _red(_T('tel_ulaz_interval', 'Razmak (s)'),
         '<input id="tel-ulaz-interval" type="number" value="' + (u.intervalSek || 3) + '" style="' + _stil() + ';width:80px">' +
-        ' <button style="font-size:.72rem;padding:3px 8px" onclick="spremiTelegram({ulaz:{intervalSek:Number(document.getElementById(\'tel-ulaz-interval\').value)}}, this)">' + _T('tel_spremi', 'Spremi') + '</button>',
+        ' <button class="cfg-btn" onclick="spremiTelegram({ulaz:{intervalSek:Number(document.getElementById(\\'tel-ulaz-interval\\').value)}}, this)">' + _T('tel_spremi', 'Spremi') + '</button>',
         '1–60');
       h += _red(_T('tel_ulaz_okidac', 'Okidač'),
         '<input id="tel-ulaz-okidac" value="' + _esc(u.okidac || '') + '" style="' + _stil() + ';width:160px" placeholder="/zadatak">' +
-        ' <button style="font-size:.72rem;padding:3px 8px" onclick="spremiTelegram({ulaz:{okidac:document.getElementById(\'tel-ulaz-okidac\').value}}, this)">' + _T('tel_spremi', 'Spremi') + '</button>',
+        ' <button class="cfg-btn" onclick="spremiTelegram({ulaz:{okidac:document.getElementById(\\'tel-ulaz-okidac\\').value}}, this)">' + _T('tel_spremi', 'Spremi') + '</button>',
         _T('tel_ulaz_okidac_opis', 'Prazno = svaka poruka. Inače samo poruke koje počinju ovim nizom.'));
       h += _red(_T('tel_ulaz_chatovi', 'Dopušteni chatovi'),
         '<input id="tel-ulaz-chatovi" value="' + _esc((u.dopusteniChatovi || []).join(', ')) + '" style="' + _stil() + ';min-width:260px" placeholder="-1001234567890">' +
-        ' <button style="font-size:.72rem;padding:3px 8px" onclick="spremiTelegramChatovi(this)">' + _T('tel_spremi', 'Spremi') + '</button>',
+        ' <button class="cfg-btn" onclick="spremiTelegramChatovi(this)">' + _T('tel_spremi', 'Spremi') + '</button>',
         _T('tel_ulaz_chatovi_opis', 'Prazno = sve što bot vidi. Chat ID doznaješ gumbom „Probaj ulaz".'));
       h += _red(_T('tel_ulaz_potvrda', 'Potvrda u chat'),
         '<input type="checkbox"' + (u.potvrdaUChat ? ' checked' : '') +
@@ -7503,7 +7559,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         s.zaustavljenRazlog ? '⛔ ' + _esc(s.zaustavljenRazlog)
           : (s.zadnjaGreska ? '⚠️ ' + _esc(s.zadnjaGreska) : ''));
       h += _red(_T('tel_ulaz_provjera', 'Provjera ulaza'),
-        '<button style="font-size:.72rem;padding:3px 8px" onclick="probajTelegramUlaz(this)">' + _T('tel_ulaz_probaj', 'Probaj ulaz') + '</button>' +
+        '<button class="cfg-btn" onclick="probajTelegramUlaz(this)">' + _T('tel_ulaz_probaj', 'Probaj ulaz') + '</button>' +
         ' <span id="tel-ulaz-ishod" style="font-size:.7rem"></span>',
         _T('tel_ulaz_probaj_opis', 'Pokaže koliko poruka čeka i iz kojih chatova — bez otvaranja zadatka.'));
       h += '</tbody></table></div>';
@@ -7636,30 +7692,61 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       return t;
     }
 
-    /** Jedno polje → jedan redak. Tip se čita iz vrijednosti, ne iz zasebne tablice. */
-    function _intPolje(ime, kljuc, vrijednost, staza) {
-      var id = 'int-' + ime + '-' + staza.replace(/\./g, '-');
-      var naziv = _T('cfg_polje_' + kljuc, kljuc);
-      if (typeof vrijednost === 'boolean') {
+    /**
+     * Jedno polje → jedan redak. Tip dolazi IZ SHEME modula (/api/<ime>/config), ne iz
+     * tipa zatečene vrijednosti (TASK-4803).
+     *
+     * Zašto: dok se čitao samo tip vrijednosti, polje „smjer" s tri dopuštene vrijednosti
+     * (izlaz/ulaz/oba) izgledalo je kao slobodan tekst, pa je ploča nudila unos koji
+     * provjera na poslužitelju odbija. Iz sheme se čita i je li polje obvezno — dosad se
+     * to nije vidjelo nigdje, nego se otkrivalo tek po tome što proba ne prolazi.
+     */
+    function _intPolje(ime, kljuc, vrijednost, staza, shemaPolja) {
+      var sp = shemaPolja || {};
+      // DVOSTRUKI backslash: predlozak u kojem ova skripta zivi pojede jednostruki, pa
+      // bi u stranicu otisao izraz /./g — koji pogada SVAKI znak. Mjereno prije ispravka:
+      // sva su polja dobila id od samih crtica (int-nextcloud--------), pa su se poklopila
+      // dva razlicita polja iste duljine imena i „Spremi" je citao TUDU vrijednost.
+      var id = 'int-' + ime + '-' + staza.replace(/\\./g, '-');
+      var naziv = _T('cfg_polje_' + kljuc, kljuc) + (sp.obavezno
+        ? '<span class="cfg-obavezno" title="' + _esc(_T('cfg_obavezno_naslov', 'obavezno polje')) + '">*</span>'
+        : '');
+      var poziv = function (tip) {
+        return 'spremiIntegracijuIzPolja(\\'' + ime + '\\', \\'' + staza + '\\', \\'' + id + '\\', \\'' + tip + '\\', this)';
+      };
+      var spremi = function (tip) {
+        return ' <button class="cfg-btn" onclick="' + poziv(tip) + '">' + _T('tel_spremi', 'Spremi') + '</button>';
+      };
+
+      if (sp.tip === 'izbor' && sp.vrijednosti) {
+        var opcije = sp.vrijednosti.map(function (v) {
+          return '<option value="' + _esc(v) + '"' + (v === vrijednost ? ' selected' : '') + '>' +
+            _esc(_T('cfg_vrijednost_' + v, v)) + '</option>';
+        }).join('');
+        return _red(naziv,
+          '<select style="' + _stil() + ';min-width:150px" onchange="spremiIntegraciju(\\'' + ime + '\\', \\'' + staza + '\\', this.value, this)">' + opcije + '</select>',
+          _T('cfg_polje_izbor_opis', 'Vrijednost iz zadanog popisa.'));
+      }
+      if (sp.tip === 'bool' || typeof vrijednost === 'boolean') {
         return _red(naziv,
           '<input type="checkbox"' + (vrijednost ? ' checked' : '') +
-          ' onchange="spremiIntegraciju(\'' + ime + '\', \'' + staza + '\', this.checked, this)">', '');
+          ' onchange="spremiIntegraciju(\\'' + ime + '\\', \\'' + staza + '\\', this.checked, this)">', '');
       }
-      if (typeof vrijednost === 'number') {
+      if (sp.tip === 'broj' || typeof vrijednost === 'number') {
+        var granice = (sp.min != null ? ' min="' + sp.min + '"' : '') + (sp.max != null ? ' max="' + sp.max + '"' : '');
         return _red(naziv,
-          '<input id="' + id + '" type="number" value="' + vrijednost + '" style="' + _stil() + ';width:110px">' +
-          ' <button style="font-size:.72rem;padding:3px 8px" onclick="spremiIntegracijuIzPolja(\'' + ime + '\', \'' + staza + '\', \'' + id + '\', \'broj\', this)">' + _T('tel_spremi', 'Spremi') + '</button>', '');
+          '<input id="' + id + '" type="number"' + granice + ' value="' + vrijednost + '" style="' + _stil() + ';width:110px">' + spremi('broj'),
+          sp.min != null && sp.max != null ? sp.min + '–' + sp.max : '');
       }
-      if (Object.prototype.toString.call(vrijednost) === '[object Array]') {
+      if (sp.tip === 'popis' || Object.prototype.toString.call(vrijednost) === '[object Array]') {
         return _red(naziv,
-          '<input id="' + id + '" value="' + _esc(vrijednost.join(', ')) + '" style="' + _stil() + ';min-width:260px" placeholder="' + _T('cfg_zarezom', 'odvojeno zarezom') + '">' +
-          ' <button style="font-size:.72rem;padding:3px 8px" onclick="spremiIntegracijuIzPolja(\'' + ime + '\', \'' + staza + '\', \'' + id + '\', \'popis\', this)">' + _T('tel_spremi', 'Spremi') + '</button>', '');
+          '<input id="' + id + '" value="' + _esc((vrijednost || []).join(', ')) + '" style="' + _stil() + ';min-width:260px" placeholder="' + _T('cfg_zarezom', 'odvojeno zarezom') + '">' + spremi('popis'),
+          _T('cfg_zarezom', 'odvojeno zarezom'));
       }
-      var tajna = /Env$/.test(kljuc);
+      var tajna = sp.tajnaEnv || /Env$/.test(kljuc);
       var opis = tajna ? _T('cfg_polje_env_opis', 'IME varijable okoline s tajnom — sama tajna NIKAD ne ide ovdje.') : '';
       return _red(naziv,
-        '<input id="' + id + '" value="' + _esc(String(vrijednost == null ? '' : vrijednost)) + '" style="' + _stil() + ';min-width:260px">' +
-        ' <button style="font-size:.72rem;padding:3px 8px" onclick="spremiIntegracijuIzPolja(\'' + ime + '\', \'' + staza + '\', \'' + id + '\', \'tekst\', this)">' + _T('tel_spremi', 'Spremi') + '</button>',
+        '<input id="' + id + '" value="' + _esc(String(vrijednost == null ? '' : vrijednost)) + '" style="' + _stil() + ';min-width:260px">' + spremi('tekst'),
         opis);
     }
 
@@ -7667,14 +7754,19 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       var h = '<div style="font-size:0.72rem;color:var(--text-secondary);margin-bottom:0.6rem">' +
         _T('cfg_int_uvod',
           'Spajanje na TVOJE servise. Postavke nose adrese i IMENA varijabli okoline — ' +
-          'lozinke i tokeni idu u config/credentials.env (prava 0600), nikad u JSON.') + '</div>';
+          'lozinke i tokeni idu u config/credentials.env (prava 0600), nikad u JSON.') + '</div>' +
+        '<div class="cfg-legenda">' +
+        '<span class="cfg-obavezno">*</span> ' +
+        _T('cfg_legenda_obavezno',
+          'obavezno polje — bez njega integracija ne može raditi. Sve ostalo je neobavezno ' +
+          'i ima zadanu vrijednost.') + '</div>';
 
       for (var i = 0; i < d.puni.length; i++) {
         var p = d.puni[i];
         var s = d.sazetak[i];
         var ime = p.ime;
-        h += '<div style="margin:0.7rem 0;padding:0.5rem;border:1px solid var(--border);border-radius:6px">';
-        h += '<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.4rem">' +
+        h += '<div class="cfg-odjeljak">';
+        h += '<div class="cfg-odjeljak-glava">' +
           '<span>' + INT_IKONA[ime] + '</span><strong>' + _esc(p.naziv) + '</strong>' +
           _intZnacka(s.znacka) +
           '<span style="font-size:.7rem;color:var(--text-secondary)">' + _esc(_intZasto(p.stanje)) + '</span>' +
@@ -7682,13 +7774,17 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         h += '<div style="font-size:.7rem;color:var(--text-secondary);margin-bottom:0.3rem">' +
           _T(INT_OPIS[ime], '') + '</div>';
         h += '<table class="info-table"><tbody>';
+        var sh = p.shema || {};
         for (var k in p.postavke) {
           if (k.charAt(0) === '_') continue;
           var v = p.postavke[k];
           if (v && typeof v === 'object' && Object.prototype.toString.call(v) !== '[object Array]') {
-            for (var k2 in v) h += _intPolje(ime, k2, v[k2], k + '.' + k2);
+            // Ugnijezdena skupina (npr. smtp i imap) dobiva podnaslov. Bez njega su se dva
+            // polja imena Host nizala jedno ispod drugoga bez icega sto bi ih razlikovalo.
+            h += _redSkupina(_T('cfg_skupina_' + k, k.toUpperCase()));
+            for (var k2 in v) h += _intPolje(ime, k2, v[k2], k + '.' + k2, (sh[k] && sh[k].polja) ? sh[k].polja[k2] : null);
           } else {
-            h += _intPolje(ime, k, v, k);
+            h += _intPolje(ime, k, v, k, sh[k]);
           }
         }
         var zadnja = p.zadnjaProba
@@ -7696,7 +7792,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
             (p.zadnjaProba.greska ? ' — ' + _esc(p.zadnjaProba.greska) : '')
           : _T('cfg_int_nema_probe', 'nije još probano');
         h += _red(_T('tel_provjera', 'Provjera'),
-          '<button style="font-size:.72rem;padding:3px 8px" onclick="probajIntegraciju(\'' + ime + '\', this)">' + _T('cfg_int_probaj', 'Probaj konekciju') + '</button>' +
+          '<button class="cfg-btn" onclick="probajIntegraciju(\\'' + ime + '\\', this)">' + _T('cfg_int_probaj', 'Probaj konekciju') + '</button>' +
           ' <span id="int-' + ime + '-ishod" style="font-size:.7rem"></span>',
           zadnja);
         h += '</tbody></table>';
@@ -7791,15 +7887,15 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         _T('orc_ukljucen_opis', 'Isključeno: nijedan agent se ne pokreće sam.'));
       h += _red(_T('orc_strop', 'Najviše usporednih agenata'),
         '<input id="orc-strop" type="number" value="' + (p.spawn ? p.spawn.maxConcurrent : 3) + '" style="' + _stil() + ';width:90px">' +
-        ' <button style="font-size:.72rem;padding:3px 8px" onclick="spremiOrkestrator({spawn:{maxConcurrent:Number(document.getElementById(\'orc-strop\').value)}}, this)">' + _T('tel_spremi', 'Spremi') + '</button>',
+        ' <button class="cfg-btn" onclick="spremiOrkestrator({spawn:{maxConcurrent:Number(document.getElementById(\\'orc-strop\\').value)}}, this)">' + _T('tel_spremi', 'Spremi') + '</button>',
         _T('orc_strop_opis', 'Koliko poslova smije teći istodobno.'));
       h += _red(_T('orc_ploca', 'Adresa ploče'),
         '<input id="orc-api" value="' + _esc(p.api ? p.api.baseUrl : '') + '" style="' + _stil() + ';min-width:240px">' +
-        ' <button style="font-size:.72rem;padding:3px 8px" onclick="spremiOrkestrator({api:{baseUrl:document.getElementById(\'orc-api\').value}}, this)">' + _T('tel_spremi', 'Spremi') + '</button>',
+        ' <button class="cfg-btn" onclick="spremiOrkestrator({api:{baseUrl:document.getElementById(\\'orc-api\\').value}}, this)">' + _T('tel_spremi', 'Spremi') + '</button>',
         _T('orc_ploca_opis', 'Adresa preko koje orkestrator i agenti pišu na ploču.'));
       h += _red(_T('orc_cinjenice', 'Činjenice o infrastrukturi'),
         '<input id="orc-facts" value="' + _esc((p.prompt && p.prompt.systemFacts ? p.prompt.systemFacts : []).join(' | ')) + '" style="' + _stil() + ';min-width:320px" placeholder="' + _T('orc_cinjenice_ph', 'npr. Ollama: http://…:11434 | RAG: http://…:8000') + '">' +
-        ' <button style="font-size:.72rem;padding:3px 8px" onclick="spremiOrkestratorCinjenice(this)">' + _T('tel_spremi', 'Spremi') + '</button>',
+        ' <button class="cfg-btn" onclick="spremiOrkestratorCinjenice(this)">' + _T('tel_spremi', 'Spremi') + '</button>',
         _T('orc_cinjenice_opis', 'Rečenice koje ulaze u prompt agenta. Odvoji ih znakom |. Paket svoje nema.'));
       h += _red(_T('orc_agenti', 'Agenata u registru'),
         '<strong>' + (d.agenata || 0) + '</strong>',
@@ -7919,7 +8015,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
 
       h += '<div style="margin-top:.5rem;display:flex;gap:6px;align-items:center;flex-wrap:wrap">' +
         '<input id="ulaz-nova-grupa" placeholder="' + _esc(_T('cfg_ulaz_nova_grupa_ph', 'chatId nove grupe (npr. -5245252755)')) + '" style="' + _stil() + ';width:230px">' +
-        '<button style="font-size:.72rem;padding:3px 8px" onclick="dodajUlazGrupu(this)">' + _T('cfg_ulaz_dodaj_grupu', 'Dodaj grupu') + '</button>' +
+        '<button class="cfg-btn" onclick="dodajUlazGrupu(this)">' + _T('cfg_ulaz_dodaj_grupu', 'Dodaj grupu') + '</button>' +
         '<span style="font-size:.66rem;color:var(--text-secondary)">' + _T('cfg_ulaz_nova_grupa_opis', 'Nova grupa kreće na <b>isključeno</b> — nikad sama.') + '</span></div>';
 
       h += '<table class="info-table" style="margin-top:.5rem"><tbody>';
@@ -8911,28 +9007,34 @@ interface IntegracijaZapis {
   proba: () => Promise<{ ok: boolean; greska?: string; detalj?: unknown }>
   /** Putanja se razrjesava pri svakom pozivu (v. ConfigModul.putanja). */
   putanja: () => string
+  /**
+   * Opis sheme za ploču (TASK-4803). Bez njega je ploča crtala polja po TIPU VRIJEDNOSTI,
+   * pa je `smjer` s tri dopuštene vrijednosti izgledao kao slobodan tekst, a nijedno polje
+   * nije znalo reći je li obvezno.
+   */
+  shema: () => Record<string, unknown>
 }
 
 const INTEGRACIJE: Record<string, IntegracijaZapis> = {
   nextcloud: {
     naziv: 'Nextcloud', load: loadNextcloudConfig, validate: validateNextcloudPatch,
     save: saveNextcloudConfig, stanje: stanjeNextcloud, proba: probajNextcloud,
-    putanja: NEXTCLOUD_CONFIG_PATH,
+    putanja: NEXTCLOUD_CONFIG_PATH, shema: () => nextcloudKonfigModul.opisSheme(),
   },
   email: {
     naziv: 'E-pošta', load: loadEmailConfig, validate: validateEmailPatch,
     save: saveEmailConfig, stanje: stanjeEmail, proba: probajEmail,
-    putanja: EMAIL_CONFIG_PATH,
+    putanja: EMAIL_CONFIG_PATH, shema: () => emailKonfigModul.opisSheme(),
   },
   gitlab: {
     naziv: 'GitLab', load: loadGitLabConfig, validate: validateGitLabPatch,
     save: saveGitLabConfig, stanje: stanjeGitLab, proba: probajGitLab,
-    putanja: GITLAB_CONFIG_PATH,
+    putanja: GITLAB_CONFIG_PATH, shema: () => gitlabKonfigModul.opisSheme(),
   },
   github: {
     naziv: 'GitHub', load: loadGitHubConfig, validate: validateGitHubPatch,
     save: saveGitHubConfig, stanje: stanjeGitHub, proba: probajGitHub,
-    putanja: GITHUB_CONFIG_PATH,
+    putanja: GITHUB_CONFIG_PATH, shema: () => githubKonfigModul.opisSheme(),
   },
 }
 
@@ -8968,6 +9070,7 @@ function handleIntegracijaGet(ime: string): Response {
     const postavke = zapis.load()
     return json({
       ime, naziv: zapis.naziv, postavke, stanje: zapis.stanje(postavke),
+      shema: zapis.shema(),
       putanja: zapis.putanja(), zadnjaProba: citajIshodeProba()[ime] || null,
     })
   } catch (err) {

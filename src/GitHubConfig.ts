@@ -51,7 +51,7 @@ const modul = new ConfigModul<GitHubPostavke>({
     ukljucen: { tip: 'bool' },
     nacin: { tip: 'izbor', vrijednosti: ['cli', 'api'] },
     repo: {
-      tip: 'tekst', maxDuljina: GRANICE.repo.maxDuljina,
+      tip: 'tekst', obavezno: true, maxDuljina: GRANICE.repo.maxDuljina,
       uzorak: RE_REPO, uzorakPoruka: 'oblik je vlasnik/repozitorij',
     },
     tokenEnv: {
