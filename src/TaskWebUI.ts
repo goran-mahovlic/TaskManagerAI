@@ -125,9 +125,9 @@ import {
 // u paketu — bot token + chat id + slanje obavijesti o završenom zadatku. NE ovisi o
 // ~/.claude/tools/Telegram/ (to je Klaudio agent, glavni stroj). Ovo je NOVI modul u paketu.
 import {
-  TELEGRAM_CONFIG_PATH, GRANICE as TELEGRAM_GRANICE,
+  TELEGRAM_CONFIG_PATH,
   loadTelegramConfig, saveTelegramConfig, validateTelegramPatch,
-  posaljiTelegramPoruku, obavijestiZadatak,
+  posaljiTelegramPoruku, obavijestiZadatak, odgovorTelegramPloci,
 } from './TelegramConfig'
 // U6/TASK-4266: generički ulaz `POST /api/ingest` — source/externalId/replyTo/text/senderName.
 // Ništa u njemu ne zna za Telegram; most, pretinac e-pošte i konzola su obični pozivatelji.
@@ -7408,9 +7408,12 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         ? '<span class="info-badge enabled">' + _T('tel_aktivno', 'aktivno') + '</span>'
         : '<span class="info-badge disabled">' + _T('tel_iskljuceno', 'isključeno') + '</span>';
 
-      var tokenPrikaz = p.botToken
+      // Kartica NE dobiva vrijednost tokena (revizija TASK-4801, B2) — samo `stanje`.
+      // Zato prikaz zna reci JE LI postavljen, a polje za unos je uvijek prazno: ono sto
+      // se ne posalje pregledniku ne moze ni procuriti iz njega.
+      var tokenPrikaz = st.tokenPostavljen
         ? '<span style="color:var(--text-secondary)">' +
-          _Tv('tel_token_postavljen', 'token postavljen ({n} znakova)', { n: p.botToken.length }) + '</span>'
+          _T('tel_token_postavljen', 'token je postavljen (vrijednost se ne prikazuje)') + '</span>'
         : '<span style="color:#f59e0b">' + _T('tel_token_nema', 'token NIJE postavljen') + '</span>';
 
       var h = '<div style="font-size:0.72rem;color:var(--text-secondary);margin-bottom:0.5rem">' +
@@ -7424,7 +7427,8 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         '<input type="checkbox"' + (p.ukljucen ? ' checked' : '') + ' onchange="spremiTelegram({ukljucen:this.checked}, this)">',
         _T('tel_ukljuceno_opis', 'Isključeno: nikakve poruke se ne šalju.'));
       h += _red(_T('tel_bot_token', 'Bot token'),
-        '<input id="tel-token" type="password" value="' + _esc(p.botToken || '') + '" style="' + _stil() + ';min-width:280px" placeholder="123456:ABC-DEF...">' +
+        '<input id="tel-token" type="password" value="" style="' + _stil() + ';min-width:280px" placeholder="' +
+          (st.tokenPostavljen ? _T('tel_token_zamjena', 'upisi novi token samo ako ga mijenjas') : '123456:ABC-DEF...') + '">' +
         ' <button style="font-size:.72rem;padding:3px 8px" onclick="spremiTelegram({botToken:document.getElementById(\'tel-token\').value}, this)">' + _T('tel_spremi', 'Spremi') + '</button>',
         tokenPrikaz);
       h += _red(_T('tel_chat_id', 'Chat ID'),
@@ -8815,19 +8819,10 @@ function handleTelegramConfigGet(): Response {
   const json = (o: unknown, s = 200) =>
     new Response(JSON.stringify(o), { status: s, headers: { 'Content-Type': 'application/json' } })
   try {
-    const postavke = loadTelegramConfig()
-    // Stanje: je li token postavljen? Je li chatId postavljen? (NE otkrivaj vrijednost!)
-    const stanje = {
-      tokenPostavljen: !!postavke.botToken,
-      chatIdPostavljen: !!postavke.chatId,
-      spreman: postavke.ukljucen && !!postavke.botToken && !!postavke.chatId,
-    }
-    return json({
-      postavke,
-      stanje,
-      putanja: TELEGRAM_CONFIG_PATH,
-      granice: TELEGRAM_GRANICE,
-    })
+    // Tijelo slaze `odgovorTelegramPloci` — ondje je i jedino mjesto koje odlucuje sto
+    // NE izlazi. Prije je ovdje stajao komentar „NE otkrivaj vrijednost", a `postavke` su
+    // se vracale cijele, s tokenom (revizija TASK-4801, nalaz B2).
+    return json(odgovorTelegramPloci(loadTelegramConfig(), TELEGRAM_CONFIG_PATH))
   } catch (err) {
     return json({ error: String(err) }, 500)
   }
@@ -8846,8 +8841,11 @@ async function handleTelegramConfigPut(req: Request): Promise<Response> {
   if (!provjera.ok) return json({ error: provjera.greske.join('; '), greske: provjera.greske }, 400)
   try {
     const postavke = saveTelegramConfig(provjera.zakrpa)
-    console.log(`[TELEGRAM] postavke promijenjene s ploče: ${JSON.stringify(provjera.zakrpa)}`)
-    return json({ ok: true, postavke })
+    // Ni odgovor ni dnevnik ne nose vrijednost tajne — dnevnik zna SAMO koja su se polja
+    // promijenila. `JSON.stringify(zakrpa)` je ispisivao token u cistom tekstu.
+    console.log(`[TELEGRAM] postavke promijenjene s ploce: ${Object.keys(provjera.zakrpa).join(', ')}`)
+    const odgovor = odgovorTelegramPloci(postavke, TELEGRAM_CONFIG_PATH)
+    return json({ ok: true, postavke: odgovor.postavke, stanje: odgovor.stanje })
   } catch (err) {
     return json({ error: String(err) }, 500)
   }

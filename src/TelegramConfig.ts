@@ -16,9 +16,10 @@
  * Autor: Kosjenka (Architect), 09.09.2026.
  */
 
-import { readFileSync, renameSync, writeFileSync } from 'fs'
+import { chmodSync, readFileSync, renameSync, writeFileSync } from 'fs'
 import { existsSync } from 'fs'
 import { konfigPutanja, konfigPutanjaZaPisanje, osigurajMapu } from './core/paths'
+import { procitajTajnu, zapisiTajnu } from './core/ConfigModul'
 
 /**
  * ADR-0001 O1.4: postavke se traže obrascem `TM_TELEGRAM_CONFIG` → `$TM_HOME/config/`
@@ -42,8 +43,17 @@ export const TELEGRAM_CONFIG_WRITE_PATH = telegramConfigWritePath()
 export interface TelegramPostavke {
   /** Je li Telegram obavijesti uključen? */
   ukljucen: boolean
-  /** Bot token od @BotFather (npr. `123456:ABC-DEF...`). */
+  /**
+   * NASLIJEĐENO polje: bot token u čistom tekstu unutar JSON-a.
+   *
+   * Novi zapis ga NE koristi — `saveTelegramConfig` tajnu odmah preseli u datoteku s
+   * vjerodajnicama (prava 0600) i ovdje ostavi prazan niz. Čita se i dalje, da nadogradnja
+   * postojeće instalacije ne ugasi bota; prvo spremanje s ploče ga preseli.
+   * Revizija TASK-4801, nalaz B2. Za rad koristi `telegramBotToken(cfg)`.
+   */
   botToken: string
+  /** IME varijable okoline / retka u datoteci s tajnama u kojoj token doista živi. */
+  botTokenEnv: string
   /** Chat ID kojem se šalju obavijesti (npr. `-1001234567890` za grupu). */
   chatId: string
   /** Šalje li se obavijest kad zadatak prijeđe u completed? */
@@ -97,12 +107,16 @@ export const ZADANI_ULAZ: TelegramUlaz = {
 export const ZADANE_POSTAVKE: TelegramPostavke = {
   ukljucen: false,
   botToken: '',
+  botTokenEnv: 'TELEGRAM_BOT_TOKEN',
   chatId: '',
   obavijestZavrseno: true,
   obavijestGreska: true,
   prefix: '📋',
   ulaz: ZADANI_ULAZ,
 }
+
+/** Ime varijable okoline, ne sama tajna — isti uzorak kao u ostale četiri integracije. */
+const RE_ENV = /^[A-Z][A-Z0-9_]{1,63}$/
 
 export const GRANICE = {
   prefix: { maxDuljina: 20 },
@@ -167,8 +181,21 @@ export function validateTelegramPatch(tijelo: unknown): Provjera {
     const v = String(t.botToken ?? '').trim()
     if (v.length > GRANICE.botToken.maxDuljina) {
       greske.push(`botToken je predugačak (najviše ${GRANICE.botToken.maxDuljina} znakova)`)
-    } else {
+    } else if (v) {
       zakrpa.botToken = v
+    }
+    // PRAZNO polje NE briše token. Kartica ga od nalaza B2 više ne prikazuje, pa je prazno
+    // polje normalno stanje svakog spremanja — kad bi ono brisalo tajnu, prva promjena bilo
+    // koje druge postavke ugasila bi bota. Token se miče brisanjem retka iz datoteke s
+    // tajnama, dakle svjesnom radnjom na stroju, a ne praznim poljem u pregledniku.
+  }
+
+  if ('botTokenEnv' in t) {
+    const v = String(t.botTokenEnv ?? '').trim()
+    if (!RE_ENV.test(v)) {
+      greske.push('botTokenEnv mora biti IME varijable okoline VELIKIM SLOVIMA (npr. TELEGRAM_BOT_TOKEN)')
+    } else {
+      zakrpa.botTokenEnv = v
     }
   }
 
@@ -245,7 +272,30 @@ export function validateTelegramPatch(tijelo: unknown): Provjera {
   return { ok: greske.length === 0, greske, zakrpa: zakrpa as Partial<TelegramPostavke> }
 }
 
-/** Spoji zakrpu s onim što je na disku i zapiši (atomski preko tmp + rename). */
+/**
+ * Vrijednost bot tokena ZA POZIV (nikad za prikaz).
+ *
+ * Redoslijed: varijabla okoline / datoteka s tajnama (`botTokenEnv`), pa naslijeđeno polje
+ * `botToken` iz JSON-a. Drugi korak postoji samo zbog nadogradnje postojeće instalacije —
+ * bez njega bi popravak B2 ugasio bota svakome tko još nije spremio postavke s ploče.
+ */
+export function telegramBotToken(cfg: TelegramPostavke): string {
+  return procitajTajnu(cfg.botTokenEnv || ZADANE_POSTAVKE.botTokenEnv) || cfg.botToken || ''
+}
+
+/**
+ * Spoji zakrpu s onim što je na disku i zapiši (atomski preko tmp + rename).
+ *
+ * DVIJE OBRANE IZ REVIZIJE TASK-4801 (nalaz B2):
+ *   1. tajna ne ostaje u JSON-u — token iz zakrpe seli u datoteku s vjerodajnicama
+ *      (`zapisiTajnu`, prava 0600), a u JSON-u ostaje prazan niz;
+ *   2. sam JSON se piše s `mode: 0o600`, a postojećoj datoteci se prava POPRAVLJAJU
+ *      (`chmodSync`) — bez toga bi `umask 0002` ostavio 0664, dakle grupno čitljivo.
+ *      `mode` kod `writeFileSync` vrijedi samo za NOVU datoteku, pa oboje treba.
+ *
+ * Ako zapis tajne ne uspije (read-only mapa, nema prava), token OSTAJE u JSON-u i to se
+ * kaže u dnevniku: tiho odbacivanje tajne značilo bi da korisnik misli da ju je spremio.
+ */
 export function saveTelegramConfig(
   zakrpa: Partial<TelegramPostavke>,
   path: string = telegramConfigWritePath(),
@@ -256,11 +306,46 @@ export function saveTelegramConfig(
     ...trenutno, ...zakrpa,
     ulaz: { ...trenutno.ulaz, ...(zakrpa.ulaz || {}) },
   }
+
+  const token = String(novo.botToken || '').trim()
+  if (token) {
+    const ime = String(novo.botTokenEnv || ZADANE_POSTAVKE.botTokenEnv).trim()
+    const r = zapisiTajnu(ime, token)
+    if (r.ok) novo.botTokenEnv = ime, novo.botToken = ''
+    else console.warn(`[TELEGRAM] tajna ostaje u JSON-u — ${ime} se nije dala zapisati: ${r.greska}`)
+  }
+
   osigurajMapu(path)
   const tmp = `${path}.tmp-${process.pid}`
-  writeFileSync(tmp, JSON.stringify(novo, null, 2) + '\n', 'utf-8')
+  writeFileSync(tmp, JSON.stringify(novo, null, 2) + '\n', { encoding: 'utf-8', mode: 0o600 })
   renameSync(tmp, path)
+  try { chmodSync(path, 0o600) } catch { /* tuđa datoteka ili FS bez prava — bolje spremiti nego pasti */ }
   return novo
+}
+
+/**
+ * Tijelo odgovora `GET /api/telegram/config`.
+ *
+ * KVAR KOJI OVO ZATVARA (revizija TASK-4801, nalaz B2): ploča je vraćala CIJELE postavke,
+ * dakle i bot token, dva retka ispod komentara koji tvrdi da vrijednost ne otkriva. Ploča
+ * sluša na `0.0.0.0` bez prijave, pa je to bio token za svakoga tko dosegne vrata.
+ *
+ * Ovdje se tajna ne skriva maskiranjem nego IZOSTAVLJANJEM polja: maska je i dalje niz koji
+ * netko negdje zaboravi skratiti. Kartici je dovoljno `stanje.tokenPostavljen`.
+ */
+export function odgovorTelegramPloci(cfg: TelegramPostavke, putanja: string) {
+  const { botToken, ...bezTajne } = cfg as TelegramPostavke & Record<string, unknown>
+  const tokenPostavljen = !!telegramBotToken(cfg)
+  return {
+    postavke: bezTajne,
+    stanje: {
+      tokenPostavljen,
+      chatIdPostavljen: !!cfg.chatId,
+      spreman: cfg.ukljucen && tokenPostavljen && !!cfg.chatId,
+    },
+    putanja,
+    granice: GRANICE,
+  }
 }
 
 /**
@@ -277,8 +362,9 @@ export async function posaljiTelegramPoruku(
   if (!cfg.ukljucen) {
     return { ok: false, greska: 'Telegram obavijesti su isključene' }
   }
-  if (!cfg.botToken) {
-    return { ok: false, greska: 'botToken nije postavljen' }
+  const token = telegramBotToken(cfg)
+  if (!token) {
+    return { ok: false, greska: `bot token nije postavljen (varijabla ${cfg.botTokenEnv || ZADANE_POSTAVKE.botTokenEnv})` }
   }
   if (!cfg.chatId) {
     return { ok: false, greska: 'chatId nije postavljen' }
@@ -288,7 +374,7 @@ export async function posaljiTelegramPoruku(
   const poruka = `${prefix}${tekst}`
 
   try {
-    const url = `https://api.telegram.org/bot${cfg.botToken}/sendMessage`
+    const url = `https://api.telegram.org/bot${token}/sendMessage`
     const resp = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

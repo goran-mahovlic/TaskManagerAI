@@ -24,7 +24,9 @@
 
 import { existsSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'fs'
 import { osigurajMapu, stanjePutanja } from './core/paths'
-import { loadTelegramConfig, posaljiTelegramPoruku, type TelegramPostavke } from './TelegramConfig'
+import {
+  loadTelegramConfig, posaljiTelegramPoruku, telegramBotToken, type TelegramPostavke,
+} from './TelegramConfig'
 
 export const STANJE_PUTANJA = stanjePutanja('telegram-poller.json')
 export const BRAVA_PUTANJA = stanjePutanja('telegram-poller.lock')
@@ -336,7 +338,9 @@ export function pokreniTelegramPoller(opcije: PokretanjeOpcije = {}): Pokretanje
   const cfg = loadTelegramConfig(opcije.configPath)
 
   if (!cfg.ulaz?.ukljucen) return { pokrenut: false, razlog: 'ulazni kanal je isključen' }
-  if (!cfg.botToken) return { pokrenut: false, razlog: 'bot token nije postavljen' }
+  // Token dolazi iz datoteke s tajnama (v. `telegramBotToken`), ne iz JSON-a — nalaz B2.
+  const token = telegramBotToken(cfg)
+  if (!token) return { pokrenut: false, razlog: 'bot token nije postavljen' }
 
   const brava = uzmiBravu(opcije.bravaPath)
   if (!brava.ok) {
@@ -346,7 +350,7 @@ export function pokreniTelegramPoller(opcije: PokretanjeOpcije = {}): Pokretanje
 
   const stanjePath = opcije.stanjePath || STANJE_PUTANJA
   const ploca = opcije.plocaBase || process.env.TM_API_BASE || 'http://localhost:17781'
-  const api = opcije.api || telegramApi(cfg.botToken, ploca)
+  const api = opcije.api || telegramApi(token, ploca)
   let radi = true
   let tajmer: ReturnType<typeof setTimeout> | null = null
   let uzastopnihKvarova = 0
@@ -416,9 +420,10 @@ export async function probajUlaz(configPath?: string, api?: Api): Promise<{
   chatovi?: { id: string; naziv: string; zadnjaPoruka: string }[]
 }> {
   const cfg = loadTelegramConfig(configPath)
-  if (!cfg.botToken) return { ok: false, greska: 'bot token nije postavljen' }
+  const token = telegramBotToken(cfg)
+  if (!token) return { ok: false, greska: 'bot token nije postavljen' }
   const stanje = ucitajStanje()
-  const klijent = api || telegramApi(cfg.botToken, process.env.TM_API_BASE || 'http://localhost:17781')
+  const klijent = api || telegramApi(token, process.env.TM_API_BASE || 'http://localhost:17781')
   const odg = await klijent.getUpdates(stanje.offset, 0)
   if (!odg.ok) {
     if (odg.status === 409) return { ok: false, greska: 'za ovog bota postavljen je webhook — makni ga prije uporabe pollera' }

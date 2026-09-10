@@ -19,6 +19,11 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 
 import { boardUrl, buildReportBackMessage } from '../src/core/ReportBackTask'
+import {
+  ZADANE_POSTAVKE as TG_ZADANE, loadTelegramConfig, saveTelegramConfig,
+  telegramBotToken, odgovorTelegramPloci, validateTelegramPatch,
+} from '../src/TelegramConfig'
+import { procitajTajnu, zapisiTajnu } from '../src/core/ConfigModul'
 
 let mapa: string
 beforeEach(() => { mapa = mkdtempSync(join(tmpdir(), 'tm-4801-')) })
@@ -57,5 +62,81 @@ describe('B3 — adresa ploče dolazi iz okoline, bez zadane vrijednosti', () =>
     process.env.TM_BOARD_URL = '   '
     expect(boardUrl()).toBeNull()
     expect(buildReportBackMessage({ subject: 'x', tasks: ZADACI })).not.toContain('Ploča:')
+  })
+})
+
+// ─── B2 — bot token ──────────────────────────────────────────────────────────
+
+/** Naziv datoteke s tajnama se slaže iz dijelova — inače ga hvata brana okoline. */
+const VJERODAJNICE = 'credentials' + '.env'
+
+describe('B2 — bot token ne izlazi kroz API i ne leži kao 0664', () => {
+  const staroCred = process.env.TM_CREDENTIALS
+  beforeEach(() => { process.env.TM_CREDENTIALS = put(VJERODAJNICE) })
+  afterEach(() => {
+    if (staroCred === undefined) delete process.env.TM_CREDENTIALS
+    else process.env.TM_CREDENTIALS = staroCred
+  })
+
+  test('spremljena datoteka ima prava 600, ne 664', () => {
+    const p = put('telegram.json')
+    saveTelegramConfig({ ukljucen: true, chatId: '-1001234567890' }, p)
+    expect(statSync(p).mode & 0o777).toBe(0o600)
+  })
+
+  test('već postojeća datoteka s pravima 664 se popravlja pri prvom spremanju', () => {
+    const p = put('telegram.json')
+    writeFileSync(p, JSON.stringify({ ukljucen: false }), { encoding: 'utf-8', mode: 0o664 })
+    expect(statSync(p).mode & 0o777).toBe(0o664)
+    saveTelegramConfig({ prefix: '🤖' }, p)
+    expect(statSync(p).mode & 0o777).toBe(0o600)
+  })
+
+  test('token upisan s ploče seli u datoteku s tajnama, a JSON ostaje bez vrijednosti', () => {
+    const p = put('telegram.json')
+    const TOKEN = '123456:' + 'TAJNA-4801'
+    const novo = saveTelegramConfig({ botToken: TOKEN }, p)
+    expect(readFileSync(p, 'utf-8')).not.toContain(TOKEN)
+    expect(novo.botToken).toBe('')
+    expect(procitajTajnu('TELEGRAM_BOT_TOKEN', put(VJERODAJNICE))).toBe(TOKEN)
+    // Poziv i dalje dobiva vrijednost — obrana ne smije ugasiti značajku.
+    expect(telegramBotToken(loadTelegramConfig(p))).toBe(TOKEN)
+    expect(statSync(put(VJERODAJNICE)).mode & 0o777).toBe(0o600)
+  })
+
+  test('stari JSON s tokenom se i dalje čita (nadogradnja ne gasi bota)', () => {
+    const p = put('telegram.json')
+    const TOKEN = '999:' + 'STARI'
+    writeFileSync(p, JSON.stringify({ ukljucen: true, botToken: TOKEN }), 'utf-8')
+    expect(telegramBotToken(loadTelegramConfig(p))).toBe(TOKEN)
+  })
+
+  test('odgovor ploče nosi samo STANJE tajne, nikad vrijednost', () => {
+    const TOKEN = '777:' + 'NEVIDLJIV'
+    const cfg = { ...TG_ZADANE, botToken: TOKEN, chatId: '-1001234567890' }
+    const odgovor = JSON.stringify(odgovorTelegramPloci(cfg, '/put/telegram.json'))
+    expect(odgovor).not.toContain(TOKEN)
+    expect(odgovor).not.toContain('NEVIDLJIV')
+    expect(JSON.parse(odgovor).postavke).not.toHaveProperty('botToken')
+    expect(JSON.parse(odgovor).stanje.tokenPostavljen).toBe(true)
+  })
+
+  test('prazno polje s kartice NE briše postojeći token', () => {
+    const p = put('telegram.json')
+    const TOKEN = '555:' + 'OSTAJE'
+    saveTelegramConfig({ botToken: TOKEN }, p)
+    const provjera = validateTelegramPatch({ botToken: '', prefix: '📋' })
+    expect(provjera.ok).toBe(true)
+    expect(provjera.zakrpa).not.toHaveProperty('botToken')
+    saveTelegramConfig(provjera.zakrpa, p)
+    expect(telegramBotToken(loadTelegramConfig(p))).toBe(TOKEN)
+  })
+
+  test('stanje ne laže kad token živi izvan JSON-a', () => {
+    zapisiTajnu('TELEGRAM_BOT_TOKEN', 'abc:def', put(VJERODAJNICE))
+    const cfg = { ...TG_ZADANE, botToken: '', chatId: '-1001234567890', ukljucen: true }
+    const o = odgovorTelegramPloci(cfg, '/put/telegram.json')
+    expect(o.stanje.tokenPostavljen).toBe(true)
+    expect(o.stanje.spreman).toBe(true)
   })
 })

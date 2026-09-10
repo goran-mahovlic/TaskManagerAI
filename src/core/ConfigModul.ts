@@ -196,15 +196,34 @@ export class ConfigModul<T extends Record<string, any>> {
 
 // ─── Tajne ───────────────────────────────────────────────────────────────────
 
-/** Datoteka s tajnama uz konfiguraciju (`IME=vrijednost`), prava 0600. */
-export const CREDENTIALS_FILE = konfigPutanja('credentials.env', 'TM_CREDENTIALS')
+/**
+ * Datoteka s tajnama uz konfiguraciju (`IME=vrijednost`), prava 0600.
+ *
+ * Putanja se razrješava PRI SVAKOM POZIVU, kao i kod JSON-a (`ConfigModul.putanja`).
+ * Zamrznuta vrijednost (revizija TASK-4801, nalaz S4) slala je tajnu u mapu PAKETA i kad
+ * je `TM_HOME` postavljen, pa bi dvije instance s različitim `TM_HOME` dijelile jednu
+ * datoteku s tajnama — upravo ono što `konfigPutanjaZaPisanje` sprječava, a na instalaciji
+ * s read-only mapom paketa spremanje tajne uopće ne bi prošlo.
+ */
+const IME_TAJNI = 'credentials.env'
+
+/** Gdje se tajna ČITA: postojeća datoteka, redom iz `konfigPutanja`. */
+export function datotekaTajni(): string { return konfigPutanja(IME_TAJNI, 'TM_CREDENTIALS') }
+
+/** Gdje se tajna PIŠE: `$TM_HOME/config/`, a ne mapa uz paket. */
+export function datotekaTajniZaPisanje(): string {
+  return konfigPutanjaZaPisanje(IME_TAJNI, 'TM_CREDENTIALS')
+}
+
+/** @deprecated Zamrznuto pri učitavanju — samo za prikaz. Za rad koristi `datotekaTajni()`. */
+export const CREDENTIALS_FILE = konfigPutanja(IME_TAJNI, 'TM_CREDENTIALS')
 
 /**
  * Je li tajna postavljena? Gleda okolinu, pa datoteku. NIKAD ne vraća vrijednost —
  * pozivatelj dobiva samo `true`/`false`, pa se ne može dogoditi da tajna procuri u
  * odgovor API-ja ili u dnevnik.
  */
-export function tajnaPostavljena(imeVarijable: string, credPath: string = CREDENTIALS_FILE): boolean {
+export function tajnaPostavljena(imeVarijable: string, credPath: string = datotekaTajni()): boolean {
   const ime = String(imeVarijable || '').trim()
   if (!ime) return false
   if (process.env[ime]) return true
@@ -223,7 +242,7 @@ export function tajnaPostavljena(imeVarijable: string, credPath: string = CREDEN
 }
 
 /** Vrijednost tajne za POZIV (ne za prikaz). Vraća `null` ako je nema. */
-export function procitajTajnu(imeVarijable: string, credPath: string = CREDENTIALS_FILE): string | null {
+export function procitajTajnu(imeVarijable: string, credPath: string = datotekaTajni()): string | null {
   const ime = String(imeVarijable || '').trim()
   if (!ime) return null
   if (process.env[ime]) return process.env[ime] as string
@@ -241,7 +260,7 @@ export function procitajTajnu(imeVarijable: string, credPath: string = CREDENTIA
 
 /** Zapiši tajnu u `credentials.env` s pravima 0600. JSON i dalje nosi samo IME varijable. */
 export function zapisiTajnu(
-  imeVarijable: string, vrijednost: string, credPath: string = CREDENTIALS_FILE,
+  imeVarijable: string, vrijednost: string, credPath: string = datotekaTajniZaPisanje(),
 ): { ok: boolean; greska?: string } {
   const ime = String(imeVarijable || '').trim()
   if (!/^[A-Z][A-Z0-9_]{1,63}$/.test(ime)) {
