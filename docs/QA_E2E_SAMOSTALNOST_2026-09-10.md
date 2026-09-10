@@ -42,7 +42,35 @@
 
 ## 2. Nalazi (rangirano po ozbiljnosti)
 
-### N1 — BLOKIRAJUĆI: "donesi svoj tim" (`TM_AGENTS`) je dokumentacijska fikcija — API i dalje odbija svako ime osim naših 11 agenata
+### N1 — ~~BLOKIRAJUĆI~~ **RIJEŠENO 10.09.2026. (TASK-4808)**: "donesi svoj tim" (`TM_AGENTS`) je bio dokumentacijska fikcija
+
+> **Ishod:** popravljeno po preporuci (a). `AgentIdSchema` više nije `z.enum`, nego provjera
+> kroz `src/core/AgentIds.ts`, koja popis razrješava iz `config/agents.json`
+> (`TM_AGENTS_CONFIG`) **plus** `TM_AGENTS` (CSV, kako INSTALL.md §5.1 i obećava), uz
+> `user`/`scheduler` koje uvijek dodaje sustav. Izvori se ZBRAJAJU — da agent iz
+> `agents.json` ne ispadne zato što nije prepisan i u `TM_AGENTS` (kvar „dvije istine" iz
+> §6). Bez ijednog izvora popis nije zatvoren: provjerava se samo oblik imena
+> (`[a-z][a-z0-9_-]{0,31}`), pa svježa instalacija radi s bilo čijim timom, a ugrađenog
+> popisa NAŠIH imena u paketu više nema. Registar se čita pri svakoj provjeri, pa agent
+> dodan nakon pokretanja vrijedi bez restarta.
+>
+> Sukob imena riješen: `scripts/install-agents.sh` i `docs/AGENTI.md` sada koriste
+> `TM_AGENTS_REGISTRY` za PUTANJU do registra PAI agenata, pa `TM_AGENTS` znači točno
+> jednu stvar.
+>
+> **Dokaz (živa sjena, tuđi tim `ana`/`ivan`/`marko` u `config/agents.json`):**
+> ```
+> POST /api/tasks {"assignee":"ana"}      → 201 TASK-001
+> POST /api/tasks {"assignee":"kosjenka"} → 400 nositelj „kosjenka" nije na popisu agenata [ana, ivan, marko, scheduler, user]
+> POST /api/tasks {"assignee":"anna"}     → 400 (tipfeler se hvata)
+> svježa instalacija bez ikakve postavke: {"assignee":"nikola"} → 201
+> TM_AGENTS=ana,ivan,marko:               {"assignee":"ivan"} → 201, {"assignee":"kosjenka"} → 400
+> registar stvoren nakon pokretanja:      {"assignee":"petra"} → 201 bez restarta
+> ```
+> `bun test`: **202 pass / 0 fail** (bilo 185; +14 `tests/agent-ids.test.ts`, +3 strukturna
+> brana u `tests/bez-nasih-vrijednosti.test.ts`). Nalaz niže ostaje kao zapis zatečenog stanja.
+
+#### Zatečeno stanje (10.09.2026., prije popravka)
 
 `docs/INSTALL.md §5.1` i `§11` tvrde da `TM_AGENTS=ana,ivan,marko` mijenja popis dopuštenih
 nositelja zadatka. **Ne postoji nijedno mjesto u `src/` koje čita `process.env.TM_AGENTS`.**
@@ -70,6 +98,10 @@ paket i dalje nosi NAŠIH 11 imena kao jedini dopušteni popis, suprotno cilju i
 ijednog retka tuđeg koda"). Brana `tests/bez-nasih-vrijednosti.test.ts` ovo ne hvata jer
 traži tekstualne uzorke (`/home/klaudio`, naše IP adrese, `.claude/regoc`), ne strukturne
 pretpostavke poput zatvorenog enuma imena.
+
+> Zatvoreno 10.09.2026.: brana je dobila strukturno pravilo — pada na svakoj NOVOJ
+> datoteci koja nabraja tri ili više naših imena (osnovica: 21 datoteka; `src/zod/schemas/task.ts`
+> ispao s popisa) i na povratku doslovnog imena u shemu zadatka.
 
 Dodatna zabuna: **tri različita značenja pod istim/sličnim imenom**:
 - `docs/INSTALL.md` — `TM_AGENTS` = CSV popis dopuštenih imena (ne postoji u kodu).

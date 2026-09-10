@@ -78,7 +78,8 @@ Everything is optional; with no settings at all it runs on defaults. Copy `env.e
 | `TM_PORT` | `17781` | server port |
 | `TM_HOME` | `$HOME/.taskmanager` | folder holding the database and working files |
 | `TM_DB` | `$TM_HOME/data/tasks.db` | path to the database, if you keep it elsewhere |
-| `TM_AGENTS` | built-in list | comma-separated names allowed as assignees |
+| `TM_AGENTS` | — | comma-separated names allowed as assignees |
+| `TM_AGENTS_CONFIG` | `config/agents.json` | agent registry; its `id`s are valid assignees too |
 | `TM_EXTERNAL_HOST` | `localhost` | host name shown in the interface |
 | `TM_LANG` | `hr` | default interface language (`en`, `hr`, or any file in `locales/`) |
 | `TM_CHROMA_HOST`, `TM_OLLAMA_URL` | — | enable RAG; without them it is off |
@@ -88,6 +89,11 @@ Everything is optional; with no settings at all it runs on defaults. Copy `env.e
 ```bash
 TM_AGENTS=ana,ivan,marko bun run start
 ```
+
+The `id`s from `config/agents.json` (the orchestrator registry) count as well: the two sources
+are merged, so you never write the same team twice. With neither of them set the list is not
+closed — any well-formed name passes (`[a-z][a-z0-9_-]{0,31}`). There is no built-in list of
+names.
 
 ---
 

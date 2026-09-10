@@ -15,12 +15,15 @@
 #
 #   bash scripts/install-agents.sh                 # upiši agente, ispiši što nedostaje
 #   bash scripts/install-agents.sh --vjestine      # + dohvati PAI i instaliraj nedostajuće
-#   bash scripts/install-agents.sh --u ~/moj.json  # upiši u drugu datoteku
+#   bash scripts/install-agents.sh --u ~/moj.json  # upiši u drugu datoteku (ili TM_AGENTS_REGISTRY)
 set -uo pipefail
 
 KORIJEN="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 IZVOR="$KORIJEN/agents/regoc-tim.json"
-ODREDISTE="${TM_AGENTS:-$HOME/.claude/regoc/REGOC_AGENTS.json}"
+# TM_AGENTS_REGISTRY, ne TM_AGENTS: `TM_AGENTS` je popis dopuštenih nositelja zadatka
+# (docs/INSTALL.md §5.1), a ovo je PUTANJA do registra PAI agenata. Isto ime za dvije
+# stvari bio je nalaz N1 iz docs/QA_E2E_SAMOSTALNOST_2026-09-10.md.
+ODREDISTE="${TM_AGENTS_REGISTRY:-$HOME/.claude/regoc/REGOC_AGENTS.json}"
 VJESTINE_DIR="${TM_SKILLS_DIR:-$HOME/.claude/skills}"
 PAI_REPO="${PAI_REPO:-https://github.com/danielmiessler/PAI}"
 PAI_KOPIJA="${PAI_KOPIJA:-$HOME/.cache/pai-izvor}"

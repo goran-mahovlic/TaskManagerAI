@@ -39,7 +39,7 @@
     {
       "n": 4, "key": "ocjena", "title": "Ocjena",
       "what": "težina 1–100, potrebni alati, je li zadatak „samo tekst\"",
-      "executor": "automatika + planer", "tool": "registar izvršitelja ($TM_AGENTS)",
+      "executor": "automatika + planer", "tool": "registar izvršitelja (config/agents.json)",
       "artifact": "polja i oznake na zadatku",
       "proof": "svaki imenovani alat postoji u registru"
     },

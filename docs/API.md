@@ -31,8 +31,10 @@ curl -X POST http://localhost:17781/api/tasks \
       }'
 ```
 
-Obavezno je samo `title`. `assignee` mora biti s popisa (`TM_AGENTS`), inače stiže
-`Validation failed`. **Prioritet 1 znači da zadatak odmah ulazi u red za izvršavanje** — to radi
+Obavezno je samo `title`. `assignee` mora biti s popisa dopuštenih nositelja
+(`config/agents.json` + `TM_AGENTS`, v. INSTALL.md §5.1), inače stiže `Validation failed`
+s porukom koja nabraja dopuštena imena. Ako popis nigdje nije zadan, provjerava se samo
+oblik imena. **Prioritet 1 znači da zadatak odmah ulazi u red za izvršavanje** — to radi
 okidač u bazi, ne API.
 
 ### Izmjena
@@ -107,7 +109,7 @@ curl -X POST http://localhost:17781/api/ingest \
 | `replyTo` | ne | adresa na koju ide odgovor. Sustav je **ne tumači i ne šalje** — samo je zapiše u opis zadatka (korak 9) |
 | `senderName` | ne | tko je poslao, za trag u opisu |
 | `projectId` | ne | izričit projekt; ima prednost pred postavkama izvora |
-| `assignee`, `tags` | ne | prosljeđuju se zadatku (`assignee` mora biti s popisa `TM_AGENTS`) |
+| `assignee`, `tags` | ne | prosljeđuju se zadatku (`assignee` mora biti s popisa dopuštenih nositelja, v. INSTALL.md §5.1) |
 
 Odgovor uvijek nosi ocjenu, i kad zadatak nije otvoren:
 

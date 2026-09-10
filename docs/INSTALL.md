@@ -100,7 +100,21 @@ timom, jedina postavka koja ti gotovo sigurno treba jest `TM_AGENTS`:
 TM_AGENTS=ana,ivan,marko
 ```
 
-Bez nje vrijedi ugrađeni popis imena i API će odbiti zadatak s nepoznatim nositeljem.
+**Tko smije biti nositelj zadatka.** Popis je podatak, ne kod, i slaže se iz dva izvora koja
+se ZBRAJAJU (uz `user` i `scheduler`, koje uvijek dodaje sam sustav):
+
+| Izvor | Kada ga koristiš |
+|---|---|
+| `config/agents.json` (§6, putanja preko `TM_AGENTS_CONFIG`) | glavni izvor — ondje ionako piše tko postoji i što radi |
+| `TM_AGENTS=ana,ivan,marko` | prečac za ploču bez orkestratora |
+
+Izvori se zbrajaju namjerno: da agent iz `agents.json` ne ispadne iz popisa zato što nije
+prepisan i u `TM_AGENTS`. Dvije istine o tome tko postoji su najčešći kvar prve instalacije.
+
+**Bez ijednog od ta dva izvora popis nije zatvoren** — svježa instalacija prihvaća bilo koje
+ispravno ime (mala slova, znamenke, `-` i `_`, počinje slovom, do 32 znaka). Čim popis izraziš,
+provjera se sama pooštri i tipfeler (`anna` umjesto `ana`) dobiva `400` s nabrojanim imenima.
+Paket NEMA ugrađeni popis imena: tuđa imena u tvojoj instalaciji nemaju što raditi.
 
 ## 6. Sloj 1 — pokreni orkestrator (neobavezno)
 
@@ -125,10 +139,9 @@ bun scripts/orchestrator.ts --jednom    # točno jedan prolaz — ispis što bi 
 bun scripts/orchestrator.ts             # petlja
 ```
 
-**Imena agenata moraju se poklapati s `TM_AGENTS`** (§5.1). `id` iz `agents.json` ploča
-provjerava kao nositelja zadatka; ako ga ondje nema, `POST /api/tasks` vraća
-`Invalid enum value` i orkestrator nema što pokrenuti. Dvije istine o tome tko postoji su
-najčešći kvar pri prvom postavljanju.
+**`id` iz `agents.json` ploča automatski prihvaća kao nositelja zadatka** — registar i popis
+dopuštenih nositelja su isti podatak (§5.1), pa ih ne treba prepisivati na dva mjesta. Datoteka
+se čita pri svakoj provjeri, pa agent dodan nakon pokretanja vrijedi bez restarta ploče.
 
 **Izvođač (`executors`) je podatak, ne kod.** Paket isporučuje dvije izvedbe:
 
@@ -229,7 +242,8 @@ dogodi.
 | Znak | Uzrok i rješenje |
 |---|---|
 | `Cannot find package 'zod'` | nisi pokrenuo `bun install` |
-| `Validation failed … invalid_enum_value … assignee` | nositelj nije na popisu; postavi `TM_AGENTS` |
+| `Validation failed … nositelj „x" nije na popisu agenata` | ime nije ni u `config/agents.json` ni u `TM_AGENTS`; poruka nabraja dopuštena imena (§5.1) |
+| `Validation failed … nije ispravno ime agenta` | ime ima razmak, kosu crtu ili veliko slovo; dopušteno je `[a-z][a-z0-9_-]{0,31}` |
 | `EADDRINUSE` | vrata su zauzeta; `TM_PORT=17800 bun run start` |
 | ploča prazna, `/health` odgovara | baza je prazna — otvori prvi zadatak preko API-ja |
 | `unable to open database file` | mapa iz `TM_HOME` ne postoji ili nema prava pisanja |

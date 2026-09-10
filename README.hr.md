@@ -74,7 +74,8 @@ Sve je neobavezno; bez ijedne postavke radi na zadanim vrijednostima. Kopiraj `e
 | `TM_PORT` | `17781` | vrata poslužitelja |
 | `TM_HOME` | `$HOME/.taskmanager` | mapa s bazom i radnim datotekama |
 | `TM_DB` | `$TM_HOME/data/tasks.db` | putanja do baze, ako je držiš drugdje |
-| `TM_AGENTS` | ugrađeni popis | imena agenata koji smiju biti nositelji, odvojena zarezom |
+| `TM_AGENTS` | — | imena agenata koji smiju biti nositelji, odvojena zarezom |
+| `TM_AGENTS_CONFIG` | `config/agents.json` | registar agenata; njegovi `id`-evi su ujedno dopušteni nositelji |
 | `TM_EXTERNAL_HOST` | `localhost` | ime poslužitelja koje se prikazuje u sučelju |
 | `TM_LANG` | `hr` | zadani jezik sučelja (`en`, `hr`, ili bilo koja datoteka u `locales/`) |
 | `TM_CHROMA_HOST`, `TM_OLLAMA_URL` | — | uključuju RAG; bez njih je isključen |
@@ -84,6 +85,11 @@ Sve je neobavezno; bez ijedne postavke radi na zadanim vrijednostima. Kopiraj `e
 ```bash
 TM_AGENTS=ana,ivan,marko bun run start
 ```
+
+Isto vrijedi za `id`-eve iz `config/agents.json` (registar orkestratora): dva izvora se
+zbrajaju, pa isti tim ne treba upisivati dvaput. Postaviš li oba, vrijedi unija.
+Bez ijednog od njih popis nije zatvoren — prolazi svako ispravno ime
+(`[a-z][a-z0-9_-]{0,31}`). Ugrađenog popisa imena nema.
 
 ---
 

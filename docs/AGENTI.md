@@ -46,7 +46,7 @@ bash scripts/install-agents.sh --u ~/moj-registar.json
 
 Skripta:
 
-1. upiše agente u `$TM_AGENTS` (zadano `~/.claude/regoc/REGOC_AGENTS.json`);
+1. upiše agente u `$TM_AGENTS_REGISTRY` (zadano `~/.claude/regoc/REGOC_AGENTS.json`);
 2. usporedi tražene vještine s onima u `~/.claude/skills` i ispiše što nedostaje;
 3. uz `--vjestine` dohvati PAI (`git clone --depth 1`) i kopira samo ono čega nema.
 
@@ -60,7 +60,7 @@ Bez mreže skripta neće izmisliti vještine: reći će koje nedostaju i odakle 
 
 ## Kako dodati vlastitog agenta
 
-Dopiši ga u registar (`$TM_AGENTS`) uz iste ključeve:
+Dopiši ga u registar (`$TM_AGENTS_REGISTRY`) uz iste ključeve:
 
 ```jsonc
 "ivan": {

@@ -1,3 +1,35 @@
+## 2026-09-10 — tvoj tim, ne naš: popis nositelja zadatka je postao podatak
+
+**`TM_AGENTS` sada doista radi (nalaz N1, `docs/QA_E2E_SAMOSTALNOST_2026-09-10.md`)**
+- Popis dopuštenih nositelja više nije zatvoren `z.enum` s imenima naših jedanaest agenata.
+  Razrješava ga `src/core/AgentIds.ts` iz dva izvora koja se **zbrajaju**: `id`-evi iz
+  `config/agents.json` (putanja: `TM_AGENTS_CONFIG`) i `TM_AGENTS=ana,ivan,marko`. `user` i
+  `scheduler` vrijede uvijek — njih upisuje sam sustav.
+- **Bez ijednog od ta dva izvora popis nije zatvoren**: provjerava se samo oblik imena
+  (`[a-z][a-z0-9_-]{0,31}`). Svježa instalacija radi s bilo čijim timom; čim popis izraziš,
+  provjera se pooštri i tipfeler dobiva `400` s nabrojanim dopuštenim imenima.
+- Registar se čita pri svakoj provjeri, pa agent dodan poslije pokretanja ploče vrijedi bez
+  restarta. Zbrajanje izvora (umjesto prvenstva) uklanja najčešći kvar prve instalacije —
+  agent iz `agents.json` koji nije prepisan u `TM_AGENTS`.
+- Poruka o odbijenom nositelju odsad kaže i što je krivo i gdje se popis mijenja, umjesto
+  `invalid_enum_value` s našim imenima u odgovoru.
+
+**Jedno ime, jedno značenje**
+- `scripts/install-agents.sh` i `docs/AGENTI.md` koriste `TM_AGENTS_REGISTRY` za PUTANJU do
+  registra PAI agenata. Dotad su `TM_AGENTS` (popis nositelja iz INSTALL.md),
+  `$TM_AGENTS` (putanja iz AGENTI.md) i `TM_AGENTS_CONFIG` (stvarni kod) bili tri značenja
+  pod dva slična imena.
+- Usklađeni `docs/INSTALL.md` §5.1/§6/§11, `docs/API.md`, oba READMEa, `env.example`,
+  `config/agents.example.json` i `templates/koraci.json`.
+
+**Brana**
+- `tests/agent-ids.test.ts` (14 testova) drži lanac razrješavanja, sustavske nositelje,
+  pooštravanje bez restarta i odbijanje neispravnog oblika.
+- `tests/bez-nasih-vrijednosti.test.ts` dobio strukturno pravilo: pada na svakoj novoj
+  datoteci koja nabraja tri ili više naših imena i na povratku doslovnog imena u shemu
+  zadatka. Tekstualni uzorci ovakvo ugrađivanje tima nisu mogli vidjeti.
+- `bun test`: 202 pass / 0 fail (bilo 185).
+
 ## 2026-09-05 — generički ulaz `POST /api/ingest`
 
 **Ulaz koji ne zna ni za jedan kanal**

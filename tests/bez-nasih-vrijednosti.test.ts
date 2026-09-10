@@ -211,3 +211,88 @@ describe('paket ne smije nositi naše vrijednosti (ADR-0001 §8)', () => {
     expect(zaostalo.length).toBeGreaterThanOrEqual(0)
   })
 })
+
+/**
+ * STRUKTURNA BRANA (TASK-4808). Gornja pravila traže TEKSTUALNE uzorke — putanje, adrese,
+ * e-poštu. Nalaz N1 iz `docs/QA_E2E_SAMOSTALNOST_2026-09-10.md` pokazao je rupu: naš tim je
+ * u paket bio ugrađen kao STRUKTURA — zatvoren `z.enum` imena u `src/zod/schemas/task.ts` —
+ * pa je tuđa instalacija odbijala svakog vlastitog nositelja, a nijedno tekstualno pravilo
+ * to nije vidjelo jer je svako pojedino ime bezopasno.
+ *
+ * Mjeri se stoga koliko datoteka nabraja TRI ILI VIŠE naših imena: jedno ime je spomen,
+ * tri su popis tima. Zapor je isti kao gore — nova datoteka pada odmah, broj smije samo
+ * padati. `agents/regoc-tim.json` i `REGOC/` su namjerna iznimka po sadržaju (to JEST
+ * ponuda „instaliraj naš tim"), ali ostaju u osnovici da se vidi cijena.
+ *
+ * Osnovica izmjerena 10.09.2026. nakon popravka N1: `src/zod/schemas/task.ts` je ispao s
+ * popisa jer popis nositelja sada dolazi iz `config/agents.json`/`TM_AGENTS`
+ * (v. `src/core/AgentIds.ts`, `tests/agent-ids.test.ts`).
+ */
+const NASA_IMENA = [
+  'regoc', 'klaudio', 'stribor', 'kosjenka', 'jelena',
+  'malik', 'manda', 'potjeh', 'dora', 'gita', 'grga',
+]
+
+/** Datoteke koje su 10.09.2026. nabrajale ≥3 naša imena. Smije samo padati. */
+const OSNOVICA_POPISI: string[] = [
+  'README.hr.md',
+  'README.md',
+  'REGOC/README.md',
+  'agents/alati.json',
+  'agents/regoc-tim.json',
+  'agents/workflows.json',
+  'config/upute-po-tipu.json',
+  'locales/en.json',
+  'locales/hr.json',
+  'src/TaskWebUI.ts',
+  'src/core/DispatchGuard.ts',
+  'src/core/MessageQueue.ts',
+  'src/core/ModeClassifier.ts',
+  'src/core/ReportBackSweepLive.ts',
+  'src/core/TaskManagerSQL.ts',
+  'src/core/WorkflowTemplate.ts',
+  'src/types/task-types.ts',
+  'tests/integracije.test.ts',
+  'tests/orchestrator.test.ts',
+  'tools/rag_izdvoji.py',
+  'tools/test_tjedni_pregled.py',
+]
+
+function popisiTima(): string[] {
+  const pogodjene: string[] = []
+  for (const rel of POPIS) {
+    let tekst: string
+    try { tekst = readFileSync(join(KORIJEN, rel), 'utf-8').toLowerCase() } catch { continue }
+    const nadena = NASA_IMENA.filter(ime => new RegExp(`\\b${ime}\\b`).test(tekst))
+    if (nadena.length >= 3) pogodjene.push(rel)
+  }
+  return pogodjene.sort()
+}
+
+describe('strukturna brana — naš tim ugrađen kao popis, ne kao tekst (N1)', () => {
+  test('nijedna NOVA datoteka ne nabraja tri ili više naših imena', () => {
+    const nove = popisiTima().filter(d => !OSNOVICA_POPISI.includes(d))
+    expect(
+      nove.length === 0
+        ? 'nema novih'
+        : `NOVI POPIS TIMA u: ${nove.join(', ')} — imena agenata su konfiguracija `
+          + `(config/agents.json / TM_AGENTS, v. src/core/AgentIds.ts), ne kod`,
+    ).toBe('nema novih')
+  })
+
+  test('broj takvih datoteka smije samo padati', () => {
+    expect(popisiTima().length).toBeLessThanOrEqual(OSNOVICA_POPISI.length)
+  })
+
+  test('shema zadatka NE smije nositi zatvoren popis nositelja (regresija N1)', () => {
+    const shema = readFileSync(join(KORIJEN, 'src/zod/schemas/task.ts'), 'utf-8')
+    const kod = shema.split('\n').filter(r => !r.trim().startsWith('//') && !r.trim().startsWith('*'))
+    for (const ime of NASA_IMENA) {
+      expect(
+        kod.some(r => new RegExp(`['"\`]${ime}['"\`]`).test(r))
+          ? `ime „${ime}" je opet doslovno u src/zod/schemas/task.ts`
+          : 'čisto',
+      ).toBe('čisto')
+    }
+  })
+})

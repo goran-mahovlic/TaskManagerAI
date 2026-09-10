@@ -1,5 +1,7 @@
 import { z } from 'zod'
 
+import { jeDopustenAgent, objasnjenjeOdbijenogAgenta } from '../../core/AgentIds'
+
 // Status enum
 export const TaskStatusSchema = z.enum([
   'pending', 'in_progress', 'blocked', 'completed', 'cancelled'
@@ -10,12 +12,23 @@ export const TaskPrioritySchema = z.union([
   z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)
 ])
 
-// Agent IDs
-export const AgentIdSchema = z.enum([
-  'regoc', 'klaudio', 'stribor', 'kosjenka', 'jelena',
-  'malik', 'manda', 'potjeh', 'dora', 'gita', 'grga',
-  'pai', 'user', 'scheduler'
-])
+// Agent IDs — popis je PODATAK, ne kod (v. src/core/AgentIds.ts, nalaz N1/TASK-4808).
+//
+// Ovdje je do 10.09.2026. stajao `z.enum` s imenima naših jedanaest agenata, pa je tuđa
+// instalacija odbijala svakog vlastitog nositelja (`400 invalid_enum_value`) unatoč tome
+// što INSTALL.md §5.1 obećava `TM_AGENTS`. Provjera zato ide kroz `jeDopustenAgent`, koja
+// popis razrješava PRI SVAKOJ PROVJERI (registar smije nastati poslije pokretanja ploče).
+export const AgentIdSchema = z
+  .string()
+  .transform(v => v.trim())
+  .superRefine((v, ctx) => {
+    if (jeDopustenAgent(v)) return
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: objasnjenjeOdbijenogAgenta(v),
+      params: { code: 'agent_not_allowed' },
+    })
+  })
 
 // Progress note
 export const ProgressNoteSchema = z.object({
