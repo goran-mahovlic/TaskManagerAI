@@ -278,15 +278,18 @@ export function provjeriPosluzitelj(
 ): { ok: boolean; greska?: string } {
   const h = String(host || '').trim()
   if (!h) return { ok: false, greska: 'poslužitelj nije upisan' }
+  // Prvo ADRESA, pa vrata: „ova adresa je u privatnoj mreži" je odluka koju je korisnik
+  // donio na kartici i koju može promijeniti; popis vrata je tvrdo pravilo. Kad su oba
+  // prekršena, korisniku je korisniji prvi razlog.
+  // `https://` je ovdje samo nosač imena: nikakav HTTP zahtjev ne slijedi.
+  const provjera = provjeriUrl(`https://${h}`, { dopustiPrivatneMreze })
+  if (!provjera.ok) return { ok: false, greska: provjera.greska }
   if (!POSTANSKA_VRATA.includes(Number(port))) {
     return {
       ok: false,
       greska: `vrata ${port} nisu poštanska — proba ide samo na ${POSTANSKA_VRATA.join(', ')}`,
     }
   }
-  // `https://` je ovdje samo nosač imena: nikakav HTTP zahtjev ne slijedi.
-  const provjera = provjeriUrl(`https://${h}`, { dopustiPrivatneMreze })
-  if (!provjera.ok) return { ok: false, greska: provjera.greska }
   return { ok: true }
 }
 
@@ -299,9 +302,14 @@ export function provjeriPosluzitelj(
  *
  * TRI OBRANE IZ REVIZIJE TASK-4801 (nalaz B1), redom kojim se izvode:
  *   1. isključena integracija ne dira mrežu — prekidač na kartici mora nešto značiti;
- *   2. `provjeriPosluzitelj` (privatne mreže + popis poštanskih vrata) PRIJE poziva;
- *   3. `prigusenje('email')` — jedna proba u 5 s, da nizanje ne postane skener.
+ *   2. `prigusenje('email')` — jedna proba u 5 s, da nizanje ne postane skener;
+ *   3. `provjeriPosluzitelj` (privatne mreže, pa popis poštanskih vrata) PRIJE poziva.
  * Ishod nosi samo `ok`/`trajanjeMs`: pozdrav poslužitelja se više ne vraća pozivatelju.
+ *
+ * ZAŠTO PRIGUŠENJE IDE PRIJE PROVJERE ADRESE. I sama odbijenica je odgovor: „ova adresa je
+ * privatna" / „ova vrata nisu poštanska" razlikuje se od „poslužitelj se nije javio", pa bi
+ * neograničen niz odbijenica i dalje bio brz upitnik o tuđoj mreži. Dopusnicu zato troši
+ * SVAKA proba, uspješna ili ne.
  */
 export async function probajEmail(path?: string): Promise<Ishod> {
   const cfg = loadEmailConfig(path)
@@ -313,19 +321,19 @@ export async function probajEmail(path?: string): Promise<Ishod> {
   // 1) Prekidač na kartici gasi i probu. Prije je proba radila i uz `ukljucen: false`.
   if (!cfg.ukljucen) return { ok: false, greska: 'e-pošta je isključena — uključi ju pa probaj' }
 
-  // 2) Adrese se provjere PRIJE prigušenja: odbijenica po pravilu ne troši dopusnicu.
+  // 2) Prigušenje. Bez njega je pet proba za redom savršen skener (izmjereno u reviziji).
+  const p = prigusenje('email')
+  if (!p.ok) return { ok: false, greska: `pričekaj još ${Math.ceil(p.cekajMs / 1000)} s prije nove probe` }
+
+  // 3) Adrese — PRIJE ijednog mrežnog poziva, za oba smjera.
   const provjere = [
     trebaIzlaz && cfg.smtp.host
       ? provjeriPosluzitelj(cfg.smtp.host, cfg.smtp.port, cfg.dopustiPrivatneMreze) : null,
     trebaUlaz && cfg.imap.host
       ? provjeriPosluzitelj(cfg.imap.host, cfg.imap.port, cfg.dopustiPrivatneMreze) : null,
   ]
-  const odbijena = provjere.find(p => p && !p.ok)
+  const odbijena = provjere.find(x => x && !x.ok)
   if (odbijena) return { ok: false, greska: odbijena.greska }
-
-  // 3) Prigušenje. Bez njega je pet proba za redom savršen skener (izmjereno u reviziji).
-  const p = prigusenje('email')
-  if (!p.ok) return { ok: false, greska: `pričekaj još ${Math.ceil(p.cekajMs / 1000)} s prije nove probe` }
 
   if (trebaIzlaz) {
     if (!cfg.smtp.host) greske.push('SMTP poslužitelj nije upisan')
@@ -376,6 +384,8 @@ export async function probajEmail(path?: string): Promise<Ishod> {
  * Namjerno NE šalje `LOGIN` bez knjižnice — ručno sastavljena IMAP naredba s korisničkim
  * nizom je upravo ona injekcija koju `filtar` provjerom sprječavamo.
  */
+export const IMAP_ROK_MS = 5000
+
 export async function probajImapVezu(cfg: EmailPostavke): Promise<Ishod> {
   const pocetak = Date.now()
   // Rukovatelji se PREDAJU `Bun.connect`-u unaprijed. Prijašnja izvedba pridruživala je
@@ -384,27 +394,52 @@ export async function probajImapVezu(cfg: EmailPostavke): Promise<Ishod> {
   let javise: (v: boolean) => void = () => { /* postavlja se odmah niže */ }
   const cekaj = new Promise<boolean>((resolve) => { javise = resolve })
   let socket: any = null
+
+  // ROK OBUHVAĆA I SPAJANJE, ne samo čekanje na odgovor. `Bun.connect` prema adresi koja
+  // ne odgovori (vatrozid tiho odbacuje SYN) visi do OS-ovog roka — izmjereno 12 s, dulje
+  // od `idleTimeout` samog poslužitelja, pa je zahtjev pucao bez tijela. Uz to je razlika
+  // „odbijeno odmah" naspram „visi 12 s" opet orakl o tuđoj mreži. S rokom oko CIJELE
+  // radnje svaki ishod staje u istih 5 s.
+  let istekao = false
+  const rok = setTimeout(() => { istekao = true; javise(false) }, IMAP_ROK_MS)
+  const porukaIsteka = `poslužitelj se nije javio u ${Math.round(IMAP_ROK_MS / 1000)} s`
+
+  let greskaVeze: string | null = null
+  // Veza se NIKAD ne ostavlja bez rukovatelja: i uspjeh i neuspjeh se obrađuju ovdje, pa
+  // spajanje koje dođe NAKON isteka roka odmah zatvara vlastiti socket (inače bi ostao
+  // otvoren prema tuđem poslužitelju, bez ijednog čitatelja).
+  const veza = Bun.connect({
+    hostname: cfg.imap.host,
+    port: cfg.imap.port,
+    tls: cfg.imap.tls,
+    socket: {
+      // Sadržaj se NAMJERNO ne čita: zanima nas samo je li se poslužitelj javio.
+      data() { javise(true) },
+      error() { javise(false) },
+      close() { javise(false) },
+    },
+  }).then(
+    (s: any) => {
+      if (istekao) { try { s?.end() } catch { /* već zatvoren */ } return null }
+      socket = s
+      return s
+    },
+    (e: any) => { greskaVeze = String(e?.message || e).slice(0, 200); javise(false); return null },
+  )
+
   try {
-    socket = await Bun.connect({
-      hostname: cfg.imap.host,
-      port: cfg.imap.port,
-      tls: cfg.imap.tls,
-      socket: {
-        // Sadržaj se NAMJERNO ne čita: zanima nas samo je li se poslužitelj javio.
-        data() { javise(true) },
-        error() { javise(false) },
-        close() { javise(false) },
-      },
-    })
-    const rok = setTimeout(() => javise(false), 5000)
+    const otvorena = await Promise.race([veza, cekaj.then(() => null)])
+    if (!otvorena) {
+      // Rok je istekao ili se spajanje izjalovilo — u oba slučaja bez tuđeg sadržaja.
+      return { ok: false, greska: istekao ? porukaIsteka : (greskaVeze || porukaIsteka) }
+    }
+    // Veza je otvorena — ostatak roka teče dalje na čekanje da poslužitelj progovori.
     const javio = await cekaj
-    clearTimeout(rok)
     return javio
       ? { ok: true, detalj: { trajanjeMs: Date.now() - pocetak } }
-      : { ok: false, greska: 'poslužitelj se nije javio u 5 s' }
-  } catch (e: any) {
-    return { ok: false, greska: String(e?.message || e).slice(0, 200) }
+      : { ok: false, greska: greskaVeze || porukaIsteka }
   } finally {
+    clearTimeout(rok)
     try { socket?.end() } catch { /* već zatvoren */ }
   }
 }

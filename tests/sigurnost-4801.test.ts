@@ -26,7 +26,7 @@ import {
 import { procitajTajnu, zapisiTajnu } from '../src/core/ConfigModul'
 import {
   ZADANE_POSTAVKE as EM_ZADANE, saveEmailConfig, validateEmailPatch, probajEmail,
-  POSTANSKA_VRATA, provjeriPosluzitelj, probajImapVezu,
+  POSTANSKA_VRATA, provjeriPosluzitelj, probajImapVezu, IMAP_ROK_MS,
 } from '../src/EmailConfig'
 import { prigusenje, resetirajPrigusenje } from '../src/core/ProbeGuard'
 import {
@@ -235,6 +235,20 @@ describe('B1 — probe e-pošte kroz ProbeGuard', () => {
     expect(EM_ZADANE.smtp.host).toBe('')
     expect(EM_ZADANE.imap.host).toBe('')
   })
+
+  test('adresa koja ne odgovara ne visi dulje od roka (bez orakla filtrirano/zatvoreno)', async () => {
+    // 203.0.113.0/24 je TEST-NET-3 (RFC 5737) — usmjerava se u nista, pa SYN nema odgovora.
+    // Prije je `Bun.connect` visio do OS-ovog roka (izmjereno 12 s, zahtjev je pucao bez
+    // tijela); sada je rok oko CIJELE radnje, pa svaki ishod staje u istih 5 s.
+    const pocetak = Date.now()
+    const r = await probajImapVezu({
+      ...EM_ZADANE,
+      imap: { ...EM_ZADANE.imap, host: '203.0.113.7', port: 993, tls: false },
+    } as any)
+    const trajanje = Date.now() - pocetak
+    expect(r.ok).toBe(false)
+    expect(trajanje).toBeLessThan(IMAP_ROK_MS + 1500)
+  }, 12_000)
 
   test('uspješna veza ne vraća ni jedno slovo odgovora poslužitelja', async () => {
     // Lažni IMAP koji odmah pošalje prepoznatljiv pozdrav. Prije je upravo taj niz
