@@ -1963,7 +1963,10 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     .project-progress-pct { flex: 0 0 45px; text-align: right; font-family: monospace; font-size: 0.8rem; font-weight: 600; }
 
     /* Info Tab */
-    .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+    /* align-items: start — kartica se ne rasteze na visinu susjede. Dok kartice nisu
+       imale podlogu to se nije vidjelo; sada bi kraca kartica bila prazna ploha visine
+       duze (System uz AI Providers: 320 px praznine). */
+    .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; align-items: start; }
     @media (max-width: 900px) { .info-grid { grid-template-columns: 1fr; } }
     .info-card { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 8px; padding: 1rem; }
     .info-card-title { font-size: 0.85rem; font-weight: 700; color: var(--accent-blue); margin-bottom: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px; display: flex; align-items: center; gap: 0.5rem; }
