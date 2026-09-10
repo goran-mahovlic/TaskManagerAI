@@ -1,0 +1,69 @@
+{
+  "_opis": [
+    "Postavke orkestratora (ADR-0001 §5.1). Kopiraj u config/orchestrator.json i uredi,",
+    "ili ih mijenjaj s ploče (Config → Orkestrator). Datoteka se čita pri svakom prolazu,",
+    "pa promjena vrijedi bez ponovnog pokretanja.",
+    "PRAVILO: polje koje bi bilo adresa, ime ili identitet ostaje prazno/null dok ga ne",
+    "upišeš. Tajne (API ključevi) NIKAD ne idu ovdje — samo IME varijable okoline."
+  ],
+
+  "enabled": false,
+  "pollIntervalMs": 1000,
+  "autoExecIntervalMs": 15000,
+
+  "api": {
+    "baseUrl": "http://localhost:17781",
+    "promptBaseUrl": null
+  },
+
+  "spawn": {
+    "maxConcurrent": 3,
+    "hardCeilingHours": 24,
+    "livenessWindowHours": 2,
+    "backoff": { "baseMs": 60000, "maxMs": 900000, "jitter": true }
+  },
+
+  "liveness": { "mode": "auto", "heartbeatDir": null },
+
+  "executors": {
+    "default": "cli-claude",
+    "cli-claude": {
+      "kind": "cli",
+      "command": "claude",
+      "args": ["--print", "--output-format", "json"],
+      "promptChannel": "arg",
+      "promptFlag": "-p",
+      "systemPromptFlag": "--append-system-prompt",
+      "sessionIdFlag": "--session-id",
+      "modelFlag": "--model"
+    },
+    "http-ollama": {
+      "kind": "http",
+      "baseUrl": null,
+      "path": "/v1/chat/completions",
+      "apiKeyEnv": null
+    }
+  },
+
+  "agents": { "registryPath": null },
+
+  "prompt": {
+    "templateDir": null,
+    "systemFacts": [],
+    "includeTaskProtocol": true,
+    "includeVerificationGate": true
+  },
+
+  "git": {
+    "autoInitProjectRepo": false,
+    "identity": { "name": null, "email": null }
+  },
+
+  "voice": { "enabled": false, "notifyUrl": null },
+
+  "watchdog": {
+    "stale":     { "mode": "shadow", "intervalMinutes": 30, "maxActionsPerRun": 5 },
+    "zombie":    { "mode": "shadow", "intervalMinutes": 1,  "maxActionsPerRun": 5 },
+    "deadAgent": { "mode": "shadow", "intervalMinutes": 30, "maxActionsPerRun": 5 }
+  }
+}
