@@ -78,7 +78,14 @@ const modul = new ConfigModul<NextcloudPostavke>({
   },
 })
 
-export const NEXTCLOUD_CONFIG_PATH = modul.putanja
+/**
+ * Putanja se razrjesava PRI SVAKOM CITANJU (v. `ConfigModul.putanja`) — zamrznuta
+ * vrijednost pokazivala bi na primjer uz paket i nakon prvog zapisa u `$TM_HOME/config/`.
+ */
+export function NEXTCLOUD_CONFIG_PATH(): string { return modul.putanja }
+
+/** Sam modul — ploca ga treba za putanju i za stanje. */
+export const nextcloudKonfigModul = modul
 
 export const loadNextcloudConfig = (path?: string) => modul.load(path)
 export const validateNextcloudPatch = (tijelo: unknown) => modul.validate(tijelo)

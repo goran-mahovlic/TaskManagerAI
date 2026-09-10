@@ -17,7 +17,7 @@
  */
 
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'fs'
-import { konfigPutanja, osigurajMapu } from './paths'
+import { konfigPutanja, konfigPutanjaZaPisanje, osigurajMapu } from './paths'
 
 // ─── Shema ───────────────────────────────────────────────────────────────────
 
@@ -69,16 +69,35 @@ function spoji<T>(zadano: T, sirovo: unknown): T {
  */
 export class ConfigModul<T extends Record<string, any>> {
   readonly ime: string
-  readonly putanja: string
+  readonly datoteka: string
+  readonly envVar: string
   readonly zadane: T
   readonly shema: Shema
 
   constructor(opcije: { ime: string; datoteka: string; envVar: string; zadane: T; shema: Shema }) {
     this.ime = opcije.ime
-    this.putanja = konfigPutanja(opcije.datoteka, opcije.envVar)
+    this.datoteka = opcije.datoteka
+    this.envVar = opcije.envVar
     this.zadane = opcije.zadane
     this.shema = opcije.shema
   }
+
+  /**
+   * Putanja se razrješava PRI SVAKOM POZIVU, ne pri učitavanju modula.
+   *
+   * Kvar koji je ovo zatvorio (uhvaćen živom provjerom 10.09.2026.): pri pokretanju
+   * `$TM_HOME/config/<ime>.json` još ne postoji, pa čitanje padne na primjer uz paket. Prvi
+   * zapis s ploče ode u `$TM_HOME/config/`, ali stara, zamrznuta putanja i dalje pokazuje
+   * na primjer — ploča javi „spremljeno", a proba i dalje vidi prazne postavke.
+   */
+  get putanja(): string { return konfigPutanja(this.datoteka, this.envVar) }
+
+  /**
+   * Kamo se PIŠE. Razlikuje se od `putanja` samo dok datoteke još nema: prvi zapis mora ići
+   * u `$TM_HOME/config/`, inače bi dvije instance s različitim `TM_HOME` pisale u istu
+   * datoteku uz paket.
+   */
+  get putanjaPisanja(): string { return konfigPutanjaZaPisanje(this.datoteka, this.envVar) }
 
   /** Uvijek svjež pročitaj s diska. Nepoznata polja iz datoteke se ČUVAJU. */
   load(path: string = this.putanja): T & Record<string, unknown> {
@@ -164,8 +183,8 @@ export class ConfigModul<T extends Record<string, any>> {
   }
 
   /** Spoji zakrpu s onim što je na disku i zapiši (atomski tmp + rename). */
-  save(zakrpa: Partial<T>, path: string = this.putanja): T & Record<string, unknown> {
-    const trenutno = this.load(path)
+  save(zakrpa: Partial<T>, path: string = this.putanjaPisanja): T & Record<string, unknown> {
+    const trenutno = this.load(existsSync(path) ? path : this.putanja)
     const novo = spoji(trenutno, zakrpa)
     osigurajMapu(path)
     const tmp = `${path}.tmp-${process.pid}`

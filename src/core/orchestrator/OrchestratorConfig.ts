@@ -14,10 +14,21 @@
  * Autorica: Jelena (Engineer), TASK-4800.
  */
 
-import { readFileSync, renameSync, writeFileSync } from 'fs'
-import { konfigPutanja, osigurajMapu } from '../paths'
+import { existsSync, readFileSync, renameSync, writeFileSync } from 'fs'
+import { konfigPutanja, konfigPutanjaZaPisanje, osigurajMapu } from '../paths'
 
-export const ORCHESTRATOR_CONFIG_PATH = konfigPutanja('orchestrator.json', 'TM_ORCHESTRATOR_CONFIG')
+export function orchestratorConfigPath(): string {
+  return konfigPutanja('orchestrator.json', 'TM_ORCHESTRATOR_CONFIG')
+}
+
+/** Zamrznuto pri pokretanju — samo za prikaz. Za CITANJE koristi `orchestratorConfigPath()`. */
+export const ORCHESTRATOR_CONFIG_PATH = orchestratorConfigPath()
+
+/** Kamo ide PRVI zapis: `$TM_HOME/config/`, a ne primjer uz paket (v. `core/paths.ts`). */
+export function orchestratorConfigWritePath(): string {
+  return konfigPutanjaZaPisanje('orchestrator.json', 'TM_ORCHESTRATOR_CONFIG')
+}
+export const ORCHESTRATOR_CONFIG_WRITE_PATH = orchestratorConfigWritePath()
 
 // ─── Oblik ───────────────────────────────────────────────────────────────────
 
@@ -162,7 +173,7 @@ function spoji<T>(zadano: T, sirovo: unknown): T {
 
 /** Uvijek svjež pročitaj s diska. Nepoznata polja se ČUVAJU. */
 export function loadOrchestratorConfig(
-  path: string = ORCHESTRATOR_CONFIG_PATH,
+  path: string = orchestratorConfigPath(),
 ): OrchestratorPostavke & Record<string, unknown> {
   try {
     const sirovo = JSON.parse(readFileSync(path, 'utf-8'))
@@ -391,9 +402,9 @@ export function validateOrchestratorPatch(tijelo: unknown): Provjera {
 /** Spoji zakrpu s onim što je na disku i zapiši (atomski tmp + rename). */
 export function saveOrchestratorConfig(
   zakrpa: Record<string, unknown>,
-  path: string = ORCHESTRATOR_CONFIG_PATH,
+  path: string = orchestratorConfigWritePath(),
 ): OrchestratorPostavke & Record<string, unknown> {
-  const trenutno = loadOrchestratorConfig(path)
+  const trenutno = loadOrchestratorConfig(existsSync(path) ? path : orchestratorConfigPath())
   const novo = spoji(trenutno, zakrpa)
   osigurajMapu(path)
   const tmp = `${path}.tmp-${process.pid}`

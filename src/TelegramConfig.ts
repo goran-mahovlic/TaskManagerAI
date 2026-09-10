@@ -17,7 +17,8 @@
  */
 
 import { readFileSync, renameSync, writeFileSync } from 'fs'
-import { konfigPutanja, osigurajMapu } from './core/paths'
+import { existsSync } from 'fs'
+import { konfigPutanja, konfigPutanjaZaPisanje, osigurajMapu } from './core/paths'
 
 /**
  * ADR-0001 O1.4: postavke se traže obrascem `TM_TELEGRAM_CONFIG` → `$TM_HOME/config/`
@@ -25,7 +26,18 @@ import { konfigPutanja, osigurajMapu } from './core/paths'
  * tuđoj instalaciji ne postoji. Nadogradnja postojeće instalacije: prekopiraj datoteku
  * na novo mjesto ili postavi `TM_TELEGRAM_CONFIG` na staru putanju.
  */
-export const TELEGRAM_CONFIG_PATH = konfigPutanja('telegram.json', 'TM_TELEGRAM_CONFIG')
+export function telegramConfigPath(): string {
+  return konfigPutanja('telegram.json', 'TM_TELEGRAM_CONFIG')
+}
+
+/** Zamrznuto pri pokretanju — samo za prikaz. Za CITANJE koristi `telegramConfigPath()`. */
+export const TELEGRAM_CONFIG_PATH = telegramConfigPath()
+
+/** Kamo ide PRVI zapis: `$TM_HOME/config/`, a ne primjer uz paket (v. `core/paths.ts`). */
+export function telegramConfigWritePath(): string {
+  return konfigPutanjaZaPisanje('telegram.json', 'TM_TELEGRAM_CONFIG')
+}
+export const TELEGRAM_CONFIG_WRITE_PATH = telegramConfigWritePath()
 
 export interface TelegramPostavke {
   /** Je li Telegram obavijesti uključen? */
@@ -105,7 +117,7 @@ export const GRANICE = {
 
 /** Uvijek svjež pročitaj s diska. Nepoznata polja se ČUVAJU. */
 export function loadTelegramConfig(
-  path: string = TELEGRAM_CONFIG_PATH,
+  path: string = telegramConfigPath(),
 ): TelegramPostavke & Record<string, unknown> {
   try {
     const sirovo = JSON.parse(readFileSync(path, 'utf-8'))
@@ -236,9 +248,9 @@ export function validateTelegramPatch(tijelo: unknown): Provjera {
 /** Spoji zakrpu s onim što je na disku i zapiši (atomski preko tmp + rename). */
 export function saveTelegramConfig(
   zakrpa: Partial<TelegramPostavke>,
-  path: string = TELEGRAM_CONFIG_PATH,
+  path: string = telegramConfigWritePath(),
 ): TelegramPostavke & Record<string, unknown> {
-  const trenutno = loadTelegramConfig(path)
+  const trenutno = loadTelegramConfig(existsSync(path) ? path : telegramConfigPath())
   // Spoj po dubini za `ulaz` — zakrpa s jednim poljem ne smije pregaziti cijelu granu.
   const novo = {
     ...trenutno, ...zakrpa,

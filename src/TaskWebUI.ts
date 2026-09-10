@@ -15,12 +15,32 @@
  * Verzija: 1.0.0
  */
 
-import { watch, existsSync, readFileSync, readdirSync, statSync, writeFileSync, mkdirSync, rmSync } from 'fs'
+import { watch, existsSync, readFileSync, readdirSync, statSync, writeFileSync, mkdirSync, rmSync, renameSync } from 'fs'
 import { join, resolve } from 'path'
 import { hostname as osHostname, networkInterfaces as osNetworkInterfaces, homedir } from 'os'
 // SQL-Only TaskManager (v2.0) - replaces MD+SQLite dual-write
 import { getTaskManagerSQL, INBOX_PROJECT_ID } from './core/TaskManagerSQL'
-import { konfigPutanja } from './core/paths'
+import { konfigPutanja, osigurajMapu, stanjePutanja } from './core/paths'
+// Integracije (TASK-4800): četiri modula po istom obrascu + orkestrator + ulazni Telegram.
+import {
+  loadNextcloudConfig, validateNextcloudPatch, saveNextcloudConfig, stanjeNextcloud,
+  probajNextcloud, NEXTCLOUD_CONFIG_PATH,
+} from './NextcloudConfig'
+import {
+  loadEmailConfig, validateEmailPatch, saveEmailConfig, stanjeEmail, probajEmail, EMAIL_CONFIG_PATH,
+} from './EmailConfig'
+import {
+  loadGitLabConfig, validateGitLabPatch, saveGitLabConfig, stanjeGitLab, probajGitLab, GITLAB_CONFIG_PATH,
+} from './GitLabConfig'
+import {
+  loadGitHubConfig, validateGitHubPatch, saveGitHubConfig, stanjeGitHub, probajGitHub, GITHUB_CONFIG_PATH,
+} from './GitHubConfig'
+import { probajUlaz, stanjeUlaza, pokreniTelegramPoller } from './TelegramPoller'
+import {
+  loadOrchestratorConfig, validateOrchestratorPatch, saveOrchestratorConfig, stanjeOrkestratora,
+  orchestratorConfigPath,
+} from './core/orchestrator/OrchestratorConfig'
+import { KonfiguracijskiRegistar } from './core/orchestrator/AgentRegistry'
 // TASK-3047: ručna kočnica — globalna pauza dijeljena s RegocDaemonom preko datoteke stanja.
 import { readPauseState, writePauseState, describePause } from './core/PauseControl'
 // TASK-3461: stanje MJERILA potrošnje (razlikuje „čekam kvotu" od „mjerilo ne radi").
@@ -2411,6 +2431,14 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         <div class="info-card info-full" id="info-ulaz-card">
           <div class="info-card-title"><span class="icon">&#9094;</span> <span data-i18n="cfg_kartica_ulaz">Ulazna vrata &mdash; kako telegramska poruka ulazi u plo&#269;u</span></div>
           <div id="info-ulaz-content"><div class="empty" data-i18n="loading">Loading...</div></div>
+        </div>
+        <div class="info-card info-full" id="info-integracije-card">
+          <div class="info-card-title"><span class="icon">&#128279;</span> <span data-i18n="cfg_kartica_integracije">Integracije &mdash; Nextcloud, e-po&#353;ta, GitLab, GitHub</span></div>
+          <div id="info-integracije-content"><div class="empty" data-i18n="loading">Loading...</div></div>
+        </div>
+        <div class="info-card info-full" id="info-orkestrator-card">
+          <div class="info-card-title"><span class="icon">&#9881;</span> <span data-i18n="cfg_kartica_orkestrator">Orkestrator &mdash; sloj koji sam pokre&#263;e agente na zadatku</span></div>
+          <div id="info-orkestrator-content"><div class="empty" data-i18n="loading">Loading...</div></div>
         </div>
         <div class="info-card info-full" id="info-modules-card">
           <div class="info-card-title"><span class="icon">&#9670;</span> Modules</div>
@@ -7062,6 +7090,8 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         loadDezurni();
         loadTelegram();
         loadUlaznaVrata();
+        loadIntegracije();
+        loadOrkestrator();
         renderInfoModules(d);
         renderInfoInfra(d);
         renderInfoDatabases(d);
@@ -7360,6 +7390,8 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       try {
         var d = await (await fetch('/api/telegram/config')).json();
         if (d.error) throw new Error(d.error);
+        // Stanje ulazne petlje je ZASEBAN izvor (data/telegram-poller.json), ne konfiguracija.
+        try { d.ulazStanje = await (await fetch('/api/telegram/ulaz/stanje')).json(); } catch (e2) { d.ulazStanje = {}; }
         _telegramZadnji = d;
         el.innerHTML = renderTelegram(d);
       } catch(e) {
@@ -7414,7 +7446,91 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         ' <span id="tel-proba-ishod" style="font-size:.7rem"></span>',
         _T('tel_provjera_opis', 'Pošalje testnu poruku na postavljeni chat ID.'));
       h += '</tbody></table>';
+      h += renderTelegramUlaz(d);
       return h;
+    }
+
+    // ── Telegram ULAZ (TASK-4800) — poruka → POST /api/ingest ──────────────────────────
+    // Ulaz se pali ODVOJENO od izlaza: bot koji sam otvara zadatke iz svake poruke koju
+    // vidi je iznenađenje, ne značajka.
+    function renderTelegramUlaz(d) {
+      var u = (d.postavke && d.postavke.ulaz) || {};
+      var s = d.ulazStanje || {};
+      var znacka = s.zaustavljen
+        ? '<span class="info-badge" style="background:#ef444422;color:#ef4444">' + _T('tel_ulaz_stao', 'zaustavljen') + '</span>'
+        : (s.radi
+          ? '<span class="info-badge enabled">' + _T('tel_ulaz_radi', 'radi') + '</span>'
+          : '<span class="info-badge disabled">' + _T('tel_ulaz_stoji', 'stoji') + '</span>');
+
+      var h = '<div style="margin-top:0.8rem;padding-top:0.5rem;border-top:1px solid var(--border)">';
+      h += '<div style="font-size:0.74rem;font-weight:600;margin-bottom:0.3rem">' +
+        _T('tel_ulaz_naslov', 'Ulaz — poruka postaje zadatak') + ' ' + znacka + '</div>';
+      h += '<div style="font-size:0.7rem;color:var(--text-secondary);margin-bottom:0.4rem">' +
+        _T('tel_ulaz_uvod',
+          'Poller čita poruke bota i šalje ih na POST /api/ingest. O tome hoće li poruka ' +
+          'postati zadatak odlučuju Ulazna vrata (pragovi i položaj po izvoru), ne poller.') + '</div>';
+      h += '<table class="info-table"><tbody>';
+      h += _red(_T('tel_ulaz_ukljucen', 'Ulaz uključen'),
+        '<input type="checkbox"' + (u.ukljucen ? ' checked' : '') +
+        ' onchange="spremiTelegram({ulaz:{ukljucen:this.checked}}, this)">',
+        _T('tel_ulaz_ukljucen_opis', 'Odvojeno od izlaznih obavijesti.'));
+      h += _red(_T('tel_ulaz_interval', 'Razmak (s)'),
+        '<input id="tel-ulaz-interval" type="number" value="' + (u.intervalSek || 3) + '" style="' + _stil() + ';width:80px">' +
+        ' <button style="font-size:.72rem;padding:3px 8px" onclick="spremiTelegram({ulaz:{intervalSek:Number(document.getElementById(\'tel-ulaz-interval\').value)}}, this)">' + _T('tel_spremi', 'Spremi') + '</button>',
+        '1–60');
+      h += _red(_T('tel_ulaz_okidac', 'Okidač'),
+        '<input id="tel-ulaz-okidac" value="' + _esc(u.okidac || '') + '" style="' + _stil() + ';width:160px" placeholder="/zadatak">' +
+        ' <button style="font-size:.72rem;padding:3px 8px" onclick="spremiTelegram({ulaz:{okidac:document.getElementById(\'tel-ulaz-okidac\').value}}, this)">' + _T('tel_spremi', 'Spremi') + '</button>',
+        _T('tel_ulaz_okidac_opis', 'Prazno = svaka poruka. Inače samo poruke koje počinju ovim nizom.'));
+      h += _red(_T('tel_ulaz_chatovi', 'Dopušteni chatovi'),
+        '<input id="tel-ulaz-chatovi" value="' + _esc((u.dopusteniChatovi || []).join(', ')) + '" style="' + _stil() + ';min-width:260px" placeholder="-1001234567890">' +
+        ' <button style="font-size:.72rem;padding:3px 8px" onclick="spremiTelegramChatovi(this)">' + _T('tel_spremi', 'Spremi') + '</button>',
+        _T('tel_ulaz_chatovi_opis', 'Prazno = sve što bot vidi. Chat ID doznaješ gumbom „Probaj ulaz".'));
+      h += _red(_T('tel_ulaz_potvrda', 'Potvrda u chat'),
+        '<input type="checkbox"' + (u.potvrdaUChat ? ' checked' : '') +
+        ' onchange="spremiTelegram({ulaz:{potvrdaUChat:this.checked}}, this)">',
+        _T('tel_ulaz_potvrda_opis', 'Vrati broj otvorenog zadatka u isti razgovor.'));
+      h += _red(_T('tel_ulaz_stanje', 'Stanje petlje'),
+        '<span style="font-family:monospace;font-size:.7rem">offset ' + (s.offset || 0) +
+        ' · ' + _T('tel_ulaz_obradeno', 'obrađeno') + ' ' + (s.obradeno || 0) +
+        ' · ' + _T('tel_ulaz_preskoceno', 'preskočeno') + ' ' + (s.preskoceno || 0) + '</span>',
+        s.zaustavljenRazlog ? '⛔ ' + _esc(s.zaustavljenRazlog)
+          : (s.zadnjaGreska ? '⚠️ ' + _esc(s.zadnjaGreska) : ''));
+      h += _red(_T('tel_ulaz_provjera', 'Provjera ulaza'),
+        '<button style="font-size:.72rem;padding:3px 8px" onclick="probajTelegramUlaz(this)">' + _T('tel_ulaz_probaj', 'Probaj ulaz') + '</button>' +
+        ' <span id="tel-ulaz-ishod" style="font-size:.7rem"></span>',
+        _T('tel_ulaz_probaj_opis', 'Pokaže koliko poruka čeka i iz kojih chatova — bez otvaranja zadatka.'));
+      h += '</tbody></table></div>';
+      return h;
+    }
+
+    function spremiTelegramChatovi(btn) {
+      var el = document.getElementById('tel-ulaz-chatovi');
+      var popis = el.value.split(',').map(function (x) { return x.trim(); }).filter(Boolean);
+      return spremiTelegram({ ulaz: { dopusteniChatovi: popis } }, btn);
+    }
+
+    async function probajTelegramUlaz(btn) {
+      btn.disabled = true;
+      var ishod = document.getElementById('tel-ulaz-ishod');
+      if (ishod) { ishod.textContent = '...'; ishod.style.color = ''; }
+      try {
+        var d = await (await fetch('/api/telegram/ulaz/proba', { method: 'POST' })).json();
+        if (ishod) {
+          if (d.ok) {
+            var opis = (d.chatovi || []).map(function (c) { return c.naziv + ' (' + c.id + ')'; }).join(', ');
+            ishod.textContent = '✅ ' + (d.cekaPoruka || 0) + ' ' + _T('tel_ulaz_ceka', 'poruka čeka') +
+              (opis ? ' — ' + opis : '');
+            ishod.style.color = '#22c55e';
+          } else {
+            ishod.textContent = '❌ ' + (d.greska || 'greška');
+            ishod.style.color = '#ef4444';
+          }
+        }
+      } catch (e) {
+        if (ishod) { ishod.textContent = '❌ ' + e.message; ishod.style.color = '#ef4444'; }
+      }
+      btn.disabled = false;
     }
 
     async function spremiTelegram(zakrpa, btn) {
@@ -7449,6 +7565,273 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         if (ishod) { ishod.textContent = '❌ ' + e.message; ishod.style.color = '#ef4444'; }
       }
       btn.disabled = false;
+    }
+
+    // ── Integracije (TASK-4800) — Nextcloud, e-pošta, GitLab, GitHub ───────────────────
+    // Jedna kartica, četiri odjeljka. Polja se crtaju IZ POSTAVKI (tip vrijednosti), pa
+    // dodavanje polja u modul ne traži izmjenu ploče — i ne može se dogoditi da ploča
+    // nudi polje koje provjera odbija, ili obrnuto.
+    var _integracijeZadnje = null;
+
+    var INT_IKONA = { nextcloud: '☁', email: '✉', gitlab: '◆', github: '●' };
+    var INT_OPIS = {
+      nextcloud: 'cfg_int_opis_nextcloud',
+      email: 'cfg_int_opis_email',
+      gitlab: 'cfg_int_opis_gitlab',
+      github: 'cfg_int_opis_github'
+    };
+
+    async function loadIntegracije() {
+      var el = document.getElementById('info-integracije-content');
+      if (!el) return;
+      try {
+        var sazetak = await (await fetch('/api/integracije')).json();
+        if (sazetak.error) throw new Error(sazetak.error);
+        var puni = [];
+        for (var i = 0; i < sazetak.integracije.length; i++) {
+          var ime = sazetak.integracije[i].ime;
+          var d = await (await fetch('/api/' + ime + '/config')).json();
+          puni.push(d);
+        }
+        _integracijeZadnje = { sazetak: sazetak.integracije, puni: puni };
+        el.innerHTML = renderIntegracije(_integracijeZadnje);
+      } catch (e) {
+        el.innerHTML = '<div class="empty">' + _esc(e.message) + '</div>';
+      }
+    }
+
+    function _intZnacka(z) {
+      if (z === 'radi') return '<span class="info-badge enabled">' + _T('int_znacka_radi', 'radi') + '</span>';
+      if (z === 'nepotpuno') return '<span class="info-badge" style="background:#f59e0b22;color:#f59e0b">' + _T('int_znacka_nepotpuno', 'nepotpuno') + '</span>';
+      return '<span class="info-badge disabled">' + _T('int_znacka_iskljuceno', 'isključeno') + '</span>';
+    }
+
+    function _intZasto(st) {
+      var k = st && st.zastoKey ? st.zastoKey : '';
+      var zadano = {
+        int_zasto_spreman: 'sve je podešeno',
+        int_zasto_iskljucen: 'isključeno',
+        int_zasto_nema_adrese: 'nedostaje adresa poslužitelja',
+        int_zasto_nema_korisnika: 'nedostaje korisničko ime',
+        int_zasto_nema_repozitorija: 'nedostaje naziv repozitorija',
+        int_zasto_nema_primatelja: 'nema nijednog primatelja',
+        int_zasto_nepotpun_ulaz: 'ulazni (IMAP) dio nije potpun',
+        int_zasto_treba_kljuc: 'tajna nije postavljena',
+        int_zasto_treba_knjiznica: 'nedostaje neobavezna knjižnica',
+        int_zasto_cli: 'koristi se tvoja vlastita prijava u CLI-ju',
+        int_zasto_greska: 'postavke se ne mogu pročitati'
+      };
+      var t = _T(k, zadano[k] || k);
+      if (st && st.zastoVars) {
+        for (var v in st.zastoVars) t = t.replace('{' + v + '}', st.zastoVars[v]);
+        if (k === 'int_zasto_treba_kljuc') t = t + ' (' + st.zastoVars.env + ')';
+        if (k === 'int_zasto_treba_knjiznica') t = t + ' (bun add ' + st.zastoVars.paket + ')';
+      }
+      return t;
+    }
+
+    /** Jedno polje → jedan redak. Tip se čita iz vrijednosti, ne iz zasebne tablice. */
+    function _intPolje(ime, kljuc, vrijednost, staza) {
+      var id = 'int-' + ime + '-' + staza.replace(/\./g, '-');
+      var naziv = _T('cfg_polje_' + kljuc, kljuc);
+      if (typeof vrijednost === 'boolean') {
+        return _red(naziv,
+          '<input type="checkbox"' + (vrijednost ? ' checked' : '') +
+          ' onchange="spremiIntegraciju(\'' + ime + '\', \'' + staza + '\', this.checked, this)">', '');
+      }
+      if (typeof vrijednost === 'number') {
+        return _red(naziv,
+          '<input id="' + id + '" type="number" value="' + vrijednost + '" style="' + _stil() + ';width:110px">' +
+          ' <button style="font-size:.72rem;padding:3px 8px" onclick="spremiIntegracijuIzPolja(\'' + ime + '\', \'' + staza + '\', \'' + id + '\', \'broj\', this)">' + _T('tel_spremi', 'Spremi') + '</button>', '');
+      }
+      if (Object.prototype.toString.call(vrijednost) === '[object Array]') {
+        return _red(naziv,
+          '<input id="' + id + '" value="' + _esc(vrijednost.join(', ')) + '" style="' + _stil() + ';min-width:260px" placeholder="' + _T('cfg_zarezom', 'odvojeno zarezom') + '">' +
+          ' <button style="font-size:.72rem;padding:3px 8px" onclick="spremiIntegracijuIzPolja(\'' + ime + '\', \'' + staza + '\', \'' + id + '\', \'popis\', this)">' + _T('tel_spremi', 'Spremi') + '</button>', '');
+      }
+      var tajna = /Env$/.test(kljuc);
+      var opis = tajna ? _T('cfg_polje_env_opis', 'IME varijable okoline s tajnom — sama tajna NIKAD ne ide ovdje.') : '';
+      return _red(naziv,
+        '<input id="' + id + '" value="' + _esc(String(vrijednost == null ? '' : vrijednost)) + '" style="' + _stil() + ';min-width:260px">' +
+        ' <button style="font-size:.72rem;padding:3px 8px" onclick="spremiIntegracijuIzPolja(\'' + ime + '\', \'' + staza + '\', \'' + id + '\', \'tekst\', this)">' + _T('tel_spremi', 'Spremi') + '</button>',
+        opis);
+    }
+
+    function renderIntegracije(d) {
+      var h = '<div style="font-size:0.72rem;color:var(--text-secondary);margin-bottom:0.6rem">' +
+        _T('cfg_int_uvod',
+          'Spajanje na TVOJE servise. Postavke nose adrese i IMENA varijabli okoline — ' +
+          'lozinke i tokeni idu u config/credentials.env (prava 0600), nikad u JSON.') + '</div>';
+
+      for (var i = 0; i < d.puni.length; i++) {
+        var p = d.puni[i];
+        var s = d.sazetak[i];
+        var ime = p.ime;
+        h += '<div style="margin:0.7rem 0;padding:0.5rem;border:1px solid var(--border);border-radius:6px">';
+        h += '<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.4rem">' +
+          '<span>' + INT_IKONA[ime] + '</span><strong>' + _esc(p.naziv) + '</strong>' +
+          _intZnacka(s.znacka) +
+          '<span style="font-size:.7rem;color:var(--text-secondary)">' + _esc(_intZasto(p.stanje)) + '</span>' +
+          '</div>';
+        h += '<div style="font-size:.7rem;color:var(--text-secondary);margin-bottom:0.3rem">' +
+          _T(INT_OPIS[ime], '') + '</div>';
+        h += '<table class="info-table"><tbody>';
+        for (var k in p.postavke) {
+          if (k.charAt(0) === '_') continue;
+          var v = p.postavke[k];
+          if (v && typeof v === 'object' && Object.prototype.toString.call(v) !== '[object Array]') {
+            for (var k2 in v) h += _intPolje(ime, k2, v[k2], k + '.' + k2);
+          } else {
+            h += _intPolje(ime, k, v, k);
+          }
+        }
+        var zadnja = p.zadnjaProba
+          ? (p.zadnjaProba.ok ? '✅ ' : '❌ ') + _esc(p.zadnjaProba.ts.slice(0, 19).replace('T', ' ')) +
+            (p.zadnjaProba.greska ? ' — ' + _esc(p.zadnjaProba.greska) : '')
+          : _T('cfg_int_nema_probe', 'nije još probano');
+        h += _red(_T('tel_provjera', 'Provjera'),
+          '<button style="font-size:.72rem;padding:3px 8px" onclick="probajIntegraciju(\'' + ime + '\', this)">' + _T('cfg_int_probaj', 'Probaj konekciju') + '</button>' +
+          ' <span id="int-' + ime + '-ishod" style="font-size:.7rem"></span>',
+          zadnja);
+        h += '</tbody></table>';
+        h += '<div style="font-size:.68rem;color:var(--text-secondary);margin-top:0.3rem">' +
+          _T('cfg_datoteka', 'datoteka') + ': <code>' + _esc(p.putanja) + '</code></div>';
+        h += '</div>';
+      }
+      return h;
+    }
+
+    function _zakrpaZaStazu(staza, vrijednost) {
+      var dijelovi = staza.split('.');
+      if (dijelovi.length === 1) { var o = {}; o[dijelovi[0]] = vrijednost; return o; }
+      var vanjski = {}; var unutarnji = {};
+      unutarnji[dijelovi[1]] = vrijednost;
+      vanjski[dijelovi[0]] = unutarnji;
+      return vanjski;
+    }
+
+    async function spremiIntegraciju(ime, staza, vrijednost, btn) {
+      if (btn) btn.disabled = true;
+      try {
+        var res = await fetch('/api/' + ime + '/config', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(_zakrpaZaStazu(staza, vrijednost))
+        });
+        var d = await res.json();
+        if (d.error) throw new Error(d.error);
+        await loadIntegracije();
+      } catch (e) {
+        alert(ime + ': ' + e.message);
+        if (btn) btn.disabled = false;
+      }
+    }
+
+    function spremiIntegracijuIzPolja(ime, staza, id, tip, btn) {
+      var el = document.getElementById(id);
+      if (!el) return;
+      var v = el.value;
+      if (tip === 'broj') v = Number(v);
+      if (tip === 'popis') v = v.split(',').map(function (x) { return x.trim(); }).filter(Boolean);
+      return spremiIntegraciju(ime, staza, v, btn);
+    }
+
+    async function probajIntegraciju(ime, btn) {
+      btn.disabled = true;
+      var ishod = document.getElementById('int-' + ime + '-ishod');
+      if (ishod) { ishod.textContent = '...'; ishod.style.color = ''; }
+      try {
+        var d = await (await fetch('/api/' + ime + '/proba', { method: 'POST' })).json();
+        if (ishod) {
+          ishod.textContent = d.ok ? '✅ ' + _T('cfg_int_radi', 'veza radi') : '❌ ' + (d.greska || 'greška');
+          ishod.style.color = d.ok ? '#22c55e' : '#ef4444';
+        }
+      } catch (e) {
+        if (ishod) { ishod.textContent = '❌ ' + e.message; ishod.style.color = '#ef4444'; }
+      }
+      btn.disabled = false;
+    }
+
+    // ── Orkestrator (TASK-4800 / ADR-0001) — sloj 1 ─────────────────────────────────────
+    async function loadOrkestrator() {
+      var el = document.getElementById('info-orkestrator-content');
+      if (!el) return;
+      try {
+        var d = await (await fetch('/api/orchestrator/config')).json();
+        if (d.error) throw new Error(d.error);
+        el.innerHTML = renderOrkestrator(d);
+      } catch (e) {
+        el.innerHTML = '<div class="empty">' + _esc(e.message) + '</div>';
+      }
+    }
+
+    function renderOrkestrator(d) {
+      var p = d.postavke || {};
+      var st = d.stanje || {};
+      var znacka = st.ukljucen
+        ? '<span class="info-badge enabled">' + _T('orc_aktivno', 'uključen') + '</span>'
+        : '<span class="info-badge disabled">' + _T('orc_iskljuceno', 'isključen') + '</span>';
+
+      var h = '<div style="font-size:0.72rem;color:var(--text-secondary);margin-bottom:0.5rem">' +
+        _T('orc_uvod',
+          'Sloj koji sam uzima zadatke s ploče i pokreće agenta na njima. Svježa instalacija ' +
+          'ga NE pali sama. Pokretanje: bun scripts/orchestrator.ts (v. docs/INSTALL.md).') +
+        ' ' + znacka + '</div>';
+
+      h += '<table class="info-table"><tbody>';
+      h += _red(_T('orc_ukljucen', 'Orkestrator uključen'),
+        '<input type="checkbox"' + (p.enabled ? ' checked' : '') +
+        ' onchange="spremiOrkestrator({enabled:this.checked}, this)">',
+        _T('orc_ukljucen_opis', 'Isključeno: nijedan agent se ne pokreće sam.'));
+      h += _red(_T('orc_strop', 'Najviše usporednih agenata'),
+        '<input id="orc-strop" type="number" value="' + (p.spawn ? p.spawn.maxConcurrent : 3) + '" style="' + _stil() + ';width:90px">' +
+        ' <button style="font-size:.72rem;padding:3px 8px" onclick="spremiOrkestrator({spawn:{maxConcurrent:Number(document.getElementById(\'orc-strop\').value)}}, this)">' + _T('tel_spremi', 'Spremi') + '</button>',
+        _T('orc_strop_opis', 'Koliko poslova smije teći istodobno.'));
+      h += _red(_T('orc_ploca', 'Adresa ploče'),
+        '<input id="orc-api" value="' + _esc(p.api ? p.api.baseUrl : '') + '" style="' + _stil() + ';min-width:240px">' +
+        ' <button style="font-size:.72rem;padding:3px 8px" onclick="spremiOrkestrator({api:{baseUrl:document.getElementById(\'orc-api\').value}}, this)">' + _T('tel_spremi', 'Spremi') + '</button>',
+        _T('orc_ploca_opis', 'Adresa preko koje orkestrator i agenti pišu na ploču.'));
+      h += _red(_T('orc_cinjenice', 'Činjenice o infrastrukturi'),
+        '<input id="orc-facts" value="' + _esc((p.prompt && p.prompt.systemFacts ? p.prompt.systemFacts : []).join(' | ')) + '" style="' + _stil() + ';min-width:320px" placeholder="' + _T('orc_cinjenice_ph', 'npr. Ollama: http://…:11434 | RAG: http://…:8000') + '">' +
+        ' <button style="font-size:.72rem;padding:3px 8px" onclick="spremiOrkestratorCinjenice(this)">' + _T('tel_spremi', 'Spremi') + '</button>',
+        _T('orc_cinjenice_opis', 'Rečenice koje ulaze u prompt agenta. Odvoji ih znakom |. Paket svoje nema.'));
+      h += _red(_T('orc_agenti', 'Agenata u registru'),
+        '<strong>' + (d.agenata || 0) + '</strong>',
+        _T('orc_agenti_opis', 'config/agents.json — bez ijednog agenta orkestrator ne pokreće ništa.'));
+      h += _red(_T('orc_izvodaci', 'Izvođača podešeno'),
+        '<strong>' + (st.brojIzvodaca || 0) + '</strong>',
+        _T('orc_izvodaci_opis', 'CLI ili HTTP; podešavaju se u orchestrator.json → executors.'));
+      var w = p.watchdog || {};
+      h += _red(_T('orc_cistaci', 'Čistači (zombi / stale)'),
+        '<span style="font-family:monospace">' + _esc((w.zombie ? w.zombie.mode : '?') + ' / ' + (w.stale ? w.stale.mode : '?')) + '</span>',
+        _T('orc_cistaci_opis', 'off → shadow → live. U sjeni se sud zapisuje, ali se ništa ne dira.'));
+      h += '</tbody></table>';
+      h += '<div style="font-size:.68rem;color:var(--text-secondary);margin-top:0.3rem">' +
+        _T('cfg_datoteka', 'datoteka') + ': <code>' + _esc(d.putanja || '') + '</code></div>';
+      return h;
+    }
+
+    async function spremiOrkestrator(zakrpa, btn) {
+      if (btn) btn.disabled = true;
+      try {
+        var res = await fetch('/api/orchestrator/config', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(zakrpa)
+        });
+        var d = await res.json();
+        if (d.error) throw new Error(d.error);
+        await loadOrkestrator();
+      } catch (e) {
+        alert('Orkestrator: ' + e.message);
+        if (btn) btn.disabled = false;
+      }
+    }
+
+    function spremiOrkestratorCinjenice(btn) {
+      var el = document.getElementById('orc-facts');
+      var popis = el.value.split('|').map(function (x) { return x.trim(); }).filter(Boolean);
+      return spremiOrkestrator({ prompt: { systemFacts: popis } }, btn);
     }
 
     // ── Ulazna vrata (U1/TASK-4261) — prekidač po grupi s TRI položaja ──────────────────
@@ -8479,6 +8862,197 @@ async function handleTelegramProba(): Promise<Response> {
     return json(r)
   } catch (e: any) {
     return json({ ok: false, greska: String(e && e.message ? e.message : e) }, 200)
+  }
+}
+
+// ── Ulazni kanal Telegrama (poller) — TASK-4800 ───────────────────────────────
+// Stanje petlje NE živi u konfiguraciji: konfiguracija je ono što je korisnik izabrao,
+// stanje je ono što je stroj zatekao. Da su zajedno, svaki PUT s ploče pregazio bi
+// `offset` i vratio već obrađene poruke natrag u obradu.
+
+function handleTelegramUlazStanje(): Response {
+  const json = (o: unknown, s = 200) =>
+    new Response(JSON.stringify(o), { status: s, headers: { 'Content-Type': 'application/json' } })
+  try {
+    return json(stanjeUlaza())
+  } catch (err) {
+    return json({ error: String(err) }, 500)
+  }
+}
+
+/** Jedan `getUpdates` s `timeout=0`: koliko poruka čeka i iz kojih chatova — bez otvaranja
+ *  ijednog zadatka. Bez toga korisnik ne može doznati `chat.id` svoje grupe. */
+async function handleTelegramUlazProba(): Promise<Response> {
+  const json = (o: unknown, s = 200) =>
+    new Response(JSON.stringify(o), { status: s, headers: { 'Content-Type': 'application/json' } })
+  try {
+    return json(await probajUlaz())
+  } catch (e: any) {
+    return json({ ok: false, greska: String(e && e.message ? e.message : e) }, 200)
+  }
+}
+
+// ── Integracije: Nextcloud, e-pošta, GitLab, GitHub (TASK-4800) ───────────────
+// Četiri modula, JEDAN skup ruta. Tablica umjesto četiri gotovo jednaka para funkcija —
+// inače bi pravilo „tajna se nikad ne vraća" postojalo u četiri preslike, od kojih bi se
+// jedna prije ili poslije razišla s ostalima.
+
+interface IntegracijaZapis {
+  naziv: string
+  load: () => any
+  validate: (t: unknown) => { ok: boolean; greske: string[]; zakrpa: any }
+  save: (z: any) => any
+  stanje: (cfg?: any) => any
+  proba: () => Promise<{ ok: boolean; greska?: string; detalj?: unknown }>
+  /** Putanja se razrjesava pri svakom pozivu (v. ConfigModul.putanja). */
+  putanja: () => string
+}
+
+const INTEGRACIJE: Record<string, IntegracijaZapis> = {
+  nextcloud: {
+    naziv: 'Nextcloud', load: loadNextcloudConfig, validate: validateNextcloudPatch,
+    save: saveNextcloudConfig, stanje: stanjeNextcloud, proba: probajNextcloud,
+    putanja: NEXTCLOUD_CONFIG_PATH,
+  },
+  email: {
+    naziv: 'E-pošta', load: loadEmailConfig, validate: validateEmailPatch,
+    save: saveEmailConfig, stanje: stanjeEmail, proba: probajEmail,
+    putanja: EMAIL_CONFIG_PATH,
+  },
+  gitlab: {
+    naziv: 'GitLab', load: loadGitLabConfig, validate: validateGitLabPatch,
+    save: saveGitLabConfig, stanje: stanjeGitLab, proba: probajGitLab,
+    putanja: GITLAB_CONFIG_PATH,
+  },
+  github: {
+    naziv: 'GitHub', load: loadGitHubConfig, validate: validateGitHubPatch,
+    save: saveGitHubConfig, stanje: stanjeGitHub, proba: probajGitHub,
+    putanja: GITHUB_CONFIG_PATH,
+  },
+}
+
+/** Zadnji ishod probe po integraciji. Bez toga značka nakon osvježavanja stranice laže:
+ *  „podešeno" nije isto što i „provjereno". */
+const INTEGRACIJE_STANJE_PATH = stanjePutanja('integracije.json')
+
+function citajIshodeProba(): Record<string, { ts: string; ok: boolean; greska?: string }> {
+  try {
+    return JSON.parse(readFileSync(INTEGRACIJE_STANJE_PATH, 'utf-8')) || {}
+  } catch {
+    return {}
+  }
+}
+
+function zapisiIshodProbe(ime: string, ok: boolean, greska?: string): void {
+  try {
+    const svi = citajIshodeProba()
+    svi[ime] = { ts: new Date().toISOString(), ok, greska }
+    osigurajMapu(INTEGRACIJE_STANJE_PATH)
+    const tmp = `${INTEGRACIJE_STANJE_PATH}.tmp-${process.pid}`
+    writeFileSync(tmp, JSON.stringify(svi, null, 2) + '\n', 'utf-8')
+    renameSync(tmp, INTEGRACIJE_STANJE_PATH)
+  } catch { /* ishod probe nije vrijedan rušenja odgovora */ }
+}
+
+function handleIntegracijaGet(ime: string): Response {
+  const json = (o: unknown, s = 200) =>
+    new Response(JSON.stringify(o), { status: s, headers: { 'Content-Type': 'application/json' } })
+  const zapis = INTEGRACIJE[ime]
+  if (!zapis) return json({ error: `nepoznata integracija: ${ime}` }, 404)
+  try {
+    const postavke = zapis.load()
+    return json({
+      ime, naziv: zapis.naziv, postavke, stanje: zapis.stanje(postavke),
+      putanja: zapis.putanja(), zadnjaProba: citajIshodeProba()[ime] || null,
+    })
+  } catch (err) {
+    return json({ error: String(err) }, 500)
+  }
+}
+
+async function handleIntegracijaPut(ime: string, req: Request): Promise<Response> {
+  const json = (o: unknown, s = 200) =>
+    new Response(JSON.stringify(o), { status: s, headers: { 'Content-Type': 'application/json' } })
+  const zapis = INTEGRACIJE[ime]
+  if (!zapis) return json({ error: `nepoznata integracija: ${ime}` }, 404)
+  let tijelo: unknown
+  try { tijelo = await req.json() } catch { return json({ error: 'Neispravan JSON' }, 400) }
+  const provjera = zapis.validate(tijelo)
+  if (!provjera.ok) return json({ error: provjera.greske.join('; '), greske: provjera.greske }, 400)
+  try {
+    const postavke = zapis.save(provjera.zakrpa)
+    // U dnevnik idu IMENA polja, ne vrijednosti — zakrpa može nositi korisničko ime.
+    console.log(`[${ime.toUpperCase()}] postavke promijenjene s ploče: ${Object.keys(provjera.zakrpa).join(', ')}`)
+    return json({ ok: true, postavke, stanje: zapis.stanje(postavke) })
+  } catch (err) {
+    return json({ error: String(err) }, 500)
+  }
+}
+
+async function handleIntegracijaProba(ime: string): Promise<Response> {
+  const json = (o: unknown, s = 200) =>
+    new Response(JSON.stringify(o), { status: s, headers: { 'Content-Type': 'application/json' } })
+  const zapis = INTEGRACIJE[ime]
+  if (!zapis) return json({ error: `nepoznata integracija: ${ime}` }, 404)
+  try {
+    // Ishod probe je PODATAK, ne kvar poslužitelja → uvijek HTTP 200.
+    const r = await zapis.proba()
+    zapisiIshodProbe(ime, r.ok, r.greska)
+    console.log(`[${ime.toUpperCase()}] proba: ${r.ok ? 'RADI' : 'NE RADI'} — ${r.greska || ''}`)
+    return json(r)
+  } catch (e: any) {
+    const greska = String(e && e.message ? e.message : e)
+    zapisiIshodProbe(ime, false, greska)
+    return json({ ok: false, greska }, 200)
+  }
+}
+
+/** Sažetak za skupinu „Integracije" na Config stranici (ikona · naziv · značka). */
+function handleIntegracijeSazetak(): Response {
+  const json = (o: unknown, s = 200) =>
+    new Response(JSON.stringify(o), { status: s, headers: { 'Content-Type': 'application/json' } })
+  const probe = citajIshodeProba()
+  const popis = Object.entries(INTEGRACIJE).map(([ime, z]) => {
+    let stanje: any = {}
+    try { stanje = z.stanje(z.load()) } catch { stanje = { spreman: false, zastoKey: 'int_zasto_greska' } }
+    const zadnja = probe[ime] || null
+    const znacka = !stanje.ukljucen ? 'iskljuceno' : (stanje.spreman && zadnja?.ok ? 'radi' : 'nepotpuno')
+    return { ime, naziv: z.naziv, stanje, zadnjaProba: zadnja, znacka }
+  })
+  return json({ integracije: popis })
+}
+
+// ── Orkestrator (sloj 1) — TASK-4800 / ADR-0001 ───────────────────────────────
+
+function handleOrchestratorGet(): Response {
+  const json = (o: unknown, s = 200) =>
+    new Response(JSON.stringify(o), { status: s, headers: { 'Content-Type': 'application/json' } })
+  try {
+    const postavke = loadOrchestratorConfig()
+    return json({
+      postavke,
+      stanje: stanjeOrkestratora(postavke),
+      putanja: orchestratorConfigPath(),
+      agenata: KonfiguracijskiRegistar.izDatoteke(postavke.agents.registryPath || undefined).list().length,
+    })
+  } catch (err) {
+    return json({ error: String(err) }, 500)
+  }
+}
+
+async function handleOrchestratorPut(req: Request): Promise<Response> {
+  const json = (o: unknown, s = 200) =>
+    new Response(JSON.stringify(o), { status: s, headers: { 'Content-Type': 'application/json' } })
+  let tijelo: unknown
+  try { tijelo = await req.json() } catch { return json({ error: 'Neispravan JSON' }, 400) }
+  const provjera = validateOrchestratorPatch(tijelo)
+  if (!provjera.ok) return json({ error: provjera.greske.join('; '), greske: provjera.greske }, 400)
+  try {
+    const postavke = saveOrchestratorConfig(provjera.zakrpa)
+    console.log(`[ORCHESTRATOR] postavke promijenjene s ploče: ${Object.keys(provjera.zakrpa).join(', ')}`)
+    return json({ ok: true, postavke, stanje: stanjeOrkestratora(postavke) })
+  } catch (err) {
+    return json({ error: String(err) }, 500)
   }
 }
 
@@ -13313,6 +13887,40 @@ const server = Bun.serve({
       return handleTelegramProba()
     }
 
+    // GET /api/telegram/ulaz/stanje — stanje ulazne petlje (offset, brojači, greška)
+    if (url.pathname === '/api/telegram/ulaz/stanje' && req.method === 'GET') {
+      return handleTelegramUlazStanje()
+    }
+
+    // POST /api/telegram/ulaz/proba — koliko poruka čeka i iz kojih chatova (bez zadataka)
+    if (url.pathname === '/api/telegram/ulaz/proba' && req.method === 'POST') {
+      return handleTelegramUlazProba()
+    }
+
+    // GET /api/integracije — sažetak četiriju integracija za skupinu na Config stranici
+    if (url.pathname === '/api/integracije' && req.method === 'GET') {
+      return handleIntegracijeSazetak()
+    }
+
+    // GET|PUT /api/<nextcloud|email|gitlab|github>/config, POST /api/<ime>/proba
+    {
+      const m = url.pathname.match(/^\/api\/(nextcloud|email|gitlab|github)\/(config|proba)$/)
+      if (m) {
+        const [, ime, sto] = m as unknown as [string, string, string]
+        if (sto === 'config' && req.method === 'GET') return handleIntegracijaGet(ime)
+        if (sto === 'config' && req.method === 'PUT') return handleIntegracijaPut(ime, req)
+        if (sto === 'proba' && req.method === 'POST') return handleIntegracijaProba(ime)
+      }
+    }
+
+    // GET|PUT /api/orchestrator/config — postavke jezgre orkestratora (ADR-0001)
+    if (url.pathname === '/api/orchestrator/config' && req.method === 'GET') {
+      return handleOrchestratorGet()
+    }
+    if (url.pathname === '/api/orchestrator/config' && req.method === 'PUT') {
+      return handleOrchestratorPut(req)
+    }
+
     // GET /api/ingest-gate — ulazna vrata za Telegram: prekidač po grupi + pragovi (U1)
     if (url.pathname === '/api/ingest-gate' && req.method === 'GET') {
       return handleIngestGateGet()
@@ -13489,3 +14097,18 @@ console.log(`
 ║  Watching:  ${watcherReady ? 'Active' : 'Inactive'}
 ╚═══════════════════════════════════════════════════════════════════════════╝
 `)
+
+// ── Telegram ULAZ, način A: poller u procesu ploče (DIZAJN-telegram-poller §2) ────────
+// Pokreće se SAMO ako je `ulaz.ukljucen` i ako postoji bot token; inače tiho ne radi ništa
+// (svježa instalacija je normalno stanje, ne kvar). Datoteka-brava sprječava da se uz ovaj
+// poller pokrene i onaj iz `scripts/telegram-poller.ts` — dva pollera s istim tokenom si
+// međusobno kradu poruke i gubitak je nevidljiv.
+{
+  const p = pokreniTelegramPoller({
+    plocaBase: `http://localhost:${PORT}`,
+    log: (r: string) => console.log(r),
+  })
+  if (!p.pokrenut && p.razlog && !/isključen|nije postavljen/.test(p.razlog)) {
+    console.log(`[telegram-poller] ${p.razlog}`)
+  }
+}
