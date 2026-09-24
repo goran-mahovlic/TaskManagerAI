@@ -10,22 +10,18 @@
  * The daemon owns the single dispatch point, so an in-memory hash window is sufficient.
  */
 
+import { MARKER_VOCAB, freeMarkerRe } from './AgentOutputParser'
+
 /** REGOČ CORE response-format section markers (from skills/CORE/SKILL.md).
  * Covers both the full English format (SUMMARY/ANALYSIS/...) and the shorter
- * Croatian REZULTAT/STATUS/SLJEDEĆI KORACI variant used in agent task replies. */
-const REPORT_MARKERS: RegExp[] = [
-  /📋[\s*_]*SUMMARY/u,
-  /🔍[\s*_]*ANALYSIS/u,
-  /⚡[\s*_]*ACTIONS/u,
-  /✅[\s*_]*RESULTS/u,
-  /📊[\s*_]*STATUS/u,
-  /📁[\s*_]*CAPTURE/u,
-  /➡️?[\s*_]*NEXT/u,
-  /📖[\s*_]*STORY\s*EXPLANATION/u,
-  /⭐[\s*_]*RATE/u,
-  /📋[\s*_]*REZULTAT/u,
-  /➡️?[\s*_]*SLJEDE[ĆC]I\s*KORAC/u,
-]
+ * Croatian REZULTAT/STATUS/SLJEDEĆI KORACI variant used in agent task replies.
+ *
+ * TASK-4815: popis markera više ne živi ovdje nego u `AgentOutputParser.MARKER_VOCAB`.
+ * Dijeli se RJEČNIK, a ne gotov uzorak (§F revizije TASK-4814): ovdašnji uzorci su
+ * NAMJERNO NESIDRENI — posao im je naći format bilo gdje u tekstu (reciklirani
+ * izvještaj), dok parser traži zaglavlje na početku retka (pravilo P1). Isti izraz
+ * ne može služiti obojici; isti popis riječi može, i mora. */
+const REPORT_MARKERS: RegExp[] = MARKER_VOCAB.map(freeMarkerRe)
 
 /**
  * TASK-3589: markeri MINIMALNOG CORE formata.
@@ -233,14 +229,129 @@ export function isAgentLifecycleNotice(content: string): boolean {
 }
 
 /**
+ * TASK-4753: SCHEDULER-DOJAVA O DOVRŠENOM ZADATKU I PRAZNOM REDU.
+ *
+ * Živi kvar 07.09.2026. 19:18: RegocScheduler je u 1,3 s stvorio TASK-4742…TASK-4751
+ * iz replaya starih dojava iz veljače 2026. Sadržaj svakoga je doslovno
+ *
+ *     Task TASK-F8-00N COMPLETED: <naslov>
+ *     No more unblocked tasks in queue.
+ *
+ * — dakle obavijest da je posao GOTOV i da reda više nema, ne specifikacija novog
+ * posla. Mjereno na tom sadržaju: `isRecycledAgentReport` (nema emoji-markera),
+ * `isCompletionReport` (sidra traže "Done."/REGOC-STATUS/"Summary of TASK-…"),
+ * `isAgentLifecycleNotice` (sidra na ✅/🛑/⏳) i time `isNonActionableMessage` —
+ * sva četiri false → `evaluateDispatch` pušta → auto-exec spawna prave Opus sesije
+ * (manda ×7, jelena, grga) nad nepostojećim poslom. Isti obrazac je u veljači već
+ * proizveo TASK-359/360/361 (svi cancelled) — 3. pojava klase (usp. TASK-2971, 3608).
+ *
+ * DISKRIMINATOR JE STRUKTURA, NE FRAZA. Puko traženje fraze bi oborilo i opis OVOG
+ * zadatka, koji obje rečenice doslovno citira kao dokaz (isti oprez kao
+ * SPEC_QUOTING_STATUS kod LIFECYCLE_PATTERNS). Zato: skini daemonov omot
+ * ("## Originalni zahtjev od: …", "**Zašto:** …", vodoravne crte) pa zahtijevaj da
+ * SVAKI preostali redak tijela bude redak dojave. Specifikacija koja dojavu citira
+ * uvijek nosi i drugi sadržaj → prolazi.
+ */
+const SCHEDULER_COMPLETED_LINE = /^\**\s*Task\s+TASK-[A-Za-z0-9._-]+\s+COMPLETED\b/iu
+const SCHEDULER_QUEUE_EMPTY_LINE =
+  /^\**\s*(?:No more unblocked tasks in queue|Queue\s+(?:is\s+)?empty|Nema\s+(?:vi[šs]e\s+)?odblokiranih\s+zadataka)\b/iu
+
+/** Tijelo poruke bez daemonovog omota: samo redci koji nose sadržaj. */
+function schedulerNoticeBodyLines(content: string): string[] {
+  return content
+    .replace(/^[ \t]*##\s*Originalni zahtjev od:.*$/gimu, '')
+    .replace(/\*\*Za[šs]to:?\*\*[\s\S]*$/iu, '')
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0 && !/^[-–—*_=]{3,}$/u.test(l))
+}
+
+/**
+ * True kad je `content` U CIJELOSTI scheduler-dojava o dovršenom zadatku i/ili
+ * praznom redu čekanja. Jedan jedini redak s drugim sadržajem poništava sud —
+ * tako spec koji dojavu citira ili opisuje ostaje izvršiv.
+ */
+export function isSchedulerQueueNotice(content: string): boolean {
+  if (!content) return false
+  const lines = schedulerNoticeBodyLines(content)
+  if (lines.length === 0) return false
+  for (const line of lines) {
+    if (!SCHEDULER_COMPLETED_LINE.test(line) && !SCHEDULER_QUEUE_EMPTY_LINE.test(line)) return false
+  }
+  return true
+}
+
+/**
+ * metadata.type vrijednosti koje emitira ISKLJUČIVO TaskSchedulerIntegration
+ * (`notifyTaskCompletion` → task_completion/task_notification, `notifyTaskAutoStart`
+ * → task_assignment). Provjereno grepom nad cijelom živom instalacijom: nijedan drugi
+ * pošiljatelj ne piše ključ `type` s tim vrijednostima (RegocClient koristi
+ * `reportType`, drugi ključ).
+ */
+export const SCHEDULER_METADATA_TYPES = new Set([
+  'task_completion',
+  'task_notification',
+  'task_assignment',
+])
+
+/** Minimalni oblik poruke iz messages.db koji sud treba — i RegocDaemon i AgentDaemon ga imaju. */
+export interface InboundMessageShape {
+  from_agent?: string | null
+  metadata?: string | Record<string, unknown> | null
+  content?: string | null
+}
+
+/** metadata je u bazi TEXT (JSON) — ali testovi i pozivatelji smiju dati i objekt. */
+function parseMetadata(meta: InboundMessageShape['metadata']): Record<string, unknown> | null {
+  if (!meta) return null
+  if (typeof meta === 'object') return meta as Record<string, unknown>
+  try {
+    const parsed = JSON.parse(meta)
+    return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * STRUKTURNI sud (TASK-4752): je li poruka strojna dojava schedulera?
+ *
+ * ZAŠTO NE PO TEKSTU: `isSchedulerQueueNotice` (TASK-4753) sudi po frazama i nad
+ * živim korpusom (messages.db, 303 poruke from_agent='scheduler') hvata 162, a
+ * promašuje 141 — svaki `AUTO-START: TASK-… \nAssignee: …\nPriority: …` (33 puta
+ * poslan u regoc red S METADATA=NULL) i svaku dojavu koja uz dovršenje nosi i redak
+ * `Next unblocked: …`. Tekst dojave je varijabilan; PODRIJETLO nije.
+ *
+ * Dva neovisna sidra, oba strukturna:
+ *   1. from_agent === 'scheduler' — 'scheduler' nije agent nego proces; u REGOČ-u
+ *      jedini pošiljatelj pod tim imenom je TaskSchedulerIntegration. Podudaranje je
+ *      CIJELO ime (ne prefiks), da 'scheduler-ui' ne bi dobio isti tretman.
+ *   2. metadata.type ∈ SCHEDULER_METADATA_TYPES — hvata dojavu i ako je proslijeđena
+ *      pod drugim imenom pošiljatelja.
+ *
+ * Namjerno NE gleda `content`: spec koja CITIRA dojavu (npr. opis ovog zadatka)
+ * mora proći.
+ */
+export function isSchedulerNotification(msg: InboundMessageShape | null | undefined): boolean {
+  if (!msg) return false
+  if (typeof msg.from_agent === 'string' && msg.from_agent.trim().toLowerCase() === 'scheduler') {
+    return true
+  }
+  const type = parseMetadata(msg.metadata)?.type
+  return typeof type === 'string' && SCHEDULER_METADATA_TYPES.has(type)
+}
+
+/**
  * Either a recycled CORE-format report (≥3 emoji markers), a plain-text
- * completion report (≥2 anchored markers, TASK-3605) or a lifecycle/system notice.
+ * completion report (≥2 anchored markers, TASK-3605), a lifecycle/system notice,
+ * or a scheduler queue notice (TASK-4753).
  */
 export function isNonActionableMessage(content: string): boolean {
   return (
     isRecycledAgentReport(content) ||
     isCompletionReport(content) ||
-    isAgentLifecycleNotice(content)
+    isAgentLifecycleNotice(content) ||
+    isSchedulerQueueNotice(content)
   )
 }
 
@@ -278,7 +389,7 @@ export interface GuardVerdict {
   block: boolean
   reason: string
   /** Machine code for logging/telemetry. */
-  code: 'ok' | 'recycled_report' | 'duplicate_dispatch'
+  code: 'ok' | 'recycled_report' | 'scheduler_notice' | 'duplicate_dispatch'
   /** For duplicates: the prior dispatch that matched. */
   prior?: DispatchRecord
 }
@@ -312,6 +423,15 @@ export function evaluateDispatch(
       code: 'recycled_report',
       reason:
         'Sadržaj zadatka je agentov završni izvještaj (≥2 sidrena markera: "Done."/REGOC-STATUS/"**Completed:**"/"Summary of TASK-…"), ne specifikacija novog posla.',
+    }
+  }
+
+  if (isSchedulerQueueNotice(content)) {
+    return {
+      block: true,
+      code: 'scheduler_notice',
+      reason:
+        'Sadržaj je scheduler-dojava o dovršenom zadatku / praznom redu ("Task TASK-… COMPLETED", "No more unblocked tasks in queue"), ne specifikacija novog posla — TASK-4742…4751.',
     }
   }
 
