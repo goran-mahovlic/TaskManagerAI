@@ -790,5 +790,18 @@
   "uputa_gumb_naslov": "Dodaj uputu agentu (stiže u tekuću sesiju, bez pauze)",
   "uputa_ceka_naslov": "Upute koje agent još nije primio",
   "uputa_sve_naslov": "Sve upute dostavljene agentu",
-  "uputa_prompt": "Uputa za agenta na {id} (stiže u tekuću sesiju uz sljedeći alat):"
+  "uputa_prompt": "Uputa za agenta na {id} (stiže u tekuću sesiju uz sljedeći alat):",
+  "rez_neslaganje": "tekst tvrdi da je gotovo, ploča kaže drugačije",
+  "rez_razina_naslov": "Razina prepoznatog formata (L0 pun do L3 sirovo)",
+  "rez_sekcija_actions": "Radnje",
+  "rez_sekcija_analysis": "Analiza",
+  "rez_sekcija_capture": "Zabilježeno",
+  "rez_sekcija_dokazi": "Dokazi (REGOC-IZLAZ)",
+  "rez_sekcija_next": "Sljedeći koraci",
+  "rez_sekcija_results": "Rezultati",
+  "rez_sekcija_story": "Objašnjenje",
+  "rez_sekcija_verifikacija": "Verifikacija",
+  "rez_sud_suzen": "tekst je sud SUZIO",
+  "rez_izvor_suda": "Izvor suda: {izvor}",
+  "rez_prikazi_sirovo": "Prikaži sirovo ({n} zn)"
 }

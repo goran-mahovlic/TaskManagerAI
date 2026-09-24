@@ -25,6 +25,8 @@ import { konfigPutanja, osigurajMapu, stanjePutanja } from './core/paths'
 // TERMINALNO stanje ne dolazi od sustava (orkestrator najam pušta prije svog zapisa) nego od
 // agenta koji sam sebe zatvara prije suda kritičara. Zadano isključeno (features.json).
 import { odlukaGuarda } from './core/SpawnFinalizer'
+// TASK-4815: jedan parser agentova izlaza za ploču i kanale (GAP F5).
+import { parseAgentOutput, renderFull } from './core/AgentOutputParser'
 import { najamAktivan } from './core/TaskCloser'
 import { isEnabled as jeUkljuceno } from './core/FeatureFlags'
 // Integracije (TASK-4800): četiri modula po istom obrascu + orkestrator + ulazni Telegram.
@@ -2666,7 +2668,9 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
 
         <div class="detail-field" id="detail-result-field" style="display:none;">
           <label data-i18n="rezultat_odgovor_agenta">Rezultat / Odgovor agenta</label>
-          <div id="detail-result-summary" class="progress-notes" style="white-space:pre-wrap;word-break:break-word;"></div>
+          <!-- TASK-4815: pre-wrap je preseljen na POJEDINE blokove (renderResultSummary),
+               jer spremnik sada nosi i bedž i sklopive sekcije, ne samo goli tekst. -->
+          <div id="detail-result-summary" class="progress-notes" style="word-break:break-word;"></div>
         </div>
 
         <!-- TASK-3568 (T4): potrošnja zadatka iz naših transkripata (agent_telemetry.py).
@@ -4229,22 +4233,9 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       // TASK-5013: upute agentu (dostavljeno / čeka)
       ucitajUpute(task.id);
 
-      // Render result summary (agentov odgovor apendan prije zatvaranja) — linkovi klikabilni (dokumenti)
-      var rsField = document.getElementById('detail-result-field');
-      var rsBox = document.getElementById('detail-result-summary');
-      var rs = task.resultSummary || '';
-      if (rs && rsBox && rsField) {
-        var esc = rs.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-        var out = esc.split(' ').map(function(tok){
-          if (tok.indexOf('http')===0) return '<a href="'+tok+'" target="_blank" rel="noopener">'+tok+'</a>';
-          if (tok.charAt(0)==='/' || tok.substring(0,2)==='~/') return '<a href="/api/files/download?path='+encodeURIComponent(tok)+'" target="_blank" rel="noopener">'+tok+'</a>';
-          return tok;
-        }).join(' ');
-        rsBox.innerHTML = out;
-        rsField.style.display = '';
-      } else if (rsField) {
-        rsField.style.display = 'none';
-      }
+      // TASK-4815: rezultat agenta — bedž (sud ploče) + sklopive sekcije + „prikaži sirovo".
+      // Klijent NE parsira: sud stiže gotov s posluzitelja (task.resultParsed).
+      renderResultSummary(task);
 
       // Render timestamps
       renderTimestamps(task);
@@ -4253,6 +4244,184 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       // pa otvaranje kartice nikad ne čeka izračun telemetrije.
       ucitajTelemetriju(task.id);
     }
+
+    /* ─── TASK-4815: prikaz agentova rezultata ──────────────────────────────
+     * SIGURNOSNI UGOVOR (§G revizije TASK-4814) — ovo NIJE stil, nego uvjet:
+     *   1. sav agentov tekst ide kroz textContent, nikad kroz innerHTML;
+     *   2. href se NIKAD ne sastavlja lijepljenjem — postavlja se kao svojstvo,
+     *      uz provjeru sheme (http/https ili vlastiti /api/files/download);
+     *   3. strukturu crta kod, sadržaj je uvijek podatak.
+     * Prije ovoga je ulaz http://x"onmouseover="… postajao PRAVI atribut i JS iz
+     * agentova teksta se izvršavao (dokazano u Chromiumu, Playwright).
+     */
+    function rsEscapeHtml(v) {
+      return String(v == null ? '' : v)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+
+    /** Vrati SIGURAN href za token, ili null ako token nije poveznica. */
+    function rsSafeHref(tok) {
+      if (tok.indexOf('http') === 0) {
+        try {
+          var u = new URL(tok);
+          if (u.protocol === 'http:' || u.protocol === 'https:') return encodeURI(tok);
+        } catch (e) { /* neispravan URL nije poveznica */ }
+        return null;
+      }
+      // Putanja mora imati bar jedan pravi znak iza kose crte; goli „/" (npr. u
+      // „211 pass / 0 fail") inače postaje plava poveznica na ništa.
+      // NAMJERNO BEZ OBRNUTE KOSE CRTE (ni u ovom komentaru): kod živi u predlošku,
+      // koji pojede svaku obrnutu kosu crtu osim tri poznate. Uzorak s razredom znakova
+      // stigao bi na stranicu bez nje, kao neispravan izraz koji obara CIJELU skriptu.
+      // Brana: tests/unit/PlocaSkriptaParsira.test.ts (pouka TASK-4803, ponovljena ovdje).
+      var pocetakPutanje = tok.charAt(0) === '/' ? 1 : (tok.substring(0, 2) === '~/' ? 2 : -1);
+      if (pocetakPutanje > 0 && tok.length > pocetakPutanje
+          && /[A-Za-z0-9_.@~+-]/.test(tok.charAt(pocetakPutanje))) {
+        return '/api/files/download?path=' + encodeURIComponent(tok);
+      }
+      return null;
+    }
+
+    /** Tekst s klikabilnim poveznicama, izgrađen kao DOM (bez ijednog innerHTML). */
+    function rsTextWithLinks(text) {
+      var frag = document.createDocumentFragment();
+      var toks = String(text == null ? '' : text).split(' ');
+      for (var i = 0; i < toks.length; i++) {
+        if (i > 0) frag.appendChild(document.createTextNode(' '));
+        var href = rsSafeHref(toks[i]);
+        if (href) {
+          var a = document.createElement('a');
+          a.href = href;                 // svojstvo, ne lijepljenje u atribut
+          a.target = '_blank';
+          a.rel = 'noopener noreferrer';
+          a.textContent = toks[i];       // sadržaj nikad kao HTML
+          frag.appendChild(a);
+        } else {
+          frag.appendChild(document.createTextNode(toks[i]));
+        }
+      }
+      return frag;
+    }
+
+    function rsPreBlock(text) {
+      var d = document.createElement('div');
+      d.style.whiteSpace = 'pre-wrap';
+      d.style.wordBreak = 'break-word';
+      d.appendChild(rsTextWithLinks(text));
+      return d;
+    }
+
+    /** Sklopiva sekcija — zatvorena, da kartica ostane pregledna. */
+    function rsDetails(naslov, text, mono) {
+      var det = document.createElement('details');
+      det.style.marginTop = '0.4rem';
+      var sum = document.createElement('summary');
+      sum.textContent = naslov;
+      sum.style.cursor = 'pointer';
+      sum.style.opacity = '0.85';
+      det.appendChild(sum);
+      var body = rsPreBlock(text);
+      body.style.marginTop = '0.3rem';
+      if (mono) { body.style.fontFamily = 'monospace'; body.style.fontSize = '0.8rem'; }
+      det.appendChild(body);
+      return det;
+    }
+
+    var RS_BADGE_BOJA = {
+      DONE: '#16a34a', DONE_WITH_CONCERNS: '#ca8a04', BLOCKED: '#dc2626',
+      NEEDS_CONTEXT: '#ea580c', IN_PROGRESS: '#64748b', UNKNOWN: '#64748b'
+    };
+    // Natpisi se sastavljaju pri CRTANJU, ne pri učitavanju skripte: rječnik u trenutku
+    // definicije još nije učitan, a ploča mora proći i na engleskom (PlocaJezik.test.ts).
+    function rsSekcije() {
+      return [
+        ['results', _T('rez_sekcija_results', 'Rezultati')],
+        ['analysis', _T('rez_sekcija_analysis', 'Analiza')],
+        ['actions', _T('rez_sekcija_actions', 'Radnje')],
+        ['next', _T('rez_sekcija_next', 'Sljedeći koraci')],
+        ['capture', _T('rez_sekcija_capture', 'Zabilježeno')],
+        ['story', _T('rez_sekcija_story', 'Objašnjenje')]
+      ];
+    }
+
+    function renderResultSummary(task) {
+      var rsField = document.getElementById('detail-result-field');
+      var rsBox = document.getElementById('detail-result-summary');
+      var rs = task.resultSummary || '';
+      if (!rsBox || !rsField) return;
+      if (!rs) { rsField.style.display = 'none'; return; }
+      rsField.style.display = '';
+      rsBox.textContent = '';                       // struktura se crta ispočetka
+
+      var rp = task.resultParsed || null;
+
+      // ── Bedž: sud dolazi s ploče, tekst ga je smio samo suziti ──────────────
+      if (rp && rp.badge) {
+        var red = document.createElement('div');
+        red.style.cssText = 'display:flex;align-items:center;gap:0.4rem;flex-wrap:wrap;margin-bottom:0.4rem;';
+        var bdz = document.createElement('span');
+        bdz.textContent = (rp.badgeEmoji || '') + ' ' + rp.badge;
+        bdz.title = _Tv('rez_izvor_suda', 'Izvor suda: {izvor}', { izvor: rp.badgeSource || '-' })
+          + (rp.narrowed ? ' (' + _T('rez_sud_suzen', 'tekst je sud SUZIO') + ')' : '');
+        bdz.style.cssText = 'font-size:0.72rem;font-weight:600;padding:0.1rem 0.45rem;border-radius:0.6rem;color:#fff;background:'
+          + (RS_BADGE_BOJA[rp.badge] || '#64748b');
+        red.appendChild(bdz);
+        if (rp.mismatch) {
+          var upoz = document.createElement('span');
+          upoz.textContent = '\\u26A0\\uFE0F ' + _T('rez_neslaganje', 'tekst tvrdi da je gotovo, ploča kaže drugačije');
+          upoz.style.cssText = 'font-size:0.72rem;color:#ea580c;';
+          red.appendChild(upoz);
+        }
+        var raz = document.createElement('span');
+        raz.textContent = rp.level + (rp.dialect && rp.dialect !== 'nijedan' ? ' · ' + rp.dialect : '');
+        raz.title = _T('rez_razina_naslov', 'Razina prepoznatog formata (L0 pun do L3 sirovo)');
+        raz.style.cssText = 'font-size:0.68rem;opacity:0.55;';
+        red.appendChild(raz);
+        rsBox.appendChild(red);
+      }
+
+      // ── L3 (79 % prometa): današnji prikaz, nepromijenjen ───────────────────
+      var imaPolja = rp && rp.fields && Object.keys(rp.fields).length > 0;
+      if (!imaPolja) {
+        rsBox.appendChild(rsPreBlock(rs));
+        return;
+      }
+
+      // ── L0/L1: sažetak otvoren, ostalo sklopivo ─────────────────────────────
+      if (rp.fields.summary) {
+        var sazetak = rsPreBlock(rp.fields.summary);
+        sazetak.style.fontWeight = '500';
+        rsBox.appendChild(sazetak);
+      }
+      if (rp.fields.statusText && rp.fields.statusText !== rp.fields.summary) {
+        var st = rsPreBlock(rp.fields.statusText);
+        st.style.opacity = '0.85';
+        st.style.marginTop = '0.3rem';
+        rsBox.appendChild(st);
+      }
+      var sekcije = rsSekcije();
+      for (var i = 0; i < sekcije.length; i++) {
+        var k = sekcije[i][0];
+        if (rp.fields[k]) rsBox.appendChild(rsDetails(sekcije[i][1], rp.fields[k], false));
+      }
+      if (rp.verification) {
+        rsBox.appendChild(rsDetails(_T('rez_sekcija_verifikacija', 'Verifikacija'), rp.verification, true));
+      }
+      if (rp.stepOutput) {
+        rsBox.appendChild(rsDetails(_T('rez_sekcija_dokazi', 'Dokazi (REGOC-IZLAZ)'),
+          typeof rp.stepOutput === 'string' ? rp.stepOutput : JSON.stringify(rp.stepOutput, null, 2), true));
+      }
+      if (rp.fields.spoken) {
+        var sp = document.createElement('div');
+        sp.textContent = '🗣️ ' + rp.fields.spoken;
+        sp.style.cssText = 'margin-top:0.4rem;font-size:0.8rem;opacity:0.7;';
+        rsBox.appendChild(sp);
+      }
+      // Prikazi sirovo je UVIJEK dostupno — parser ne smije nista sakriti.
+      rsBox.appendChild(rsDetails(_Tv('rez_prikazi_sirovo', 'Prikaži sirovo ({n} zn)', { n: rs.length }), rs, true));
+    }
+
 
     // TASK-3512: projekt zadatka — prikaz imena + izbornik za promjenu.
     // Aktivni projekti idu u prvu skupinu, arhivirani u drugu (na dno), prazna
@@ -10011,9 +10180,28 @@ function handleGetTask(taskId: string): Response {
     })
   }
 
-  return new Response(JSON.stringify(task), {
+  // TASK-4815: PARSIRANJE JE NA POSLUŽITELJU, ne u pregledniku. To je jedina izvedba
+  // u kojoj ploča i kanali dijele ISTI kod, a ne dvije preslike iste gramatike.
+  // Klijent dobiva gotov sud i samo ga CRTA; `resultSummary` ostaje netaknut uz njega,
+  // pa „prikaži sirovo" uvijek ima puni izvor.
+  return new Response(JSON.stringify({ ...task, resultParsed: parsiraniRezultat(task) }), {
     headers: { 'Content-Type': 'application/json' }
   })
+}
+
+/**
+ * Sud o agentovom izlazu za prikaz na kartici. Ploča je MJERODAVNA za bedž
+ * (`task.status`), parsirani tekst ga smije samo suziti — nikad podići
+ * (§3 dizajna TASK-4813). Fail-soft: bez rezultata nema ni suda, ne izmišlja se.
+ */
+function parsiraniRezultat(task: any): unknown {
+  const rs = task?.resultSummary
+  if (!rs || !String(rs).trim()) return null
+  try {
+    return renderFull(parseAgentOutput(String(rs)), task.status, { blockedReason: task.blockedReason })
+  } catch {
+    return null   // prikaz nikad ne smije pasti zbog suda o tekstu
+  }
 }
 
 /**

@@ -790,5 +790,18 @@
   "uputa_gumb_naslov": "Add instruction for the agent (delivered into the running session, no pause)",
   "uputa_ceka_naslov": "Instructions the agent has not received yet",
   "uputa_sve_naslov": "All instructions delivered to the agent",
-  "uputa_prompt": "Instruction for the agent on {id} (delivered into the running session with the next tool call):"
+  "uputa_prompt": "Instruction for the agent on {id} (delivered into the running session with the next tool call):",
+  "rez_neslaganje": "text claims done, the board says otherwise",
+  "rez_razina_naslov": "Recognised format level (L0 full to L3 raw)",
+  "rez_sekcija_actions": "Actions",
+  "rez_sekcija_analysis": "Analysis",
+  "rez_sekcija_capture": "Captured",
+  "rez_sekcija_dokazi": "Evidence (REGOC-IZLAZ)",
+  "rez_sekcija_next": "Next steps",
+  "rez_sekcija_results": "Results",
+  "rez_sekcija_story": "Explanation",
+  "rez_sekcija_verifikacija": "Verification",
+  "rez_sud_suzen": "text narrowed the verdict",
+  "rez_izvor_suda": "Verdict source: {izvor}",
+  "rez_prikazi_sirovo": "Show raw ({n} chars)"
 }
