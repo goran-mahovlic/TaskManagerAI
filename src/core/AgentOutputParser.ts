@@ -1,8 +1,8 @@
 /**
  * AgentOutputParser — JEDAN parser agentova izlaza i JEDAN prekidač prikaza po kanalu.
  *
- * Dizajn: `docs/TASK-4813_parser-agent-outputa.md` (Kosjenka) + ispravci
- *         `docs/TASK-4814_revizija-dizajna.md` (Jelena). Provedba: TASK-4815.
+ * Dizajn: TASK-4813 (arhitekt) + ispravci iz revizije TASK-4814 (inženjer).
+ * Provedba: TASK-4815.
  *
  * ZAŠTO POSTOJI: format se prije ovoga izmišljao na devet mjesta sa šest različitih
  * konstanti reza (`substring(0, 2000|3900|500|200|4000)`), i nijedno nije gledalo
@@ -277,10 +277,38 @@ export const BADGE_EMOJI: Record<Badge, string> = {
   UNKNOWN: '⚪',
 }
 
-// ─── Rod izvođača (trajno pravilo, memorija `kosjenka-identitet-jezik`) ──────
+// ─── Rod izvođača ─────────────────────────────────────────────────────────────
 
-/** Agentice u timu — popis preuzet iz `AgentDaemon.ts:367`, ne izmišljen. */
-const AGENTICE = new Set(['kosjenka', 'jelena', 'manda', 'dora', 'gita'])
+/**
+ * Tko je u ženskom rodu — iz registra agenata (`config/agents.json`, polje `"rod": "ž"`),
+ * NE iz popisa u kodu: imena tima su konfiguracija instalacije (ADR-0001, TASK-4808).
+ * Čita se lijeno i jednom; nečitljiv registar = muški rod za sve (poruka ostaje točna
+ * po sadržaju, samo gramatički neutralnija).
+ */
+let _agentice: Set<string> | null = null
+function agentice(): Set<string> {
+  if (_agentice) return _agentice
+  const skup = new Set<string>()
+  try {
+    const { readFileSync, existsSync } = require('fs') as typeof import('fs')
+    const { konfigPutanja } = require('./paths') as typeof import('./paths')
+    const p = konfigPutanja('agents.json', 'TM_AGENTS_CONFIG')
+    if (existsSync(p)) {
+      const raw = JSON.parse(readFileSync(p, 'utf-8'))
+      for (const a of Array.isArray(raw?.agents) ? raw.agents : []) {
+        const rod = String(a?.rod || '').toLowerCase()
+        if (a?.id && (rod === 'ž' || rod === 'z' || rod === 'f')) skup.add(String(a.id).toLowerCase())
+      }
+    }
+  } catch { /* registar nije obavezan */ }
+  _agentice = skup
+  return skup
+}
+
+/** Samo za testove: zadaj skup ženskog roda ili ga vrati na čitanje registra (`null`). */
+export function postaviZenskiRod(ids: string[] | null): void {
+  _agentice = ids ? new Set(ids.map((x) => x.toLowerCase())) : null
+}
 
 /**
  * „završila" / „završio". Poruka o ženskoj agentici u muškom rodu je jednako kriva
@@ -288,7 +316,7 @@ const AGENTICE = new Set(['kosjenka', 'jelena', 'manda', 'dora', 'gita'])
  * tekst za korisnika.
  */
 export function zavrsioZavrsila(agentId?: string | null): string {
-  return AGENTICE.has(String(agentId || '').toLowerCase().trim()) ? 'završila' : 'završio'
+  return agentice().has(String(agentId || '').toLowerCase().trim()) ? 'završila' : 'završio'
 }
 
 // ─── Čisti tekst (§E revizije) ───────────────────────────────────────────────
@@ -375,7 +403,7 @@ export function rezNaGranici(sIn: string, maxLen: number): string {
 export interface MinimalOpts {
   /** Ukupan strop poruke. Jedan za sve kanale. */
   maxLen?: number
-  /** Gotov, već ispravan prvi redak (npr. „✅ Kosjenka završila zadatak TASK-1"). */
+  /** Gotov, već ispravan prvi redak (npr. „✅ Arhitektica završila zadatak TASK-1"). */
   heading?: string
   /** Poveznica na ploču — zamjena za sve što minimalni kanal izostavlja. */
   boardUrl?: string | null
@@ -476,7 +504,7 @@ export function renderFull(
  * agentici u muškom rodu najglasnija je upravo ondje gdje se izgovara.
  */
 export function mogaoMogla(agentId?: string | null): string {
-  return AGENTICE.has(String(agentId || '').toLowerCase().trim()) ? 'mogla' : 'mogao'
+  return agentice().has(String(agentId || '').toLowerCase().trim()) ? 'mogla' : 'mogao'
 }
 
 // ─── Prekidač prikaza — §4 dizajna TASK-4813 ─────────────────────────────────

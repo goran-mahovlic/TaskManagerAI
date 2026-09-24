@@ -1,4 +1,4 @@
-// tests/spawn-finalizer.test.ts — ADR-0012 implementacija (Jelena, TASK-4827).
+// tests/spawn-finalizer.test.ts — ADR-0012 implementacija (Inženjerka, TASK-4827).
 //
 // `SpawnFinalizer` je JEDINI put kojim spawn završava u terminalnom stanju:
 //   sud CompletionGuarda → sud kritičara → PRED-PROVJERA VRATARA (§12) → zatvaranje.
@@ -80,7 +80,7 @@ describe('F2 — simulacija TASK-3068: FAIL kritičara završava u blocked, nika
     const { finalizirajSpawn } = await ucitaj()
     const zapisi: any[] = []
     const r = await finalizirajSpawn({
-      apiBase: 'http://x/api/tasks', taskId: 'TASK-3068', agentId: 'jelena',
+      apiBase: 'http://x/api/tasks', taskId: 'TASK-3068', agentId: 'inzenjerka',
       resultText: REZULTAT, sinceMs: Date.now() - 1000,
       kritikaFn: async () => ({ enforce: true, blockedReason: 'BLOCKED: CRITIC_FAILED — bun test pada', brief: '✗ bun test' }),
       fetchFn: async (_u: any, init: any) => { zapisi.push(JSON.parse(init.body)); return odgovor(200) },
@@ -98,7 +98,7 @@ describe('F2 — simulacija TASK-3068: FAIL kritičara završava u blocked, nika
     const { finalizirajSpawn } = await ucitaj()
     const zapisi: any[] = []
     const r = await finalizirajSpawn({
-      apiBase: 'http://x/api/tasks', taskId: 'TASK-OK', agentId: 'jelena',
+      apiBase: 'http://x/api/tasks', taskId: 'TASK-OK', agentId: 'inzenjerka',
       resultText: REZULTAT, sinceMs: Date.now() - 1000,
       kritikaFn: async () => ({ enforce: false, blockedReason: '', brief: '' }),
       fetchFn: async (_u: any, init: any) => { zapisi.push(JSON.parse(init.body)); return odgovor(200) },
@@ -113,7 +113,7 @@ describe('F2 — simulacija TASK-3068: FAIL kritičara završava u blocked, nika
     const { finalizirajSpawn } = await ucitaj()
     const zapisi: any[] = []
     const r = await finalizirajSpawn({
-      apiBase: 'http://x/api/tasks', taskId: 'TASK-G1', agentId: 'manda',
+      apiBase: 'http://x/api/tasks', taskId: 'TASK-G1', agentId: 'istrazivacica',
       resultText: REZULTAT, sinceMs: Date.now() - 1000,
       kritikaFn: async () => ({ enforce: false, blockedReason: '', brief: '' }),
       fetchFn: async (_u: any, init: any) => { zapisi.push(JSON.parse(init.body)); return odgovor(200) },
@@ -128,7 +128,7 @@ describe('F2 — simulacija TASK-3068: FAIL kritičara završava u blocked, nika
     const { finalizirajSpawn } = await ucitaj()
     const zapisi: any[] = []
     const r = await finalizirajSpawn({
-      apiBase: 'http://x/api/tasks', taskId: 'TASK-NC', agentId: 'jelena',
+      apiBase: 'http://x/api/tasks', taskId: 'TASK-NC', agentId: 'inzenjerka',
       resultText: 'Nemam pristup čvoru.\nREGOC-STATUS: BLOCKED — nedostaje SSH pristup',
       sinceMs: Date.now() - 1000,
       kritikaFn: async () => ({ enforce: false, blockedReason: '', brief: '' }),
@@ -145,11 +145,11 @@ describe('F3 — najam se pušta PRIJE zapisa (inače daemon blokira sam sebe)',
   test('u trenutku PUT-a najam više nije aktivan', async () => {
     const { finalizirajSpawn } = await ucitaj()
     const { uzmiNajam, najamAktivan } = await ucitajNajam()
-    uzmiNajam({ taskId: 'TASK-LEASE', agent: 'jelena', pid: process.pid, startedAt: new Date().toISOString() })
+    uzmiNajam({ taskId: 'TASK-LEASE', agent: 'inzenjerka', pid: process.pid, startedAt: new Date().toISOString() })
     expect(najamAktivan('TASK-LEASE')).toBe(true)
     let aktivanZaVrijemePUT: boolean | null = null
     await finalizirajSpawn({
-      apiBase: 'http://x/api/tasks', taskId: 'TASK-LEASE', agentId: 'jelena',
+      apiBase: 'http://x/api/tasks', taskId: 'TASK-LEASE', agentId: 'inzenjerka',
       resultText: 'REGOC-STATUS: BLOCKED — test',
       sinceMs: Date.now() - 1000,
       kritikaFn: async () => ({ enforce: false, blockedReason: '', brief: '' }),

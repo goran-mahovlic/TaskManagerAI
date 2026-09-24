@@ -15,7 +15,7 @@ import {
   type ChainTaskView, type ReportBackTaskView, type SweepDeps,
 } from '../src/core/ReportBackTask'
 
-const CHAT = -5161938429
+const CHAT = -1001234567890
 
 // ─── Mala ploča u memoriji: pometnja se testira bez baze i bez mreže ──────────
 
@@ -56,7 +56,7 @@ function makeBoard(chainStatuses: string[], opts: { live?: boolean; sendOk?: boo
 describe('biljeg niza u opisu (preživljava brisanje blockedBy)', () => {
   test('zapis i čitanje', () => {
     const m = formatReportBackMarker({ chatId: CHAT, taskIds: ['TASK-1', 'task-2'] })
-    expect(m).toBe('[report-back chatId=-5161938429 tasks=TASK-1,TASK-2]')
+    expect(m).toBe('[report-back chatId=-1001234567890 tasks=TASK-1,TASK-2]')
     expect(parseReportBackMarker(`uvod\n${m}\nkraj`)).toEqual({ chatId: CHAT, taskIds: ['TASK-1', 'TASK-2'] })
   })
   test('bez biljega / smeće → null, ne iznimka', () => {

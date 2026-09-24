@@ -1,7 +1,7 @@
 /**
- * agent-output-switch.test.ts — DORADA TASK-4817 (Kosjenka, arhitektura).
+ * agent-output-switch.test.ts — DORADA TASK-4817 (Arhitektica, arhitektura).
  *
- * Pokriva ono što je TASK-4815 (Jelena) ostavio otvoreno:
+ * Pokriva ono što je TASK-4815 (Inženjerka) ostavio otvoreno:
  *   §A  `renderAgentOutput(p, { mode })` — JEDAN prekidač kanala (§4 dizajna
  *       TASK-4813). Dosad je svako zvalo `renderMinimal` izravno, pa je preslika
  *       pravila „koji kanal dobiva što" rasla po pozivateljima (ADR-0004).
@@ -12,7 +12,7 @@
  *   §D  Fail-soft prekidača: nepoznat način i null ulaz NIKAD ne bacaju.
  */
 
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, test, beforeAll, afterAll } from 'bun:test'
 import {
   MAX_MSG_LEN,
   mogaoMogla,
@@ -20,6 +20,7 @@ import {
   renderAgentOutput,
   renderMinimal,
   zavrsioZavrsila,
+  postaviZenskiRod,
 } from '../src/core/AgentOutputParser'
 
 const IZVJESTAJ = [
@@ -89,12 +90,15 @@ describe('§B — voice: sadržaj agenta, ne konzervirana rečenica', () => {
 })
 
 describe('§C — rod u govorenom tekstu', () => {
+  // Rod dolazi iz registra (config/agents.json, `"rod": "ž"`); test ga zadaje izravno.
+  beforeAll(() => postaviZenskiRod(['arhitektica', 'inzenjerka', 'istrazivacica', 'analiticarka', 'umjetnica']))
+  afterAll(() => postaviZenskiRod(null))
   test('mogaoMogla prati iste agentice kao zavrsioZavrsila', () => {
-    for (const a of ['kosjenka', 'jelena', 'manda', 'dora', 'gita']) {
+    for (const a of ['arhitektica', 'inzenjerka', 'istrazivacica', 'analiticarka', 'umjetnica']) {
       expect(mogaoMogla(a)).toBe('mogla')
       expect(zavrsioZavrsila(a)).toBe('završila')
     }
-    for (const a of ['potjeh', 'malik', 'grga', 'stribor', 'regoc']) {
+    for (const a of ['qa', 'sigurnost', 'dizajner', 'glas', 'regoc']) {
       expect(mogaoMogla(a)).toBe('mogao')
       expect(zavrsioZavrsila(a)).toBe('završio')
     }
@@ -104,7 +108,7 @@ describe('§C — rod u govorenom tekstu', () => {
     expect(mogaoMogla(null)).toBe('mogao')
     expect(mogaoMogla(undefined)).toBe('mogao')
     expect(mogaoMogla('')).toBe('mogao')
-    expect(mogaoMogla('  KOSJENKA  ')).toBe('mogla')
+    expect(mogaoMogla('  ARHITEKTICA  ')).toBe('mogla')
   })
 })
 
@@ -127,5 +131,29 @@ describe('§D — fail-soft prekidača (nikad ne baca)', () => {
     const r = renderAgentOutput(parseAgentOutput(dug), { mode: 'minimal', maxLen: MAX_MSG_LEN })
     if (r.mode !== 'minimal') throw new Error('nije minimal')
     expect(r.text.length).toBeLessThanOrEqual(MAX_MSG_LEN)
+  })
+})
+
+describe('rod iz registra agenata (ne iz koda)', () => {
+  test('agent s "rod": "ž" u config/agents.json dobiva ženski rod, ostali muški', () => {
+    const { mkdtempSync, writeFileSync } = require('fs') as typeof import('fs')
+    const { join } = require('path') as typeof import('path')
+    const { tmpdir } = require('os') as typeof import('os')
+    const dir = mkdtempSync(join(tmpdir(), 'rod-'))
+    const p = join(dir, 'agents.json')
+    writeFileSync(p, JSON.stringify({ agents: [{ id: 'ana', rod: 'ž' }, { id: 'ivo', rod: 'm' }, { id: 'bez' }] }))
+    const prije = process.env.TM_AGENTS_CONFIG
+    process.env.TM_AGENTS_CONFIG = p
+    postaviZenskiRod(null)
+    try {
+      expect(zavrsioZavrsila('ana')).toBe('završila')
+      expect(mogaoMogla('ANA')).toBe('mogla')
+      expect(zavrsioZavrsila('ivo')).toBe('završio')
+      expect(zavrsioZavrsila('bez')).toBe('završio')
+    } finally {
+      if (prije === undefined) delete process.env.TM_AGENTS_CONFIG
+      else process.env.TM_AGENTS_CONFIG = prije
+      postaviZenskiRod(null)
+    }
   })
 })

@@ -139,7 +139,7 @@ describe('P2 — tijelo sekcije ima granicu', () => {
   })
 
   test('🗣️ redak zatvara sekciju', () => {
-    const p = parseAgentOutput('📋 REZULTAT: ok\n🗣️ Jelena: gotovo\njoš nešto')
+    const p = parseAgentOutput('📋 REZULTAT: ok\n🗣️ Inženjerka: gotovo\njoš nešto')
     expect(p.fields.summary).toBe('ok')
     expect(p.fields.spoken).toBe('gotovo')
   })
@@ -302,11 +302,11 @@ describe('§E — renderMinimal vraća čisti tekst (Telegram nema parse_mode)',
 
   test('glava i poveznica na ploču su opcionalne i čiste', () => {
     const m = renderMinimal(parseAgentOutput('📋 REZULTAT: ok'), {
-      heading: '✅ Kosjenka završila zadatak TASK-1',
+      heading: '✅ Arhitektica završila zadatak TASK-1',
       boardUrl: 'http://ploca.primjer:17781',
       maxLen: MAX_MSG_LEN,
     })
-    expect(m.startsWith('✅ Kosjenka završila zadatak TASK-1')).toBe(true)
+    expect(m.startsWith('✅ Arhitektica završila zadatak TASK-1')).toBe(true)
     expect(m).toContain('Ploča: http://ploca.primjer:17781')
   })
 
@@ -328,7 +328,7 @@ describe('§E — renderMinimal vraća čisti tekst (Telegram nema parse_mode)',
 // ─── voice ───────────────────────────────────────────────────────────────────
 describe('§4 — renderVoice ≤ 16 riječi', () => {
   test('uzima 🗣️ redak kad postoji', () => {
-    expect(renderVoice(parseAgentOutput('📋 REZULTAT: x\n🗣️ Jelena: parser je gotov'))).toBe('parser je gotov')
+    expect(renderVoice(parseAgentOutput('📋 REZULTAT: x\n🗣️ Inženjerka: parser je gotov'))).toBe('parser je gotov')
   })
 
   test('pada na sažetak i reže na 16 riječi', () => {
