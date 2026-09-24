@@ -7,6 +7,28 @@ napraviti kad ga postaviš u središte, umjesto da ti bude popis obveza sa stran
 Sve što slijedi opisuje kako sustav radi, ne kako je konfiguriran. Adrese, ključevi, imena
 skupina i lozinke namjerno izostaju.
 
+[English](README.en.md)
+
+---
+
+## Teme / Topics
+
+Ovaj dokument je ulaz i pregled. Svaka tema ima vlastitu datoteku koja ide dublje — s
+mehanizmom, razlogom zbog kojeg postoji i izmjerenim kvarom koji ga je tražio.
+
+| Tema | Sadržaj |
+|---|---|
+| [Arhitektura](ARHITEKTURA.md) | put poruke od kanala do dojave; gdje je koji sloj u paketu |
+| [Tim](TIM.md) | uloge, ovlasti, vještine i modeli; kako dodati vlastitog agenta |
+| [Identitet](IDENTITET.md) | blok identiteta iz jednog registra pri svakom pokretanju; zašto tajne nikad ne idu u prompt |
+| [Životni ciklus zadatka](ZIVOTNI_CIKLUS_ZADATKA.md) | stanja i prijelazi, tko zatvara, `blocked` nije brava, pitanje za odluku, čistači |
+| [Pravila isporuke](PRAVILA_ISPORUKE.md) | vrata provjere, `REGOC-STATUS`, strukturirani izlaz `REGOC-IZLAZ` |
+| [Vrata i kočnice](VRATA_I_KOCNICE.md) | pauza, vrata autonomije, stropovi, sjena prije paljenja, zamka oscilatora |
+| [Baze](BAZE.md) | tri SQLite zapisa, WAL i `VACUUM INTO`, poredak po vremenu, vratar RAG upisa |
+| [Trošak i energija](TROSAK_I_ENERGIJA.md) | trošak po projektu; struja, CO₂ i voda kao procjena s rasponom |
+| [Lekcije](LEKCIJE.md) | šest skupih kvarova: simptom → uzrok → lijek → brana |
+| [Složi svoj](SLOZI_SVOJ.md) | najmanji recept i redoslijed uključivanja |
+
 ---
 
 ## Sadržaj
@@ -112,6 +134,8 @@ poviješću i bilješkama, i netko ga drugi može preuzeti.
 Strelice idu u oba smjera, ali jedno je pravilo tvrdo: **svaki sloj koji nešto radi mora to
 zapisati u TaskManager.** Sloj iznad ne vjeruje pamćenju sloja ispod.
 
+Detaljnije: [ARHITEKTURA.md](ARHITEKTURA.md).
+
 ---
 
 ## 4. Tim
@@ -143,6 +167,8 @@ dogodi lakše nego što zvuči — koordinatoru je uvijek brže napraviti sam ne
 
 Postoji i mehanizam koji tim slaže sam: iz opisa posla sustav zaključi koji lanac uloga treba i
 otvori zadatke redom, umjesto da čovjek imenuje svakog sudionika.
+
+Detaljnije: [TIM.md](TIM.md) i [IDENTITET.md](IDENTITET.md).
 
 ---
 
@@ -249,6 +275,8 @@ nešto ovako, odgovor je u bazi, a ne u nečijem pamćenju.
 
 **Projekti okupljaju.** Veći posao je projekt sa specifikacijom; iz specifikacije nastaju zadatci,
 a povijest specifikacije čuva se uz njih, pa se vidi kako se namjera mijenjala.
+
+Detaljnije: [ZIVOTNI_CIKLUS_ZADATKA.md](ZIVOTNI_CIKLUS_ZADATKA.md) i [BAZE.md](BAZE.md).
 
 ---
 
@@ -379,6 +407,8 @@ rezervni model koji sam utvrdi uzrok, javi ga i, ako je tako postavljeno, privre
 razgovor. Ključna razlika od stupnjeva autonomije: stupnjevi gase koliko sustav sam sebi daje
 posla, a dežurni brine da sustav uopće ostane čujan dok se glavni put ne vrati.
 
+Detaljnije: [VRATA_I_KOCNICE.md](VRATA_I_KOCNICE.md).
+
 ---
 
 ## 13. Provjere prije nego što se nešto proglasi gotovim
@@ -399,6 +429,8 @@ više njih s različitim gledištima, jer tri ista pogleda nisu provjera nego od
 **Bez sklopovlja nema tvrdnje.** Ako se radi o programskoj podršci za uređaj koji nije priključen,
 ishod je „treba provjeriti na sklopovlju“, a ne „popravljeno“. To je pravilo nastalo nakon niza
 „popravaka“ koji nikad nisu bili ni prevedeni.
+
+Detaljnije: [PRAVILA_ISPORUKE.md](PRAVILA_ISPORUKE.md).
 
 ---
 
@@ -458,6 +490,8 @@ Popis je kratak jer su sve skupo plaćene.
 7. **Imena su korisna.** Uloga s imenom i osobnošću lakše se poziva i lakše se o njoj razgovara.
 8. **Kočnicu postavi prije nego što zatreba.** Poslije je uvijek skuplje.
 
+Proširenje s uzrocima i branama: [LEKCIJE.md](LEKCIJE.md).
+
 ---
 
 ## 17. Što od ovoga treba tebi
@@ -476,6 +510,8 @@ Ako gradiš vlastiti sustav, ovo je redoslijed koji bih preporučio:
    brže.
 
 Redoslijed nije proizvoljan. Neke smo od tih koraka radili obrnuto i svaki nas je vratio natrag.
+
+Najmanji recept s redoslijedom uključivanja: [SLOZI_SVOJ.md](SLOZI_SVOJ.md).
 
 ---
 

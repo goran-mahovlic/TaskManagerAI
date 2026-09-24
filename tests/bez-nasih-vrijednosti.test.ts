@@ -221,8 +221,9 @@ describe('paket ne smije nositi naše vrijednosti (ADR-0001 §8)', () => {
  *
  * Mjeri se stoga koliko datoteka nabraja TRI ILI VIŠE naših imena: jedno ime je spomen,
  * tri su popis tima. Zapor je isti kao gore — nova datoteka pada odmah, broj smije samo
- * padati. `agents/regoc-tim.json` i `REGOC/` su namjerna iznimka po sadržaju (to JEST
- * ponuda „instaliraj naš tim"), ali ostaju u osnovici da se vidi cijena.
+ * padati. `agents/regoc-tim.json` je namjerna iznimka po sadržaju (to JEST ponuda „instaliraj
+ * naš tim") i ostaje u osnovici da se vidi cijena; mapa `REGOC/` je izuzeta jednim pravilom
+ * (v. `IZUZETO_OD_POPISA_TIMA` niže).
  *
  * Osnovica izmjerena 10.09.2026. nakon popravka N1: `src/zod/schemas/task.ts` je ispao s
  * popisa jer popis nositelja sada dolazi iz `config/agents.json`/`TM_AGENTS`
@@ -242,7 +243,6 @@ const NASA_IMENA = [
 const OSNOVICA_POPISI: string[] = [
   'README.hr.md',
   'README.md',
-  'REGOC/README.md',
   'agents/alati.json',
   'agents/regoc-tim.json',
   'agents/workflows.json',
@@ -260,9 +260,25 @@ const OSNOVICA_POPISI: string[] = [
   'tools/test_tjedni_pregled.py',
 ]
 
+/**
+ * IZUZEĆE MAPE `REGOC/` (GAP 24.09.2026. §5 J11, jedno pravilo umjesto osnovice po datoteci).
+ *
+ * `REGOC/` je po definiciji opis sustava iz kojega je paket izvučen — dakle NAŠEG tima — i
+ * dijeli se na teme u parovima `X.md` + `X.en.md`. Svaka nova tema koja spomene uloge s
+ * imenima bila bi „novi popis tima" i tražila bi proširenje osnovice; osnovica bi tada rasla
+ * sa svakom stranicom dokumentacije, što je upravo suprotno pravilu „smije samo padati".
+ *
+ * Zato se mapa izuzima JEDNIM pravilom, a `REGOC/README.md` je istim potezom maknut iz
+ * `OSNOVICA_POPISI` — zapor se i dalje mjeri nad kodom i ostatkom paketa. Tekstualna pravila
+ * iz `PRAVILA` (adrese, putanje, e-pošta, chat id) NE izuzimaju `REGOC/`: opis tima smije
+ * imenovati uloge, ali ne smije nositi ničiju adresu ni putanju.
+ */
+const IZUZETO_OD_POPISA_TIMA = 'REGOC/'
+
 function popisiTima(): string[] {
   const pogodjene: string[] = []
   for (const rel of POPIS) {
+    if (rel.startsWith(IZUZETO_OD_POPISA_TIMA)) continue
     let tekst: string
     try { tekst = readFileSync(join(KORIJEN, rel), 'utf-8').toLowerCase() } catch { continue }
     const nadena = NASA_IMENA.filter(ime => new RegExp(`\\b${ime}\\b`).test(tekst))
