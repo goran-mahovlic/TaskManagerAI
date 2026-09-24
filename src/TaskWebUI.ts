@@ -94,7 +94,9 @@ import {
 // M2/TASK-4628: strop stvaranja zadataka po izvoru (rafal 02.09. = 686 zadataka u 2 h).
 import { TaskCreateBreaker, formatTaskCreateAlarm } from './core/TaskCreateBreaker'
 // K7/TASK-2986: potrošnja na ploči dolazi iz cost_loga koji puni svaki spawn.
-import { getCostTracker, TROSAK_PO_PROJEKTU_SQL, TROSAK_PO_PROJEKTU_PROZOR_SQL } from './core/CostTracker'
+import { getCostTracker, TROSAK_PO_PROJEKTU_SQL, TROSAK_PO_PROJEKTU_PROZOR_SQL,
+         ENERGIJA_PO_PROJEKTU_SQL, sazmiEnergiju, energijaSazetakOdWh,
+         type EnergijaSazetak } from './core/CostTracker'
 import {
   normalizeTaskFields,
   unknownFieldResponseBody,
@@ -907,6 +909,29 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     .project-count.c-vrijednost b { color: #22c55e; }
     .project-count.c-vrijednost.is-prazna { opacity: 0.45; }
     .project-count.c-vrijednost.is-racuna b { color: var(--text-secondary); font-weight: 400; }
+    /* ADR-0010/TASK-4820: procjena potrosnje struje. ZUTO je jedina boja koja na kartici
+       znaci „ovo nije izmjereno": plavo = trosak (mjeren), zeleno = vrijednost po cjeniku,
+       ljubicasto = RAG, zuto = energija (procjena, raspon ÷3…×3). Znak ≈ je obavezan. */
+    .project-count.c-energija { background: rgba(234,179,8,0.12); }
+    .project-count.c-energija b { color: #eab308; }
+    .project-count.c-energija.is-prazna { opacity: 0.45; }
+    .project-count.c-energija.is-racuna b { color: var(--text-secondary); font-weight: 400; }
+    /* ADR-0011/TASK-4822: CO2 i voda su ISTA zuta — ne uvodi se nova boja, jer bi to
+       razvodnilo jedino znacenje zutoga („nije izmjereno"). Razlikuju se znakom u cipu.
+       VODA nosi iscrtkan obrub i znak ⚠: raspon objavljenih WUE je ~50× (0,12–5,3 L/kWh)
+       prema ~4× za mreznu emisiju, pa se razlika mora vidjeti i bez citanja tooltipa
+       i bez razlikovanja boja (daltonisti).
+       ZAMKA (izmjereno u pregledniku 12.09.): 💧 U+1F4A7 je IZVAN BMP-a i u kontejnerskom
+       fontu je tofu (sirina glifa == sirina referentnog „nedostaje glif"). Zato tekst H₂O.
+       ⚠ U+26A0 JEST u BMP-u i renderira se (14,3 px) — on ostaje. */
+    .project-count.c-co2 { background: rgba(234,179,8,0.12); }
+    .project-count.c-co2 b { color: #eab308; }
+    .project-count.c-co2.is-prazna { opacity: 0.45; }
+    .project-count.c-co2.is-racuna b { color: var(--text-secondary); font-weight: 400; }
+    .project-count.c-voda { background: rgba(234,179,8,0.08); border: 1px dashed rgba(234,179,8,0.55); }
+    .project-count.c-voda b { color: #eab308; }
+    .project-count.c-voda.is-prazna { opacity: 0.45; }
+    .project-count.c-voda.is-racuna b { color: var(--text-secondary); font-weight: 400; }
     .osoba-znacka { display: inline-block; margin-left: 0.25rem; padding: 0 0.3rem; border-radius: 3px;
       background: rgba(148,163,184,0.18); color: var(--text-secondary); font-size: 0.66rem; }
 
@@ -1495,6 +1520,12 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     .tel-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(88px, 1fr)); gap: 0.4rem; }
     .tel-cell { background: var(--bg-secondary); border-radius: 0.25rem; padding: 0.35rem 0.45rem; }
     .tel-cell b { display: block; font-size: 0.9rem; font-weight: 600; }
+    /* ADR-0010: procijenjena energija nosi istu zutu boju kao cip na kartici — jedna boja,
+       jedno znacenje („procjena, ne mjerenje") gdje god se brojka pojavi. */
+    .tel-energija { color: #eab308; }
+    /* ADR-0011: voda je ista zuta, ali podvucena iscrtkano — jedini znak koji preživi
+       i crno-bijeli ispis i daltonizam. */
+    .tel-voda { color: #eab308; border-bottom: 1px dashed rgba(234,179,8,0.6); }
     .tel-cell span { color: var(--text-secondary); font-size: 0.68rem; }
     /* Osam stupaca s nowrap ima min-content sirinu vecu od panela (400/480 px). Dok je
        tablica bila display:table, width:100% je nije mogao stisnuti ispod te sirine, pa se
@@ -5402,6 +5433,32 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         + telCelija(telBroj(u.tokeni.izlaz, 0), _T('izlazni_tokeni', 'izlazni tokeni') + ' · ' + _Tv('iz_n', 'iz {broj}', { broj: u.tokeni.izZadataka }))
         + telCelija(telPostotak(u.tokeni.udioKesa), _T('udio_kesa', 'udio keša') + ' · ' + _Tv('iz_n', 'iz {broj}', { broj: u.tokeni.izZadataka }))
         + telCelija(telBroj(u.zadataka, 0), _T('izvodjenja', 'izvođenja'))
+        // ADR-0010 (P2): energija stoji UZ trošak, ali je procjena i dolazi iz drugog izvora
+        // (cost_log, ne run_log) — zato vlastiti nazivnik i riječ „procjena" u vidljivoj oznaci.
+        + (data.energija && data.energija.izTokena
+            ? telCelija('<span class="tel-energija" title="' + telEsc(energijaOpis(data.energija)) + '">&asymp; '
+                        + energijaTekst(data.energija.wh) + '</span>',
+                        _T('energija_procjena_oznaka', 'procjena struje (nije mjereno)') + ' · '
+                        + _T('energija_raspon', 'raspon') + ' ' + energijaTekst(data.energija.donja)
+                        + '–' + energijaTekst(data.energija.gornja) + ' · '
+                        + _Tv('iz_n', 'iz {broj}', { broj: data.energija.izTokena }))
+            : telCelija('&mdash;', _T('energija_procjena_oznaka', 'procjena struje (nije mjereno)')))
+        // ADR-0011 (P2): CO₂ i voda su ISTA energija × jedan množitelj — stoje uz nju, ali
+        // svaka nosi vlastiti pojas u vidljivoj oznaci. Voda dodatno riječ „gruba" i znak ⚠.
+        + (data.energija && data.energija.co2
+            ? telCelija('<span class="tel-energija" title="' + telEsc(co2Opis(data.energija.co2)) + '">&asymp; '
+                        + co2Tekst(data.energija.co2.kg) + '</span>',
+                        _T('co2_procjena_oznaka', 'procjena CO₂ (nije mjereno)') + ' · '
+                        + _T('energija_raspon', 'raspon') + ' ' + co2Tekst(data.energija.co2.donja)
+                        + '–' + co2Tekst(data.energija.co2.gornja))
+            : telCelija('&mdash;', _T('co2_procjena_oznaka', 'procjena CO₂ (nije mjereno)')))
+        + (data.energija && data.energija.voda
+            ? telCelija('<span class="tel-voda" title="' + telEsc(vodaOpis(data.energija.voda)) + '">&#9888; &asymp; '
+                        + vodaTekst(data.energija.voda.l) + '</span>',
+                        _T('voda_procjena_oznaka', 'GRUBA procjena vode (nije mjereno)') + ' · '
+                        + _T('energija_raspon', 'raspon') + ' ' + vodaTekst(data.energija.voda.donja)
+                        + '–' + vodaTekst(data.energija.voda.gornja))
+            : telCelija('&mdash;', _T('voda_procjena_oznaka', 'GRUBA procjena vode (nije mjereno)')))
         + '</div></div>';
 
       // Latencija — prosjek i medijan traženi izrijekom
@@ -5461,16 +5518,41 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
           + '</div><table class="tel-table"><thead><tr>'
           + '<th>' + _T('st_zadatak', 'zadatak') + '</th><th>' + _T('st_agent', 'agent') + '</th>'
           + '<th>' + _T('trosak', 'trošak') + '</th><th>' + _T('tel_st_trajanje', 'trajanje') + '</th>'
-          + '<th>' + _T('tel_poziva', 'poziva') + '</th><th>' + _T('st_kes', 'keš') + '</th></tr></thead><tbody>';
+          + '<th>' + _T('tel_poziva', 'poziva') + '</th><th>' + _T('st_kes', 'keš') + '</th>'
+          + '<th>' + _T('energija_stupac', '≈ struja (procjena)') + '</th></tr></thead><tbody>';
+        var ePoZad = data.energijaPoZadatku || {};
+        // ADR-0011 §4.1 (P3): CO₂ i voda NEMAJU vlastiti stupac — one su ista brojka × konstanta
+        // (§1), pa bi tri stupca utrostručila vizualnu težinu jednog podatka. Idu u tooltip
+        // stupca struje, a dijagnostička uloga stupca (razilaženje >1,5×) ostaje na struji.
+        // Faktor i WUE dolaze s poslužitelja — klijent nema vlastitu kopiju konstanti.
+        var co2Faktor = (data.energija && data.energija.co2) ? data.energija.co2.faktor : null;
+        var vodaWue = (data.energija && data.energija.voda) ? data.energija.voda.wue : null;
         for (var j = 0; j < p.najskuplji.length; j++) {
           var z = p.najskuplji[j];
+          // ADR §11.2: ova brojka NIJE drugo mjerilo skupoće — ona je 130 × cjenički trošak.
+          // Korisna je dijagnostički: kad se razilazi od prikazanog troška više od 1,5 ×,
+          // knjigovodstvo troška i knjigovodstvo tokena za taj redak ne govore istu priču.
+          var eWh = ePoZad[z.taskId];
+          var eCelija = '<span class="tel-muted">&mdash;</span>';
+          if (eWh !== null && eWh !== undefined && isFinite(eWh)) {
+            var ocekivano = 130 * (z.trosakUsd || 0);
+            var razilazi = ocekivano > 0 && (eWh / ocekivano > 1.5 || ocekivano / eWh > 1.5);
+            eCelija = '<span title="' + telEsc(_T('energija_naslov', 'procjena potrošnje struje iz tokena — NIJE izmjereno')
+              + ' — ' + energijaTekst(eWh / 3) + ' – ' + energijaTekst(eWh * 3) + ' (÷3…×3)'
+              + (co2Faktor !== null ? '; ≈ ' + co2Tekst(eWh / 1000 * co2Faktor) + ' (÷4…×4)' : '')
+              + (vodaWue !== null ? '; ≈ ' + vodaTekst(eWh / 1000 * vodaWue) + ' '
+                  + _T('voda_gruba_kratko', 'vode — GRUBA procjena (÷10…×6)') : '')
+              + (razilazi ? '; ' + _T('energija_razilazi', 'zabilježeni trošak i tokeni ovog retka se razilaze više od 1,5× — provjeriti zapis') : '')) + '">'
+              + '&asymp; ' + energijaTekst(eWh) + (razilazi ? ' &#9888;' : '') + '</span>';
+          }
           html += '<tr><td><b>' + telEsc(z.taskId) + '</b>'
             + (z.naslov ? '<br><span class="tel-muted" style="font-size:0.68rem;">' + telEsc(z.naslov.slice(0, 60)) + '</span>' : '')
             + '</td><td>' + telEsc(z.agent) + '</td>'
             + '<td>' + projIznos(z.trosakUsd) + '</td>'
             + '<td>' + telTrajanje(z.trajanjeS) + '</td>'
             + '<td>' + telBroj(z.pozivaModela, 0) + '</td>'
-            + '<td>' + telPostotak(z.udioKesa) + '</td></tr>';
+            + '<td>' + telPostotak(z.udioKesa) + '</td>'
+            + '<td>' + eCelija + '</td></tr>';
         }
         html += '</tbody></table></div>';
       }
@@ -5588,7 +5670,8 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
             zadataka: po[pid].zapisa30,
             zadnji: po[pid].zadnji,
             prviZadatak: po[pid].prviZadatak,
-            zadnjiZadatak: po[pid].zadnjiZadatak
+            zadnjiZadatak: po[pid].zadnjiZadatak,
+            energija: po[pid].energija || null
           };
         }
         popisTrosak = mapa;
@@ -5673,6 +5756,115 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     }
 
     /** Kućica „dokumenata" na kartici projekta: „…" dok se učitava, 0 kad ih nema. */
+    /**
+     * Procjena potrosnje struje (ADR-0010). CETIRI obavezna znaka da je rijec o procjeni:
+     * (1) znak ≈ ispred svake brojke, (2) vlastita zuta boja, (3) rijec „procjena" u
+     * vidljivom tekstu panela, (4) tooltip s metodom, rasponom i nazivnikom.
+     * Nemjereno je crtica, nikad 0 — redak bez tokena ne smije izgledati kao izmjerena nula.
+     */
+    function energijaTekst(wh) {
+      if (wh === null || wh === undefined || !isFinite(wh)) return '&mdash;';
+      if (wh >= 1000) return telBroj(wh / 1000, wh >= 100000 ? 0 : 1) + ' kWh';
+      return telBroj(wh, 0) + ' Wh';
+    }
+
+    function energijaOpis(e) {
+      if (!e) return '';
+      return _T('energija_naslov', 'procjena potrošnje struje iz tokena — NIJE izmjereno')
+        + ' — ' + _T('energija_raspon', 'raspon') + ' ' + energijaTekst(e.donja)
+        + ' – ' + energijaTekst(e.gornja) + ' (÷3…×3); '
+        + _T('energija_metoda', 'metoda Epoch AI + omjeri Anthropicova cjenika') + ' (' + e.metoda + '); '
+        + _Tv('iz_n_izvodjenja', 'iz {broj} izvođenja', { broj: e.izTokena })
+        + (e.modelNepoznat ? '; ' + _Tv('energija_nepoznat_model', '{broj} izvođenja nepoznatog razreda modela (množitelj 1)', { broj: e.modelNepoznat }) : '');
+    }
+
+    /**
+     * ADR-0011: CO2 i voda su JEDAN mnozitelj nad istim Wh — nijedna od njih ne nosi ni jedan
+     * bit koji energija (a preko nje i €) vec nema. Zato dijele zutu boju i znak ≈, a faktor
+     * i WUE dolaze s posluzitelja (e.co2.faktor, e.voda.wue) — klijent NEMA vlastitu
+     * kopiju konstanti, inace bi se dva popisa razisla.
+     * ZAMKA: ovaj komentar zivi UNUTAR template literala s HTML-om ploce — obrnuta
+     * kosa crta i backtick ovdje rusе CIJELU plocu, a build to prijavi tek kao
+     * „Unexpected ." desetak redaka dalje.
+     */
+    /* ZAMKA (uhvacena na sjeni 17791): ove dvije funkcije pune I tijelo HTML-a I atribut
+       title=. HTML entiteti (&#8322;, &sup3;, &mdash;) u atributu se NE razrjesuju — tooltip
+       bi doslovno pisao „kg CO&#8322;e". Zato doslovni UTF-8 znakovi, koji rade u oba
+       konteksta; stranica je UTF-8 i ostatak koda ih vec koristi. */
+    function co2Tekst(kg) {
+      if (kg === null || kg === undefined || !isFinite(kg)) return '—';
+      if (kg >= 1000) return telBroj(kg / 1000, 1) + ' t CO₂e';
+      if (kg < 1) return telBroj(kg * 1000, 0) + ' g CO₂e';
+      return telBroj(kg, kg >= 100 ? 0 : 1) + ' kg CO₂e';
+    }
+
+    function vodaTekst(l) {
+      if (l === null || l === undefined || !isFinite(l)) return '—';
+      if (l >= 10000) return telBroj(l / 1000, 1) + ' m³';
+      return telBroj(l, l >= 100 ? 0 : 1) + ' L';
+    }
+
+    function co2Opis(c) {
+      if (!c) return '';
+      return _T('co2_naslov', 'procjena CO₂ iz procijenjene struje — NIJE izmjereno')
+        + ' — ' + _T('energija_raspon', 'raspon') + ' ' + co2Tekst(c.donja)
+        + ' – ' + co2Tekst(c.gornja) + ' (÷4…×4); '
+        + _Tv('co2_faktor', 'faktor mreže {faktor} kg CO₂e/kWh (EU-27, EEA)', { faktor: telBroj(c.faktor, 3) }) + '; '
+        + _T('co2_ograda', 'modeli se NE vrte na EU mreži nego u SAD-u (~0,37 kg/kWh, do 1,8× više) — ovo je pretvorba u razumljivu jedinicu, ne obračun stvarnog pogona');
+    }
+
+    function vodaOpis(v) {
+      if (!v) return '';
+      return _T('voda_naslov', 'NAJNESIGURNIJA od tri procjene — gruba procjena vode iz procijenjene struje, NIJE izmjereno')
+        + ' — ' + _T('energija_raspon', 'raspon') + ' ' + vodaTekst(v.donja)
+        + ' – ' + vodaTekst(v.gornja) + ' (÷10…×6); '
+        + _Tv('voda_wue', 'WUE {wue} L/kWh (Google, izmjereno u produkciji, arXiv 2508.15734)', { wue: telBroj(v.wue, 2) }) + '; '
+        + _T('voda_ograda', 'objavljene vrijednosti idu 0,12–5,3 L/kWh (~50×): WUE broji SAMO vodu na licu mjesta, a proizvodnja te struje troši još 3–5 L/kWh; lokacija i način hlađenja mijenjaju brojku >10×');
+    }
+
+    function projectCo2Chip(projectId) {
+      var naslov = _T('chip_co2_naslov', 'procjena CO₂ iz procijenjene struje — procjena, ne mjerenje');
+      if (!popisTrosak) {
+        return '<span class="project-count c-co2 is-racuna" title="' + _esc(naslov + ' — ' + _T('chip_ucitava_se', 'učitava se')) + '">CO&#8322; <b>&hellip;</b></span>';
+      }
+      var z = popisTrosak[projectId];
+      var c = z && z.energija && z.energija.co2;
+      if (!c) {
+        return '<span class="project-count c-co2 is-prazna" title="' + _esc(naslov + ' — ' + _T('chip_energija_nemjereno', 'nijedno izvođenje ovog projekta nema zapisane tokene')) + '">CO&#8322; <b>&mdash;</b></span>';
+      }
+      return '<span class="project-count c-co2" title="' + telEsc(co2Opis(c)) + '">'
+        + '&asymp; <b>' + co2Tekst(c.kg) + '</b></span>';
+    }
+
+    function projectVodaChip(projectId) {
+      var naslov = _T('chip_voda_naslov', 'GRUBA procjena vode iz procijenjene struje — najnesigurnija od tri brojke');
+      if (!popisTrosak) {
+        return '<span class="project-count c-voda is-racuna" title="' + _esc(naslov + ' — ' + _T('chip_ucitava_se', 'učitava se')) + '">H&#8322;O <b>&hellip;</b></span>';
+      }
+      var z = popisTrosak[projectId];
+      var v = z && z.energija && z.energija.voda;
+      if (!v) {
+        return '<span class="project-count c-voda is-prazna" title="' + _esc(naslov + ' — ' + _T('chip_energija_nemjereno', 'nijedno izvođenje ovog projekta nema zapisane tokene')) + '">H&#8322;O <b>&mdash;</b></span>';
+      }
+      // Znak ⚠ stoji U CIPU, ne samo u tooltipu: jaci raspon mora biti vidljiv bez hovera.
+      return '<span class="project-count c-voda" title="' + telEsc(vodaOpis(v)) + '">'
+        + 'H&#8322;O &#9888; &asymp; <b>' + vodaTekst(v.l) + '</b></span>';
+    }
+
+    function projectEnergijaChip(projectId) {
+      var naslov = _T('chip_energija_naslov', 'procjena potrošnje struje iz tokena (cost_log) — procjena, ne mjerenje');
+      if (!popisTrosak) {
+        return '<span class="project-count c-energija is-racuna" title="' + _esc(naslov + ' — ' + _T('chip_ucitava_se', 'učitava se')) + '">&#9889; <b>&hellip;</b></span>';
+      }
+      var z = popisTrosak[projectId];
+      var e = z && z.energija;
+      if (!e || !e.izTokena) {
+        return '<span class="project-count c-energija is-prazna" title="' + _esc(naslov + ' — ' + _T('chip_energija_nemjereno', 'nijedno izvođenje ovog projekta nema zapisane tokene')) + '">&#9889; <b>&mdash;</b></span>';
+      }
+      return '<span class="project-count c-energija" title="' + telEsc(energijaOpis(e)) + '">'
+        + '&#9889; &asymp; <b>' + energijaTekst(e.wh) + '</b></span>';
+    }
+
     function projectRagChip(projectId) {
       var naslov = _Tv('chip_rag_naslov', 'RAG dokumenata s project_id = {id}', { id: projectId });
       if (!ragBrojDokumenata) {
@@ -6056,6 +6248,9 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
             \${projectCountChip('blocked', _T('chip_blokirano', 'blokirano'), project.blocked_task_count)}
             \${projectCountChip('completed', _T('chip_gotovo', 'gotovo'), done)}
             \${projectTrosakChip(project.id)}
+            \${projectEnergijaChip(project.id)}
+            \${projectCo2Chip(project.id)}
+            \${projectVodaChip(project.id)}
             \${projectVrijednostChip(project.id)}
             \${projectRagChip(project.id)}
           </div>
@@ -10851,6 +11046,56 @@ async function handleTjedniPregled(url: URL): Promise<Response> {
 // Nepoznat projekt je 404 PRIJE pokretanja pythona — inače bismo na svaku tipfelu
 // platili puni prolaz nad transkriptima da bismo dobili prazan pregled.
 // ============================================================================
+/**
+ * Energija JEDNOG projekta u istom prozoru koji panel prikazuje (ADR-0010 §8.1, P2 i P3).
+ *
+ * Izvor je `cost_log`, a ne `tjedni_pregled.py` koji puni ostatak panela — zato brojka nosi
+ * vlastiti nazivnik („iz N izvođenja") i zato se ne smije zbrajati s ostalim ćelijama.
+ * `poZadatku` služi P3: u tablici najskupljih zadataka energija nije drugo mjerilo skupoće
+ * (ona JE 130 × cjenički trošak, ADR §11.1), nego dijagnostika — gdje se razilazi od
+ * prikazanog troška više od 1,5 ×, knjigovodstvo troška i knjigovodstvo tokena za taj redak
+ * ne govore istu priču (8,6 % redaka, ADR §11.2).
+ */
+function energijaJednogProjekta(projekt: string, dana: number): {
+  sazetak: EnergijaSazetak | null; poZadatku: Record<string, number>
+} {
+  const prazno = { sazetak: null, poZadatku: {} as Record<string, number> }
+  const db = getTrosakDb()
+  if (!db) return prazno
+  try {
+    const prozor = `-${Math.max(1, Math.round(dana))} days`
+    const redci = db.query(`
+      SELECT c.task_id AS tid, c.model AS model,
+             SUM(c.input_tokens) AS input_tokens, SUM(c.output_tokens) AS output_tokens,
+             SUM(c.cache_read_tokens) AS cache_read_tokens, SUM(c.cache_write_tokens) AS cache_write_tokens,
+             SUM(CASE WHEN COALESCE(c.input_tokens,0) + COALESCE(c.output_tokens,0)
+                         + COALESCE(c.cache_read_tokens,0) + COALESCE(c.cache_write_tokens,0) > 0
+                      THEN 1 ELSE 0 END) AS zapisa_s_tokenima
+        FROM cost_log c
+        LEFT JOIN tasks t ON t.id = c.task_id
+       WHERE COALESCE(t.project_id, c.project_id) = ?
+         AND c.timestamp > datetime('now', ?)
+       GROUP BY c.task_id, c.model`).all(projekt, prozor) as any[]
+    const svi = redci.map(r => ({
+      model: r.model || '',
+      inputTokens: r.input_tokens || 0, outputTokens: r.output_tokens || 0,
+      cacheReadTokens: r.cache_read_tokens || 0, cacheWriteTokens: r.cache_write_tokens || 0,
+      zapisaSTokenima: r.zapisa_s_tokenima || 0,
+      tid: r.tid as string | null,
+    }))
+    const poZadatku: Record<string, number> = {}
+    for (const r of svi) {
+      if (!r.tid) continue
+      const e = sazmiEnergiju([r])
+      if (e) poZadatku[r.tid] = Math.round(((poZadatku[r.tid] || 0) + e.wh) * 1e4) / 1e4
+    }
+    return { sazetak: sazmiEnergiju(svi), poZadatku }
+  } catch {
+    // Procjena je dodatak; njezin izostanak ne ruši panel potrošnje.
+    return prazno
+  }
+}
+
 async function handleProjektPregled(projectIdSirovo: string, url: URL): Promise<Response> {
   const dekodiran = (() => {
     try { return decodeURIComponent(projectIdSirovo) } catch { return projectIdSirovo }
@@ -10882,6 +11127,7 @@ async function handleProjektPregled(projectIdSirovo: string, url: URL): Promise<
   const force = url.searchParams.get('force') === '1'
   try {
     const r = await resolveTjedniPregled({ dana, najskupljih, projekt, force }, pregledDeps)
+    const e = energijaJednogProjekta(projekt, dana)
     return json({
       stanje: r.stanje,
       projekt,
@@ -10889,6 +11135,10 @@ async function handleProjektPregled(projectIdSirovo: string, url: URL): Promise<
       staroS: r.staroMs === null ? null : Math.round(r.staroMs / 1000),
       poruka: r.poruka,
       pregled: r.pregled,
+      // ADR-0010: PROCJENA iz cost_loga, vlastiti izvor i vlastiti nazivnik — ne zbraja se
+      // s ćelijama koje dolaze iz `tjedni_pregled.py`.
+      energija: e.sazetak ? { ...e.sazetak, dana } : null,
+      energijaPoZadatku: e.poZadatku,
     }, r.http)
   } catch (err) {
     // Nijedan kvar potrošnje ne smije srušiti panel projekta.
@@ -12315,6 +12565,42 @@ async function handleVrijednostInputa(url: URL): Promise<Response> {
   }
 }
 
+/**
+ * Procjena potrošnje struje po projektu (ADR-0010, TASK-4820) — IZVEDENA pri čitanju,
+ * nigdje se ne sprema (§7: koeficijenti će se mijenjati, upisana brojka bi zamrznula
+ * procjenu iz 2026. u retke zauvijek).
+ *
+ * Dva upita umjesto jednoga (§11.3): trošak i energija dijele pripis projekta
+ * (`LEFT JOIN tasks`), ali energija MORA grupirati i po modelu — inače `k = 1` svima i
+ * podcjena 1,584 ×. Kvar upita ne smije srušiti karticu, pa je sve u `try`: bez energije
+ * ploča i dalje pokazuje trošak.
+ */
+function energijaPoProjektu(db: Database): Record<string, EnergijaSazetak> {
+  const po: Record<string, EnergijaSazetak> = {}
+  try {
+    const redci = db.query(ENERGIJA_PO_PROJEKTU_SQL).all() as any[]
+    const grupe: Record<string, any[]> = {}
+    for (const r of redci) {
+      (grupe[r.pid] ||= []).push({
+        model: r.model || '',
+        inputTokens: r.input_tokens || 0,
+        outputTokens: r.output_tokens || 0,
+        cacheReadTokens: r.cache_read_tokens || 0,
+        cacheWriteTokens: r.cache_write_tokens || 0,
+        zapisaSTokenima: r.zapisa_s_tokenima || 0,
+      })
+    }
+    for (const pid of Object.keys(grupe)) {
+      const e = sazmiEnergiju(grupe[pid])
+      if (e) po[pid] = e   // `null` = nijedan redak s tokenima → kartica pokazuje „—", ne 0
+    }
+  } catch {
+    // Energija je dodatak trošku; njezin izostanak ne smije oboriti /api/projects/trosak.
+  }
+  return po
+}
+
+
 function handleGetProjectsTrosak(): Response {
   const db = getTrosakDb()
   if (!db) {
@@ -12338,6 +12624,7 @@ function handleGetProjectsTrosak(): Response {
        GROUP BY project_id
     `).all() as any[]
     const zadnjih30 = db.query(TROSAK_PO_PROJEKTU_PROZOR_SQL).all('-30 days') as any[]
+    const energija = energijaPoProjektu(db)
 
     const po: Record<string, any> = {}
     for (const r of ukupno) {
@@ -12353,12 +12640,26 @@ function handleGetProjectsTrosak(): Response {
       po[r.pid].prviZadatak = r.prvi ?? null
       po[r.pid].zadnjiZadatak = r.zadnji ?? null
     }
+    for (const pid of Object.keys(energija)) {
+      if (!po[pid]) po[pid] = { usdUkupno: 0, zapisaUkupno: 0, zadnji: null, usd30: null, zapisa30: 0 }
+      po[pid].energija = energija[pid]
+    }
     const zbroj = ukupno.reduce((a, r) => a + (r.usd || 0), 0)
+    // Ukupna energija je zbroj projekata, a ne zaseban upit — da se zbroj kartica i brojka
+    // u zaglavlju ne mogu razići (ista zamka koju je TASK-4263 otkrio kod troška).
+    const energijaWh = Object.values(energija).reduce((a, e) => a + e.wh, 0)
+    const energijaIzTokena = Object.values(energija).reduce((a, e) => a + e.izTokena, 0)
     return new Response(JSON.stringify({
       izracunatoU: new Date().toISOString(),
       izvor: 'cost_log',
       ukupnoUsd: Math.round(zbroj * 10000) / 10000,
       projekata: Object.keys(po).length,
+      // PROCJENA, ne mjerenje (ADR-0010 §8.2) — `procjena: true` je ugovor prema sučelju.
+      // Objekt slaže ISTA funkcija koja ga slaže po projektu (ADR-0011): dvije ruke koje
+      // neovisno grade isti oblik su isti raskorak koji je TASK-4263 otkrio kod troška.
+      energija: energijaSazetakOdWh(
+        energijaWh, energijaIzTokena,
+        Object.values(energija).reduce((a, e) => a + e.modelNepoznat, 0)),
       poProjektu: po,
     }), { headers: { 'Content-Type': 'application/json' } })
   } catch (e) {

@@ -1,0 +1,17 @@
+{
+  "_opis": [
+    "Koeficijenti PROCJENE struje, CO₂ i vode (ADR-0010/0011). Kopiraj u config/energija.json",
+    "ili postavi TM_ENERGIJA_CONFIG. Čita se pri pokretanju ploče; ključ koji izostaviš ostaje zadan.",
+    "Ploča sve tri brojke prikazuje kao procjenu (znak ≈, raspon, tooltip s metodom).",
+    "whPoMTok: Wh po milijun tokena za razred 'sonnet' (drugi razredi se skaliraju omjerom cijene",
+    "ulaza). Izvor zadanih vrijednosti: Epoch AI / Couch, središnje vrijednosti 2026.",
+    "energijaPojas: prikazani raspon ÷n…×n (zadano 3).",
+    "co2KgPoKWh: intenzitet mreže; zadano 0,21 = proizvodnja struje EU-27 (EEA, 2023).",
+    "vodaLPoKWh: WUE na lokaciji; zadano 1,1 = Google, produkcijsko mjerenje (arXiv 2508.15734).",
+    "Vrijednost ≤ 0 ili nebrojčana se odbacuje (vraća zadanu), da tipfeler ne pokaže nulu."
+  ],
+  "whPoMTok": { "input": 390, "output": 1950, "cacheRead": 39, "cacheWrite": 490 },
+  "energijaPojas": 3,
+  "co2KgPoKWh": 0.21,
+  "vodaLPoKWh": 1.1
+}

@@ -41,17 +41,17 @@
  * i `logUsage` ga namjerno ignorira kad je `taskId` zadan.
  *
  * Usage:
- *   import { getCostTracker } from '~/.claude/regoc/CostTracker'
+ *   import { getCostTracker } from './src/core/CostTracker'
  *   const ct = getCostTracker()
- *   ct.logUsage({ agentId: 'jelena', taskId: 'TASK-100', model: 'opus', inputTokens: 5000, outputTokens: 2000, turns: 12 })
+ *   ct.logUsage({ agentId: 'assistant', taskId: 'TASK-100', model: 'opus', inputTokens: 5000, outputTokens: 2000, turns: 12 })
  *   ct.getCostByAgent()
  *   ct.getCostByProject(7)   // potrošnja po projektu, zadnjih 7 dana
  */
 
 import Database from 'bun:sqlite'
-import { join } from 'path'
 import { randomUUID } from 'crypto'
-import { TM_DB } from './paths'
+import { existsSync, readFileSync } from 'fs'
+import { TM_DB, konfigPutanja } from './paths'
 
 // ============================================
 // Types
@@ -170,11 +170,8 @@ export class CostTracker {
   private db: Database
 
   constructor(dbPath?: string) {
-    // U6/TASK-4266: `TM_DB`/`TM_HOME` premještaju bazu izvan `~/.claude/regoc`;
-    // bez njih je putanja nepromijenjena (živa instalacija se ne dira).
-    const defaultPath = (process.env.TM_DB || process.env.TM_HOME)
-      ? TM_DB
-      : join(process.env.HOME || '', '.claude/regoc/data/regoc.db')
+    // ADR-0001 O1.1: baza je uvijek TM_DB (zadano $HOME/.taskmanager/data/tasks.db).
+    const defaultPath = TM_DB
     this.db = new Database(dbPath || defaultPath)
     this.db.exec("PRAGMA journal_mode = WAL"); this.db.exec("PRAGMA busy_timeout = 5000");
     this.db.exec('PRAGMA journal_mode = WAL')
@@ -564,6 +561,238 @@ export function estimateCostUsd(
 }
 
 // ============================================
+// Procjena potrošnje struje (ADR-0010, TASK-4820)
+// ============================================
+
+/**
+ * PROCJENA, NE MJERENJE. Potrošnju Claude modela dobavljač ne objavljuje; ovo je izvedena
+ * vrijednost iz tokena koje `cost_log` već ima (ADR-0010 §3–§4), s rasponom ÷3…×3 (§4.5).
+ * Svaki potrošač je DUŽAN prikazati je kao procjenu (znak `≈`, vlastita boja, riječ
+ * „procjena", tooltip s metodom) — v. ADR §8.2.
+ *
+ * Tri stvari koje je istraga (TASK-4818/4819) pokazala, a koje se iz koda ne vide:
+ *  1. Formula ima ČETIRI člana. Naivna `(ulaz + izlaz) × faktor` nad našim podatcima vidi
+ *     13,7 % energije — 96 % našeg prometa je keš-čitanje (ADR M3, M9).
+ *  2. `ENERGY_RATES ÷ COST_RATES = 130` u svakom članu, jer su omjeri koeficijenata preuzeti
+ *     iz istog cjenika. Energija je zato PRETVORBA JEDINICE troška (130 Wh/USD), a ne novo
+ *     mjerilo (ADR §11.1). Tko od nje očekuje nov uvid, dobit će prekrštenu brojku troška.
+ *  3. Vrijednost se NE sprema u stupac (ADR §7): koeficijenti će se mijenjati čim iziđe bolji
+ *     izvor, a upisana brojka bi zamrznula procjenu iz 2026. u retke zauvijek.
+ */
+/**
+ * Koeficijenti se mogu nadjačati u `config/energija.json` (ili `TM_ENERGIJA_CONFIG`) — v.
+ * `config/energija.example.json` s izvorima. Čita se JEDNOM pri učitavanju modula; nepoznat
+ * ili nebrojčan ključ se preskače, pa tipfeler vraća zadanu vrijednost, a ne nulu.
+ */
+function koeficijenti(): Record<string, any> {
+  try {
+    const p = konfigPutanja('energija.json', 'TM_ENERGIJA_CONFIG')
+    if (!existsSync(p)) return {}
+    const raw = JSON.parse(readFileSync(p, 'utf-8'))
+    return raw && typeof raw === 'object' ? raw : {}
+  } catch { return {} }
+}
+const KOEF = koeficijenti()
+const broj = (v: unknown, zadano: number): number =>
+  typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : zadano
+
+export const ENERGY_RATES = {
+  input: broj(KOEF.whPoMTok?.input, 390),
+  output: broj(KOEF.whPoMTok?.output, 1950),
+  cacheRead: broj(KOEF.whPoMTok?.cacheRead, 39),
+  cacheWrite: broj(KOEF.whPoMTok?.cacheWrite, 490),
+} as const  // Wh/MTok, razred „sonnet"
+export const ENERGY_BAND = broj(KOEF.energijaPojas, 3)   // prikazani raspon ÷3…×3 (ADR §4.5)
+export const ENERGY_METHOD = KOEF.whPoMTok ? 'konfiguracija' : 'A-couch-epoch-2026'  // Couch/Epoch (ADR §4.2)
+
+/**
+ * Množitelj razreda modela. Veličina Claude modela je poslovna tajna; jedini javni signal
+ * koji je specifičan za model i monotono vezan uz trošak posluživanja jest cjenik, pa se
+ * uzima omjer cijene ULAZA prema sonnetu (ADR §4.3). Normalizacija imena ide kroz POSTOJEĆI
+ * `normalizeModel()` — drugog popisa modela nema, inače bi se dva popisa razišla.
+ */
+const ENERGY_K: Record<string, number> = {
+  fable:  10 / 3,
+  opus:    5 / 3,
+  sonnet:  1,
+  haiku:   1 / 3,
+}
+
+/** `k` za model; nepoznat razred (lokalni/tuđi model) → 1, ali uz zastavicu u `procijeniEnergijuWh`. */
+export function energijaKRazreda(model: string): number {
+  return ENERGY_K[normalizeModel(model)] ?? 1
+}
+
+export interface EnergijaRedak {
+  model: string
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheWriteTokens: number
+  /**
+   * Koliko je STVARNIH redaka `cost_loga` (s tokenima) sažeto u ovaj redak. Postoji jer
+   * `ENERGIJA_PO_PROJEKTU_SQL` vraća već zbrojen redak po (projekt × model), a nazivnik
+   * „iz N izvođenja" mora ostati broj izvođenja, ne broj modela. Izostane li — jedan redak
+   * je jedno izvođenje.
+   */
+  zapisaSTokenima?: number
+}
+
+/**
+ * Energija jednog retka `cost_loga`, u Wh.
+ *
+ * Vraća `null` — NE 0 — kad redak nema nijedan token (696 legacy redaka `model='opus'` sa
+ * svim nulama, ADR M1). Nula bi na kartici izgledala kao izmjerena nula; nemjereno je crtica
+ * (pravilo `TaskWebUI.ts:837`).
+ */
+export function procijeniEnergijuWh(r: EnergijaRedak): { wh: number; modelNepoznat: boolean } | null {
+  const ulaz = Number(r.inputTokens) || 0
+  const izlaz = Number(r.outputTokens) || 0
+  const kc = Number(r.cacheReadTokens) || 0
+  const kp = Number(r.cacheWriteTokens) || 0
+  if (ulaz + izlaz + kc + kp <= 0) return null
+
+  const razred = normalizeModel(r.model || '')
+  const k = ENERGY_K[razred] ?? 1
+  const wh = k * (
+    (ulaz / 1_000_000) * ENERGY_RATES.input +
+    (izlaz / 1_000_000) * ENERGY_RATES.output +
+    (kc / 1_000_000) * ENERGY_RATES.cacheRead +
+    (kp / 1_000_000) * ENERGY_RATES.cacheWrite
+  )
+  return { wh, modelNepoznat: !(razred in ENERGY_K) }
+}
+
+// --------------------------------------------
+// CO₂ i voda (ADR-0011, TASK-4822)
+// --------------------------------------------
+
+/**
+ * PROCJENA PRETVORBE PROCJENE. Obje su brojke JEDAN množitelj nad već izračunatim `wh` —
+ * nema druge formule iz tokena. Ako je energija po ADR-0010 §11.1 pretvorba jedinice troška
+ * (130 Wh/USD, identitet a ne korelacija), onda CO₂ i voda ne nose NIJEDAN bit koji € već
+ * nema. Prikazuju se jer 122 kg i 640 L ljudima znače nešto što 5069 USD ne znači — i samo
+ * uz označavanje iz ADR-0011 §4.
+ *
+ * Faktor mreže: 0,21 kg CO₂e/kWh = intenzitet proizvodnje struje EU-27 (EEA). LOKACIJSKI je,
+ * i to je ograda koja MORA ići u sučelje: naši se modeli ne vrte na EU mreži nego u SAD-u,
+ * gdje je ~0,37 (eGRID), dakle do 1,8× više. Odabran je zbog kontinuiteta s ADR-0010 M16
+ * („122 kg CO₂e"), i jer svi kandidati (HR 0,19 · AWS 0,287 · SAD 0,37 · svijet 0,445)
+ * leže unutar pojasa ÷4…×4. Promjena = jedna konstanta, cijela se povijest preračuna (§7).
+ */
+export const CO2_FACTOR_KG_PER_KWH = broj(KOEF.co2KgPoKWh, 0.21)
+export const CO2_BAND = 4                       // ÷4…×4: energija ÷3…×3 + izbor mreže (ADR-0011 §2.3)
+export const CO2_METHOD = KOEF.co2KgPoKWh ? 'konfiguracija' : 'EEA-EU27-2023'
+
+/**
+ * WUE — voda po kWh. `1,1` je usidren na JEDINO produkcijsko mjerenje na AI opterećenju:
+ * Google, arXiv 2508.15734, 0,26 mL po medijanskom upitu ÷ 0,24 Wh = 1,08 L/kWh (isti par
+ * koji ADR-0010 §3 već citira za energiju).
+ *
+ * Pojas je namjerno mnogo širi I NESIMETRIČAN, jer voda ima nesigurnost koju struja i CO₂
+ * nemaju — granica obračuna nije dogovorena:
+ *  - ÷10 dolje: objavljene flotne WUE idu do 0,12 L/kWh (AWS 2025., zatvoreni krug);
+ *  - ×6 gore: „WUE" u izvješćima znači SAMO lice mjesta, a proizvodnja te iste struje troši
+ *    još 3,1 (prosjek SAD) do 5,3 L/kWh (Siddik/Shehabi/Marston, ERL 2021) — to nije
+ *    pesimizam nego ista voda koju samo nitko ne pripisuje podatkovnom centru.
+ * Raspon objavljenih vrijednosti je time ~50×, prema ~4× za mrežni CO₂ → zato voda nosi
+ * `grubaProcjena` i jače označavanje u sučelju (ADR-0011 §3.4, §4).
+ */
+export const VODA_WUE_L_PER_KWH = broj(KOEF.vodaLPoKWh, 1.1)
+export const VODA_BAND_DOLJE = 10
+export const VODA_BAND_GORE = 6
+export const VODA_METHOD = KOEF.vodaLPoKWh ? 'konfiguracija' : 'google-2508.15734-onsite'
+
+export interface Co2Sazetak {
+  kg: number
+  donja: number
+  gornja: number
+  faktor: number        // kg CO₂e/kWh — putuje do klijenta da ondje NE stoji druga kopija
+  metoda: string
+  procjena: true
+}
+
+export interface VodaSazetak {
+  l: number
+  donja: number
+  gornja: number
+  wue: number           // L/kWh — isto, jedan izvor istine
+  metoda: string
+  procjena: true
+  grubaProcjena: true   // UGOVOR prema sučelju: traži jače označavanje od `procjena` (ADR-0011 §4)
+}
+
+const zaokr = (x: number) => Math.round(x * 1e4) / 1e4
+
+export function procijeniCo2Kg(wh: number): number { return (Number(wh) || 0) / 1000 * CO2_FACTOR_KG_PER_KWH }
+export function procijeniVoduL(wh: number): number { return (Number(wh) || 0) / 1000 * VODA_WUE_L_PER_KWH }
+
+/** `null` — ne 0 — kad energije nema; nemjereno je crtica (isto pravilo kao energija). */
+export function sazmiCo2(wh: number): Co2Sazetak | null {
+  if (!(Number(wh) > 0)) return null
+  const kg = procijeniCo2Kg(wh)
+  return { kg: zaokr(kg), donja: zaokr(kg / CO2_BAND), gornja: zaokr(kg * CO2_BAND),
+           faktor: CO2_FACTOR_KG_PER_KWH, metoda: CO2_METHOD, procjena: true }
+}
+
+/** `null` — ne 0 — kad energije nema. */
+export function sazmiVodu(wh: number): VodaSazetak | null {
+  if (!(Number(wh) > 0)) return null
+  const l = procijeniVoduL(wh)
+  return { l: zaokr(l), donja: zaokr(l / VODA_BAND_DOLJE), gornja: zaokr(l * VODA_BAND_GORE),
+           wue: VODA_WUE_L_PER_KWH, metoda: VODA_METHOD, procjena: true, grubaProcjena: true }
+}
+
+export interface EnergijaSazetak {
+  wh: number            // središnja procjena (Wh)
+  donja: number         // wh / ENERGY_BAND
+  gornja: number        // wh * ENERGY_BAND
+  metoda: string
+  procjena: true        // OBVEZNO polje, ne komentar — sučelje se na njega oslanja (ADR §7)
+  izTokena: number      // iz koliko je redaka s tokenima izračunata (nazivnik)
+  modelNepoznat: number // koliko redaka nije prepoznatog razreda
+  co2: Co2Sazetak | null   // ADR-0011: izvedeno iz `wh`, ne iz tokena iznova
+  voda: VodaSazetak | null
+}
+
+/**
+ * Sažetak iz već zbrojenih Wh. Postoji da bi ga dijelili `sazmiEnergiju` (po projektu) i
+ * ukupna brojka u `/api/projects/trosak` — dvije ruke koje neovisno slažu isti objekt su
+ * isti raskorak koji je TASK-4263 već jednom otkrio kod troška.
+ */
+export function energijaSazetakOdWh(wh: number, izTokena: number, modelNepoznat: number): EnergijaSazetak | null {
+  if (!izTokena) return null
+  return {
+    wh: zaokr(wh),
+    donja: zaokr(wh / ENERGY_BAND),
+    gornja: zaokr(wh * ENERGY_BAND),
+    metoda: ENERGY_METHOD,
+    procjena: true,
+    izTokena,
+    modelNepoznat,
+    co2: sazmiCo2(wh),
+    voda: sazmiVodu(wh),
+  }
+}
+
+/**
+ * Zbroj energije preko redaka (npr. jedan projekt, grupiran po modelu).
+ * `null` kad nijedan redak nema tokene — kartica tada pokazuje „—", ne „0 kWh".
+ */
+export function sazmiEnergiju(redci: EnergijaRedak[]): EnergijaSazetak | null {
+  let wh = 0, izTokena = 0, modelNepoznat = 0
+  for (const r of redci) {
+    const e = procijeniEnergijuWh(r)
+    if (!e) continue
+    const n = Math.max(1, Number(r.zapisaSTokenima ?? 1) || 1)
+    wh += e.wh
+    izTokena += n
+    if (e.modelNepoznat) modelNepoznat += n
+  }
+  return energijaSazetakOdWh(wh, izTokena, modelNepoznat)
+}
+
+// ============================================
 // Singleton
 // ============================================
 
@@ -604,6 +833,33 @@ export const TROSAK_PO_PROJEKTU_SQL = `
         FROM cost_log c
         LEFT JOIN tasks t ON t.id = c.task_id
        GROUP BY pid`
+
+/**
+ * Energija po projektu (ADR-0010 §7, §11.3) — ISTI pripis projekta kao trošak, ali
+ * **`GROUP BY pid, c.model`**.
+ *
+ * Zašto model mora biti u ključu: množitelj razreda `k` (§4.3) razlikuje opus od sonneta
+ * 1,67×, a `claude-opus-5` je 80 % našeg prometa. Tko doda `SUM(input_tokens)` postojećem
+ * `TROSAK_PO_PROJEKTU_SQL` i ostane na `GROUP BY pid`, primijeni `k = 1` na sve retke i
+ * **podcijeni energiju 1,584× (manjka 36,9 %)** — mjereno 12.09.2026. nad cijelim `cost_logom`.
+ *
+ * Postojeći upit troška se namjerno NE dira: trošak i energija ostaju dva upita s istim
+ * pripisom projekta, a ne jedan upit s dvije svrhe.
+ */
+export const ENERGIJA_PO_PROJEKTU_SQL = `
+      SELECT COALESCE(t.project_id, c.project_id, '(bez projekta)') AS pid,
+             c.model                          AS model,
+             SUM(c.input_tokens)              AS input_tokens,
+             SUM(c.output_tokens)             AS output_tokens,
+             SUM(c.cache_read_tokens)         AS cache_read_tokens,
+             SUM(c.cache_write_tokens)        AS cache_write_tokens,
+             COUNT(*)                         AS zapisa,
+             SUM(CASE WHEN COALESCE(c.input_tokens,0) + COALESCE(c.output_tokens,0)
+                         + COALESCE(c.cache_read_tokens,0) + COALESCE(c.cache_write_tokens,0) > 0
+                      THEN 1 ELSE 0 END)      AS zapisa_s_tokenima
+        FROM cost_log c
+        LEFT JOIN tasks t ON t.id = c.task_id
+       GROUP BY pid, c.model`
 
 /** Isti agregat, ograničen na prozor (parametar: npr. `-30 days`). */
 export const TROSAK_PO_PROJEKTU_PROZOR_SQL = `
