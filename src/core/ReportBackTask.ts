@@ -1,3 +1,4 @@
+import { MAX_MSG_LEN, parseAgentOutput, summaryLine } from './AgentOutputParser'
 /**
  * ReportBackTask — ZADATAK DOJAVE: niz zadataka daje JEDNU poruku korisniku (U4 / TASK-4264).
  *
@@ -233,8 +234,12 @@ export function evaluateReportBack(
 
 // ─── Poruka ──────────────────────────────────────────────────────────────────
 
-/** Telegram propušta ~4096 znakova; ostatak se reže, ne šalje se druga poruka. */
-export const MAX_MSG_LEN = 3900
+/**
+ * Telegram propušta ~4096 znakova; ostatak se reže, ne šalje se druga poruka.
+ * TASK-4815: vrijednost više ne živi ovdje — jedan strop za sve kanale stoji u
+ * `AgentOutputParser`, a ovdje se samo re-izvozi radi zatečenih uvoznika.
+ */
+export { MAX_MSG_LEN }
 
 /**
  * Adresa ploče kakvu korisnik otvara s VLASTITOG stroja — iz `TM_BOARD_URL`, bez zadane
@@ -253,9 +258,13 @@ export function boardUrl(): string | null {
 }
 
 function sazetakRetka(t: ChainTaskView, maxLen: number): string {
-  const izvor = String(t.resultSummary || t.blockedReason || '').replace(/\s+/g, ' ').trim()
-  if (!izvor) return ''
-  return izvor.length <= maxLen ? izvor : izvor.slice(0, maxLen - 1).trimEnd() + '…'
+  // TASK-4815: jedan redak po zadatku, iz ISTOG parsera kao ploča — prije je ovdje stajao
+  // `replace(/\s+/g,' ')` + `slice(n)`, rez je padao nasred zaglavlja, a markdown je išao
+  // korisniku doslovno.
+  const izvor = String(t.resultSummary || t.blockedReason || '')
+  if (!izvor.trim()) return ''
+  if (maxLen <= 0) return ''
+  return summaryLine(parseAgentOutput(izvor), maxLen)
 }
 
 export interface ReportBackMessageInput {
