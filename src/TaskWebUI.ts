@@ -25,6 +25,8 @@ import { konfigPutanja, osigurajMapu, stanjePutanja } from './core/paths'
 // TERMINALNO stanje ne dolazi od sustava (orkestrator najam pušta prije svog zapisa) nego od
 // agenta koji sam sebe zatvara prije suda kritičara. Zadano isključeno (features.json).
 import { odlukaGuarda } from './core/SpawnFinalizer'
+// TASK-4894: model-config.json se mijenja SAMO atomno i uz revizijski trag (GAP F14).
+import { saveModelConfig } from './core/models/ModelConfigWriter'
 // TASK-4815: jedan parser agentova izlaza za ploču i kanale (GAP F5).
 import { parseAgentOutput, renderFull } from './core/AgentOutputParser'
 import { najamAktivan } from './core/TaskCloser'
@@ -9188,6 +9190,15 @@ const AVAILABLE_MODELS: Array<{ spec: string; provider: string; model: string; t
   { spec: 'anthropic:opus',   provider: 'anthropic', model: 'opus',   tier: 'frontier', label: 'Claude Opus',   spawnable: true },
   { spec: 'anthropic:sonnet', provider: 'anthropic', model: 'sonnet', tier: 'strong',   label: 'Claude Sonnet', spawnable: true },
   { spec: 'anthropic:haiku',  provider: 'anthropic', model: 'haiku',  tier: 'basic',    label: 'Claude Haiku',  spawnable: true },
+  { spec: 'anthropic:fable',  provider: 'anthropic', model: 'fable',  tier: 'strong',   label: 'Claude Fable',  spawnable: true },
+  // Pinirane generacije. TASK-4894: `[1m]` (kontekst 1M) mora biti u ovom popisu, jer
+  // validacija spremanja prima SAMO ono što je ovdje — bez njega je svako spremanje s
+  // ploče tiho vraćalo `…[1m]` na model bez proširenog konteksta.
+  { spec: 'anthropic:claude-opus-4-6',       provider: 'anthropic', model: 'claude-opus-4-6',       tier: 'frontier', label: 'Claude Opus 4.6',               spawnable: true },
+  { spec: 'anthropic:claude-sonnet-4-6',     provider: 'anthropic', model: 'claude-sonnet-4-6',     tier: 'strong',   label: 'Claude Sonnet 4.6',             spawnable: true },
+  { spec: 'anthropic:claude-opus-4-6[1m]',   provider: 'anthropic', model: 'claude-opus-4-6[1m]',   tier: 'frontier', label: 'Claude Opus 4.6 (kontekst 1M)',   spawnable: true },
+  { spec: 'anthropic:claude-sonnet-4-6[1m]', provider: 'anthropic', model: 'claude-sonnet-4-6[1m]', tier: 'strong',   label: 'Claude Sonnet 4.6 (kontekst 1M)', spawnable: true },
+  { spec: 'anthropic:claude-haiku-4-5',      provider: 'anthropic', model: 'claude-haiku-4-5',      tier: 'basic',    label: 'Claude Haiku 4.5',              spawnable: true },
   { spec: 'ollama:qwen3:8b',                  provider: 'ollama', model: 'qwen3:8b',                  tier: 'basic',  label: 'Ollama qwen3:8b',              spawnable: false },
   { spec: 'ollama:qwen2.5-coder:7b-instruct', provider: 'ollama', model: 'qwen2.5-coder:7b-instruct', tier: 'good',   label: 'Ollama qwen2.5-coder:7b',      spawnable: false },
   { spec: 'ollama:qwen3-coder:30b',           provider: 'ollama', model: 'qwen3-coder:30b',           tier: 'strong', label: 'Ollama qwen3-coder:30b',       spawnable: false },
@@ -9911,8 +9922,10 @@ async function handleSetProvider(providerId: string, req: Request): Promise<Resp
       else p.apiKey = body.apiKey
     }
 
-    const { writeFileSync: _wfs } = require('fs')
-    _wfs(mcPath, JSON.stringify(mc, null, 2) + '\n')
+    // TASK-4894: atomno + revizijski trag (v. ModelConfigWriter.ts). Prije je ovo bio
+    // gol writeFileSync preko žive datoteke — pad usred upisa daje krnji JSON, koji
+    // resolveAgentTarget tiho proguta i vrati SVE agente na plivajući alias.
+    saveModelConfig(mcPath, _mc => { Object.assign(_mc, mc) }, 'ploca')
     return json({ status: 'saved', providerId, enabled: p.enabled !== false, baseUrl: p.baseUrl || null, hasAuth: !!p.apiKey })
   } catch (err) {
     return json({ error: String(err) }, 400)
@@ -10253,8 +10266,10 @@ async function handleSetAgentModel(agentId: string, req: Request): Promise<Respo
       mc.agentOverrides[agentId] = raw
     }
 
-    const { writeFileSync: _wfs } = require('fs')
-    _wfs(mcPath, JSON.stringify(mc, null, 2) + '\n')
+    // TASK-4894: atomno + revizijski trag (v. ModelConfigWriter.ts). Prije je ovo bio
+    // gol writeFileSync preko žive datoteke — pad usred upisa daje krnji JSON, koji
+    // resolveAgentTarget tiho proguta i vrati SVE agente na plivajući alias.
+    saveModelConfig(mcPath, _mc => { Object.assign(_mc, mc) }, 'ploca')
 
     const spawnable = clearing ? null : (getEffectiveModels().find(m => m.spec === raw)?.spawnable ?? false)
     return json({ status: 'saved', agentId, model: clearing ? null : raw, spawnable })
@@ -10851,7 +10866,7 @@ function loginSetProviderEnabled(id: string, enabled: boolean): void {
     const mc = existsSync(mcPath) ? JSON.parse(readFileSync(mcPath, 'utf-8')) : {}
     mc.providers = mc.providers || {}
     mc.providers[id] = { ...(mc.providers[id] || {}), enabled }
-    writeFileSync(mcPath, JSON.stringify(mc, null, 2))
+    saveModelConfig(mcPath, _mc => { Object.assign(_mc, mc) }, 'prijava:davatelj')
   } catch {}
 }
 function loginSpawnEnv(): Record<string, string> {
