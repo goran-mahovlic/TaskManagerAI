@@ -27,6 +27,8 @@ import { konfigPutanja, osigurajMapu, stanjePutanja } from './core/paths'
 import { odlukaGuarda } from './core/SpawnFinalizer'
 // TASK-4894: model-config.json se mijenja SAMO atomno i uz revizijski trag (GAP F14).
 import { saveModelConfig } from './core/models/ModelConfigWriter'
+// TASK-4967/4972: RAG s dva pozadinska sustava (ChromaDB / pgvector / dual), GAP F13.
+import { getRAGBackendService } from './RAGBackendService'
 // TASK-4815: jedan parser agentova izlaza za ploču i kanale (GAP F5).
 import { parseAgentOutput, renderFull } from './core/AgentOutputParser'
 import { najamAktivan } from './core/TaskCloser'
@@ -2586,6 +2588,11 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         <div class="info-card info-full" id="info-rules-card">
           <div class="info-card-title"><span class="icon">&#9888;</span> Critical Rules (27)</div>
           <div id="info-rules-content"><div class="empty" data-i18n="loading">Loading...</div></div>
+        </div>
+        <!-- TASK-4972: RAG Backend upravljanje (ChromaDB/pgvector) -->
+        <div class="info-card info-full" id="info-rag-card">
+          <div class="info-card-title"><span class="icon">&#128451;</span> <span data-i18n="cfg_kartica_rag">RAG Backend</span></div>
+          <div id="info-rag-content"><div class="empty" data-i18n="loading">Loading...</div></div>
         </div>
       </div>
     </div>
@@ -7650,6 +7657,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         renderInfoSkillsAndWorkflows(d);
         renderInfoRules(d);
         renderInfoMetrics(metricsData);
+        loadRagBackend();
       } catch(e) {
         document.getElementById('info-system-content').innerHTML = '<div class="empty">Error loading info: ' + e.message + '</div>';
       }
@@ -9097,6 +9105,306 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       h += '<div class="info-kv"><span class="info-kv-label">Events Total</span><span class="info-kv-value">' + (o.totalEvents||0) + '</span></div>';
       h += '<div class="info-kv"><span class="info-kv-label">Events (24h)</span><span class="info-kv-value">' + (o.last24h||0) + '</span></div>';
       el.innerHTML = h;
+    }
+
+    // ============================================
+    // TASK-4972: RAG Backend (ChromaDB/pgvector) upravljanje
+    // ============================================
+
+    var _ragZadnji = null;  // Zadnji odgovor za osvježavanje jezika
+    var _ragUsporedba = null;  // Zadnja usporedba kolekcija
+    var _ragMigracija = null;  // Status migracije
+
+    function osvjeziRagJezik() {
+      var el = document.getElementById('info-rag-content');
+      if (!el || !_ragZadnji) return;
+      el.innerHTML = renderRagBackend(_ragZadnji);
+    }
+
+    async function loadRagBackend() {
+      var el = document.getElementById('info-rag-content');
+      if (!el) return;
+      try {
+        var d = await (await fetch('/api/rag/backend/status')).json();
+        if (d.error) throw new Error(d.error);
+        _ragZadnji = d;
+        el.innerHTML = renderRagBackend(d);
+      } catch(e) {
+        el.innerHTML = '<div class="empty">' +
+          _Tv('rag_greska_citanja', 'Greška pri čitanju RAG statusa: {greska}',
+                 { greska: _esc(e.message) }) + '</div>';
+      }
+    }
+
+    function renderRagBackend(d) {
+      var cur = d.currentBackend || 'chromadb';
+      var chroma = d.chromadb || {};
+      var pg = d.pgvector || {};
+
+      // Status znački
+      var chromaZnacka = chroma.connected
+        ? '<span class="info-badge enabled">✓ ' + _T('rag_spojeno', 'spojeno') + '</span>'
+        : '<span class="info-badge disabled">✗ ' + _T('rag_nije_spojeno', 'nije spojeno') + '</span>';
+      var pgZnacka = pg.connected
+        ? '<span class="info-badge enabled">✓ ' + _T('rag_spojeno', 'spojeno') + '</span>'
+        : (pg.available
+            ? '<span class="info-badge disabled">✗ ' + _T('rag_nije_spojeno', 'nije spojeno') + '</span>'
+            : '<span class="info-badge disabled" title="' + _esc(pg.error || '') + '">⚠ ' + _T('rag_nedostupno', 'nedostupno') + '</span>');
+
+      var aktivniBackend = cur === 'chromadb'
+        ? '<span class="info-badge enabled">ChromaDB</span>'
+        : (cur === 'pgvector'
+            ? '<span class="info-badge enabled">pgvector</span>'
+            : '<span class="info-badge enabled">dual (oba)</span>');
+
+      var h = '<div style="font-size:0.72rem;color:var(--text-secondary);margin-bottom:0.5rem">' +
+        _T('rag_uvod', 'RAG (Retrieval-Augmented Generation) backend za vektorsko pretraživanje. ' +
+          'ChromaDB je zadani backend; pgvector omogućuje migraciju na PostgreSQL s boljim performansama.') +
+        ' ' + _T('rag_aktivni', 'Aktivni backend:') + ' ' + aktivniBackend + '</div>';
+
+      // Dvije kartice za status backenda
+      h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem">';
+
+      // ChromaDB status
+      h += '<div style="background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:6px;padding:0.75rem">' +
+        '<div style="font-weight:600;margin-bottom:0.5rem;display:flex;align-items:center;gap:0.5rem">' +
+        '<span style="font-size:1.1rem">🗄️</span> ChromaDB ' + chromaZnacka + '</div>';
+      h += '<div style="font-size:0.72rem">';
+      h += '<div style="display:flex;justify-content:space-between;padding:2px 0"><span>Host:</span><span style="font-family:monospace">' + _esc(chroma.host) + ':' + chroma.port + '</span></div>';
+      h += '<div style="display:flex;justify-content:space-between;padding:2px 0"><span>' + _T('rag_kolekcije', 'Kolekcije') + ':</span><span>' + (chroma.collections || 0) + '</span></div>';
+      h += '<div style="display:flex;justify-content:space-between;padding:2px 0"><span>' + _T('rag_dokumenti', 'Dokumenti') + ':</span><span>~' + (chroma.documents || 0).toLocaleString() + '</span></div>';
+      if (chroma.error && !chroma.connected) h += '<div style="color:var(--accent-red);margin-top:4px;font-size:0.68rem">⚠ ' + _esc(chroma.error) + '</div>';
+      h += '</div></div>';
+
+      // pgvector status
+      h += '<div style="background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:6px;padding:0.75rem">' +
+        '<div style="font-weight:600;margin-bottom:0.5rem;display:flex;align-items:center;gap:0.5rem">' +
+        '<span style="font-size:1.1rem">🐘</span> pgvector ' + pgZnacka + '</div>';
+      h += '<div style="font-size:0.72rem">';
+      h += '<div style="display:flex;justify-content:space-between;padding:2px 0"><span>Host:</span><span style="font-family:monospace">' + _esc(pg.host) + ':' + pg.port + '</span></div>';
+      h += '<div style="display:flex;justify-content:space-between;padding:2px 0"><span>Database:</span><span style="font-family:monospace">' + _esc(pg.database) + '</span></div>';
+      h += '<div style="display:flex;justify-content:space-between;padding:2px 0"><span>' + _T('rag_kolekcije', 'Kolekcije') + ':</span><span>' + (pg.collections || 0) + '</span></div>';
+      h += '<div style="display:flex;justify-content:space-between;padding:2px 0"><span>' + _T('rag_dokumenti', 'Dokumenti') + ':</span><span>' + (pg.documents || 0).toLocaleString() + '</span></div>';
+      if (pg.version) h += '<div style="display:flex;justify-content:space-between;padding:2px 0"><span>Verzija:</span><span>' + _esc(pg.version) + '</span></div>';
+      if (pg.error && !pg.connected) h += '<div style="color:var(--accent-red);margin-top:4px;font-size:0.68rem">⚠ ' + _esc(pg.error) + '</div>';
+      h += '</div></div>';
+
+      h += '</div>';
+
+      // Kontrole
+      h += '<table class="info-table" style="margin-bottom:1rem"><tbody>';
+
+      // Backend prekidač
+      var backendOpts = '<option value="chromadb"' + (cur === 'chromadb' ? ' selected' : '') + '>ChromaDB</option>' +
+        '<option value="pgvector"' + (cur === 'pgvector' ? ' selected' : '') + (pg.connected ? '' : ' disabled') + '>pgvector</option>' +
+        '<option value="dual"' + (cur === 'dual' ? ' selected' : '') + (pg.connected ? '' : ' disabled') + '>dual (oba)</option>';
+      h += _red(_T('rag_backend', 'Aktivni backend'),
+        '<select id="rag-backend-select" style="' + _stil() + ';min-width:150px" onchange="setRagBackend(this.value, this)">' + backendOpts + '</select>' +
+        ' <span id="rag-backend-status" style="font-size:0.68rem;margin-left:0.5rem"></span>',
+        _T('rag_backend_opis', 'ChromaDB = postojeći; pgvector = PostgreSQL (brži, HNSW indeksi); dual = oba paralelno (za migraciju).'));
+
+      h += '</tbody></table>';
+
+      // pgvector konfiguracija (sklopivo)
+      h += '<details style="margin-bottom:1rem"><summary style="cursor:pointer;font-weight:600;font-size:0.8rem;color:var(--accent-blue)">' +
+        _T('rag_pg_config', '🔧 pgvector konfiguracija') + '</summary>';
+      h += '<div style="padding:0.75rem;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:0 0 6px 6px;margin-top:-1px">';
+      h += '<table class="info-table"><tbody>';
+      h += _red('Host',
+        '<input id="rag-pg-host" value="' + _esc(pg.host) + '" style="' + _stil() + ';width:150px">',
+        'IP adresa ili hostname PostgreSQL poslužitelja');
+      h += _red('Port',
+        '<input id="rag-pg-port" type="number" value="' + _esc(pg.port == null ? '' : pg.port) + '" style="' + _stil() + ';width:80px">',
+        'Port (zadano: 17791, mapira se na 5432)');
+      h += _red('Database',
+        '<input id="rag-pg-database" value="' + _esc(pg.database) + '" style="' + _stil() + ';width:150px">',
+        'Ime baze podataka');
+      h += _red('User',
+        '<input id="rag-pg-user" value="regoc" style="' + _stil() + ';width:100px">',
+        'Korisničko ime');
+      h += _red('Password',
+        '<input id="rag-pg-password" type="password" placeholder="••••••••" style="' + _stil() + ';width:150px">' +
+        ' <span style="font-size:0.68rem;color:var(--text-secondary)">' + _T('rag_pass_hint', '(iz TM_PGVECTOR_PASSWORD ili datoteke tajni)') + '</span>',
+        'Lozinka se čita iz ~/.claude/regoc/credentials.env');
+      h += '</tbody></table>';
+      h += '<div style="margin-top:0.75rem;display:flex;gap:0.5rem">' +
+        '<button style="font-size:0.72rem;padding:4px 12px" onclick="testRagPgConnection(this)">' + _T('rag_test', 'Test konekcije') + '</button>' +
+        '<button style="font-size:0.72rem;padding:4px 12px" onclick="saveRagPgConfig(this)">' + _T('rag_spremi', 'Spremi postavke') + '</button>' +
+        '<span id="rag-pg-status" style="font-size:0.68rem;line-height:2"></span></div>';
+      h += '</div></details>';
+
+      // Migracija panel (sklopivo)
+      h += '<details style="margin-bottom:0.5rem"><summary style="cursor:pointer;font-weight:600;font-size:0.8rem;color:var(--accent-blue)">' +
+        _T('rag_migracija', '📦 Migracija ChromaDB → pgvector') + '</summary>';
+      h += '<div style="padding:0.75rem;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:0 0 6px 6px;margin-top:-1px">';
+      h += '<div style="font-size:0.72rem;margin-bottom:0.75rem">' +
+        _T('rag_mig_uvod', 'Usporedi kolekcije između backenda i pokreni migraciju jedne po jedne. ' +
+          'Migracija se izvršava u pozadini; status možeš pratiti osvježavanjem.') + '</div>';
+      h += '<div style="display:flex;gap:0.5rem;margin-bottom:0.75rem">' +
+        '<button style="font-size:0.72rem;padding:4px 12px" onclick="compareRagCollections(this)">' + _T('rag_usporedi', 'Usporedi kolekcije') + '</button>' +
+        '<button style="font-size:0.72rem;padding:4px 12px" onclick="refreshRagMigrationStatus()">' + _T('rag_osvjezi_status', 'Osvježi status') + '</button>' +
+        '<span id="rag-mig-status" style="font-size:0.68rem;line-height:2"></span></div>';
+      h += '<div id="rag-compare-result"></div>';
+      h += '</div></details>';
+
+      return h;
+    }
+
+    async function setRagBackend(backend, el) {
+      var statusEl = document.getElementById('rag-backend-status');
+      if (el) el.disabled = true;
+      if (statusEl) statusEl.innerHTML = '<span style="color:var(--text-secondary)">' + _T('rag_spremam', 'spremam…') + '</span>';
+      try {
+        var res = await fetch('/api/rag/backend', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ backend: backend })
+        });
+        var d = await res.json();
+        if (!res.ok || d.error) throw new Error(d.error || 'save failed');
+        if (statusEl) statusEl.innerHTML = '<span style="color:var(--accent-green)">✓ ' + _T('rag_spremljeno', 'spremljeno') + '</span>';
+        setTimeout(loadRagBackend, 800);
+      } catch(e) {
+        if (statusEl) statusEl.innerHTML = '<span style="color:var(--accent-red)">✗ ' + _esc(e.message) + '</span>';
+        if (el) el.disabled = false;
+      }
+    }
+
+    async function testRagPgConnection(el) {
+      var statusEl = document.getElementById('rag-pg-status');
+      if (el) el.disabled = true;
+      if (statusEl) statusEl.innerHTML = '<span style="color:var(--text-secondary)">' + _T('rag_testiram', 'testiram…') + '</span>';
+      try {
+        var config = {
+          host: document.getElementById('rag-pg-host').value,
+          port: Number(document.getElementById('rag-pg-port').value),
+          database: document.getElementById('rag-pg-database').value,
+          user: document.getElementById('rag-pg-user').value,
+          password: document.getElementById('rag-pg-password').value || ''
+        };
+        var res = await fetch('/api/rag/backend/test', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(config)
+        });
+        var d = await res.json();
+        if (d.connected) {
+          statusEl.innerHTML = '<span style="color:var(--accent-green)">✓ ' +
+            _Tv('rag_test_ok', 'Spojeno! {verzija}', { verzija: d.version || '' }) + '</span>';
+        } else {
+          statusEl.innerHTML = '<span style="color:var(--accent-red)">✗ ' + _esc(d.error || 'Connection failed') + '</span>';
+        }
+      } catch(e) {
+        statusEl.innerHTML = '<span style="color:var(--accent-red)">✗ ' + _esc(e.message) + '</span>';
+      }
+      if (el) el.disabled = false;
+    }
+
+    async function saveRagPgConfig(el) {
+      var statusEl = document.getElementById('rag-pg-status');
+      if (el) el.disabled = true;
+      if (statusEl) statusEl.innerHTML = '<span style="color:var(--text-secondary)">' + _T('rag_spremam', 'spremam…') + '</span>';
+      try {
+        var config = {
+          host: document.getElementById('rag-pg-host').value,
+          port: Number(document.getElementById('rag-pg-port').value),
+          database: document.getElementById('rag-pg-database').value,
+          user: document.getElementById('rag-pg-user').value
+        };
+        var res = await fetch('/api/rag/backend/config', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(config)
+        });
+        var d = await res.json();
+        if (!res.ok || d.error) throw new Error(d.error || 'save failed');
+        statusEl.innerHTML = '<span style="color:var(--accent-green)">✓ ' + _T('rag_spremljeno', 'spremljeno') + '</span>';
+        setTimeout(loadRagBackend, 500);
+      } catch(e) {
+        statusEl.innerHTML = '<span style="color:var(--accent-red)">✗ ' + _esc(e.message) + '</span>';
+      }
+      if (el) el.disabled = false;
+    }
+
+    async function compareRagCollections(el) {
+      var statusEl = document.getElementById('rag-mig-status');
+      var resultEl = document.getElementById('rag-compare-result');
+      if (el) el.disabled = true;
+      if (statusEl) statusEl.innerHTML = '<span style="color:var(--text-secondary)">' + _T('rag_usporedba', 'uspoređujem…') + '</span>';
+      try {
+        var res = await fetch('/api/rag/backend/compare');
+        var d = await res.json();
+        if (d.error) throw new Error(d.error);
+        _ragUsporedba = d;
+        statusEl.innerHTML = '';
+
+        // Tablica usporedbe
+        var h = '<table class="info-table" style="font-size:0.72rem"><thead><tr>' +
+          '<th>' + _T('rag_kolekcija', 'Kolekcija') + '</th>' +
+          '<th>ChromaDB</th><th>pgvector</th><th>' + _T('rag_razlika', 'Razlika') + '</th>' +
+          '<th></th></tr></thead><tbody>';
+        (d || []).forEach(function(c) {
+          var diff = c.difference;
+          var diffStyle = diff === 0 ? 'color:var(--accent-green)' : (diff > 0 ? 'color:var(--accent-yellow)' : 'color:var(--accent-blue)');
+          var diffText = diff === 0 ? '✓' : (diff > 0 ? '+' + diff : String(diff));
+          var btn = diff > 0
+            ? '<button style="font-size:0.68rem;padding:2px 8px" onclick="migrateRagCollection(\\'' + _esc(c.collection) + '\\', this)">' + _T('rag_migriraj', 'Migriraj') + '</button>'
+            : (diff === 0 ? '<span style="color:var(--accent-green);font-size:0.68rem">✓</span>' : '');
+          h += '<tr><td style="font-family:monospace">' + _esc(c.collection) + '</td>' +
+            '<td style="text-align:right">' + c.chromaCount.toLocaleString() + '</td>' +
+            '<td style="text-align:right">' + c.pgvectorCount.toLocaleString() + '</td>' +
+            '<td style="text-align:right;' + diffStyle + '">' + diffText + '</td>' +
+            '<td>' + btn + '</td></tr>';
+        });
+        h += '</tbody></table>';
+        resultEl.innerHTML = h;
+      } catch(e) {
+        statusEl.innerHTML = '<span style="color:var(--accent-red)">✗ ' + _esc(e.message) + '</span>';
+      }
+      if (el) el.disabled = false;
+    }
+
+    async function migrateRagCollection(collection, el) {
+      var statusEl = document.getElementById('rag-mig-status');
+      if (el) el.disabled = true;
+      if (statusEl) statusEl.innerHTML = '<span style="color:var(--text-secondary)">' +
+        _Tv('rag_migriram', 'migriram {kol}…', { kol: _esc(collection) }) + '</span>';
+      try {
+        var res = await fetch('/api/rag/backend/migrate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ collection: collection })
+        });
+        var d = await res.json();
+        if (!d.started) throw new Error(d.error || 'Migration failed to start');
+        statusEl.innerHTML = '<span style="color:var(--accent-green)">✓ ' +
+          _Tv('rag_mig_pokrenuta', 'Migracija {kol} pokrenuta', { kol: _esc(collection) }) + '</span>';
+        // Osvježi nakon kratke pauze
+        setTimeout(loadRagBackend, 3000);
+      } catch(e) {
+        statusEl.innerHTML = '<span style="color:var(--accent-red)">✗ ' + _esc(e.message) + '</span>';
+        if (el) el.disabled = false;
+      }
+    }
+
+    async function refreshRagMigrationStatus() {
+      var statusEl = document.getElementById('rag-mig-status');
+      try {
+        var res = await fetch('/api/rag/backend/migration');
+        var d = await res.json();
+        _ragMigracija = d;
+        if (d.inProgress) {
+          statusEl.innerHTML = '<span style="color:var(--accent-blue)">' +
+            _Tv('rag_mig_u_tijeku', 'U tijeku: {kol} ({prog}%)', { kol: _esc(d.collection), prog: d.progress || 0 }) + '</span>';
+        } else {
+          var stats = d.totalMigrated > 0
+            ? _Tv('rag_mig_gotovo', '{n} dokumenata migrirano, {f} neuspješno', { n: d.totalMigrated, f: d.totalFailed })
+            : _T('rag_mig_nema', 'Nema migracije u tijeku');
+          statusEl.innerHTML = '<span style="color:var(--text-secondary)">' + stats + '</span>';
+        }
+      } catch(e) {
+        statusEl.innerHTML = '<span style="color:var(--accent-red)">✗ ' + _esc(e.message) + '</span>';
+      }
     }
 
     // ============================================
@@ -14399,6 +14707,250 @@ startFileWatcher()
 // Start konzola log streamer
 startKonzolaLogStreamer()
 
+
+// ============================================
+// RAG BACKEND HANDLERS (TASK-4967)
+// ============================================
+
+const ragBackendService = getRAGBackendService()
+
+/**
+ * GET /api/rag/backend/status — Status svih backenda
+ */
+async function handleGetRAGBackendStatus(): Promise<Response> {
+  try {
+    const status = await ragBackendService.getStatus()
+    return new Response(JSON.stringify(status), {
+      headers: { 'Content-Type': 'application/json' }
+    })
+  } catch (error) {
+    return new Response(JSON.stringify({
+      error: 'Failed to get backend status',
+      details: error instanceof Error ? error.message : String(error)
+    }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' }
+    })
+  }
+}
+
+/**
+ * PUT /api/rag/backend — Promjena aktivnog backenda
+ */
+async function handleSetRAGBackend(req: Request): Promise<Response> {
+  try {
+    const body = await req.json()
+    const backend = body.backend
+
+    if (!backend) {
+      return new Response(JSON.stringify({ error: 'Backend not specified' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' }
+      })
+    }
+
+    const result = await ragBackendService.setBackend(backend)
+
+    if (!result.success) {
+      return new Response(JSON.stringify({ error: result.error }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' }
+      })
+    }
+
+    return new Response(JSON.stringify({ success: true, backend }), {
+      headers: { 'Content-Type': 'application/json' }
+    })
+  } catch (error) {
+    return new Response(JSON.stringify({
+      error: 'Failed to set backend',
+      details: error instanceof Error ? error.message : String(error)
+    }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' }
+    })
+  }
+}
+
+/**
+ * GET /api/rag/backend/compare — Usporedi kolekcije između backenda
+ */
+async function handleCompareRAGBackends(): Promise<Response> {
+  try {
+    const comparisons = await ragBackendService.compareCollections()
+    return new Response(JSON.stringify({ comparisons }), {
+      headers: { 'Content-Type': 'application/json' }
+    })
+  } catch (error) {
+    return new Response(JSON.stringify({
+      error: 'Failed to compare backends',
+      details: error instanceof Error ? error.message : String(error)
+    }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' }
+    })
+  }
+}
+
+/**
+ * GET /api/rag/backend/migration — Status migracije
+ */
+async function handleGetRAGMigrationStatus(): Promise<Response> {
+  try {
+    const status = ragBackendService.getMigrationStatus()
+    return new Response(JSON.stringify(status), {
+      headers: { 'Content-Type': 'application/json' }
+    })
+  } catch (error) {
+    return new Response(JSON.stringify({
+      error: 'Failed to get migration status',
+      details: error instanceof Error ? error.message : String(error)
+    }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' }
+    })
+  }
+}
+
+/**
+ * POST /api/rag/backend/migrate — Pokreni migraciju kolekcije
+ */
+async function handleStartRAGMigration(req: Request): Promise<Response> {
+  try {
+    const body = await req.json()
+    const collection = body.collection
+
+    if (!collection) {
+      return new Response(JSON.stringify({ error: 'Collection not specified' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' }
+      })
+    }
+
+    const result = await ragBackendService.startMigration(collection)
+
+    if (!result.started) {
+      return new Response(JSON.stringify({ error: result.error }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' }
+      })
+    }
+
+    return new Response(JSON.stringify({ success: true, started: true, collection }), {
+      headers: { 'Content-Type': 'application/json' }
+    })
+  } catch (error) {
+    return new Response(JSON.stringify({
+      error: 'Failed to start migration',
+      details: error instanceof Error ? error.message : String(error)
+    }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' }
+    })
+  }
+}
+
+/**
+ * PUT /api/rag/backend/config — Spremi pgvector konfiguraciju
+ */
+async function handleSetRAGBackendConfig(req: Request): Promise<Response> {
+  try {
+    const body = await req.json()
+    const { host, port, database, user } = body
+
+    // Lozinka se NIKAD ne sprema u JSON konfiguraciju: ide u TM_PGVECTOR_PASSWORD ili u
+    // datoteku tajni. Tiho ignoriranje bi korisniku reklo „spremljeno", a nije.
+    if (body && Object.prototype.hasOwnProperty.call(body, 'password')) {
+      return new Response(JSON.stringify({
+        error: 'Lozinka se ne sprema u konfiguraciju — postavi TM_PGVECTOR_PASSWORD (okolina ili datoteka tajni).'
+      }), { status: 400, headers: { 'Content-Type': 'application/json' } })
+    }
+
+    if (!host || !port || !database || !user) {
+      return new Response(JSON.stringify({
+        error: 'Missing required fields: host, port, database, user'
+      }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' }
+      })
+    }
+
+    const result = await ragBackendService.savePgVectorConfig({
+      host, port, database, user
+    })
+
+    if (!result.success) {
+      return new Response(JSON.stringify({ error: result.error }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' }
+      })
+    }
+
+    return new Response(JSON.stringify({ success: true }), {
+      headers: { 'Content-Type': 'application/json' }
+    })
+  } catch (error) {
+    return new Response(JSON.stringify({
+      error: 'Failed to save config',
+      details: error instanceof Error ? error.message : String(error)
+    }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' }
+    })
+  }
+}
+
+/**
+ * POST /api/rag/backend/test — Test pgvector konekcije
+ */
+async function handleTestRAGBackendConnection(req: Request): Promise<Response> {
+  try {
+    const body = await req.json()
+    const { host, port, database, user, password } = body
+
+    if (!host || !port || !database || !user) {
+      return new Response(JSON.stringify({
+        error: 'Missing required fields: host, port, database, user'
+      }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' }
+      })
+    }
+
+    // Lozinka: poslana u tijelu ILI (samo za SPREMLJENU adresu) iz TM_PGVECTOR_PASSWORD /
+    // datoteke tajni — to razrješava sama usluga. Na upisanu tuđu adresu spremljena se
+    // lozinka nikad ne šalje (SSRF / curenje tajne, GAP F13 uvjet d).
+    const result = await ragBackendService.testPgVectorConnection({
+      host, port, database, user, password: password || undefined
+    })
+
+    return new Response(JSON.stringify(result), {
+      headers: { 'Content-Type': 'application/json' }
+    })
+  } catch (error) {
+    return new Response(JSON.stringify({
+      connected: false,
+      error: error instanceof Error ? error.message : String(error)
+    }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' }
+    })
+  }
+}
+
+
+/** GET /api/rag/backend/config — postavke BEZ lozinke (samo `passwordSet`). */
+function handleGetRAGBackendConfig(): Response {
+  try {
+    return new Response(JSON.stringify(ragBackendService.getConfig()), { headers: { 'Content-Type': 'application/json' } })
+  } catch (error) {
+    return new Response(JSON.stringify({ error: error instanceof Error ? error.message : String(error) }), {
+      status: 500, headers: { 'Content-Type': 'application/json' },
+    })
+  }
+}
+
+
 const server = Bun.serve({
   port: PORT,
   hostname: HOST,  // Bind to 0.0.0.0 for external access
@@ -14888,6 +15440,51 @@ const server = Bun.serve({
         if (sto === 'proba' && req.method === 'POST') return handleIntegracijaProba(ime)
       }
     }
+
+    // ============================================
+    // RAG BACKEND API ROUTES (TASK-4967)
+    // ============================================
+
+    // GET /api/rag/backend/status - Backend status
+    if (url.pathname === '/api/rag/backend/status' && req.method === 'GET') {
+      return handleGetRAGBackendStatus()
+    }
+
+    // PUT /api/rag/backend - Set backend
+    if (url.pathname === '/api/rag/backend' && req.method === 'PUT') {
+      return handleSetRAGBackend(req)
+    }
+
+    // GET /api/rag/backend/compare - Compare collections
+    if (url.pathname === '/api/rag/backend/compare' && req.method === 'GET') {
+      return handleCompareRAGBackends()
+    }
+
+    // GET /api/rag/backend/migration - Migration status
+    if (url.pathname === '/api/rag/backend/migration' && req.method === 'GET') {
+      return handleGetRAGMigrationStatus()
+    }
+
+    // POST /api/rag/backend/migrate - Start migration
+    if (url.pathname === '/api/rag/backend/migrate' && req.method === 'POST') {
+      return handleStartRAGMigration(req)
+    }
+
+    // GET /api/rag/backend/config - postavke bez lozinke
+    if (url.pathname === '/api/rag/backend/config' && req.method === 'GET') {
+      return handleGetRAGBackendConfig()
+    }
+
+    // PUT /api/rag/backend/config - Save pgvector config
+    if (url.pathname === '/api/rag/backend/config' && req.method === 'PUT') {
+      return handleSetRAGBackendConfig(req)
+    }
+
+    // POST /api/rag/backend/test - Test pgvector connection
+    if (url.pathname === '/api/rag/backend/test' && req.method === 'POST') {
+      return handleTestRAGBackendConnection(req)
+    }
+
 
     // GET|PUT /api/orchestrator/config — postavke jezgre orkestratora (ADR-0001)
     if (url.pathname === '/api/orchestrator/config' && req.method === 'GET') {

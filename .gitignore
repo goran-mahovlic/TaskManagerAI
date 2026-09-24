@@ -73,3 +73,4 @@ config/completion-gate.json
 config/critic-gate.json
 config/features.json
 config/energija.json
+config/rag-backend.json

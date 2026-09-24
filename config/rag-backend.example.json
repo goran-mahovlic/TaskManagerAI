@@ -1,0 +1,30 @@
+{
+  "_opis": [
+    "RAG pozadinski sustavi (ChromaDB / pgvector / dual). Kopiraj u config/rag-backend.json ili",
+    "postavi TM_RAG_BACKEND_CONFIG na punu putanju. Ploča piše u $TM_HOME/config/rag-backend.json.",
+    "backend: chromadb (zadano) | pgvector | dual (piše u oba, čita iz pgvectora).",
+    "chroma.host/port: ChromaDB; okolina TM_CHROMA_HOST/TM_CHROMA_PORT ima prednost. Prazan host = RAG nije podešen.",
+    "pgvector.host/port/database/user: PostgreSQL s ekstenzijom vector. SVA ČETIRI moraju biti upisana,",
+    "inače je pgvector 'configured: false'. Okolina: TM_PGVECTOR_HOST/PORT/DATABASE/USER ima prednost.",
+    "LOZINKA NE IDE OVDJE: postavi TM_PGVECTOR_PASSWORD u okolinu ili u config/credentials.env.",
+    "pgvector.dimensions: dimenzija vektora tablice (mora odgovarati modelu ugrađivanja; zadano 4096).",
+    "pgvector.maxConnections: veličina bazena konekcija (zadano 10).",
+    "dopustiPrivatneMreze: smije li 'Probaj konekciju' na privatne raspone (zadano true; instalacija",
+    "izložena internetu stavlja false).",
+    "Paket 'pg' je opcijska ovisnost: bez njega ChromaDB radi, a pgvector javlja da treba `bun add pg`."
+  ],
+  "backend": "chromadb",
+  "dopustiPrivatneMreze": true,
+  "chroma": {
+    "host": "",
+    "port": 8000
+  },
+  "pgvector": {
+    "host": "",
+    "port": 5432,
+    "database": "",
+    "user": "",
+    "dimensions": 4096,
+    "maxConnections": 10
+  }
+}

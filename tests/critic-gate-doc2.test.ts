@@ -14,8 +14,8 @@
  *   4. sinkroni put nema sudca — vraća `null`, ne izmišlja prolaz;
  *   5. tekst dokumenta ulazi u prompt kao PODATAK, s branom protiv ubrizgavanja upute.
  */
-import { describe, test, expect } from 'bun:test'
-import { mkdtempSync, writeFileSync } from 'fs'
+import { describe, test, expect, afterAll } from 'bun:test'
+import { mkdtempSync, writeFileSync, rmSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
 
@@ -26,6 +26,7 @@ import {
 } from '../src/core/CriticGate'
 
 const dir = mkdtempSync(join(tmpdir(), 'doc2-'))
+afterAll(() => rmSync(dir, { recursive: true, force: true }))
 
 const cfg = (over: Partial<CriticConfig> = {}): CriticConfig => ({ ...DEFAULT_CRITIC_CONFIG, ...over })
 const pisi = (ime: string, t: string): string => { const p = join(dir, ime); writeFileSync(p, t, 'utf-8'); return p }
