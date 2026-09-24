@@ -25,8 +25,8 @@
  */
 
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
-import { homedir } from 'os'
 import { join, dirname } from 'path'
+import { konfigPutanja, stanjePutanja } from './paths'
 import {
   criticLedgerPath,
   type CriticStatus,
@@ -34,13 +34,15 @@ import {
 } from './CriticGate'
 import { isTestRuntime } from './LiveDbGuard'
 
-const HOME = process.env.HOME || homedir()
 
-export const UNVERIFIED_CONFIG_PATH = join(HOME, '.claude', 'regoc', 'config', 'unverified-alert.json')
+export const UNVERIFIED_CONFIG_PATH = konfigPutanja('unverified-alert.json', 'TM_UNVERIFIED_CONFIG')
+
+/** Zadano stanje dojava — uz bazu (`$TM_HOME/data`), ADR-0001 O1.1. */
+const ZADANO_STANJE = stanjePutanja('unverified_alerts.json')
 
 /** `REGOC_UNVERIFIED_STATE` je override SAMO za testove/alat (v. LiveDbGuard, TASK-3020). */
 export function unverifiedStatePath(): string {
-  return process.env.REGOC_UNVERIFIED_STATE || join(HOME, '.claude', 'regoc', 'data', 'unverified_alerts.json')
+  return process.env.REGOC_UNVERIFIED_STATE || ZADANO_STANJE
 }
 
 // ─── Konfiguracija (prag je OVDJE, ne u kodu) ────────────────────────────────
@@ -185,7 +187,7 @@ export function readUnverifiedState(path = unverifiedStatePath(), nowMs = Date.n
  */
 export function stateWriteAllowed(path: string): boolean {
   if (!isTestRuntime()) return true
-  return path !== join(HOME, '.claude', 'regoc', 'data', 'unverified_alerts.json')
+  return path !== ZADANO_STANJE
 }
 
 export function writeUnverifiedState(state: UnverifiedState, path = unverifiedStatePath()): boolean {
@@ -299,6 +301,15 @@ export interface UnverifiedAlertInput {
   durationS?: number | null
   reasons: string[]
   live?: boolean
+  /**
+   * TASK-4833/4834 §5.3: razina doc-provjere koja je PROŠLA. Kad je postavljena, tvrdnja
+   * „vratar NIJE mogao provjeriti NIŠTA" postaje neistinita — nešto JEST provjereno (oblik
+   * dokumenta), samo ne ono najvažnije (sadržaj). Dojava koja laže u prvoj rečenici gubi
+   * povjerenje jednako brzo kao dojava koje nema.
+   */
+  razina?: 'L0' | 'L1' | null
+  /** Dokumenti koji su ušli u doc-provjeru (imena ili putovi) — imenuju se u dojavi. */
+  docChecked?: string[]
 }
 
 function money(costUsd?: number | null): string {
@@ -312,18 +323,27 @@ function trajanje(s?: number | null): string {
 }
 
 export function formatUnverifiedAlert(i: UnverifiedAlertInput, cfg: UnverifiedConfig = loadUnverifiedConfig()): string {
-  const glava = i.status === 'partial'
-    ? 'vratar NIJE stigao provjeriti sve'
-    : 'vratar NIJE mogao provjeriti NIŠTA'
+  // Kad je doc-provjera prošla, glava IMENUJE razinu umjesto da tvrdi da nije provjereno
+  // ništa (TASK-4833 §6: ishod se imenuje razinom, nikad golim „pass" ni golim „ništa").
+  const glava = i.razina
+    ? `vratar je provjerio SAMO ${i.razina === 'L1' ? 'oblik i traženu strukturu' : 'oblik'} dokumenta (${i.razina})`
+    : i.status === 'partial'
+      ? 'vratar NIJE stigao provjeriti sve'
+      : 'vratar NIJE mogao provjeriti NIŠTA'
   const shown = i.reasons.slice(0, cfg.maxReasons)
   const rest = i.reasons.length - shown.length
   const lines = [
     `🔎 [neprovjereno] ${i.taskId} (${i.agentId}) — ${glava} (${i.status}). ${money(i.costUsd)}, ${trajanje(i.durationS)}. Rad NIJE zaustavljen.`,
-    'Što je nedostajalo:',
-    ...shown.map((r) => `  • ${r}`),
   ]
+  if (i.razina) {
+    const docs = (i.docChecked || []).map((p) => p.split('/').pop() || p)
+    lines.push(`Provjereno (${i.razina}): ${docs.length ? docs.join(', ') : 'dokument'} — tvar, naslovi, ograde, ostavljene rupe${i.razina === 'L1' ? ' i traženi odsjeci' : ''}.`)
+    lines.push('NIJE provjereno: točnost tvrdnji, postojanje i vjerodostojnost izvora, ispravnost zaključaka — to je razina L2 (W5) i ona je ugašena do kalibracije.')
+  }
+  lines.push('Što je nedostajalo:')
+  lines.push(...shown.map((r) => `  • ${r}`))
   if (rest > 0) lines.push(`  • (+ još ${rest} razloga)`)
-  lines.push(`Provjeri ručno: bun ~/.claude/regoc/CriticGate.ts ledger --task ${i.taskId}`)
+  lines.push(`Provjeri ručno: bun src/core/CriticGate.ts ledger --task ${i.taskId}`)
   return lines.join('\n')
 }
 
@@ -344,7 +364,7 @@ export function formatUnverifiedSummary(day: string, rows: SummaryRow[], cfg: Un
     lines.push(`  • ${r.taskId} (${r.agentId}, ${r.status}) — ${r.reasons[0] || 'razlog nije zapisan'}`)
   }
   if (rest > 0) lines.push(`  • (+ još ${rest} zadataka)`)
-  lines.push('Popis i razlozi: bun ~/.claude/regoc/tools/unverified-report.ts')
+  lines.push('Popis i razlozi: ploča → „Danas neprovjereno"')
   return lines.join('\n')
 }
 

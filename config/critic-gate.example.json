@@ -1,0 +1,20 @@
+{
+  "_opis": [
+    "Kritičar (CriticGate) — provjere koje POKREĆE vratar, ne izvođač. Kopiraj u config/critic-gate.json",
+    "ili postavi TM_CRITIC_CONFIG na punu putanju. Nedostajuća datoteka => zadane vrijednosti ispod.",
+    "watchRoots (popis putanja): stabla u kojima agenti rade; bez ključa = sam paket.",
+    "docMode (L0/L1 — oblik dokumenta i traženi odsjeci, bez tokena): off | shadow | on.",
+    "doc2Mode (L2 — sadržaj preko agenta-suca): zadano off; traži modul Sudac (TM_SUDAC_MODUL),",
+    "koji nije dio paketa. Bez njega L2 vraća 'sudac nije instaliran' (neprovjereno, ne pad)."
+  ],
+  "maxFiles": 40,
+  "perCheckTimeoutMs": 20000,
+  "totalBudgetMs": 90000,
+  "declaredAllowlist": ["python3", "bun", "node", "pytest", "npm", "make"],
+  "docExtensions": [".md", ".txt", ".adoc"],
+  "docMinChars": 800,
+  "docMinLines": 12,
+  "docMode": "shadow",
+  "docIgnore": ["CHECKPOINT_", "/templates/"],
+  "doc2Mode": "off"
+}
