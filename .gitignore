@@ -67,3 +67,6 @@ config/credentials.env
 __pycache__/
 *.pyc
 config/postavke.env
+# Vratari zatvaranja: živa postavka po instalaciji; isporučuju se *.example.json.
+config/step-schema.json
+config/completion-gate.json

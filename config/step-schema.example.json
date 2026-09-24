@@ -1,0 +1,12 @@
+{
+  "_opis": [
+    "Strukturirani izlaz koraka (REGOC-IZLAZ, ADR-0009). Kopiraj u config/step-schema.json",
+    "(ili $TM_HOME/config/step-schema.json). Nedostajuća ili neispravna datoteka => 'shadow'.",
+    "nacin: off = blok se ne traži i sud se ne donosi; shadow = sud se donosi i logira, ne blokira;",
+    "on = nevaljan blok (schema_invalid) odbija zatvaranje. Izostao blok (schema_missing) odbija se",
+    "SAMO uz provodiNedostajuci=true i izvan izuzeća (trenutno zatvaranje < 2 s, oznaka 'bez-bloka',",
+    "zaglavlje X-REGOC-Zatvara: covjek|orkestrator). Promjena vrijedi bez ponovnog pokretanja."
+  ],
+  "nacin": "shadow",
+  "provodiNedostajuci": false
+}

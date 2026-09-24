@@ -34,12 +34,16 @@
  * Autorica: Kosjenka (Architect), TASK-4615.
  */
 
-import { konfigPutanja } from './paths'
-
 // ─── Ugovor ───────────────────────────────────────────────────────────────────
 
-/** Inačica sheme — mjerenje mora znati po kojim je pravilima redak ocijenjen. */
-export const SHEMA_VERZIJA = 1
+import { konfigPutanja } from './paths'
+
+/**
+ * Inačica sheme — mjerenje mora znati po kojim je pravilima redak ocijenjen.
+ * v2 (TASK-4810): rječniku dokaza dodana vrsta `rag` (nalaz upisan u RAG je ponovljiv preko
+ * `rag-query`, a dotad se upisivao pod `datoteka` i padao jer „doc_…" nije putanja).
+ */
+export const SHEMA_VERZIJA = 2
 
 /** Redak-najava iznad JSON bloka. Traži se ZADNJI pojavak (agent smije citirati protokol). */
 export const SHEMA_MARKER = 'REGOC-IZLAZ'
@@ -55,7 +59,15 @@ export const OBAVEZNA_POLJA = [
 
 export type PoljeSheme = (typeof OBAVEZNA_POLJA)[number]
 
-/** Zatvoren rječnik vrsta dokaza. Nepoznata vrsta je GREŠKA, ne tiho propuštanje. */
+/**
+ * Zatvoren rječnik vrsta dokaza. Nepoznata vrsta je GREŠKA, ne tiho propuštanje.
+ *
+ * `rag` je dodan u v2 (TASK-4810) na temelju mjerenja, ne na temelju ukusa: od 7 zadataka
+ * koji su 11.09.2026. pali na `nevaljana_polja`, tri su pala samo zato što je RAG-upis
+ * („RAG agent_arhitekt doc_1788958329155_jydtuo") bio prijavljen kao vrsta `datoteka`, a
+ * ID dokumenta nije putanja koja se može otvoriti. Upis JEST ponovljiv — `rag-query` ga
+ * vraća — pa je rupa bila u rječniku, a ne u agentu.
+ */
 export const VRSTE_DOKAZA = [
   'naredba',
   'test',
@@ -64,6 +76,7 @@ export const VRSTE_DOKAZA = [
   'http',
   'commit',
   'url',
+  'rag',
 ] as const
 
 export type VrstaDokaza = (typeof VRSTE_DOKAZA)[number]
@@ -198,6 +211,13 @@ const BROJ_RE = /\d/u
 const SHA_RE = /\b[0-9a-f]{7,40}\b/iu
 const HTTP_STATUS_RE = /\b[1-5]\d{2}\b/u
 const URL_RE = /\bhttps?:\/\/\S+/u
+/**
+ * ID dokumenta u RAG-u, onako kako ga `rag-store.ts` vrati: `doc_<ms>_<slug>`. Traži se
+ * baš ID, a ne samo ime kolekcije: „RAG agent_arhitekt" je mjesto, ne nalaz — nitko po
+ * njemu ne može dohvatiti isti zapis i usporediti ga. (Mjereno: TASK-4786 je pao točno
+ * na tome, a TASK-4766/4783/4797 su nosili ID i pali samo zbog krive vrste.)
+ */
+const RAG_DOC_RE = /\bdoc_\d{6,}_[\w-]+/u
 
 export interface SudDokaza {
   /** Može li itko (čovjek ili kritičar) ovaj dokaz PONOVITI i usporediti? */
@@ -251,6 +271,13 @@ export function provjeriStavkuDokaza(stavka: unknown): SudDokaza {
       return { provjerljiv: true, razlog: null }
     case 'url':
       if (!URL_RE.test(izlaz) && !URL_RE.test(naredba)) return { provjerljiv: false, razlog: 'vrsta "url" traži http(s) adresu u "izlaz"' }
+      return { provjerljiv: true, razlog: null }
+    case 'rag':
+      // Gleda se i "datoteka": agenti su ID upisivali onamo dok je vrsta bila `datoteka`,
+      // pa isti zapis ne smije pasti samo zato što je polje ostalo staro.
+      if (!RAG_DOC_RE.test(izlaz) && !RAG_DOC_RE.test(naredba) && !RAG_DOC_RE.test(datoteka)) {
+        return { provjerljiv: false, razlog: 'vrsta "rag" traži ID dokumenta (doc_…) u "izlaz" — ime kolekcije samo po sebi nije nalaz' }
+      }
       return { provjerljiv: true, razlog: null }
   }
   return { provjerljiv: false, razlog: `nepodržana vrsta "${vrsta}"` }
@@ -404,6 +431,19 @@ export const NACINI_SHEME: readonly NacinSheme[] = ['off', 'shadow', 'on'] as co
 
 export interface StepSchemaConfig {
   nacin: NacinSheme
+  /**
+   * W3b/TASK-4879 — DRUGA RUČICA, NE ČETVRTI NAČIN. Način `on` provodi granu
+   * `schema_invalid` (blok postoji, polja ne valjaju). Grana `schema_missing` (bloka
+   * uopće nema) traži JOŠ i ovu zastavicu.
+   *
+   * Zašto zastavica, a ne `nacin: 'on-strogo'`: rollback mora ostati JEDNA RIJEČ
+   * (`nacin: 'off'`), pa se skup načina ne smije širiti. Zašto razdvojeno: mjereno
+   * 15.09.2026. (TASK-4874/4878) globalni `on` bi odbio 7/50 zatvaranja, a u svih sedam
+   * je posao STVARNO obavljen; nijedno nije došlo iz grane `schema_invalid` (0 u svim
+   * kohortama od 12.09.). Prva grana ne može dati lažni pozitiv — tko je blok napisao,
+   * pravilo je vidio; druga može, jer dio zatvaranja blok nikad nije ni nosio.
+   */
+  provodiNedostajuci: boolean
   /** Otkad se blok ubacuje u promptove — dijeli mjerenje na „prije" i „poslije". */
   aktiviranoU: string | null
   izvor: string
@@ -411,6 +451,7 @@ export interface StepSchemaConfig {
 
 export const DEFAULT_STEP_SCHEMA_CONFIG: StepSchemaConfig = {
   nacin: 'shadow',   // isti obrazac kao W0: prvo mjeri na istom prometu, pa uključi
+  provodiNedostajuci: false,   // W3b: izostao blok NE odbija dok se doseg ne izmjeri
   aktiviranoU: null,
   izvor: '(zadano)',
 }
@@ -445,6 +486,9 @@ export function loadStepSchemaConfig(force = false): StepSchemaConfig {
       if (typeof raw?.nacin === 'string' && (NACINI_SHEME as readonly string[]).includes(raw.nacin)) {
         cfg.nacin = raw.nacin as NacinSheme
       }
+      // Samo pravi boolean; "da"/1/"true" se NE tumače — zastavica koja se uključi
+      // tipfelerom je gora od zastavice koje nema (grana ide ravno u pogon, bez sjene).
+      if (typeof raw?.provodiNedostajuci === 'boolean') cfg.provodiNedostajuci = raw.provodiNedostajuci
       if (typeof raw?.aktiviranoU === 'string') cfg.aktiviranoU = raw.aktiviranoU
       cfg.izvor = put
     }
@@ -460,24 +504,142 @@ export function shemaUPromptu(cfg: StepSchemaConfig = loadStepSchemaConfig()): b
   return cfg.nacin !== 'off'
 }
 
-/** Smije li nevaljan izlaz STVARNO zaustaviti zatvaranje zadatka? Samo u načinu `on`. */
+/**
+ * Smije li NEVALJAN izlaz (`schema_invalid`) STVARNO zaustaviti zatvaranje? Samo u `on`.
+ * Ova grana kažnjava pravilo koje je izvršitelj VIDIO — blok je napisao, polja mu ne valjaju.
+ */
 export function shemaSeProvodi(cfg: StepSchemaConfig = loadStepSchemaConfig()): boolean {
   return cfg.nacin === 'on'
+}
+
+/**
+ * Smije li IZOSTAO izlaz (`schema_missing`) zaustaviti zatvaranje? Traži OBOJE: način `on`
+ * i zastavicu `provodiNedostajuci`. Zastavica NE zaobilazi način — `off`/`shadow` gase sve,
+ * da rollback i dalje bude jedna riječ (W3b/TASK-4879).
+ */
+export function nedostajuciSeProvodi(cfg: StepSchemaConfig = loadStepSchemaConfig()): boolean {
+  return cfg.nacin === 'on' && cfg.provodiNedostajuci === true
+}
+
+// ─── W3b: izuzeće dosega za granu `schema_missing` ───────────────────────────
+
+/**
+ * Tko je napisao sažetak koji se sudi. `agent` = iza teksta je agentov spawn, dakle prompt
+ * je blok NOSIO. `orkestrator`/`covjek` = sažetak je nastao izvan spawna, pa blok nije ni
+ * mogao biti pred piscem.
+ */
+export type IzvorZatvaranja = 'agent' | 'orkestrator' | 'covjek'
+
+/** Trajna oznaka zadatka: „ovo zatvaranje nije nosilo blok u promptu." */
+export const OZNAKA_BEZ_BLOKA = 'bez-bloka'
+
+/**
+ * Razmak `started_at`→`completed_at` ispod kojeg je zatvaranje KNJIGOVODSTVENO (zadatak
+ * nikad nije spawnan, samo je proknjižen kroz `pending → in_progress → completed` u dva
+ * uzastopna PUT-a). Nije nula jer dva HTTP poziva nikad ne padnu na istu milisekundu:
+ * izmjereno na ploči TASK-4840 = 30 ms, TASK-4835 = 35 ms. Najkraći PRAVI spawn u istom
+ * prozoru traje 4 min, pa je 2 s prag koji razdvaja dvije pojave bez preklapanja.
+ */
+export const PRAG_TRENUTNOG_ZATVARANJA_MS = 2_000
+
+/** Kontekst zatvaranja — ono što pozivatelj ZNA o putu kojim je sažetak nastao. */
+export interface KontekstZatvaranja {
+  /** `started_at` zadatka. */
+  pocetoU?: string | null
+  /** `completed_at` (ili trenutak u kojem se zatvaranje upravo događa). */
+  zavrsenoU?: string | null
+  izvor?: IzvorZatvaranja | null
+  /** Oznake (tags) zadatka — trajni kanal koji preživi do mjerila. */
+  oznake?: readonly string[] | null
+}
+
+export type KodIzuzeca = 'nije-izuzet' | 'covjek' | 'orkestrator' | 'oznaka' | 'knjigovodstveno'
+
+export interface IzuzeceSheme {
+  izuzet: boolean
+  kod: KodIzuzeca
+  razlog: string
+}
+
+const NIJE_IZUZET: IzuzeceSheme = { izuzet: false, kod: 'nije-izuzet', razlog: '' }
+
+/** ISO (`…T…Z`) i SQLite (`… …`) oblik na isti brojčani trenutak. Nevaljano → NaN. */
+export function msIzOznake(ts?: string | null): number {
+  const s = String(ts ?? '').trim()
+  if (!s) return NaN
+  // Naivna oznaka iz SQLitea je UTC (baza piše `CURRENT_TIMESTAMP`/`toISOString()`).
+  const kandidat = /(?:Z|[+-]\d{2}:?\d{2})$/.test(s) ? s : `${s.replace(' ', 'T')}Z`
+  const t = Date.parse(kandidat)
+  return Number.isFinite(t) ? t : NaN
+}
+
+/**
+ * Smije li se ZATVARANJE BEZ BLOKA (`schema_missing`) preskočiti?
+ *
+ * NAČELO (prepisano iz `GitCommitGate`): kažnjava se pravilo koje je izvršitelj VIDIO.
+ * Zatvaranje koje blok nikad nije nosilo u promptu ne smije pasti na tome što bloka nema —
+ * mjereno 15.09.2026., 5 od 7 takvih promašaja dolazi upravo s tih puteva (2 knjigovodstvena
+ * zatvaranja, 3 sažetka od 119–149 zn. koje je umjesto agenta napisao orkestrator).
+ *
+ * DVIJE STVARI KOJE OVDJE MORAJU OSTATI KAKO JESU:
+ *   1. NEPOZNATO NIJE IZUZETO. Poziv bez konteksta, prazne oznake i neispravno vrijeme daju
+ *      `izuzet: false`. Da je obrnuto, izostanak podatka bi tiho ugasio vratara (fail-open),
+ *      a vratar mora biti fail-closed prema izuzeću, ne prema kazni.
+ *   2. `izvor: 'agent'` VETIRA sve ostalo. Inače bi izvršitelj sam sebi pisao oslobođenje:
+ *      dopiši zadatku oznaku `bez-bloka` i blok više ne treba pisati.
+ */
+export function izuzetOdNedostajuceSheme(k?: KontekstZatvaranja | null): IzuzeceSheme {
+  if (!k) return NIJE_IZUZET
+  if (k.izvor === 'agent') return NIJE_IZUZET
+
+  if (k.izvor === 'covjek') {
+    return { izuzet: true, kod: 'covjek', razlog: 'zatvaranje je napravio čovjek s ploče — blok mu nije bio u promptu' }
+  }
+  if (k.izvor === 'orkestrator') {
+    return { izuzet: true, kod: 'orkestrator', razlog: 'sažetak je umjesto agenta napisao orkestrator' }
+  }
+  const oznake = Array.isArray(k.oznake) ? k.oznake : []
+  if (oznake.some((o) => String(o).trim().toLowerCase() === OZNAKA_BEZ_BLOKA)) {
+    return { izuzet: true, kod: 'oznaka', razlog: `zadatak nosi oznaku \`${OZNAKA_BEZ_BLOKA}\` — zatvaranje nije nosilo blok` }
+  }
+  const a = msIzOznake(k.pocetoU)
+  const b = msIzOznake(k.zavrsenoU)
+  if (Number.isFinite(a) && Number.isFinite(b) && Math.abs(b - a) < PRAG_TRENUTNOG_ZATVARANJA_MS) {
+    return {
+      izuzet: true, kod: 'knjigovodstveno',
+      razlog: `knjigovodstveno zatvaranje (start ≈ kraj, razmak ${Math.abs(b - a)} ms) — zadatak nikad nije spawnan`,
+    }
+  }
+  return NIJE_IZUZET
 }
 
 // ─── Blok za prompt ──────────────────────────────────────────────────────────
 
 /**
- * Odsjek koji ide u spawn-prompt. Namjerno kratak (~1 kB): ADR-0003 je izmjerio da naš
+ * Odsjek koji ide u spawn-prompt. Namjerno kratak (~1,4 kB): ADR-0003 je izmjerio da naš
  * vlastiti boilerplate diže udio nepotrebnih odsjeka ×23,4, pa ovdje stoji samo ono bez
  * čega agent ne može pogoditi oblik — imena polja, rječnik vrsta i jedan primjer.
+ *
+ * DVIJE STVARI KOJE JE MJERENJE 11.09.2026. (TASK-4810) MORALO DOPISATI:
+ *   1. KANAL. Blok se tražio „u odgovoru", a vratar (`CompletionGuard` na PUT-u) i mjerilo
+ *      čitaju `tasks.result_summary`. Tri zadatka (TASK-4807/4789/4771) imaju u dnevniku
+ *      `step-schema: OK dokaz=7/7`, a u bazi `nema_sheme` — agent je ugovor ispunio u
+ *      odgovoru, a zatvorio zadatak proznim sažetkom. Zato sada doslovno piše KAMO ide.
+ *   2. PRVENSTVO. Prompt nosi još dva obrasca izlaza koji dolaze KASNIJE („📋 REZULTAT"
+ *      iz Pravila i „=== VERIFIKACIJA ===" iz recepta), a zadnja uputa pobjeđuje: sažetci
+ *      TASK-4792/4791 počinju upravo s „=== VERIFIKACIJA ===", TASK-4752 s „📋 REZULTAT".
+ *      Blok je zato premješten IZA recepta (v. RegocDaemon/AgentDaemon) i ovdje kaže da ih
+ *      ne zamjenjuje nego im se dodaje.
  */
 export function blokShemeKoraka(cfg: StepSchemaConfig = loadStepSchemaConfig()): string {
   if (!shemaUPromptu(cfg)) return ''
   const provodi = shemaSeProvodi(cfg)
   return `
-## STRUKTURIRANI IZLAZ KORAKA (${SHEMA_MARKER}) — uz REGOC-STATUS redak
-Prije završnog REGOC-STATUS retka ispiši JSON blok. Vratar provjerava POLJA, ne prozu.
+## STRUKTURIRANI IZLAZ KORAKA (${SHEMA_MARKER}) — OBAVEZNO, uz REGOC-STATUS redak
+Ispiši ovaj JSON blok prije završnog REGOC-STATUS retka. Tvoj odgovor sustav u cijelosti
+zapisuje u \`result_summary\` kad zatvara zadatak (status ne postavljaš ti — ADR-0012), a
+vratar i mjerilo čitaju upravo to polje, pa blok MORA biti u odgovoru.
+Blok NE zamjenjuju „📋 REZULTAT" ni „=== VERIFIKACIJA ===": idu zajedno.
 
 ${SHEMA_MARKER}
 \`\`\`json
@@ -485,7 +647,9 @@ ${SHEMA_MARKER}
   "napravljeno": "<što je konkretno napravljeno, jedna rečenica>",
   "dokaz": [
     {"vrsta": "naredba", "naredba": "bun test tests/x.test.ts", "izlaz": "24 pass, 0 fail"},
-    {"vrsta": "datoteka", "datoteka": "src/core/X.ts", "izlaz": "312 redaka"}
+    {"vrsta": "datoteka", "datoteka": "src/core/X.ts", "izlaz": "312 redaka"},
+    {"vrsta": "http", "naredba": "curl -s -o /dev/null -w '%{http_code}' localhost:<port>/api/tasks", "izlaz": "200"},
+    {"vrsta": "rag", "izlaz": "<kolekcija> doc_1788958329155_jydtuo"}
   ],
   "datoteke": ["/putanja/koju/si/dirao.ts"],
   "sljedeci_korak": "<što slijedi, ili null>",
@@ -496,7 +660,8 @@ ${SHEMA_MARKER}
 Pravila (${provodi ? 'ODBIJA se izlaz koji ih krši' : 'način shadow: sud se bilježi, ne blokira'}):
 - "dokaz" mora imati BAR JEDNU stavku koju netko može PONOVITI. Vrste: ${VRSTE_DOKAZA.join(', ')}.
 - naredba/test → obavezno "naredba" + "izlaz"; datoteka → "datoteka" (putanja);
-  mjerenje → broj u "izlaz"; http → statusni kod; commit → sha; url → adresa.
+  mjerenje → broj u "izlaz"; http → statusni KOD u "izlaz" ("200", ne "OK");
+  commit → sha; url → adresa; rag → ID dokumenta (doc_…), ne samo ime kolekcije.
 - "nesigurnosti" je mjesto za ono što nisi mogao provjeriti — prazan niz ako svega nema.
   Tu rečenicu NE stavljaj u "napravljeno": ondje ide samo ono što je stvarno napravljeno.
 `

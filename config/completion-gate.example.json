@@ -1,0 +1,18 @@
+{
+  "_opis": [
+    "Vratar zatvaranja (CompletionGuard). Kopiraj u config/completion-gate.json.",
+    "Nedostajuća datoteka => enabled=true, live=false (SHADOW: logira 'BIH blokirala', ne blokira).",
+    "deterministicLive: sudovi koji nisu heuristika (prazan sažetak, agentov vlastiti",
+    "REGOC-STATUS: BLOCKED/NEEDS_CONTEXT) smiju blokirati i u sjeni.",
+    "localExecutorStrict: rezultat izvršitelja izvan trustedProviders traži bar jednu provjeru koju",
+    "je pokrenuo kritičar (ključ '[PROVJERA] cmd: <naredba>' u opisu zadatka).",
+    "Rollback bilo kojeg sloja = odgovarajući *Live: false; čita se uz TTL 30 s."
+  ],
+  "enabled": true,
+  "live": false,
+  "deterministicLive": true,
+  "localExecutorStrict": true,
+  "localExecutorStrictLive": false,
+  "localExecutorRequiresDeclared": false,
+  "trustedProviders": ["anthropic"]
+}

@@ -95,6 +95,7 @@ import {
 import {
   evaluateCompletion, formatVerdictLog, formatShadowLog, loadGateConfig, shouldEnforce,
 } from './core/CompletionGuard'
+import type { KontekstZatvaranja } from './core/StepSchema'
 // R2/TASK-4309: istraživanje mora završiti u RAG-u — zadatak s oznakom `istrazivanje`
 // ne prolazi u completed bez ID-a dokumenta u result_summary.
 import {
@@ -10816,7 +10817,22 @@ async function handleUpdateTask(taskId: string, req: Request): Promise<Response>
       const existingTask = taskManager.getTask(taskId)
       // Mjerodavan je tekst koji će ZAVRŠITI na zadatku: novi ako je poslan, inače postojeći.
       const effectiveSummary = rs !== undefined ? String(rs) : (existingTask?.resultSummary || '')
-      const verdict = evaluateCompletion(effectiveSummary)
+      // W3b/TASK-4879: grana `schema_missing` se ne provodi nad zatvaranjima koja blok nikad
+      // nisu nosila u promptu. Ovo je jedino mjesto koje TO ZNA — redak zadatka ima
+      // `started_at` (je li uopće bilo spawna) i oznake. `X-REGOC-Zatvara` daje pozivatelju
+      // da se izjasni (`covjek` s ploče, `orkestrator` koji sažetak piše umjesto agenta);
+      // bez zaglavlja se ništa ne izuzima — nepoznato nije izuzeto.
+      const zaglavljeIzvor = req.headers.get('X-REGOC-Zatvara')
+      const izvorZatvaranja = (['agent', 'orkestrator', 'covjek'] as const)
+        .find((x) => x === zaglavljeIzvor)
+      const kontekstZatvaranja: KontekstZatvaranja = {
+        pocetoU: existingTask?.startedAt ?? null,
+        // Zatvaranje se događa SADA — `completed_at` još nije zapisan.
+        zavrsenoU: new Date().toISOString(),
+        izvor: izvorZatvaranja ?? null,
+        oznake: validatedData.tags !== undefined ? validatedData.tags : (existingTask?.tags || []),
+      }
+      const verdict = evaluateCompletion(effectiveSummary, kontekstZatvaranja)
       const forced = (validatedData as any).force === true
       const enforce = shouldEnforce(verdict, gateCfg) && !forced
 

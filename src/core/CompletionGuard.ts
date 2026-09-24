@@ -36,11 +36,15 @@
 
 import { konfigPutanja } from './paths'
 import {
+  izuzetOdNedostajuceSheme,
   loadStepSchemaConfig,
+  nedostajuciSeProvodi,
   ocijeniIzlazKoraka,
   shemaSeProvodi,
   shemaUPromptu,
   zamjerkeZaAgenta,
+  type IzuzeceSheme,
+  type KontekstZatvaranja,
   type SudKoraka,
 } from './StepSchema'
 
@@ -160,6 +164,11 @@ export type CompletionCode =
   | 'schema_invalid'
   /** W3: blok REGOC-IZLAZ uopće ne postoji, a način je `on`. */
   | 'schema_missing'
+  /**
+   * E1/TASK-4787: zadatak je izvršio NEPOVJERLJIV (lokalni) izvršitelj, a nijedna
+   * nezavisna provjera nije pokrenuta nad artefaktom — sud počiva samo na izvještaju.
+   */
+  | 'unverified_local'
 
 /**
  * Koliko je sud pouzdan.
@@ -173,7 +182,7 @@ export type CompletionCode =
  *                 PONOVITI (naredba + izlaz, putanja, statusni kod), pa sud ne ovisi
  *                 o tome kako je agent formulirao rečenicu.
  */
-export type CompletionConfidence = 'declared' | 'heuristic' | 'schema'
+export type CompletionConfidence = 'declared' | 'heuristic' | 'schema' | 'executor'
 
 /** Oznaka koja ide kao prefiks u blocked_reason (i u telemetriju). */
 export type CompletionLabel = 'NEEDS_CONTEXT' | 'BLOCKED'
@@ -198,18 +207,38 @@ export interface CompletionVerdict {
   matched?: string
   /** W3: sud o strukturiranom izlazu koraka, kad ga ima (za dnevnik i mjerenje). */
   stepSchema?: SudKoraka
+  /**
+   * W3b: zašto grana `schema_missing` NIJE provedena nad ovim zatvaranjem (ili zašto jest).
+   * Popunjeno samo kad bloka nema — bez ovoga se u dnevniku ne vidi razlika između
+   * „propust je oprošten jer blok nikad nije nosio" i „vratar spava".
+   */
+  izuzece?: IzuzeceSheme
 }
 
 /** Strojno čitljiv ishod koji agent MORA ispisati kao zadnji redak odgovora. */
-export type DeclaredStatus = 'DONE' | 'BLOCKED' | 'NEEDS_CONTEXT'
+export type DeclaredStatus = 'DONE' | 'DONE_WITH_CONCERNS' | 'BLOCKED' | 'NEEDS_CONTEXT'
+
+/**
+ * „Gotovo" obitelj. `DONE_WITH_CONCERNS` JEST završetak — samo uz ograde, pa bedž na
+ * ploči biva SUŽEN (🟡), a zatvaranje se ne odbija. Bez ovoga bi proširenje uzorka
+ * dolje pretvorilo dosad NEPARSIRANU izjavu u odbijanje zatvaranja.
+ */
+export function jeDeklariranoGotovo(status?: string | null): boolean {
+  return status === 'DONE' || status === 'DONE_WITH_CONCERNS'
+}
 
 /**
  * Obvezni završni redak spawn-protokola (TASK-2959, sloj 2):
- *   `REGOC-STATUS: DONE|BLOCKED|NEEDS_CONTEXT — <razlog>`
+ *   `REGOC-STATUS: DONE|DONE_WITH_CONCERNS|BLOCKED|NEEDS_CONTEXT — <razlog>`
  * Prihvaćamo crticu, dvotočje ili ništa kao razdjelnik, s ili bez razmaka.
+ *
+ * TASK-4815: `DONE_WITH_CONCERNS` traže CLAUDE.md pravilo 8, `MessageQueue.TaskSignal`
+ * i `MonitorLoop`, a uzorak ga do sada nije prihvaćao UOPĆE — takva izjava padala je
+ * u heuristiku kao da je agent nije ni napisao. Alternacija mora ići PRIJE golog
+ * `DONE`, inače `DONE` pojede prefiks i ostatak retka obori podudaranje.
  */
 const DECLARED_STATUS_RE =
-  /^[\s>*_#-]*REGOC[-_ ]?STATUS\s*[:=]\s*(DONE|BLOCKED|NEEDS[-_ ]?CONTEXT)\s*(?:[—–\-:]\s*(.*))?$/imu
+  /^[\s>*_#-]*REGOC[-_ ]?STATUS\s*[:=]\s*(DONE[-_ ]?WITH[-_ ]?CONCERNS|DONE|BLOCKED|NEEDS[-_ ]?CONTEXT)\s*(?:[—–\-:]\s*(.*))?$/imu
 
 /**
  * Izvuci deklarirani ishod iz odgovora. Uzima se ZADNJE pojavljivanje — agent može
@@ -335,7 +364,7 @@ function evaluateProse(resultSummary?: string | null): CompletionVerdict {
   // Agent koji je SAM deklarirao ishod ne treba pogađanje: njegova izjava je
   // mjerodavna. Ovo je jedini put koji smije biti jedini osnov odluke u live modu.
   const declared = parseDeclaredStatus(text)
-  if (declared && declared.status !== 'DONE') {
+  if (declared && !jeDeklariranoGotovo(declared.status)) {
     const label: CompletionLabel = declared.status === 'BLOCKED' ? 'BLOCKED' : 'NEEDS_CONTEXT'
     return reject(
       'declared_not_done',
@@ -348,7 +377,7 @@ function evaluateProse(resultSummary?: string | null): CompletionVerdict {
   }
   // Deklarirani DONE ne daje slobodan prolaz: i dalje mora imati nekakav sadržaj —
   // inače bi jedan redak "REGOC-STATUS: DONE" postao nova rupa iste veličine.
-  if (declared?.status === 'DONE' && text.length >= MIN_MEANINGFUL_LENGTH) {
+  if (jeDeklariranoGotovo(declared?.status) && text.length >= MIN_MEANINGFUL_LENGTH) {
     return accept(countEvidenceMarkers(text), 'declared')
   }
 
@@ -423,8 +452,24 @@ function evaluateProse(resultSummary?: string | null): CompletionVerdict {
  * Nevaljana shema BLOKIRA samo u načinu `on` (config/step-schema.json). U `shadow`-u se
  * sud izračuna, zakači na `verdict.stepSchema` i ode u dnevnik — promet se mjeri prije
  * nego se išta počne odbijati. To je isti obrazac po kojem su prošli W0 i completion gate.
+ *
+ * W3b/TASK-4879 — DVIJE GRANE ODBIJANJA NEMAJU ISTU CIJENU, PA NEMAJU NI ISTU RUČICU:
+ *   - `schema_invalid` (blok postoji, polja ne valjaju) ide s `nacin: 'on'`. Lažno
+ *     odbijanje nije moguće: tko je blok napisao, pravilo je vidio. Izmjereno: 0 slučajeva
+ *     u svim kohortama od 12.09.2026.
+ *   - `schema_missing` (bloka nema) traži JOŠ i `provodiNedostajuci: true`, a i tada
+ *     preskače zatvaranja koja blok nikad nisu nosila (`izuzetOdNedostajuceSheme`:
+ *     knjigovodstveno zatvaranje, sažetak orkestratora, čovjekovo zatvaranje s ploče).
+ *     Bez tog razdvajanja bi `on` odbio 7/50 zatvaranja u kojima je posao STVARNO
+ *     obavljen (TASK-4874), a `SpawnFinalizer` sud `confidence: 'schema'` pretvara u
+ *     `status: blocked` — dakle ravno u pogon, bez sjene.
+ *
+ * `kontekst` je ono što pozivatelj zna o putu zatvaranja; bez njega se ništa ne izuzima.
  */
-export function evaluateCompletion(resultSummary?: string | null): CompletionVerdict {
+export function evaluateCompletion(
+  resultSummary?: string | null,
+  kontekst?: KontekstZatvaranja | null,
+): CompletionVerdict {
   const text = (resultSummary ?? '').trim()
   const cfg = loadStepSchemaConfig()
   // `off` znači doslovno „kao da W3 nema": ni sud se ne donosi. Bez ovoga bi ugašen
@@ -432,39 +477,54 @@ export function evaluateCompletion(resultSummary?: string | null): CompletionVer
   if (!shemaUPromptu(cfg)) return evaluateProse(text)
 
   const declared = parseDeclaredStatus(text)
-  const declaredNotDone = !!declared && declared.status !== 'DONE'
+  const declaredNotDone = !!declared && !jeDeklariranoGotovo(declared.status)
   const sud = ocijeniIzlazKoraka(text)
   const provodi = shemaSeProvodi(cfg)
+  // W3b: izuzeće se računa SAMO za granu `schema_missing` i samo kad bloka doista nema —
+  // pokvaren blok je netko napisao, pa ga nikakav kontekst ne oslobađa.
+  const izuzece = sud.nadjen ? undefined : izuzetOdNedostajuceSheme(kontekst)
 
   if (!declaredNotDone) {
     if (sud.strojnoProvjerljiv) {
       return accept(countEvidenceMarkers(text), 'schema', sud)
     }
-    if (provodi) {
-      return sud.nadjen
-        ? reject(
-            'schema_invalid',
-            'NEEDS_CONTEXT',
-            zamjerkeZaAgenta(sud),
-            countEvidenceMarkers(text),
-            sud.greske[0],
-            'schema',
-            sud,
-          )
-        : reject(
-            'schema_missing',
-            'NEEDS_CONTEXT',
-            'Rezultat nema strukturirani izlaz koraka (blok REGOC-IZLAZ s poljima napravljeno, dokaz, datoteke, sljedeci_korak, nesigurnosti). Vratar provjerava polja, ne prozu.',
-            countEvidenceMarkers(text),
-            undefined,
-            'schema',
-            sud,
-          )
+    if (provodi && sud.nadjen) {
+      return reject(
+        'schema_invalid',
+        'NEEDS_CONTEXT',
+        zamjerkeZaAgenta(sud),
+        countEvidenceMarkers(text),
+        sud.greske[0],
+        'schema',
+        sud,
+      )
+    }
+    // Grana `schema_missing` traži DRUGU ručicu (`provodiNedostajuci`) i prolazi kroz
+    // izuzeće dosega. Mjereno 15.09.2026.: bez toga bi 7/50 zatvaranja bilo odbijeno, a
+    // u svih sedam je posao obavljen — `SpawnFinalizer` bi ih zapisao kao `blocked`.
+    if (nedostajuciSeProvodi(cfg) && !izuzece?.izuzet) {
+      return {
+        ...reject(
+          'schema_missing',
+          'NEEDS_CONTEXT',
+          'Rezultat nema strukturirani izlaz koraka (blok REGOC-IZLAZ s poljima napravljeno, dokaz, datoteke, sljedeci_korak, nesigurnosti). Vratar provjerava polja, ne prozu.',
+          countEvidenceMarkers(text),
+          undefined,
+          'schema',
+          sud,
+        ),
+        ...(izuzece ? { izuzece } : {}),
+      }
     }
   }
 
   const v = evaluateProse(text)
-  return sud.nadjen ? { ...v, stepSchema: sud } : v
+  // TASK-4810: sud se kači UVIJEK, i kad bloka nema. Dok je uvjet bio `sud.nadjen`, način
+  // `shadow` je bio slijep za jedini kvar koji nas je zanimao: 15 od 18 zadataka bez bloka
+  // nije proizvelo NIJEDAN redak `step-schema:` u dnevniku, pa je „16 pojava NEVALJAN"
+  // brojalo samo pokvarena polja, a ne i posve izostao blok. Mjerilo koje ne vidi
+  // najčešći promašaj nije mjerilo. Ishod se ne mijenja — `shadow` i dalje ne blokira.
+  return { ...v, stepSchema: sud, ...(izuzece ? { izuzece } : {}) }
 }
 
 // ─── Rollout: shadow → live (config/completion-gate.json) ────────────────────
@@ -476,12 +536,32 @@ export interface GateConfig {
   live: boolean
   /** Smiju li se NE-heuristički sudovi provoditi i prije nego `live` postane true. */
   deterministicLive: boolean
+  /**
+   * E1/TASK-4787: sudi li se posebno o zadatcima koje je izvršio NEPOVJERLJIV izvršitelj
+   * (svaki provider izvan `trustedProviders`). false = mehanizma nema (put je bajt-identičan
+   * onome prije E1).
+   */
+  localExecutorStrict: boolean
+  /** true = taj se sud PROVODI (blocked). false = SHADOW, samo dnevnik. */
+  localExecutorStrictLive: boolean
+  /**
+   * true = kao nezavisna provjera priznaje se SAMO ona koju je propisao sam zadatak
+   * (`[PROVJERA] cmd:`, vrsta `task`). false = priznaje se bilo koja provjera koju je
+   * kritičar stvarno pokrenuo (parse/lint/json/test/task).
+   */
+  localExecutorRequiresDeclared: boolean
+  /** Provideri čijem se izvještaju vjeruje bez nezavisne provjere. */
+  trustedProviders: string[]
 }
 
 export const DEFAULT_GATE_CONFIG: GateConfig = {
   enabled: true,
   live: false,             // shadow-first: dorada TASK-2959
   deterministicLive: true,
+  localExecutorStrict: true,        // E1/TASK-4787: sudi i loga…
+  localExecutorStrictLive: false,   // …ali ne blokira dok se ne izmjeri (isti obrazac kao W0/W3)
+  localExecutorRequiresDeclared: false,
+  trustedProviders: ['anthropic'],
 }
 
 const GATE_CONFIG_TTL_MS = 30_000
@@ -510,6 +590,15 @@ export function loadGateConfig(force = false): GateConfig {
       if (typeof raw?.enabled === 'boolean') cfg.enabled = raw.enabled
       if (typeof raw?.live === 'boolean') cfg.live = raw.live
       if (typeof raw?.deterministicLive === 'boolean') cfg.deterministicLive = raw.deterministicLive
+      if (typeof raw?.localExecutorStrict === 'boolean') cfg.localExecutorStrict = raw.localExecutorStrict
+      if (typeof raw?.localExecutorStrictLive === 'boolean') cfg.localExecutorStrictLive = raw.localExecutorStrictLive
+      if (typeof raw?.localExecutorRequiresDeclared === 'boolean') cfg.localExecutorRequiresDeclared = raw.localExecutorRequiresDeclared
+      if (Array.isArray(raw?.trustedProviders)) {
+        const lista = raw.trustedProviders.filter((x: unknown) => typeof x === 'string' && x.trim())
+        // Prazan popis bi značio „nikome se ne vjeruje" — to je vjerojatnije tipfeler nego
+        // namjera, a posljedica bi bila blokada SVAKOG zadatka. Zadano ostaje na snazi.
+        if (lista.length) cfg.trustedProviders = lista.map((x: string) => x.trim().toLowerCase())
+      }
     }
   } catch {
     // Neispravan JSON → defaulti (shadow). Gate nikad ne smije srušiti poziv.
@@ -536,6 +625,10 @@ export function shouldEnforce(v: CompletionVerdict, cfg: GateConfig = loadGateCo
   // → nacin: 'on'). Da nije tako, strukturirani izlaz bi čekao rollout proznog sloja koji
   // je i nastao zato što proza nije pouzdana.
   if (v.confidence === 'schema') return true
+  // E1/TASK-4787: sud o izvršitelju NIJE heuristika nad prozom (ulaz su ime providera i
+  // BROJ stvarno pokrenutih provjera), pa ima vlastiti prekidač i ne čeka rollout proznog
+  // sloja. Dok je `localExecutorStrictLive` false, sud ide samo u dnevnik.
+  if (v.confidence === 'executor') return cfg.localExecutorStrict && cfg.localExecutorStrictLive
   if (cfg.live) return true
   if (!cfg.deterministicLive) return false
   return v.confidence === 'declared' || v.code === 'empty_result'
@@ -544,6 +637,17 @@ export function shouldEnforce(v: CompletionVerdict, cfg: GateConfig = loadGateCo
 /** Redak za shadow-log: točno ono što bi se dogodilo da je gate live. */
 export function formatShadowLog(taskId: string, v: CompletionVerdict): string {
   return `BIH blokirala ${taskId} (reason=${v.code}/${v.label} conf=${v.confidence} evidence=${v.evidence})`
+}
+
+/**
+ * Oznaka suda za PORUKE i DNEVNIK (TASK-4724). `label` je popunjen samo kad je sud
+ * odbijen; kod `accept()` je `null` — a zadatak ipak ne mora biti zatvoren (npr. kad
+ * ga obori nezavisni kritičar, RegocDaemon postavi `treatAsDone=false` nad prihvaćenim
+ * sudom). Golo `${v.label}` je u tom slučaju ispisivalo doslovno "(null)" u Telegram
+ * poruci. Jedan izvor nadomjestka za sva mjesta — da se ne popravlja svaki ispis zasebno.
+ */
+export function formatVerdictLabel(v: Pick<CompletionVerdict, 'label'>): string {
+  return v.label ?? 'n/a'
 }
 
 /**
@@ -556,4 +660,119 @@ export function formatVerdictLog(v: CompletionVerdict): string {
   return v.accept
     ? `completion-guard: ACCEPT conf=${v.confidence} evidence=${v.evidence}`
     : `completion-guard: REJECT ${v.code}/${v.label} conf=${v.confidence} evidence=${v.evidence}${v.matched ? ` matched="${v.matched}"` : ''}`
+}
+
+// ─── E1/TASK-4787: sloj IZVRŠITELJA — tko je uopće napisao ovaj izvještaj? ────
+//
+// DOKAZANI KVAR (čvor bez nadzora, 09.09.2026., TASK-152, agent QA @ ollama:qwen3:8b):
+//   Opis:      „bash `uname -a` → write_file u ~/.tmp/regresija.txt"
+//   Artefakt:  datoteka doslovno sadrži niz `$(uname -a)` (model je proslijedio tekst
+//              naredbe umjesto njezina izlaza — ljuskine zamjene nije bilo)
+//   Izvještaj: „Datoteka … postoji i sadrži izlaz uname -a." + 5 ✅ redaka
+//   Dnevnik:   completion-guard: ACCEPT conf=heuristic evidence=2
+//              critic-gate: UNVERIFIABLE task=TASK-152 checks=0 failed=0 akcija=accept
+//   Ishod:     COMPLETED. Lažni ✅ na ploči čvora koji radi bez ljudskog nadzora.
+//
+// ZAŠTO JE PROŠAO: `evaluateProse` mjeri OBLIK izvještaja (putanja + backtickovi = dvije
+// vrste dokaza), a ne ISTINITOST artefakta. Oblik je upravo ono što i slab model
+// pouzdano proizvede — on prepiše kriterij iz opisa i stavi kvačicu. Kontrola TASK-153
+// (ista postava, prompt bez ljuskine zamjene) dala je točan artefakt, dakle infrastruktura
+// radi; griješi SADRŽAJ. Dok je izvršitelj bio Anthropic model, takva je greška bila
+// rijetka i heuristika je prolazila; s qwen3:8b ona je očekivana.
+//
+// PRAVILO: rezultat NEPOVJERLJIVOG izvršitelja ne smije zatvoriti zadatak na temelju
+// vlastitog izvještaja. Mora postojati bar jedna provjera koju je POKRENUO NETKO DRUGI
+// (kritičar) i koja je prošla. Izlaz iz blokade nije bolji tekst, nego ključ
+// `[PROVJERA] cmd:` u opisu zadatka — tada kritičar ima što pokrenuti (checks > 0).
+
+/** Vjeruje li se izvještaju ovog izvršitelja bez nezavisne provjere? */
+export type ExecutorTrust = 'trusted' | 'local'
+
+/**
+ * `anthropic` je jedini zadano povjerljiv provider. Sve ostalo (ollama, openrouter,
+ * kimicli, geminicli, anthropic-kompatibilni endpointi) su tuđi modeli čija se sadržajna
+ * točnost ovdje nije mjerila — dok se ne izmjeri, tretiraju se kao `local`.
+ * Popis se mijenja u config/completion-gate.json → `trustedProviders`.
+ */
+export function executorTrust(
+  provider?: string | null,
+  cfg: GateConfig = loadGateConfig(),
+): ExecutorTrust {
+  const p = (provider ?? '').trim().toLowerCase()
+  // Nepoznat/prazan provider NIJE povod za povjerenje: pozivatelj koji ga ne zna
+  // proslijediti ne zna ni tko je radio. Ali ni za blokadu — zadano `anthropic` je
+  // ono što svi stari pozivi (CLI put) stvarno jesu.
+  if (!p) return 'trusted'
+  return cfg.trustedProviders.includes(p) ? 'trusted' : 'local'
+}
+
+/** Što je o ovom spawnu poznato IZVAN agentova teksta. */
+export interface LocalExecutorContext {
+  /** Provider koji je zadatak stvarno izvršio ('anthropic', 'ollama', 'openrouter'…). */
+  provider?: string | null
+  /** Broj provjera koje je kritičar POKRENUO i dobio izlazni kod (bez preskočenih). */
+  checksRun?: number
+  /** Koliko ih je palo. */
+  checksFailed?: number
+  /** Koliko je pokrenutih provjera propisao SAM ZADATAK (`[PROVJERA] cmd:`, vrsta `task`). */
+  declaredChecksRun?: number
+  /** Ima li opis zadatka ključ `[PROVJERA] cmd:` (neovisno je li se dao izvesti). */
+  declaredPresent?: boolean
+}
+
+/**
+ * Drugi sud, nad PRIHVAĆENIM sudom o tekstu: smije li rezultat nepovjerljivog izvršitelja
+ * zatvoriti zadatak? Namjerno je odvojena funkcija, a ne grana u `evaluateCompletion`:
+ *   • ulaz nije tekst nego činjenice o spawnu (provider, broj pokrenutih provjera),
+ *   • te su činjenice poznate tek POSLIJE kritičara, dakle nakon suda o tekstu,
+ *   • i tako `evaluateCompletion` ostaje čista funkcija stringa (kakvu testovi znaju).
+ *
+ * Sud NIKAD ne pretvara odbijanje u prihvaćanje — samo prihvaćanje može oboriti.
+ */
+export function evaluateLocalExecutor(
+  v: CompletionVerdict,
+  ctx: LocalExecutorContext,
+  cfg: GateConfig = loadGateConfig(),
+): CompletionVerdict {
+  if (!cfg.enabled || !cfg.localExecutorStrict) return v
+  if (!v.accept) return v
+  if (executorTrust(ctx.provider, cfg) === 'trusted') return v
+
+  const pokrenuto = Math.max(0, ctx.checksRun ?? 0)
+  const palo = Math.max(0, ctx.checksFailed ?? 0)
+  const propisanoPokrenuto = Math.max(0, ctx.declaredChecksRun ?? 0)
+  const dovoljno = cfg.localExecutorRequiresDeclared ? propisanoPokrenuto > 0 : pokrenuto > 0
+  // Netko DRUGI je stvarno nešto pokrenuo nad artefaktom i ništa nije palo ⇒ sud stoji.
+  if (dovoljno && palo === 0) return v
+
+  const provider = ((ctx.provider ?? '').trim() || 'nepoznat')
+  const brojke = `pokrenuto=${pokrenuto}, palo=${palo}, propisano=${propisanoPokrenuto}`
+
+  // Popravak je RAZLIČIT ovisno o tome fali li ključ u opisu (popravlja autor zadatka)
+  // ili se propisana provjera nije dala izvesti (popravlja okruženje/izvršitelj) —
+  // zato i različita oznaka, po istom ugovoru kao ostatak vratara.
+  const faliKljuc = !ctx.declaredPresent
+  const label: CompletionLabel = faliKljuc ? 'NEEDS_CONTEXT' : 'BLOCKED'
+  const reason = faliKljuc
+    ? `Izvršitelj je lokalni model (${provider}), a nijedna nezavisna provjera nije pokrenuta (${brojke}). ` +
+      `Sud o zatvaranju bi počivao SAMO na agentovu tekstu (conf=${v.confidence}, evidence=${v.evidence}), ` +
+      `a tekst je upravo ono što slab model proizvede i kad artefakt nije točan ` +
+      `(dokaz: TASK-152 na čvoru bez nadzora — datoteka je sadržavala literal \`$(uname -a)\` uz izvještaj da sadrži izlaz naredbe). ` +
+      `Dopiši u opis zadatka redak \`[PROVJERA] cmd: <naredba koja provjerava artefakt>\` — tada vratar ima što pokrenuti.`
+    : `Izvršitelj je lokalni model (${provider}); zadatak propisuje provjeru ključem \`[PROVJERA] cmd:\`, ` +
+      `ali ona nije prošla ni izvedena (${brojke}). Zatvaranje bi počivalo samo na agentovu izvještaju.`
+
+  return {
+    accept: false,
+    code: 'unverified_local',
+    reason,
+    label,
+    suggestedStatus: 'blocked',
+    blockedReason: `${label}: ${reason}`,
+    evidence: v.evidence,
+    confidence: 'executor',
+    matched: `provider=${provider} ${brojke}`,
+    ...(v.stepSchema ? { stepSchema: v.stepSchema } : {}),
+    ...(v.izuzece ? { izuzece: v.izuzece } : {}),
+  }
 }
