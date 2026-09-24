@@ -2354,12 +2354,16 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
           <div class="konzola-welcome" data-i18n="konzola_ready_type_help_for_commands">Konzola ready. Type 'help' for commands.</div>
         </div>
       </div>
-      <div class="konzola-input-wrapper">
+      <!-- TASK-4722: OBAVEZNO <form>, ne <div>. Preglednik sve kontrole bez vlasnika obrasca
+           slaže u JEDAN sintetski obrazac, pa je konzolni unos dijelio obrazac s poljima za
+           lozinku iz kartice Config (login-key-*, prov-*-key) i upravitelj lozinkama ga je
+           čitao kao korisničko ime. autocomplete=off i data-* to NE rješavaju. -->
+      <form class="konzola-input-wrapper" autocomplete="off" onsubmit="return false;">
         <span class="konzola-prompt" id="konzola-prompt">regoc $</span>
         <input type="text" id="konzola-input" class="konzola-input" placeholder="Type a command..." data-i18n-placeholder="type_a_command"
                name="regoc-konzola" autocomplete="off" spellcheck="false"
                data-form-type="other" data-lpignore="true" data-1p-ignore data-bwignore>
-      </div>
+      </form>
     </div>
 
     <!-- POTROŠNJA TAB — TASK-3569 (T5), mjera 6: tjedni pregled po projektu i agentu.
@@ -6848,6 +6852,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       const input = document.getElementById('konzola-input');
       input.addEventListener('keydown', async (e) => {
         if (e.key === 'Enter') {
+          e.preventDefault(); // TASK-4722: unos je u <form> — bez ovoga Enter šalje obrazac
           const cmd = input.value.trim();
           if (!cmd) return;
           konzolaCommandHistory.push(cmd);

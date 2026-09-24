@@ -117,17 +117,26 @@ export class ProjectManager {
 
   /**
    * Generate next project ID
+   *
+   * TASK-4740: `project_sequence.next_id` može zaostati za stvarnom tablicom kad se projekt
+   * upiše mimo ovog puta (uvoz ili migracija s izravnim INSERT-om i eksplicitnim ID-jem).
+   * Izmjereno u živoj instalaciji: sekvenca na 64, najveći stvarni ID 69 — generator je vraćao
+   * zauzet ID i `INSERT` je padao na `UNIQUE constraint failed: projects.id`.
+   * Lijek: sljedeći broj je uvijek MAX(sekvenca, najveći ID u tablici + 1).
    */
   private generateProjectId(): string {
     const result = this.db.query('SELECT next_id FROM project_sequence WHERE id = 1').get() as { next_id: number } | null
+    const maxRow = this.db.query(
+      "SELECT MAX(CAST(SUBSTR(id, 5) AS INTEGER)) AS maxNum FROM projects WHERE id LIKE 'PRJ-%'"
+    ).get() as { maxNum: number | null } | null
+    const floorFromTable = (maxRow?.maxNum ?? 0) + 1
+    const nextId = Math.max(result?.next_id ?? 1, floorFromTable)
 
     if (!result) {
-      this.db.exec('INSERT INTO project_sequence (id, next_id) VALUES (1, 1)')
-      return 'PRJ-001'
+      this.db.exec(`INSERT INTO project_sequence (id, next_id) VALUES (1, ${nextId + 1})`)
+    } else {
+      this.db.exec(`UPDATE project_sequence SET next_id = ${nextId + 1} WHERE id = 1`)
     }
-
-    const nextId = result.next_id
-    this.db.exec(`UPDATE project_sequence SET next_id = ${nextId + 1} WHERE id = 1`)
 
     return `PRJ-${String(nextId).padStart(3, '0')}`
   }

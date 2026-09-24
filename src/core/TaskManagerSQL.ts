@@ -183,8 +183,10 @@ const ValidStatusTransitions: Record<string, string[]> = {
   'pending': ['in_progress', 'blocked', 'cancelled'],
   'in_progress': ['completed', 'blocked', 'cancelled'],
   'blocked': ['pending', 'in_progress', 'cancelled'],
-  'completed': [],
-  'cancelled': []
+  // Ponovno otvaranje (16.09.2026., zahtjev vlasnika): zatvoren zadatak se vraća u red,
+  // nikad ravno u rad — agent ga uzima kao i svaki drugi `pending`.
+  'completed': ['pending'],
+  'cancelled': ['pending']
 };
 
 // ============================================
