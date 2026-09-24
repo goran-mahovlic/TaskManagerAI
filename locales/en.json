@@ -769,5 +769,13 @@
   "zadnjih_30_dana": "last 30 days",
   "zadnjih_7_dana": "last 7 days",
   "zadnjih_90_dana": "last 90 days",
-  "zaustavi_sav_automatski_rad": "Stop all automatic work"
+  "zaustavi_sav_automatski_rad": "Stop all automatic work",
+  "cfg_kartica_usporedni": "Concurrent agents (1–10)",
+  "cfg_usp_oznaka": "Concurrent agents",
+  "cfg_usp_greska": "Error reading the limit",
+  "cfg_usp_greska_spremanje": "Error saving the limit",
+  "cfg_usp_zauzeto": "In use",
+  "cfg_usp_zauzeto_title": "slots in use / limit",
+  "cfg_usp_napomena": "The change applies immediately (read within 5 s). Lowering it does not stop running agents — it only holds back new ones. Autonomy gates (70/85 %) still override the limit.",
+  "cfg_usp_zadnje": "Last change"
 }

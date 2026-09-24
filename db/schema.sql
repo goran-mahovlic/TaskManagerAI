@@ -297,3 +297,25 @@ CREATE VIEW v_projects_summary AS
       , 0), 1) as calculated_progress,
       (SELECT COUNT(*) FROM project_rag_entries pre WHERE pre.project_id = p.id) as rag_entry_count
     FROM projects p;
+
+
+-- Postavke TaskManagera (ključ → vrijednost) i njihova povijest (audit: tko, kada, staro → novo).
+-- Prvi ključ: `agents.max_concurrent` — strop usporednih agenata, mijenja se uživo na
+-- Config stranici (`PUT /api/config/concurrency`). Početnu vrijednost (3) upisuje
+-- `scripts/init-db.ts` / TaskManagerSQL, ne ova shema — da okolina može biti jednokratni seed.
+CREATE TABLE IF NOT EXISTS settings (
+  key         TEXT PRIMARY KEY,
+  value       TEXT NOT NULL,
+  updated_by  TEXT NOT NULL DEFAULT 'system',
+  updated_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE TABLE IF NOT EXISTS settings_history (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  key         TEXT NOT NULL,
+  old_value   TEXT,
+  new_value   TEXT NOT NULL,
+  changed_by  TEXT NOT NULL,
+  source      TEXT NOT NULL DEFAULT 'api',
+  changed_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE INDEX IF NOT EXISTS idx_settings_history_key ON settings_history(key, id);

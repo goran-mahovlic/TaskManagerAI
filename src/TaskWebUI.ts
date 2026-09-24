@@ -46,6 +46,7 @@ import {
 import { KonfiguracijskiRegistar } from './core/orchestrator/AgentRegistry'
 // TASK-3047: ručna kočnica — globalna pauza dijeljena s RegocDaemonom preko datoteke stanja.
 import { readPauseState, writePauseState, describePause } from './core/PauseControl'
+import { parseConcurrencyInput, formatConcurrencyChange, CONCURRENCY_ENV, CONCURRENCY_MIN, CONCURRENCY_MAX, CONCURRENCY_DEFAULT } from './core/ConcurrencySetting'
 // TASK-3461: stanje MJERILA potrošnje (razlikuje „čekam kvotu" od „mjerilo ne radi").
 import { readWaitingQueue } from './core/AutonomyQueue'
 import { formatLocalTime } from './core/QuotaWakeup'
@@ -2460,6 +2461,10 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         <div class="info-card info-full" id="info-classifier-card">
           <div class="info-card-title"><span class="icon">&#8644;</span> <span data-i18n="cfg_kartica_klasifikator">Klasifikacijski model &mdash; rutiranje poruka (odvojeno od izvr&#353;nog)</span></div>
           <div id="info-classifier-content"><div class="empty" data-i18n="loading">Loading...</div></div>
+        </div>
+        <div class="info-card info-full" id="info-concurrency-card">
+          <div class="info-card-title"><span class="icon">&#8793;</span> <span data-i18n="cfg_kartica_usporedni">Usporedni agenti (1&ndash;10)</span></div>
+          <div id="info-concurrency-content"><div class="empty" data-i18n="loading">Loading...</div></div>
         </div>
         <div class="info-card info-full" id="info-dezurni-card">
           <div class="info-card-title"><span class="icon">&#9873;</span> <span data-i18n="cfg_kartica_dezurni">De&#382;urni &mdash; rezervni model kad primarni padne</span></div>
@@ -7149,6 +7154,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         loadClassifier();
         loadLoginProviders();
         loadDezurni();
+        loadConcurrency();
         loadTelegram();
         loadUlaznaVrata();
         loadIntegracije();
@@ -7894,9 +7900,9 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         ' onchange="spremiOrkestrator({enabled:this.checked}, this)">',
         _T('orc_ukljucen_opis', 'Isključeno: nijedan agent se ne pokreće sam.'));
       h += _red(_T('orc_strop', 'Najviše usporednih agenata'),
-        '<input id="orc-strop" type="number" value="' + (p.spawn ? p.spawn.maxConcurrent : 3) + '" style="' + _stil() + ';width:90px">' +
-        ' <button class="cfg-btn" onclick="spremiOrkestrator({spawn:{maxConcurrent:Number(document.getElementById(\\'orc-strop\\').value)}}, this)">' + _T('tel_spremi', 'Spremi') + '</button>',
-        _T('orc_strop_opis', 'Koliko poslova smije teći istodobno.'));
+        '<b>' + (d.strop != null ? d.strop : '') + '</b>',
+        _T('cfg_usp_napomena', 'Promjena vrijedi odmah (daemon je čita najkasnije za 5 s). Smanjenje ne prekida agente koji rade — samo ne pušta nove. Vrata autonomije (70/85 %) i dalje nadjačavaju strop.') +
+        ' → ' + _T('cfg_kartica_usporedni', 'Usporedni agenti (1–10)'));
       h += _red(_T('orc_ploca', 'Adresa ploče'),
         '<input id="orc-api" value="' + _esc(p.api ? p.api.baseUrl : '') + '" style="' + _stil() + ';min-width:240px">' +
         ' <button class="cfg-btn" onclick="spremiOrkestrator({api:{baseUrl:document.getElementById(\\'orc-api\\').value}}, this)">' + _T('tel_spremi', 'Spremi') + '</button>',
@@ -7942,6 +7948,58 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       var el = document.getElementById('orc-facts');
       var popis = el.value.split('|').map(function (x) { return x.trim(); }).filter(Boolean);
       return spremiOrkestrator({ prompt: { systemFacts: popis } }, btn);
+    }
+
+    // ── Usporedni agenti — strop spawnova, vrijedi uživo (orkestrator čita ≤5 s) ─────────
+    async function loadConcurrency() {
+      var el = document.getElementById('info-concurrency-content');
+      if (!el) return;
+      try {
+        var d = await (await fetch('/api/config/concurrency')).json();
+        if (d.error) throw new Error(d.error);
+        el.innerHTML = renderConcurrency(d);
+      } catch(e) {
+        el.innerHTML = '<div class="empty">' + _T('cfg_usp_greska', 'Greška pri čitanju stropa') + ': ' + _esc(e.message) + '</div>';
+      }
+    }
+
+    function renderConcurrency(d) {
+      var h = (d.history || []).slice(0, 5).map(function(r) {
+        return '<li>' + _esc(r.changedAt || '') + ' — ' + _esc(String(r.oldValue == null ? '—' : r.oldValue)) +
+          ' → ' + _esc(String(r.newValue)) + ' (' + _esc(r.changedBy) + ', ' + _esc(r.source) + ')</li>';
+      }).join('');
+      return '<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">' +
+        '<label for="usp-strop">' + _T('cfg_usp_oznaka', 'Usporedni agenti') + '</label>' +
+        '<input id="usp-strop" type="range" min="' + d.min + '" max="' + d.max + '" value="' + d.maxConcurrent + '" ' +
+          'oninput="document.getElementById(&quot;usp-vrijednost&quot;).textContent=this.value">' +
+        '<b id="usp-vrijednost">' + d.maxConcurrent + '</b>' +
+        '<button class="cfg-btn" onclick="spremiConcurrency(this)">' + _T('tel_spremi', 'Spremi') + '</button>' +
+        '<span id="usp-zauzeto" title="' + _T('cfg_usp_zauzeto_title', 'zauzeta mjesta / strop') + '">' +
+          _T('cfg_usp_zauzeto', 'Zauzeto') + ': <b>' + d.active + '/' + d.maxConcurrent + '</b></span>' +
+        '</div>' +
+        '<div style="opacity:.75;font-size:12px;margin-top:6px">' +
+          _T('cfg_usp_napomena', 'Promjena vrijedi odmah (daemon je čita najkasnije za 5 s). Smanjenje ne prekida agente koji rade — samo ne pušta nove. Vrata autonomije (70/85 %) i dalje nadjačavaju strop.') +
+          (d.updatedBy ? '<br>' + _T('cfg_usp_zadnje', 'Zadnja promjena') + ': ' + _esc(d.updatedBy) + ', ' + _esc(d.updatedAt || '') : '') +
+          (d.envDeprecated ? '<br>⚠️ ' + _esc(d.envDeprecated) : '') +
+        '</div>' +
+        (h ? '<ul style="font-size:12px;opacity:.75;margin:6px 0 0 16px">' + h + '</ul>' : '');
+    }
+
+    async function spremiConcurrency(btn) {
+      var v = Number(document.getElementById('usp-strop').value);
+      if (btn) btn.disabled = true;
+      try {
+        var res = await fetch('/api/config/concurrency', {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ maxConcurrent: v, source: 'config' })
+        });
+        var d = await res.json();
+        if (!res.ok || d.error) throw new Error(d.error || 'save failed');
+        await loadConcurrency();
+      } catch(e) {
+        alert(_T('cfg_usp_greska_spremanje', 'Greška pri spremanju stropa') + ': ' + e.message);
+        if (btn) btn.disabled = false;
+      }
     }
 
     // ── Ulazna vrata (U1/TASK-4261) — prekidač po grupi s TRI položaja ──────────────────
@@ -9149,6 +9207,8 @@ function handleOrchestratorGet(): Response {
       postavke,
       stanje: stanjeOrkestratora(postavke),
       putanja: orchestratorConfigPath(),
+      // Strop NIJE polje orchestrator.json nego postavka (kartica „Usporedni agenti").
+      strop: taskManager.getConcurrencySetting().value,
       agenata: KonfiguracijskiRegistar.izDatoteke(postavke.agents.registryPath || undefined).list().length,
     })
   } catch (err) {
@@ -11664,6 +11724,46 @@ function handleGetPause(): Response {
   })
 }
 
+// ─── Strop usporednih agenata ────────────────────────────────────────────────
+// Izvor istine: tablica `settings` (core/ConcurrencySetting.ts). Orkestrator ga čita uživo
+// (keš ≤5 s), pa PUT ne traži restart. `active` = broj zadataka `in_progress`.
+function concurrencyPayload() {
+  const cur = taskManager.getConcurrencySetting()
+  const inProgress = taskManager.getTasks({ status: 'in_progress' } as any).length
+  const env = process.env[CONCURRENCY_ENV]
+  return {
+    maxConcurrent: cur.value, min: CONCURRENCY_MIN, max: CONCURRENCY_MAX, default: CONCURRENCY_DEFAULT,
+    updatedBy: cur.updatedBy, updatedAt: cur.updatedAt, source: cur.source,
+    active: inProgress, activeSource: 'in_progress', inProgress,
+    history: taskManager.getConcurrencyHistory(10),
+    envDeprecated: env ? `${CONCURRENCY_ENV}=${env} u okolini se ignorira (zastarjelo) — vrijedi postavka` : null,
+  }
+}
+
+function handleConcurrencyGet(): Response {
+  try {
+    return new Response(JSON.stringify(concurrencyPayload()), { headers: { 'Content-Type': 'application/json' } })
+  } catch (error) {
+    return new Response(JSON.stringify({ error: String(error) }), { status: 500, headers: { 'Content-Type': 'application/json' } })
+  }
+}
+
+async function handleConcurrencyPut(req: Request): Promise<Response> {
+  let body: any
+  try { body = await req.json() } catch {
+    return new Response(JSON.stringify({ error: 'Neispravno JSON tijelo' }), { status: 400, headers: { 'Content-Type': 'application/json' } })
+  }
+  const p = parseConcurrencyInput(body?.maxConcurrent)
+  if (!p.ok) return new Response(JSON.stringify({ error: p.error }), { status: 400, headers: { 'Content-Type': 'application/json' } })
+  const by = typeof body.by === 'string' && body.by.trim() ? body.by.trim() : 'config'
+  const source = typeof body.source === 'string' && body.source.trim() ? body.source.trim().slice(0, 32) : 'config'
+  const ch = taskManager.setConcurrencySetting(p.value, by, source)
+  console.log(`[API] ${formatConcurrencyChange({ oldValue: ch.oldValue, newValue: ch.newValue, changedBy: ch.changedBy, source })}`)
+  const message = JSON.stringify({ type: 'concurrency_changed', concurrency: { maxConcurrent: ch.newValue, by: ch.changedBy } })
+  wsClients.forEach(client => { try { client.send(message) } catch { wsClients.delete(client) } })
+  return new Response(JSON.stringify({ ...concurrencyPayload(), change: ch }), { headers: { 'Content-Type': 'application/json' } })
+}
+
 async function handleSetPause(req: Request): Promise<Response> {
   try {
     const body = await req.json() as any
@@ -13748,6 +13848,8 @@ const server = Bun.serve({
       return handleTaskPitanje(url.pathname.split('/')[3], req)
     }
     if (url.pathname === '/api/pause' && req.method === 'GET') return handleGetPause()
+    if (url.pathname === '/api/config/concurrency' && req.method === 'GET') return handleConcurrencyGet()
+    if (url.pathname === '/api/config/concurrency' && req.method === 'PUT') return handleConcurrencyPut(req)
     if (url.pathname === '/api/pause' && req.method === 'POST') return handleSetPause(req)
     if (url.pathname.match(/^\/api\/tasks\/[^\/]+\/pause$/) && req.method === 'POST') {
       return handleTaskPause(url.pathname.split('/')[3], true, req)

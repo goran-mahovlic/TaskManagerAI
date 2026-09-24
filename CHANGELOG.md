@@ -1,3 +1,16 @@
+## 2026-09-24 — strop usporednih agenata je postavka, promjenjiva uživo
+
+- Nova tablica `settings` (+ `settings_history` za audit) i modul `src/core/ConcurrencySetting.ts`.
+  Ključ `agents.max_concurrent`, zadano **3**, seed pri `scripts/init-db.ts`.
+- `GET/PUT /api/config/concurrency` (validacija 1–10, zapis tko/kada/staro → novo) i kartica
+  „Usporedni agenti (1–10)" na Config stranici, uz prikaz zauzetih mjesta (npr. 2/3).
+- Orkestrator (`SpawnQueue`) čita strop **uživo** (keš ≤5 s) — promjena ne traži restart;
+  smanjenje ne prekida poslove koji teku. `SpawnQueue` i dalje prima i obični broj.
+- `spawn.maxConcurrent` u `orchestrator.json` i `TM_MAX_CONCURRENT` više ne određuju strop;
+  `REGOC_MAX_AGENT_CONCURRENT` je samo jednokratna početna vrijednost i javlja se kao zastarjela.
+- Testovi: `tests/concurrency-setting.test.ts` (15 — seed, validacija, audit, keš, fail-safe,
+  E2E 1 → 3 bez restarta, init-db na praznom `TM_HOME`).
+
 ## 2026-09-10 — tvoj tim, ne naš: popis nositelja zadatka je postao podatak
 
 **`TM_AGENTS` sada doista radi (nalaz N1, `docs/QA_E2E_SAMOSTALNOST_2026-09-10.md`)**

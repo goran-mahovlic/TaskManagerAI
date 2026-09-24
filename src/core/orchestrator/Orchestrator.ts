@@ -35,11 +35,15 @@ export class Orchestrator {
   private tajmer: ReturnType<typeof setTimeout> | null = null
   private zadnjiAutoExec = 0
 
-  constructor(ports: OrchestratorPorts, cfg: OrchestratorPostavke) {
+  /**
+   * `opcije.maxConcurrent` — živi izvor stropa (postavka TaskManagera, Config stranica).
+   * Bez njega vrijedi `cfg.spawn.maxConcurrent` (fiksno, npr. u testu).
+   */
+  constructor(ports: OrchestratorPorts, cfg: OrchestratorPostavke, opcije: { maxConcurrent?: () => number } = {}) {
     this.p = ports
     this.cfg = cfg
     this.queue = new SpawnQueue({
-      maxConcurrent: cfg.spawn.maxConcurrent,
+      maxConcurrent: opcije.maxConcurrent ?? cfg.spawn.maxConcurrent,
       backoff: cfg.spawn.backoff,
       hardCeilingHours: cfg.spawn.hardCeilingHours,
       now: () => ports.clock.now(),
@@ -218,7 +222,7 @@ export class Orchestrator {
     if (this.radi) return
     this.radi = true
     this.p.logger.log(
-      `[orchestrator] pokrenut — strop ${this.cfg.spawn.maxConcurrent}, ` +
+      `[orchestrator] pokrenut — strop ${this.queue.strop}, ` +
       `izvođač ${this.p.executor.ime}, agenata ${this.p.agents.list().length}`,
     )
     const petlja = async () => {

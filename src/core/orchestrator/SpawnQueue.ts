@@ -13,7 +13,12 @@
  */
 
 export interface SpawnQueueOpcije {
-  maxConcurrent: number
+  /**
+   * Strop usporednih spawnova. Funkcija = čita se pri SVAKOJ provjeri (postavka s Config
+   * stranice, `ConcurrencySetting.createConcurrencyReader`), pa promjena vrijedi bez restarta.
+   * Smanjenje ne gasi poslove koji teku — samo `smije()` ne pušta nove dok ih ne bude manje.
+   */
+  maxConcurrent: number | (() => number)
   backoff: { baseMs: number; maxMs: number; jitter: boolean }
   /** Nakon koliko sati se spawn smatra zaglavljenim bez obzira na sve ostalo. */
   hardCeilingHours: number
@@ -52,6 +57,12 @@ export class SpawnQueue {
     } as Required<SpawnQueueOpcije>
   }
 
+  /** Trenutačni strop (uživo ako je zadan kao funkcija). */
+  get strop(): number {
+    const m = this.opcije.maxConcurrent
+    return typeof m === 'function' ? m() : m
+  }
+
   /** Koliko poslova trenutno teče. */
   get broj(): number { return this.aktivni.size }
 
@@ -64,10 +75,11 @@ export class SpawnQueue {
     if (this.aktivni.has(taskId)) {
       return { ok: false, razlog: 'vec-radi', poruka: `zadatak ${taskId} već ima živ spawn` }
     }
-    if (this.aktivni.size >= this.opcije.maxConcurrent) {
+    const strop = this.strop
+    if (this.aktivni.size >= strop) {
       return {
         ok: false, razlog: 'strop',
-        poruka: `strop usporednih spawnova (${this.opcije.maxConcurrent}) je dosegnut`,
+        poruka: `strop usporednih spawnova (${strop}) je dosegnut`,
       }
     }
     const k = this.kvarovi.get(agentId)
@@ -117,7 +129,7 @@ export class SpawnQueue {
     const sada = this.opcije.now()
     return {
       aktivnih: this.aktivni.size,
-      strop: this.opcije.maxConcurrent,
+      strop: this.strop,
       uOdgodi: [...this.kvarovi.entries()]
         .filter(([, v]) => v.slobodanOd > sada)
         .map(([agentId, v]) => ({ agentId, slobodanOd: v.slobodanOd, broj: v.broj })),

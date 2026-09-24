@@ -14,6 +14,7 @@
 import Database, { type Statement } from "bun:sqlite";
 import { homedir } from 'os'
 import { TaskIdAllocator } from "./TaskIdAllocator";
+import { seedConcurrency, getConcurrency, setConcurrency, concurrencyHistory, CONCURRENCY_KEY, CONCURRENCY_ENV } from "./ConcurrencySetting";
 import { assertNotLiveDbInTest } from "./LiveDbGuard";
 import { TM_DB } from "./paths";
 // TASK-3516: jedno pravilo poretka za cijeli TaskManager — najnovije na vrhu.
@@ -280,6 +281,7 @@ export class TaskManagerSQL {
     this.db.exec("PRAGMA busy_timeout=5000");
 
     this.ensurePauseColumns();
+    this.ensureSettings();
     this.prepareStatements();
     this.idAllocator = new TaskIdAllocator(this.db);
     console.log(`[TaskManagerSQL] Initialized. Next ID: ${this.idAllocator.peek()}`);
@@ -518,6 +520,29 @@ export class TaskManagerSQL {
       try { this.db.exec(ddl); } catch { /* stupac već postoji */ }
     }
   }
+
+  // ============================================
+  // POSTAVKE — strop usporednih agenata
+  // ============================================
+
+  /**
+   * Tablice `settings`/`settings_history` i početna vrijednost stropa (3, ili jednokratno iz
+   * `REGOC_MAX_AGENT_CONCURRENT` ako postavka još ne postoji). Idempotentno: bazu otvara
+   * više procesa (ploča, orkestrator, alati) i svaki mora zateći isti oblik.
+   */
+  private ensureSettings(): void {
+    try {
+      const r = seedConcurrency(this.db, process.env as Record<string, string | undefined>);
+      if (r.seeded) console.log(`[TaskManagerSQL] Postavka '${CONCURRENCY_KEY}' upisana: ${r.value}`);
+      else if (r.envIgnored) console.warn(`[TaskManagerSQL] ${CONCURRENCY_ENV} je zastarjela — vrijedi postavka '${CONCURRENCY_KEY}'=${r.value} (Config → Usporedni agenti)`);
+    } catch (err) {
+      console.warn(`[TaskManagerSQL] postavke nisu inicijalizirane: ${err instanceof Error ? err.message : err}`);
+    }
+  }
+
+  getConcurrencySetting() { return getConcurrency(this.db); }
+  setConcurrencySetting(value: number, by: string, source = 'api') { return setConcurrency(this.db, value, by, source); }
+  getConcurrencyHistory(limit = 20) { return concurrencyHistory(this.db, limit); }
 
   /**
    * Pauziraj/nastavi zadatak. Status se NE dira — pauza je ortogonalna dimenzija

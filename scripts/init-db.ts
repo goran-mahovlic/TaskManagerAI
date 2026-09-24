@@ -13,6 +13,7 @@ import { Database } from 'bun:sqlite'
 import { existsSync, mkdirSync, readFileSync } from 'fs'
 import { dirname, join } from 'path'
 import { TM_DB, TM_DATA } from '../src/core/paths'
+import { seedConcurrency } from '../src/core/ConcurrencySetting'
 
 const KORIJEN = join(dirname(new URL(import.meta.url).pathname), '..')
 const SHEMA = join(KORIJEN, 'db', 'schema.sql')
@@ -31,6 +32,9 @@ const db = new Database(TM_DB)
 // WAL je obavezan: ploča čita dok agenti pišu.
 db.exec('PRAGMA journal_mode=WAL;')
 db.exec(readFileSync(SHEMA, 'utf-8'))
+// Zadane postavke (strop usporednih agenata = 3). Okolina se koristi samo ako postavke još
+// nema; postojeća vrijednost se nikad ne prepisuje.
+const seed = seedConcurrency(db, process.env as Record<string, string | undefined>)
 
 const broj = (tip: string) =>
   (db.query(`SELECT count(*) AS n FROM sqlite_master WHERE type = ?`).get(tip) as { n: number }).n
@@ -41,6 +45,7 @@ console.log(`  baza:     ${TM_DB}`)
 console.log(`  tablica:  ${broj('table')}`)
 console.log(`  kazala:   ${broj('index')}`)
 console.log(`  okidača:  ${broj('trigger')}`)
+console.log(`  strop usporednih agenata: ${seed.value}${seed.seeded ? ' (upisano sada)' : ''}`)
 console.log('')
 console.log('Pokreni poslužitelj s:  bun run start')
 

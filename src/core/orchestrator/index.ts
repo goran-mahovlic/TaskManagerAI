@@ -27,6 +27,8 @@ import { odaberiLiveness } from './Liveness'
 import { DatotecniLogger, HttpBoard, PraznaMagistrala, SistemskiSat, TelegramNotifier } from './Adapters'
 import { loadOrchestratorConfig, type OrchestratorPostavke } from './OrchestratorConfig'
 import type { OrchestratorPorts } from './Ports'
+import { createConcurrencyReader, formatConcurrencyChange } from '../ConcurrencySetting'
+import { TM_DB } from '../paths'
 
 export interface Sastav {
   orkestrator: Orchestrator | null
@@ -72,5 +74,12 @@ export function sastaviOrkestrator(
     clock: portovi.clock || SistemskiSat,
     logger: portovi.logger || new DatotecniLogger(),
   }
-  return { orkestrator: new Orchestrator(ports, cfg), cfg, greske }
+  // Strop usporednih agenata je POSTAVKA TaskManagera (tablica `settings`, Config stranica),
+  // ne polje orchestrator.json: čita se uživo (keš ≤5 s), pa promjena ne traži restart.
+  const maxConcurrent = createConcurrencyReader({
+    dbPath: TM_DB,
+    env: process.env as Record<string, string | undefined>,
+    onChange: (c) => ports.logger.log(`[orchestrator] ${formatConcurrencyChange(c)} — vrijedi odmah`),
+  })
+  return { orkestrator: new Orchestrator(ports, cfg, { maxConcurrent }), cfg, greske }
 }

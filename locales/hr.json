@@ -769,5 +769,13 @@
   "zadnjih_30_dana": "zadnjih 30 dana",
   "zadnjih_7_dana": "zadnjih 7 dana",
   "zadnjih_90_dana": "zadnjih 90 dana",
-  "zaustavi_sav_automatski_rad": "Zaustavi sav automatski rad"
+  "zaustavi_sav_automatski_rad": "Zaustavi sav automatski rad",
+  "cfg_kartica_usporedni": "Usporedni agenti (1–10)",
+  "cfg_usp_oznaka": "Usporedni agenti",
+  "cfg_usp_greska": "Greška pri čitanju stropa",
+  "cfg_usp_greska_spremanje": "Greška pri spremanju stropa",
+  "cfg_usp_zauzeto": "Zauzeto",
+  "cfg_usp_zauzeto_title": "zauzeta mjesta / strop",
+  "cfg_usp_napomena": "Promjena vrijedi odmah (daemon je čita najkasnije za 5 s). Smanjenje ne prekida agente koji rade — samo ne pušta nove. Vrata autonomije (70/85 %) i dalje nadjačavaju strop.",
+  "cfg_usp_zadnje": "Zadnja promjena"
 }

@@ -47,6 +47,19 @@ i nakon `git pull` da pokupi nove tablice ili okidače.
 | `project_rag_entries` | poveznica bilješke na zapis u vanjskoj bazi ugradbi |
 | `cost_log` | potrošnja po pozivu modela: žetoni, cijena, agent, zadatak |
 
+**Postavke**
+
+| Tablica | Čemu služi |
+|---|---|
+| `settings` | postavke TaskManagera, ključ → vrijednost, s `updated_by` i `updated_at`; prvi ključ je `agents.max_concurrent` (strop usporednih agenata, zadano 3) |
+| `settings_history` | povijest promjena postavki: stara i nova vrijednost, tko (`changed_by`), odakle (`source`: `seed`, `config`, `api`) i kada |
+
+Početnu vrijednost stropa upisuje `scripts/init-db.ts` (i sama ploča pri prvom otvaranju baze),
+ne `schema.sql`: tako okolina `REGOC_MAX_AGENT_CONCURRENT` može poslužiti kao jednokratni
+seed, a postojeća se vrijednost nikad ne prepisuje. Nečitljiva ili ručno pokvarena vrijednost
+nikad ne znači „neograničeno" — čitač pada na zadnju dobru vrijednost, pa na okolinu, pa na 3,
+i sve stišće u [1, 10].
+
 Uz to postoje dva pogleda, `v_cost_log` i `v_projects_summary`, koji služe ploči za zbrojeve.
 
 ## Okidači — mjesto gdje se sustav sam pokreće

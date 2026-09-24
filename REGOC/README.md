@@ -356,6 +356,14 @@ djeluje razumno.
 Jedina je iznimka stroj na kojem mjerenje nikad nije ni radilo — ondje bi zatvaranje značilo da
 se novi sustav nikad ne pokrene.
 
+**Strop usporednih agenata.** Koliko agenata smije raditi istodobno nije varijabla okoline ni
+broj u kodu, nego postavka samoga TaskManagera, promjenjiva uživo na Config stranici (zadano 3).
+Demon je pročita najkasnije za pet sekundi, pa se s jednoga na tri prelazi bez restarta.
+Smanjenje nikoga ne prekida — samo se novi ne puštaju dok ih ne bude manje. Stupnjevi
+autonomije i dalje imaju prednost: iznad drugoga praga radi najviše jedan, ma koliko strop bio.
+Pouka iz pogona: dok je strop dolazio iz okoline kontejnera, zaboravljena `=1` iz davne
+konfiguracije tjerala je sustav u serijski rad a da to nitko nije vidio na ploči.
+
 **Ručna kočnica.** Postoji i gumb: pauza globalno ili po zadatku. Pauza ne mijenja stanje
 zadatka, pa se posao nastavlja točno ondje gdje je prekinut. Otkazivanje se za to **ne koristi** —
 to je konačno stanje iz kojega se ne vraća.

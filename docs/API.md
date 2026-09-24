@@ -70,6 +70,32 @@ curl http://localhost:17781/api/pause          # stanje
 
 Dok je uključena, sustav ne preuzima nove zadatke ni iz reda ni na zahtjev.
 
+### Usporedni agenti (strop)
+
+Koliko agenata smije raditi istodobno. Vrijednost je **postavka TaskManagera** (tablica
+`settings`, ključ `agents.max_concurrent`), mijenja se na Config stranici (kartica „Usporedni
+agenti") ili ovim krajem i **vrijedi odmah** — orkestrator je čita najkasnije za 5 s, bez
+restarta. Nova instalacija počinje s 3.
+
+```bash
+curl http://localhost:17781/api/config/concurrency
+# {"maxConcurrent":3,"min":1,"max":10,"active":1,"updatedBy":"seed:default",
+#  "updatedAt":"…","history":[{"oldValue":null,"newValue":3,"changedBy":"seed:default","source":"seed",…}]}
+
+curl -X PUT http://localhost:17781/api/config/concurrency \
+  -H "Content-Type: application/json" \
+  -d '{"maxConcurrent":3,"by":"ana"}'
+```
+
+- `maxConcurrent` mora biti cijeli broj **1–10**; sve drugo vraća `400` i ništa ne mijenja.
+- `by` (tko) i `source` (odakle, zadano `config`) ulaze u povijest (`settings_history`) uz
+  staru i novu vrijednost te vrijeme.
+- Smanjenje ne prekida agente koji već rade — samo se novi ne puštaju dok ih ne bude manje od
+  novog stropa. Pravila autonomije (kvota, tjedni prag) nadjačavaju strop.
+- Varijabla okoline `REGOC_MAX_AGENT_CONCURRENT` je **zastarjela**: služi samo kao jednokratna
+  početna vrijednost dok postavka još ne postoji. Ako je postavljena, odgovor to javlja u
+  `envDeprecated`.
+
 ### Odluka o pokretanju (`needs-decision`)
 
 Zadatak s oznakom `needs-decision` (ili `no-autonomy`, `waiting-for-human`, `interactive`) čeka
