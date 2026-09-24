@@ -55,7 +55,7 @@ export const ProjectSchema = z.object({
   updated_at: z.string(),
   target_date: z.string().optional(),
   tags: z.array(z.string()).default([]),
-  metadata: z.record(z.unknown()).default({}),
+  metadata: z.record(z.string(), z.any()).default({}),
   // Nextcloud integration fields
   nextcloud_folder_id: z.string().optional(),
   nextcloud_share_url: z.string().optional(),
@@ -88,7 +88,7 @@ export const CreateProjectInputSchema = z.object({
   lead_agent: AgentIdSchema.optional(),
   target_date: z.string().optional(),
   tags: z.array(z.string()).optional(),
-  metadata: z.record(z.unknown()).optional(),
+  metadata: z.record(z.string(), z.any()).optional(),
   nextcloud_folder_id: z.string().optional(),
   nextcloud_share_url: z.string().optional()
 })

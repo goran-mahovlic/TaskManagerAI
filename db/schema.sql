@@ -292,7 +292,7 @@ CREATE VIEW v_projects_summary AS
       ROUND(COALESCE(
         CASE
           WHEN (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id) = 0 THEN 0
-          ELSE (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND t.status = 'completed') * 100.0 / (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id)
+          ELSE (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND t.status IN ('completed', 'cancelled')) * 100.0 / (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id)
         END
       , 0), 1) as calculated_progress,
       (SELECT COUNT(*) FROM project_rag_entries pre WHERE pre.project_id = p.id) as rag_entry_count

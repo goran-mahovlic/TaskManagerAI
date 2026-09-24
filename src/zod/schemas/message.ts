@@ -23,7 +23,7 @@ export const MessageSchema = z.object({
   created_at: z.string(),
   processed_at: z.string().optional(),
   error: z.string().optional(),
-  metadata: z.record(z.unknown()).optional(),
+  metadata: z.record(z.string(), z.any()).optional(),
   chat_id: z.string().optional(),
   voice_relay: z.boolean().optional(),
   retry_count: z.number().int().min(0).default(0),
@@ -39,7 +39,7 @@ export const SendMessageInputSchema = z.object({
   content: z.string().min(1),
   type: MessageTypeSchema.optional(),
   priority: z.number().int().min(1).max(5).optional(),
-  metadata: z.record(z.unknown()).optional(),
+  metadata: z.record(z.string(), z.any()).optional(),
 })
 
 // Type exports

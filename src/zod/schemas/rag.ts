@@ -8,7 +8,7 @@ export const RAGEntrySchema = z.object({
   id: z.string().min(1),
   content: z.string(),
   collection: z.string().min(1),
-  metadata: z.record(z.unknown()).default({}),
+  metadata: z.record(z.string(), z.any()).default({}),
   stored_at: z.string().optional(),
   // Optional fields from query results
   distance: z.number().optional(),
@@ -81,7 +81,7 @@ export const RAGQuerySchema = z.object({
   collection: z.string().min(1),
   query: z.string().min(1),
   nResults: z.number().int().min(1).max(50).default(10),
-  where: z.record(z.unknown()).optional()
+  where: z.record(z.string(), z.any()).optional()
 })
 
 // ============================================
@@ -91,7 +91,7 @@ export const RAGQuerySchema = z.object({
 export const RAGStoreSchema = z.object({
   collection: z.string().min(1),
   content: z.string().min(1),
-  metadata: z.record(z.unknown()).default({}),
+  metadata: z.record(z.string(), z.any()).default({}),
   documentId: z.string().optional()
 })
 
