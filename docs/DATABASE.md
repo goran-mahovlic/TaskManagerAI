@@ -61,6 +61,22 @@ nikad ne znači „neograničeno" — čitač pada na zadnju dobru vrijednost, p
 i sve stišće u [1, 10].
 
 Uz to postoje dva pogleda, `v_cost_log` i `v_projects_summary`, koji služe ploči za zbrojeve.
+`v_projects_summary` napredak projekta broji kao udio **zatvorenih** zadataka —
+`status IN ('completed','cancelled')`: otkazan zadatak je zatvoren, pa projekt u kojem su svi
+zadatci završeni ili otkazani stoji na 100 %, ne ispod.
+
+**Datoteke stanja uz bazu** (`$TM_HOME/data/`, nikad u repozitoriju):
+
+| Datoteka | Tko piše | Čemu služi |
+|---|---|---|
+| `critic_gate.jsonl` | kritičar | trag svake kritike (provjere, presuda, razina doc-provjere) |
+| `unverified_alerts.json` | dojava „neprovjereno" | tko je danas već javljen, da se dojava ne ponavlja |
+| `spawn_leases/` | orkestrator | najam spawna: na ovom zadatku upravo radi agent |
+| `spawn_close_guard.jsonl` | ploča | sudovi `spawnCloseGuard`a (sjena i uživo) |
+| `close_failures.jsonl` | `TaskCloser` | zatvaranja koja nisu uspjela ni nakon ponavljanja |
+
+Energija, CO₂ i voda **ne spremaju se nigdje**: izvode se iz `cost_log` pri čitanju, jer bi
+upisana brojka zamrznula današnje koeficijente u retke zauvijek (ADR-0010 §7).
 
 ## Okidači — mjesto gdje se sustav sam pokreće
 
@@ -82,15 +98,19 @@ gleda `execution_queue` i posao će ti sam dolaziti.
 
 ```
 pending  →  in_progress  →  completed
-   ↓             ↓
-cancelled     blocked
+   ↓   ↖         ↓              │
+cancelled ←── blocked           │
+   │                            │
+   └──────→ pending ←───────────┘   (ponovno otvaranje)
 ```
+
+Točna tablica prijelaza je u [API.md](API.md#izmjena).
 
 Prijelaz `pending → completed` **nije dopušten** izravno. Zadatak mora proći kroz `in_progress`,
 inače se na ploči ne vidi tko je na čemu radio. To je namjerno ograničenje, ne propust.
 
-Za privremeno zaustavljanje ne koristi se `cancelled` — to je konačno stanje iz kojega se ne
-vraća. Postoji zastavica `paused`, koja stanje ne dira, pa se posao nastavi točno ondje gdje je
+Za privremeno zaustavljanje ne koristi se `cancelled` — iz njega se vraća samo ponovnim
+otvaranjem u `pending`, pa zadatak ide na kraj reda. Postoji zastavica `paused`, koja stanje ne dira, pa se posao nastavi točno ondje gdje je
 prekinut.
 
 ## Izmjena sheme

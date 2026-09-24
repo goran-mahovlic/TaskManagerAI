@@ -116,6 +116,51 @@ ispravno ime (mala slova, znamenke, `-` i `_`, počinje slovom, do 32 znaka). Č
 provjera se sama pooštri i tipfeler (`anna` umjesto `ana`) dobiva `400` s nabrojanim imenima.
 Paket NEMA ugrađeni popis imena: tuđa imena u tvojoj instalaciji nemaju što raditi.
 
+## 5.2. Vratari zatvaranja i prekidači
+
+Zadatak na ploči zatvara se **na dokaz**, ne na riječ. Paket nosi vratare iz izvornog sustava,
+ali **svi kreću u sjeni**: sud se donosi i zapisuje, a ništa se ne odbija dok ga ne uključiš.
+Svaki se uključuje kopiranjem primjera i izmjenom jednog ključa; datoteke se čitaju uživo
+(TTL do 30 s), pa restart nije potreban. Rollback je uvijek ista jedna riječ.
+
+| Datoteka (kopiraj iz `*.example.json`) | Varijabla s putanjom | Što uključuje | Zadano |
+|---|---|---|---|
+| `config/completion-gate.json` | — | completion-guard: `completed` bez dokaza izvršenja; strogi sud za izvršitelja izvan `trustedProviders` | `live: false` (sjena) |
+| `config/step-schema.json` | — | strukturirani izlaz koraka `REGOC-IZLAZ` (zatvoren rječnik dokaza) | `nacin: shadow`, `provodiNedostajuci: false` |
+| `config/critic-gate.json` | `TM_CRITIC_CONFIG` | kritičar pokreće provjere nad onim što je agent ostavio na disku; `docMode` (L0/L1) za dokumente | `docMode: shadow`, `doc2Mode: off` |
+| `config/features.json` | `TM_FEATURES_FILE` | `criticGate`, `spawnCloseGuard` (agent ne smije sam zatvoriti zadatak dok radi njegov spawn), strop stvaranja zadataka | sve `false` |
+| `config/energija.json` | `TM_ENERGIJA_CONFIG` | koeficijenti procjene struje, CO₂ i vode (s izvorima u primjeru) | ugrađene vrijednosti |
+
+**Redoslijed koji se pokazao sigurnim:** sjena → mjerenje u dnevniku (`BIH blokirala`,
+`$TM_HOME/data/critic_gate.jsonl`, `spawn_close_guard.jsonl`) → uživo tek kad je broj
+lažnih odbijanja nula. Vratar koji odbije uredan rad biva isključen, a to je gore od kvara
+koji liječi.
+
+`spawnCloseGuard` ima smisla tek kad radi orkestrator (§6): on uzima **najam** na zadatku dok
+agent radi i pušta ga prije vlastitog zapisa ishoda. Čovjek s ploče uvijek prolazi zaglavljem
+`X-REGOC-Force: 1`.
+
+`doc2Mode` (L2 — sadržaj dokumenta sudi drugi model) traži modul suca koji **nije dio paketa**
+(vezan je uz registar imenovanih agenata). Bez njega L2 vraća „sudac nije instaliran" i
+provjera ostaje neprovjerena, ništa ne pada.
+
+## 5.3. RAG: ChromaDB, pgvector ili oba (neobavezno)
+
+Ploča radi bez RAG-a. Ako ga želiš:
+
+```bash
+cp config/rag-backend.example.json config/rag-backend.json
+$EDITOR config/rag-backend.json          # backend, chroma.host, pgvector.host/port/database/user
+export TM_PGVECTOR_PASSWORD='…'          # ili u datoteku tajni — NIKAD u JSON
+bun add pg                               # samo za pgvector; ChromaDB ga ne treba
+```
+
+Isto se radi i s ploče: **Config → RAG Backend** (status, izbor sustava, usporedba zbirki,
+migracija ChromaDB → pgvector po zbirkama). Bez upisane adrese pgvector javlja
+`configured: false` i ploča ne radi nijedan mrežni poziv. Gumb „Test konekcije" prolazi iste
+provjere adrese kao integracije (`ProbeGuard`), a spremljenu lozinku šalje **samo** na
+spremljenu adresu. Instalacija izložena internetu neka postavi `dopustiPrivatneMreze: false`.
+
 ## 6. Sloj 1 — pokreni orkestrator (neobavezno)
 
 Dosad si dobio **ploču**: zadatke, projekte, API i vratare. Orkestrator je sloj koji **sam

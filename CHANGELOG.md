@@ -1,3 +1,55 @@
+## 2026-09-24 — prijenos značajki iz živog sustava (GAP 24.09.)
+
+Plan i odluke po značajki: [`docs/GAP_20260924.md`](docs/GAP_20260924.md). Prijenos je išao
+**po značajkama, ne po datotekama** — svaki hunk iz žive instalacije dobio je paketne obrasce
+(`paths.ts`, `konfigPutanja()`, `TM_*`), jer bi slijepa kopija vratila tuđe adrese i naš tim.
+
+**Zadatak i zatvaranje**
+- ID projekta nikad ne zaostaje za tablicom (`MAX(sekvenca, max(id)+1)`); ponovno otvaranje
+  `completed → pending` i `cancelled → pending`; konzola ne nudi spremanje lozinke.
+- Strukturirani izlaz koraka `REGOC-IZLAZ` (W3b): `schema_invalid` uživo uz `nacin: on`,
+  `schema_missing` samo uz `provodiNedostajuci` i izvan izuzeća (zaglavlje `X-REGOC-Zatvara`).
+- Completion-guard za nepovjerljivog izvršitelja (`localExecutorStrict`, u sjeni).
+- Kritičar za dokumente (L0 oblik, L1 traženi odsjeci); L2 traži suca koji nije dio paketa i
+  bez njega javlja „sudac nije instaliran". Dojava „neprovjereno" imenuje prošlu razinu.
+- `TaskCloser` + `SpawnFinalizer` + `spawnCloseGuard` (`409 SPAWN_ACTIVE`) iza prekidača u
+  `config/features.json`, zadano isključeno. **Ispravak uz prijenos:** terminalan skup je
+  „stanja iz kojih vodi samo povratak u red" — stari sud „nema prijelaza" nakon uvođenja
+  ponovnog otvaranja davao je prazan skup i guard je tiho utihnuo (isti kvar u živom sustavu
+  prijavljen je zasebno).
+
+**Ploča**
+- `GET /api/tasks/:id` nosi `resultParsed`; kartica crta bedž, sklopive sekcije i „prikaži
+  sirovo" isključivo kroz `textContent` (bez `innerHTML`).
+- Straža jeke: dojava raspoređivača i obavijesti o životnom ciklusu agenta ne postaju zadatak.
+- Procjena struje, CO₂ i vode uz trošak projekta, s rasponom i metodom; koeficijenti u
+  `config/energija.json`.
+- `model-config.json` se mijenja atomno (`tmp` + `rename`) uz revizijski trag; `[1m]` u popisu.
+- RAG s dva pozadinska sustava (ChromaDB / pgvector / dual) + kartica „RAG Backend"; `pg` je
+  opcijska ovisnost; lozinka samo iz `TM_PGVECTOR_PASSWORD`, nikad u JSON-u ni odgovoru.
+
+**Bez naših vrijednosti**
+- Rod agenta (završio/završila) više nije popis u kodu nego polje `rod` u `config/agents.json`.
+- `CostTracker`, `CriticGate`, `UnverifiedReport`, `FeatureFlags`, `TaskCloser`: putanje kroz
+  `konfigPutanja`/`stanjePutanja` umjesto tuđeg kućnog direktorija.
+- Nove konfiguracije isporučuju se kao `config/*.example.json`; žive su u `.gitignore`.
+
+**Dokumentacija**
+- `REGOC/` razdijeljen po temama, svaka na hrvatskom i engleskom (`X.md` + `X.en.md`), uz
+  `REGOC/README.en.md`. Brana imena izuzima mapu `REGOC/` jednim pravilom.
+- INSTALL §5.2 (vratari i prekidači), §5.3 (RAG); API: prijelazi stanja, zaglavlja zatvaranja,
+  `resultParsed`, `/api/critic`, `/api/rag/backend/*`; DATABASE: `v_projects_summary` i datoteke
+  stanja; TOOLS; oba READMEa.
+
+**Nije preneseno u ovom krugu** (GAP §3.2–§3.3): sudac L2 i registar imenovanih agenata,
+izbor tima u lancu, ostatak demona, tier-klasifikator; sve vezano za naš stroj.
+
+**Provjera prazne instalacije** (`tests/prazna-instalacija.test.ts`, i ručno s `curl`):
+`init-db` na praznom `TM_HOME` → poslužitelj → `/` 200 → `POST /api/tasks` (prioritet 1) →
+`GET /api/tasks/TASK-001` 200 → `execution_queue` sadrži `TASK-001` (okidač
+`auto_queue_p1_tasks`), zadatak prioriteta 3 ne; `/api/rag/backend/status` 200 bez adrese.
+Testovi: s ovim prijenosom `bun test` broji 800+ prolaza i 0 padova.
+
 ## 2026-09-24 — strop usporednih agenata je postavka, promjenjiva uživo
 
 - Nova tablica `settings` (+ `settings_history` za audit) i modul `src/core/ConcurrencySetting.ts`.

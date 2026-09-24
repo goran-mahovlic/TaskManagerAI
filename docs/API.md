@@ -48,6 +48,53 @@ curl -X PUT http://localhost:17781/api/tasks/TASK-001 \
 Zapamti: `pending → completed` izravno **ne prolazi**. Trebaju dva poziva, prvo `in_progress`,
 pa `completed`.
 
+**Dopušteni prijelazi** (izvor: `ValidStatusTransitions` u `src/core/TaskManagerSQL.ts`;
+nedopušten prijelaz vraća `409`):
+
+| Iz | U |
+|---|---|
+| `pending` | `in_progress`, `blocked`, `cancelled` |
+| `in_progress` | `completed`, `blocked`, `cancelled` |
+| `blocked` | `pending`, `in_progress`, `cancelled` |
+| `completed` | `pending` (ponovno otvaranje) |
+| `cancelled` | `pending` (ponovno otvaranje) |
+
+Ponovno otvoren zadatak vraća se **u red**, nikad ravno u rad — agent ga uzima kao i svaki
+drugi `pending`.
+
+**Zatvaranje prolazi kroz vratare** (sve je zadano u sjeni — bilježi, ne blokira; v.
+INSTALL.md §5.2):
+
+| Vratar | Kada odbija | Odgovor |
+|---|---|---|
+| completion-guard | `completed` bez dokaza izvršenja, ili agentov vlastiti `REGOC-STATUS: BLOCKED` | `400` |
+| shema izlaza koraka | neispravan blok `REGOC-IZLAZ` (uz `nacin: on`) | `400` |
+| `spawnCloseGuard` | agent sam postavlja `completed`/`cancelled` dok na zadatku radi njegov spawn | `409 SPAWN_ACTIVE` |
+
+Dva zaglavlja govore ploči tko zatvara:
+
+| Zaglavlje | Vrijednost | Učinak |
+|---|---|---|
+| `X-REGOC-Zatvara` | `covjek`, `orkestrator`, `agent` | izuzeće od „nema bloka `REGOC-IZLAZ`" vrijedi samo za `covjek`/`orkestrator`; `agent` ga poništava |
+| `X-REGOC-Force` | `1` | čovjek s ploče pregazi `spawnCloseGuard` (zapis ostaje u `spawn_close_guard.jsonl`) |
+
+### Rezultat zadatka (`resultParsed`)
+
+`GET /api/tasks/:id` uz `resultSummary` vraća i `resultParsed` — agentov izvještaj
+razložen na **poslužitelju** (`src/core/AgentOutputParser.ts`), istim parserom kojim ga
+dobivaju kanali:
+
+```json
+{
+  "resultSummary": "📋 REZULTAT: …\nREGOC-STATUS: DONE — …",
+  "resultParsed": { "badge": "…", "badgeEmoji": "…", "badgeSource": "…", "sections": [ … ] }
+}
+```
+
+Bedž slijedi **stanje zadatka na ploči**; tekst ga smije samo suziti (npr. izvještaj koji
+tvrdi `BLOCKED` na zadatku koji je `completed`), nikad podići. Bez rezultata je
+`resultParsed: null`. Ploča crta sve kroz `textContent`, pa agentov tekst nikad ne postaje HTML.
+
 ### Pauza
 
 ```bash
@@ -217,6 +264,15 @@ ugrađeni popis. Koliko je koji korak obvezan **odlučuje težina**, ne predlož
 praga B. Koraci se nikad ne brišu iz opisa — korak s napomenom „preskače se (težina 12 < 36)"
 nosi i odluku i njezin razlog.
 
+## Kritičar (`/api/critic`)
+
+| Ruta | Što vraća |
+|---|---|
+| `GET /api/critic/unverified` | zadatke koje je vratar danas pustio, a nije mogao pokrenuti nijednu provjeru; razlozi i razina doc-provjere (`L0`/`L1`) ako je prošla |
+
+Trag svake kritike je `$TM_HOME/data/critic_gate.jsonl`; iz naredbenog retka:
+`bun src/core/CriticGate.ts ledger --task TASK-001`.
+
 ## Pregled stanja
 
 | Kraj | Što vraća |
@@ -262,6 +318,25 @@ da je značajka isključena, što nije pogreška.
 | `GET /api/rag/collections` | popis zbirki |
 | `GET /api/rag/entries?collection=…&search=…` | pretraga zapisa |
 | `GET /api/rag/projects` | broj dokumenata po projektu |
+
+### Pozadinski sustav (ChromaDB / pgvector / dual)
+
+Postavke su u `config/rag-backend.json` (v. INSTALL.md §5.3). Lozinka nikad ne izlazi kroz API —
+odgovori nose samo `passwordSet: true|false`.
+
+| Kraj | Što radi |
+|---|---|
+| `GET /api/rag/backend/status` | aktivni sustav i stanje oba; bez adrese pgvectora `{configured:false}` i bez mrežnog poziva |
+| `PUT /api/rag/backend` | `{"backend":"chromadb"\|"pgvector"\|"dual"}` |
+| `GET /api/rag/backend/config` | postavke bez lozinke |
+| `PUT /api/rag/backend/config` | `{"host","port","database","user"}`; ključ `password` → `400` |
+| `POST /api/rag/backend/test` | proba konekcije (`ProbeGuard` + prigušenje); spremljena lozinka samo za spremljenu adresu |
+| `GET /api/rag/backend/compare` | broj dokumenata po zbirci u oba sustava |
+| `GET /api/rag/backend/migration` | stanje migracije (prekinuta se tako i prijavljuje) |
+| `POST /api/rag/backend/migrate` | `{"collection":"…"}` → `{"started":true}`; serije od 100, ponovni pokušaj preskače već kopirano |
+
+Kao i ostale Config rute, i ove štiti samo popis dopuštenih domaćina (`TM_ALLOWED_HOSTS`) —
+prijave nema, pa ploču ne izlaži izvan svoje mreže.
 
 ## Modeli i davatelji
 

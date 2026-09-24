@@ -11,6 +11,9 @@ Sve što dolazi uz sustav i sve što ti treba da ga držiš u pogonu.
 | `bun run health` | provjerava odgovara li poslužitelj i broji zadatke | nadzor, prije i poslije nadogradnje |
 | `bun scripts/backup.ts` | sigurnosna preslika baze | dnevno, periodičkim poslom |
 | `bun test` | testovi | prije izmjene koda |
+| `bun src/core/CriticGate.ts ledger --task TASK-001` | trag kritike za jedan zadatak (provjere, presuda, razina doc-provjere) | kad se pita „zašto je zadatak blokiran" |
+| `bun src/core/CriticGate.ts check …` | ručno pokretanje kritičara nad mapom | proba prije uključivanja `criticGate` |
+| `bun scripts/orchestrator.ts --stanje` | što orkestratoru nedostaje (izlazni kod 1 ako fali) | prije prvog pokretanja sloja 1 |
 | `python3 tools/dezurni.py` | CLI za postavke i probu dežurnog (rezervnog) modela — vidi [API.md](API.md#dežurni-rezervni-model) | kad se konfigurira izvan ploče, npr. sa stroja bez preglednika |
 
 Svaka skripta poštuje `TM_HOME`, `TM_DB` i `TM_PORT`, pa se bez problema drži više odvojenih
@@ -64,9 +67,12 @@ znači „ovo se radi odmah“.
 
 Da ne bude nesporazuma — ovo je upravitelj zadataka, ne cijeli sustav agenata. Ne dolaze:
 
-- pokretanje modela ni poziv prema njima;
-- most prema Telegramu, glasu ili bilo kojem drugom kanalu;
-- raspoređivač koji sam odlučuje što je sljedeće.
+- most prema glasu;
+- sudac (drugi model u ulozi kritičara, razina L2) — vezan je uz registar imenovanih agenata;
+- izbor tima u lancu i ostatak demona izvornog sustava (v. `docs/GAP_20260924.md` §3.2).
+
+Orkestrator koji uzima zadatke i pokreće model (sloj 1) **jest** u paketu, ali se ne pali sam —
+v. [INSTALL.md §6](INSTALL.md#6-sloj-1--pokreni-orkestrator-neobavezno).
 
 Sve se to gradi **oko** njega. Kako to izgleda u praksi opisano je u
 [REGOC/README.md](../REGOC/README.md). Iznimka koju vrijedi znati: **ploča ima gotove krajeve

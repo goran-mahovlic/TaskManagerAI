@@ -28,6 +28,10 @@ started opening and closing tasks.
 | **Knowledge graph** | notes and the links between them, optionally with semantic search |
 | **Interface languages** | English and Croatian; further languages are one JSON file away |
 | **Decision gate** | tasks tagged `needs-decision` wait for a person — or for a model you choose |
+| **Closing gates** | a task is closed on evidence: completion guard, structured step output (`REGOC-IZLAZ`), a critic that runs its own checks — all start in shadow mode |
+| **Parsed results** | the agent's report is parsed on the server: verdict badge, collapsible sections, "show raw" — never rendered as HTML |
+| **Energy estimate** | electricity, CO₂ and water next to project cost, always shown as an estimate with a range; coefficients are configuration |
+| **Two RAG backends** | ChromaDB, pgvector or both (for migration), managed from the Config page; `pg` is optional |
 
 Everything runs without a single external service. RAG (semantic search) is an optional extra.
 
@@ -83,6 +87,10 @@ Everything is optional; with no settings at all it runs on defaults. Copy `env.e
 | `TM_EXTERNAL_HOST` | `localhost` | host name shown in the interface |
 | `TM_LANG` | `hr` | default interface language (`en`, `hr`, or any file in `locales/`) |
 | `TM_CHROMA_HOST`, `TM_OLLAMA_URL` | — | enable RAG; without them it is off |
+| `TM_PGVECTOR_HOST`, `_PORT`, `_DATABASE`, `_USER` | — | pgvector backend (all four, or `config/rag-backend.json`) |
+| `TM_PGVECTOR_PASSWORD` | — | pgvector password — only here or in the secrets file, never in JSON |
+| `TM_BOARD_URL` | — | board link in reports; without it the link line is left out |
+| `TM_FEATURES_FILE`, `TM_CRITIC_CONFIG`, `TM_ENERGIJA_CONFIG` | `config/*.json` | switches, critic and energy coefficients (see INSTALL.md §5.2) |
 
 **Your own team** is set like this — `user` and `scheduler` are always added automatically:
 
@@ -144,10 +152,11 @@ Details, providers and settings: [docs/ODLUCIVANJE.md](docs/ODLUCIVANJE.md).
 | [docs/DATABASE.md](docs/DATABASE.md) | tables, triggers, how the database is created and changed |
 | [docs/API.md](docs/API.md) | every API endpoint with examples |
 | [docs/TOOLS.md](docs/TOOLS.md) | scripts, console, periodic jobs |
+| [CHANGELOG.md](CHANGELOG.md) | what changed and why, newest first |
 | [docs/JEZICI.md](docs/JEZICI.md) | interface languages: choosing one, adding one |
 | [docs/ODLUCIVANJE.md](docs/ODLUCIVANJE.md) | tasks that wait for a decision; letting a model decide, and the risk filter |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | git hooks, commit rules, running the tests |
-| [REGOC/README.md](REGOC/README.md) | what a real agent system built around this looks like |
+| [REGOC/README.en.md](REGOC/README.en.md) | what a real agent system built around this looks like — split into topics (architecture, roles, task life cycle, delivery rules, gates and brakes, databases, cost and energy, lessons, build your own) |
 
 The `REGOC` folder describes the system TaskManagerAI was extracted from: a team of agents with
 their own roles and models, a daemon running in the background, sessions that survive an

@@ -24,6 +24,10 @@ prešao s datoteka na SQL, jer su zadatke počeli otvarati i zatvarati programi,
 | **Graf znanja** | bilješke i veze među njima, neobavezno uz semantičko pretraživanje |
 | **Jezici sučelja** | hrvatski i engleski; svaki novi jezik je jedna JSON datoteka |
 | **Vratar odluke** | zadatci s oznakom `needs-decision` čekaju čovjeka — ili model kojeg izabereš |
+| **Vratari zatvaranja** | zadatak se zatvara na dokaz: completion-guard, strukturirani izlaz koraka (`REGOC-IZLAZ`), kritičar koji sam pokreće provjere — sve kreće u sjeni |
+| **Parsiran rezultat** | agentov izvještaj razlaže poslužitelj: bedž suda, sklopive sekcije, „prikaži sirovo" — nikad kao HTML |
+| **Procjena energije** | struja, CO₂ i voda uz trošak projekta, uvijek kao procjena s rasponom; koeficijenti su konfiguracija |
+| **Dva RAG sustava** | ChromaDB, pgvector ili oba (za migraciju), upravljano s Config stranice; `pg` je opcijski |
 
 Sve radi bez ijedne vanjske usluge. RAG (semantičko pretraživanje) je neobavezan dodatak.
 
@@ -79,6 +83,10 @@ Sve je neobavezno; bez ijedne postavke radi na zadanim vrijednostima. Kopiraj `e
 | `TM_EXTERNAL_HOST` | `localhost` | ime poslužitelja koje se prikazuje u sučelju |
 | `TM_LANG` | `hr` | zadani jezik sučelja (`en`, `hr`, ili bilo koja datoteka u `locales/`) |
 | `TM_CHROMA_HOST`, `TM_OLLAMA_URL` | — | uključuju RAG; bez njih je isključen |
+| `TM_PGVECTOR_HOST`, `_PORT`, `_DATABASE`, `_USER` | — | pgvector (sva četiri, ili `config/rag-backend.json`) |
+| `TM_PGVECTOR_PASSWORD` | — | lozinka za pgvector — samo ovdje ili u datoteci tajni, nikad u JSON-u |
+| `TM_BOARD_URL` | — | poveznica na ploču u izvještajima; bez nje se redak izostavlja |
+| `TM_FEATURES_FILE`, `TM_CRITIC_CONFIG`, `TM_ENERGIJA_CONFIG` | `config/*.json` | prekidači, kritičar i koeficijenti energije (INSTALL.md §5.2) |
 
 **Vlastiti sastav tima** postavlja se ovako — `user` i `scheduler` uvijek se dodaju sami:
 
@@ -140,10 +148,11 @@ Pojedinosti, davatelji i postavke: [docs/ODLUCIVANJE.md](docs/ODLUCIVANJE.md).
 | [docs/DATABASE.md](docs/DATABASE.md) | tablice, okidači, kako nastaje baza i kako se mijenja |
 | [docs/API.md](docs/API.md) | svi krajevi API-ja s primjerima |
 | [docs/TOOLS.md](docs/TOOLS.md) | skripte, konzola, periodički poslovi |
+| [CHANGELOG.md](CHANGELOG.md) | što se promijenilo i zašto, najnovije prvo |
 | [docs/JEZICI.md](docs/JEZICI.md) | jezici sučelja: odabir, dodavanje |
 | [docs/ODLUCIVANJE.md](docs/ODLUCIVANJE.md) | zadatci koji čekaju odluku; kad odlučuje model, i filtar rizika |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | git kuke, pravila za commitove, pokretanje testova |
-| [REGOC/README.md](REGOC/README.md) | kako izgleda pravi sustav agenata izgrađen oko ovoga |
+| [REGOC/README.md](REGOC/README.md) | kako izgleda stvaran sustav agenata izgrađen oko ovoga — po temama (arhitektura, uloge, životni ciklus zadatka, pravila isporuke, vrata i kočnice, baze, trošak i energija, lekcije, složi svoj) |
 
 Mapa `REGOC` opisuje sustav iz kojega je TaskManagerAI izvučen: tim agenata s vlastitim ulogama i
 modelima, demon koji radi u pozadini, sjednice koje preživljavaju prekid, kočnice autonomije,
