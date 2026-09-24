@@ -777,5 +777,18 @@
   "cfg_usp_zauzeto": "Zauzeto",
   "cfg_usp_zauzeto_title": "zauzeta mjesta / strop",
   "cfg_usp_napomena": "Promjena vrijedi odmah (daemon je čita najkasnije za 5 s). Smanjenje ne prekida agente koji rade — samo ne pušta nove. Vrata autonomije (70/85 %) i dalje nadjačavaju strop.",
-  "cfg_usp_zadnje": "Zadnja promjena"
+  "cfg_usp_zadnje": "Zadnja promjena",
+  "upute_naslov": "Dodatne upute agentu (dok radi)",
+  "uputa_placeholder": "Uputa za agenta koji radi na zadatku…",
+  "dodaj_uputu": "Dodaj uputu",
+  "uputa_nije_spremljena": "Uputa nije spremljena:",
+  "nema_uputa": "Nema uputa",
+  "upute_nedostupne": "Upute nedostupne",
+  "uputa_dostavljeno": "dostavljeno",
+  "uputa_sesija": "sesija",
+  "uputa_ceka_dostavu": "čeka dostavu (stiže uz sljedeći alat agenta ili pri sljedećem pokretanju)",
+  "uputa_gumb_naslov": "Dodaj uputu agentu (stiže u tekuću sesiju, bez pauze)",
+  "uputa_ceka_naslov": "Upute koje agent još nije primio",
+  "uputa_sve_naslov": "Sve upute dostavljene agentu",
+  "uputa_prompt": "Uputa za agenta na {id} (stiže u tekuću sesiju uz sljedeći alat):"
 }

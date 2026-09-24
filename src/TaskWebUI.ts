@@ -52,6 +52,7 @@ import {
 import { KonfiguracijskiRegistar } from './core/orchestrator/AgentRegistry'
 // TASK-3047: ručna kočnica — globalna pauza dijeljena s RegocDaemonom preko datoteke stanja.
 import { readPauseState, writePauseState, describePause } from './core/PauseControl'
+import { parseInstructionInput } from './core/TaskInstructions'
 import { parseConcurrencyInput, formatConcurrencyChange, CONCURRENCY_ENV, CONCURRENCY_MIN, CONCURRENCY_MAX, CONCURRENCY_DEFAULT } from './core/ConcurrencySetting'
 // TASK-3461: stanje MJERILA potrošnje (razlikuje „čekam kvotu" od „mjerilo ne radi").
 import { readWaitingQueue } from './core/AutonomyQueue'
@@ -1654,6 +1655,20 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       cursor: help;
     }
 
+    /* TASK-5013: dodatne upute agentu dok radi */
+    .task-uputa-btn {
+      background: transparent; border: 1px solid var(--border-color, #444); color: var(--text-secondary, #aaa);
+      border-radius: 4px; padding: 0 6px; font-size: 0.8rem; cursor: pointer; line-height: 1.4;
+    }
+    .task-uputa-btn:hover { border-color: var(--accent-blue, #3b82f6); color: var(--accent-blue, #3b82f6); }
+    .uputa-badge {
+      display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 4px; font-size: 0.7rem;
+      background: rgba(59,130,246,.15); color: var(--accent-blue, #3b82f6); border: 1px solid rgba(59,130,246,.4);
+    }
+    .uputa-badge.ceka { background: rgba(234,179,8,.15); color: var(--accent-yellow, #eab308); border-color: rgba(234,179,8,.5); }
+    .uputa-item { border-left: 3px solid var(--accent-green, #22c55e); padding: 4px 8px; margin-bottom: 6px; }
+    .uputa-item.ceka { border-left-color: var(--accent-yellow, #eab308); }
+    .uputa-item .uputa-meta { font-size: 0.75rem; opacity: .75; }
     .paused-badge {
       font-size: 0.68rem;
       background: var(--accent-yellow, #eab308);
@@ -2630,6 +2645,16 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
           <input type="text" id="detail-tag-input" placeholder="Add tag (press Enter)" data-i18n-placeholder="add_tag_press_enter" style="margin-top: 0.25rem;">
         </div>
 
+        <!-- TASK-5013: uputa stiže agentu koji VEĆ radi (hook uz sljedeći alat), bez pauze i restarta. -->
+        <div class="detail-field" id="detail-upute-field">
+          <label data-i18n="upute_naslov">Dodatne upute agentu (dok radi)</label>
+          <div id="detail-upute" class="progress-notes"></div>
+          <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
+            <textarea id="detail-nova-uputa" rows="2" placeholder="Uputa za agenta koji radi na zadatku…" data-i18n-placeholder="uputa_placeholder" style="flex: 1;"></textarea>
+            <button class="btn btn-secondary" id="dodaj-uputu-btn" data-i18n="dodaj_uputu">Dodaj uputu</button>
+          </div>
+        </div>
+
         <div class="detail-field">
           <label data-i18n="progress_notes">Progress Notes</label>
           <div id="detail-progress-notes" class="progress-notes"></div>
@@ -2942,6 +2967,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     let projectsCache = [];
     // T10/TASK-3575: zadnji sud vratara po zadatku + koliko ih je danas proslo neprovjereno.
     let unverifiedCache = { day: '', todayCount: 0, tasks: {} };
+    let uputeCache = {};   // TASK-5013: {TASK-x: {total, undelivered}}
 
     // TASK-3516: NAJNOVIJE NA VRHU — isto pravilo kao na poslužitelju (ChronoOrder.ts).
     // Popisi i padajuće liste na ploči već stižu poredani iz /api/tasks i
@@ -3002,6 +3028,11 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         if (data.type === 'pause_changed') {
           renderGlobalPause(data.pause);
         }
+        // TASK-5013: nova uputa ili dostava — osvježi oznaku i otvorene detalje.
+        if (data.type === 'task_instructions') {
+          fetchTasks();
+          if (selectedTaskId === data.taskId) ucitajUpute(data.taskId);
+        }
       };
     }
 
@@ -3023,6 +3054,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         // Oznaka „NIJE PROVJERENO" mora stici PRIJE iscrtavanja, inace kartica prvo
         // pokaze zadatak bez oznake pa je doda — a upravo taj trenutak je laz na ploci.
         await fetchUnverified();
+        await fetchUputeStanje();
         renderTasks();
         updateStats();
         updateAgentFilter();
@@ -3037,6 +3069,57 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       return String(t == null ? '' : t)
         .replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;')
         .replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    // TASK-5013: brojači uputa za cijelu ploču (jedan upit). Kvar ne smije isprazniti ploču.
+    async function fetchUputeStanje() {
+      try {
+        const r = await fetch('/api/upute/stanje');
+        if (r.ok) uputeCache = await r.json();
+      } catch (err) { console.error('Failed to fetch upute:', err); }
+    }
+
+    async function posaljiUputu(taskId, tekst) {
+      tekst = String(tekst || '').trim();
+      if (!tekst) return false;
+      try {
+        const res = await fetch('/api/tasks/' + encodeURIComponent(taskId) + '/uputa', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: tekst, author: 'goran' })
+        });
+        const d = await res.json().catch(() => ({}));
+        if (!res.ok) { alert(_T('uputa_nije_spremljena', 'Uputa nije spremljena:') + ' ' + (d.error || ('HTTP ' + res.status))); return false; }
+        fetchTasks();
+        if (selectedTaskId === taskId) ucitajUpute(taskId);
+        return true;
+      } catch (err) {
+        alert(_T('uputa_nije_spremljena', 'Uputa nije spremljena:') + ' ' + err);
+        return false;
+      }
+    }
+
+    async function ucitajUpute(taskId) {
+      const el = document.getElementById('detail-upute');
+      if (!el) return;
+      try {
+        const r = await fetch('/api/tasks/' + encodeURIComponent(taskId) + '/upute');
+        const d = await r.json();
+        const list = (d && d.instructions) || [];
+        if (!list.length) { el.innerHTML = '<div class="empty">' + rsEscapeHtml(_T('nema_uputa', 'Nema uputa')) + '</div>'; return; }
+        // Tekst upute je korisnički unos: samo kroz rsEscapeHtml (ugovor §G, TASK-4815).
+        el.innerHTML = list.map(u => {
+          const kad = new Date(u.created_at);
+          const stanje = u.delivered_at
+            ? '✅ ' + _T('uputa_dostavljeno', 'dostavljeno') + ' ' + new Date(u.delivered_at).toLocaleTimeString() + (u.delivered_session ? ' (' + _T('uputa_sesija', 'sesija') + ' ' + String(u.delivered_session).slice(0, 8) + ')' : '')
+            : '⏳ ' + _T('uputa_ceka_dostavu', 'čeka dostavu (stiže uz sljedeći alat agenta ili pri sljedećem pokretanju)');
+          return '<div class="uputa-item' + (u.delivered_at ? '' : ' ceka') + '">'
+            + '<div class="uputa-meta">#' + rsEscapeHtml(u.id) + ' · ' + rsEscapeHtml(u.author) + ' · '
+            + rsEscapeHtml(kad.toLocaleDateString()) + ' ' + rsEscapeHtml(kad.toLocaleTimeString()) + ' · ' + rsEscapeHtml(stanje) + '</div>'
+            + '<div style="white-space:pre-wrap;word-break:break-word;">' + rsEscapeHtml(u.text) + '</div></div>';
+        }).join('');
+      } catch (err) {
+        el.innerHTML = '<div class="empty">' + rsEscapeHtml(_T('upute_nedostupne', 'Upute nedostupne')) + '</div>';
+      }
     }
 
     async function fetchUnverified() {
@@ -3171,6 +3254,15 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         const pauseBtnHTML = task.paused
           ? \`<button class="task-pause-btn resume" data-pause-id="\${task.id}" data-pause-to="0" title="\${escapeAttr(_T('tsk_nastavi_naslov', 'Nastavi rad na zadatku'))}">&#9654; \${_T('nastavi', 'Nastavi')}</button>\`
           : \`<button class="task-pause-btn" data-pause-id="\${task.id}" data-pause-to="1" title="\${escapeAttr(_T('tsk_pauziraj_naslov', 'Pauziraj zadatak (prekida i agenta koji radi)'))}">&#9208;</button>\`;
+        // TASK-5013: uputa agentu koji radi — bez pauze. Na završenom zadatku nema komu stići.
+        const uputaBtnHTML = (task.status === 'completed' || task.status === 'cancelled') ? ''
+          : \`<button class="task-uputa-btn" data-uputa-id="\${task.id}" title="\${escapeAttr(_T('uputa_gumb_naslov', 'Dodaj uputu agentu (stiže u tekuću sesiju, bez pauze)'))}">&#128232;</button>\`;
+        const uc = uputeCache[task.id];
+        const uputaBadge = uc && uc.total
+          ? (uc.undelivered
+              ? \`<span class="uputa-badge ceka" title="\${escapeAttr(_T('uputa_ceka_naslov', 'Upute koje agent još nije primio'))}">&#128232; \${uc.undelivered} \${_T('ceka_malo', 'čeka')}</span>\`
+              : \`<span class="uputa-badge" title="\${escapeAttr(_T('uputa_sve_naslov', 'Sve upute dostavljene agentu'))}">&#128232; \${uc.total} &#10003;</span>\`)
+          : '';
 
         // Lanac: korijen niza (nista ga ne drzi, a on drzi druge) dobiva punu oznaku i rub,
         // jer je to jedini zadatak cije rjesavanje odmah pusta posao dalje.
@@ -3189,17 +3281,26 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         }
 
         card.innerHTML = \`
-          <div class="task-id">\${task.id}\${projectBadgeHTML}\${pausedBadge}\${unverifiedBadge}\${lanacBadge}</div>
+          <div class="task-id">\${task.id}\${projectBadgeHTML}\${pausedBadge}\${unverifiedBadge}\${uputaBadge}\${lanacBadge}</div>
           <div class="task-title">\${task.title}</div>
           \${progressHTML}
           <div class="task-meta">
             <span>\${task.assignee || 'Unassigned'}</span>
             <span class="priority-badge \${priorityClass}" data-task-id="\${task.id}">P\${task.priority}</span>
-            \${pauseBtnHTML}
+            \${uputaBtnHTML}\${pauseBtnHTML}
           </div>
         \`;
 
         container.appendChild(card);
+
+        const uputaBtn = card.querySelector('.task-uputa-btn');
+        if (uputaBtn) {
+          uputaBtn.addEventListener('click', (e) => {
+            e.stopPropagation();   // klik na gumb ne smije otvoriti detalje
+            const t = prompt(_Tv('uputa_prompt', 'Uputa za agenta na {id} (stiže u tekuću sesiju uz sljedeći alat):', { id: task.id }));
+            if (t) posaljiUputu(task.id, t);
+          });
+        }
 
         const pauseBtn = card.querySelector('.task-pause-btn');
         if (pauseBtn) {
@@ -4124,6 +4225,9 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
 
       // Render progress notes
       renderProgressNotes(task.progressNotes || []);
+
+      // TASK-5013: upute agentu (dostavljeno / čeka)
+      ucitajUpute(task.id);
 
       // Render result summary (agentov odgovor apendan prije zatvaranja) — linkovi klikabilni (dokumenti)
       var rsField = document.getElementById('detail-result-field');
@@ -5415,6 +5519,13 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     }
 
     // Add progress note
+    // TASK-5013: uputa agentu iz detalja zadatka
+    document.getElementById('dodaj-uputu-btn').addEventListener('click', async () => {
+      if (!selectedTaskId) return;
+      const polje = document.getElementById('detail-nova-uputa');
+      if (await posaljiUputu(selectedTaskId, polje.value)) polje.value = '';
+    });
+
     document.getElementById('add-note-btn').addEventListener('click', async () => {
       const input = document.getElementById('detail-new-note');
       const note = input.value.trim();
@@ -11209,6 +11320,70 @@ function handleTaskPause(taskId: string, paused: boolean, req: Request): Promise
 }
 
 
+// ============================================
+// DODATNE UPUTE AGENTU DOK RADI (TASK-5013)
+// ============================================
+
+/**
+ * POST /api/tasks/:id/uputa `{text, author?}` — nova uputa za agenta koji radi (ili sljedeći spawn).
+ * GET  /api/tasks/:id/upute[?nedostavljene=1] — popis za ploču (dostavljeno / nije).
+ * POST /api/tasks/:id/upute/preuzmi `{session}` — SAMO za hook TaskInstructionsInject: atomično
+ *      vrati nedostavljene i označi ih `delivered_at` + sesija.
+ *
+ * Upute NISU progressNotes: njih piše i sam agent, pa bi se uputa izgubila među njegovim
+ * bilješkama, a agent ih ionako ne čita (TASK-4999). Dostavu radi hook u spawnanoj sesiji.
+ */
+const UPUTA_TERMINALNI = new Set(['completed', 'cancelled'])
+
+function jsonResp(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
+}
+
+function broadcastInstructions(taskId: string): void {
+  const message = JSON.stringify({ type: 'task_instructions', taskId, counts: taskManager.taskInstructionCounts(taskId) })
+  wsClients.forEach(client => { try { client.send(message) } catch { wsClients.delete(client) } })
+}
+
+async function handleAddInstruction(taskId: string, req: Request): Promise<Response> {
+  const task = taskManager.getTask(taskId)
+  if (!task) return jsonResp({ error: 'Task not found' }, 404)
+  if (UPUTA_TERMINALNI.has(String(task.status))) {
+    return jsonResp({ error: `Zadatak je '${task.status}' — nijedan agent ga više neće pokrenuti, uputa ne bi stigla nikome. Otvori novi zadatak.` }, 409)
+  }
+  let body: unknown = null
+  try { body = await req.json() } catch { /* validacija ispod javlja grešku */ }
+  const p = parseInstructionInput(body)
+  if (!p.ok) return jsonResp({ error: p.error }, 400)
+  const row = taskManager.addTaskInstruction(taskId, p.author, p.text)
+  console.log(`[API] 📨 uputa #${row.id} za ${taskId} (${p.author}, ${p.text.length} zn.)`)
+  broadcastInstructions(taskId)
+  return jsonResp({ ok: true, instruction: row, counts: taskManager.taskInstructionCounts(taskId), taskStatus: task.status }, 201)
+}
+
+function handleListInstructions(taskId: string, url: URL): Response {
+  const samoNove = ['1', 'true', 'da'].includes(String(url.searchParams.get('nedostavljene') || '').toLowerCase())
+  return jsonResp({
+    taskId,
+    instructions: taskManager.listTaskInstructions(taskId, samoNove),
+    counts: taskManager.taskInstructionCounts(taskId),
+  })
+}
+
+async function handleClaimInstructions(taskId: string, req: Request): Promise<Response> {
+  let session: string | null = null
+  try {
+    const b = await req.json() as any
+    if (typeof b?.session === 'string' && b.session) session = b.session.slice(0, 64)
+  } catch { /* sesija nije obavezna */ }
+  const rows = taskManager.claimTaskInstructions(taskId, session)
+  if (rows.length) {
+    console.log(`[API] 📬 ${taskId}: dostavljeno ${rows.map(r => '#' + r.id).join(', ')} → sesija ${session || '?'}`)
+    broadcastInstructions(taskId)
+  }
+  return jsonResp({ taskId, instructions: rows })
+}
+
+
 
 
 /**
@@ -13905,6 +14080,16 @@ const server = Bun.serve({
     }
     if (url.pathname.match(/^\/api\/tasks\/[^\/]+\/pitanje$/) && req.method === 'POST') {
       return handleTaskPitanje(url.pathname.split('/')[3], req)
+    }
+    if (url.pathname === '/api/upute/stanje' && req.method === 'GET') return jsonResp(taskManager.taskInstructionSummary())
+    if (url.pathname.match(/^\/api\/tasks\/[^\/]+\/uputa$/) && req.method === 'POST') {
+      return handleAddInstruction(url.pathname.split('/')[3], req)
+    }
+    if (url.pathname.match(/^\/api\/tasks\/[^\/]+\/upute$/) && req.method === 'GET') {
+      return handleListInstructions(url.pathname.split('/')[3], url)
+    }
+    if (url.pathname.match(/^\/api\/tasks\/[^\/]+\/upute\/preuzmi$/) && req.method === 'POST') {
+      return handleClaimInstructions(url.pathname.split('/')[3], req)
     }
     if (url.pathname === '/api/pause' && req.method === 'GET') return handleGetPause()
     if (url.pathname === '/api/config/concurrency' && req.method === 'GET') return handleConcurrencyGet()

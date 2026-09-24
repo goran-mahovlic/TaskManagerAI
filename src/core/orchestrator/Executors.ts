@@ -78,6 +78,9 @@ export class CliExecutor implements Executor {
         stdin: stdinTekst === null ? 'ignore' : new TextEncoder().encode(stdinTekst),
         stdout: 'pipe',
         stderr: 'pipe',
+        // TASK-5013: hook `hooks/TaskInstructionsInject.hook.ts` po ovome zna za koji zadatak
+        // preuzima dodatne upute. Bez ID-a zadatka okolina ostaje naslijeđena kao i prije.
+        env: req.taskId ? { ...process.env, TM_TASK_ID: req.taskId } : undefined,
       })
       const prekid = setTimeout(() => { try { proc.kill() } catch { /* već je gotov */ } }, rok)
       const [izlaz, greska, exitCode] = await Promise.all([

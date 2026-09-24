@@ -777,5 +777,18 @@
   "cfg_usp_zauzeto": "In use",
   "cfg_usp_zauzeto_title": "slots in use / limit",
   "cfg_usp_napomena": "The change applies immediately (read within 5 s). Lowering it does not stop running agents — it only holds back new ones. Autonomy gates (70/85 %) still override the limit.",
-  "cfg_usp_zadnje": "Last change"
+  "cfg_usp_zadnje": "Last change",
+  "upute_naslov": "Extra instructions for the agent (while running)",
+  "uputa_placeholder": "Instruction for the agent working on this task…",
+  "dodaj_uputu": "Add instruction",
+  "uputa_nije_spremljena": "Instruction not saved:",
+  "nema_uputa": "No instructions",
+  "upute_nedostupne": "Instructions unavailable",
+  "uputa_dostavljeno": "delivered",
+  "uputa_sesija": "session",
+  "uputa_ceka_dostavu": "awaiting delivery (arrives with the agent’s next tool call or next start)",
+  "uputa_gumb_naslov": "Add instruction for the agent (delivered into the running session, no pause)",
+  "uputa_ceka_naslov": "Instructions the agent has not received yet",
+  "uputa_sve_naslov": "All instructions delivered to the agent",
+  "uputa_prompt": "Instruction for the agent on {id} (delivered into the running session with the next tool call):"
 }

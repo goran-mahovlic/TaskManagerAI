@@ -185,6 +185,7 @@ export class Orchestrator {
         agentId: agent.id,
         model: agent.model,
         prompt,
+        taskId: t.id,
       })
     } catch (e: any) {
       rezultat = { exitCode: 1, resultText: '', greska: String(e?.message || e) }

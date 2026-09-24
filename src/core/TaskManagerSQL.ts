@@ -11,6 +11,7 @@
  * Date: 2026-05-28
  */
 
+import { ensureInstructionsSchema, addInstruction, listInstructions, claimUndelivered, instructionCounts, instructionSummary, type InstructionRow } from './TaskInstructions';
 import Database, { type Statement } from "bun:sqlite";
 import { homedir } from 'os'
 import { TaskIdAllocator } from "./TaskIdAllocator";
@@ -282,6 +283,7 @@ export class TaskManagerSQL {
 
     this.ensurePauseColumns();
     this.ensureSettings();
+    this.ensureInstructions();
     this.prepareStatements();
     this.idAllocator = new TaskIdAllocator(this.db);
     console.log(`[TaskManagerSQL] Initialized. Next ID: ${this.idAllocator.peek()}`);
@@ -539,6 +541,41 @@ export class TaskManagerSQL {
       console.warn(`[TaskManagerSQL] postavke nisu inicijalizirane: ${err instanceof Error ? err.message : err}`);
     }
   }
+
+  // ============================================
+  // DODATNE UPUTE AGENTU DOK RADI (TASK-5013)
+  // ============================================
+
+  /** Tablica `task_instructions` — idempotentno, kao `ensureSettings`. */
+  private ensureInstructions(): void {
+    try { ensureInstructionsSchema(this.db); }
+    catch (err) { console.warn(`[TaskManagerSQL] task_instructions nije inicijalizirana: ${err instanceof Error ? err.message : err}`); }
+  }
+
+  /** Nova uputa + trag u progressNotes (ploča i povijest vide TKO je poslao uputu). */
+  addTaskInstruction(taskId: string, author: string, text: string): InstructionRow {
+    const row = addInstruction(this.db, taskId, author, text);
+    const kratko = text.length > 120 ? text.slice(0, 117) + '…' : text;
+    this.addProgressNote(taskId, author, `📨 Uputa #${row.id} (${author}) čeka dostavu agentu: ${kratko}`);
+    return row;
+  }
+
+  listTaskInstructions(taskId: string, undeliveredOnly = false): InstructionRow[] {
+    return listInstructions(this.db, taskId, { undeliveredOnly });
+  }
+
+  /** Atomično preuzimanje za hook; bilješka o dostavi ide samo kad je nešto dostavljeno. */
+  claimTaskInstructions(taskId: string, session: string | null): InstructionRow[] {
+    const rows = claimUndelivered(this.db, taskId, session);
+    if (rows.length) {
+      const ids = rows.map(r => `#${r.id}`).join(', ');
+      this.addProgressNote(taskId, 'system', `📬 Uputa ${ids} dostavljena agentu u sesiju ${session ? session.slice(0, 8) : '?'}…`);
+    }
+    return rows;
+  }
+
+  taskInstructionCounts(taskId: string) { return instructionCounts(this.db, taskId); }
+  taskInstructionSummary() { return instructionSummary(this.db); }
 
   getConcurrencySetting() { return getConcurrency(this.db); }
   setConcurrencySetting(value: number, by: string, source = 'api') { return setConcurrency(this.db, value, by, source); }

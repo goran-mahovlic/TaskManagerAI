@@ -94,6 +94,8 @@ export interface ExecRequest {
   sessionId?: string
   cwd?: string
   timeoutMs?: number
+  /** ID zadatka — izvođač ga stavlja u okolinu agenta (TM_TASK_ID) za hook dodatnih uputa (TASK-5013). */
+  taskId?: string
   /** Slobodna polja koja domaćin razumije (npr. dopuštenja alata). */
   extra?: Record<string, unknown>
 }
