@@ -1,0 +1,13 @@
+{
+  "_opis": [
+    "Runtime prekidači (FeatureFlags). Kopiraj u config/features.json ili postavi TM_FEATURES_FILE.",
+    "Čita se uz TTL 30 s — promjena vrijedi bez ponovnog pokretanja. Nepoznat ključ = isključeno.",
+    "Pravilo uvođenja: isključeno → sjena (bilježi) → uživo; rollback = enabled:false."
+  ],
+  "criticGate": { "enabled": false, "note": "kritičar sudi i bilježi nakon spawna (sjena)" },
+  "criticGateLive": { "enabled": false, "note": "presuda kritičara mijenja ishod (blocked umjesto completed)" },
+  "spawnCloseGuard": { "enabled": false, "note": "ADR-0012: bilježi agentov PUT terminalnog statusa dok traje najam spawna (data/spawn_close_guard.jsonl)" },
+  "spawnCloseGuardLive": { "enabled": false, "note": "isti sud vraća HTTP 409 SPAWN_ACTIVE; čovjek s ploče prolazi zaglavljem X-REGOC-Force: 1" },
+  "taskCreateBreaker": { "enabled": false, "note": "strop stvaranja zadataka po autoru (sjena)" },
+  "taskCreateBreakerLive": { "enabled": false, "note": "strop stvaranja zadataka uživo" }
+}

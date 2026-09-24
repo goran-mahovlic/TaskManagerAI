@@ -71,3 +71,4 @@ config/postavke.env
 config/step-schema.json
 config/completion-gate.json
 config/critic-gate.json
+config/features.json

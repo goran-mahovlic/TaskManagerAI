@@ -15,12 +15,18 @@
  * Verzija: 1.0.0
  */
 
-import { watch, existsSync, readFileSync, readdirSync, statSync, writeFileSync, mkdirSync, rmSync, renameSync } from 'fs'
+import { watch, existsSync, readFileSync, readdirSync, statSync, writeFileSync, mkdirSync, rmSync, renameSync, appendFileSync } from 'fs'
 import { join, resolve } from 'path'
 import { hostname as osHostname, networkInterfaces as osNetworkInterfaces, homedir } from 'os'
 // SQL-Only TaskManager (v2.0) - replaces MD+SQLite dual-write
 import { getTaskManagerSQL, INBOX_PROJECT_ID } from './core/TaskManagerSQL'
 import { konfigPutanja, osigurajMapu, stanjePutanja } from './core/paths'
+// ADR-0012 (TASK-4827): `spawnCloseGuard` — dok na zadatku DOKAZIVO radi spawn, prijelaz u
+// TERMINALNO stanje ne dolazi od sustava (orkestrator najam pušta prije svog zapisa) nego od
+// agenta koji sam sebe zatvara prije suda kritičara. Zadano isključeno (features.json).
+import { odlukaGuarda } from './core/SpawnFinalizer'
+import { najamAktivan } from './core/TaskCloser'
+import { isEnabled as jeUkljuceno } from './core/FeatureFlags'
 // Integracije (TASK-4800): četiri modula po istom obrascu + orkestrator + ulazni Telegram.
 import {
   loadNextcloudConfig, validateNextcloudPatch, saveNextcloudConfig, stanjeNextcloud,
@@ -10801,6 +10807,43 @@ async function handleUpdateTask(taskId: string, req: Request): Promise<Response>
 
     const br = validatedData.blockedReason
     if (br !== undefined) updates.blockedReason = br
+
+    // ─── spawnCloseGuard (ADR-0012 §6.2, GAP_20260924 F4) ───────────────────
+    // Rupa koju zatvara (izmjereno u živoj instalaciji): 6 od 6 zadataka kojima je kritičar
+    // presudio FAIL stajalo je kao `completed`, jer ih je agent zatvorio 5–80 s PRIJE suda.
+    // Guard ne pita TKO zove nego RADI LI SADA spawn na zadatku (najam + živ pid).
+    // FAIL-OPEN: bez najma, s mrtvim pidom ili ustajalim zapisom PUT prolazi.
+    // Prekidači (config/features.json): `spawnCloseGuard` = sud i zapis (sjena),
+    // `spawnCloseGuardLive` = odbijanje 409. Oba zadano isključena dok orkestrator ne radi.
+    if (updates.status && jeUkljuceno('spawnCloseGuard')) {
+      try {
+        const prisilno = req.headers.get('X-REGOC-Force') === '1'
+        const bilo = odlukaGuarda({
+          status: String(updates.status),
+          prijelazi: (st: string) => taskManager.getAllowedTransitions(st),
+          najamAktivan: najamAktivan(taskId),
+          force: false,
+        })
+        if (bilo.odbij) {
+          const zivi = jeUkljuceno('spawnCloseGuardLive')
+          console.warn(`[API] spawn-close-guard: ${taskId} → ${updates.status} ` +
+            `${zivi && !prisilno ? 'BLOKIRAM' : 'SJENA'}${prisilno ? ' (FORCE — čovjek je pregazio)' : ''} — ${bilo.razlog}`)
+          try {
+            appendFileSync(osigurajMapu(stanjePutanja('spawn_close_guard.jsonl')),
+              JSON.stringify({ ts: new Date().toISOString(), taskId, status: updates.status,
+                mode: zivi ? 'live' : 'shadow', forced: prisilno, assignee: taskManager.getTask(taskId)?.assignee ?? null }) + '\n')
+          } catch { /* mjerenje ne smije oboriti API */ }
+          if (zivi && !prisilno) {
+            return new Response(JSON.stringify({
+              error: 'Spawn active', code: bilo.code, details: bilo.razlog, hint: bilo.hint,
+            }), { status: 409, headers: { 'Content-Type': 'application/json' } })
+          }
+        }
+      } catch (e) {
+        // Guard koji obori normalan rad biva isključen — svaka greška je fail-open.
+        console.warn(`[API] spawn-close-guard: sud nije donesen (${e}) — PUT prolazi`)
+      }
+    }
 
     // ─── CompletionGuard (TASK-2954 / nalaz D2) ────────────────────────────
     // Zatvaranje u `completed` traži DOKAZ izvršenja. Ovo je jedini HTTP ulaz za

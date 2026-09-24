@@ -2,7 +2,7 @@
 // NT-A / TASK-2574 (PRJ-030). Runtime prekidači za sigurno uvođenje
 // (flag OFF → shadow → canary → live). Rollback = flag na false BEZ restarta.
 //
-// Datoteka: ~/.claude/regoc/features.json
+// Datoteka: config/features.json (konfigPutanja: TM_FEATURES_FILE → $TM_HOME/config → paket)
 // Format:  { "<ime>": { "enabled": bool, "since": ISO, "note": "..." }, ... }
 //
 // Korištenje:
@@ -13,10 +13,10 @@
 // vidljiva bez restarta daemona.
 
 import { existsSync, readFileSync } from 'fs'
-import { join } from 'path'
+import { konfigPutanja } from './paths'
 
-const HOME = process.env.HOME || process.env.USERPROFILE || ''
-const DEFAULT_FEATURES_FILE = join(HOME, '.claude', 'regoc', 'features.json')
+// ADR-0001 O1.4: postavka instalacije, ne tuđi kućni direktorij.
+const DEFAULT_FEATURES_FILE = konfigPutanja('features.json', 'TM_FEATURES_FILE')
 
 // REGOC_FEATURES_FILE: override putanje (SAMO za testove/alat — produkcija ga ne postavlja,
 // pa je ponašanje nepromijenjeno). Čita se pri svakom load-u, ne pri importu modula, da
