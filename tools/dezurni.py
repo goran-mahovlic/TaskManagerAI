@@ -52,7 +52,8 @@ PUTOVI_SERVISA = [                      # glavni stroj, pa čvorovi (RegocMobile
     (HOME / ".claude/regoc/manage.sh", ["restart"]),
     (HOME / "tmai_start.sh", []),
 ]
-PUTOVI_SLANJA = [HOME / ".tmp/regoc_send.py", HOME / "tools/regoc_send.py"]
+# Bilo ~/.tmp/regoc_send.py — ~/.tmp se čisti, pa je slanje šutke nestalo. TM_TELEGRAM_SEND ima prednost.
+PUTOVI_SLANJA = [Path(os.environ.get("TM_TELEGRAM_SEND") or HOME / ".claude/regoc/tools/telegram_send_text.py")]
 POSTAVKE = HOME / ".claude/regoc/config/dezurni.json"
 STANJE_STRAZE = HOME / ".claude/regoc/data/dezurni.straza.json"
 

@@ -313,9 +313,13 @@ function getTaskCreateBreaker(): TaskCreateBreaker | null {
 function notifyGoranTaskBurst(text: string): void {
   console.warn(`[TaskWebUI] TASK-4628 DOJAVA:\n${text}`)
   try {
-    const script = join(process.env.HOME || homedir(), '.tmp/agent_telegram_send.sh')
-    if (!existsSync(script)) return
-    Bun.spawn(['bash', script, text.slice(0, 4000), 'regoc'], { stdout: 'ignore', stderr: 'ignore' })
+    // Bilo je ~/.tmp/agent_telegram_send.sh — skripta REGOČ stroja koje u paketu nema (a na
+    // REGOČ-u je iz ~/.tmp nestala), pa je dojava šutke izostajala. Paket ima svoj Telegram
+    // modul (Config → Telegram); isključen ili nepostavljen = nema poruke, zapis ostaje.
+    const esc = text.slice(0, 4000).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    void posaljiTelegramPoruku(esc).then(r => {
+      if (!r.ok) console.warn(`[TaskWebUI] TASK-4628 dojava nije poslana: ${r.greska}`)
+    }).catch(() => {})
   } catch { /* dojava nije kritični put — zapis je već otišao */ }
 }
 

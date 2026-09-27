@@ -52,7 +52,11 @@ CRED_FILE = Path.home() / ".claude" / ".credentials.json"
 LOG_FILE = Path.home() / ".claude" / "regoc" / "data" / "session_usage.jsonl"
 CACHE_FILE = Path.home() / ".claude" / "regoc" / "data" / "session_usage.cache.json"
 SESSIONS_PATH = Path.home() / ".claude" / "tools" / "Telegram" / "chat_sessions.json"
-REGOC_SEND = Path.home() / ".tmp" / "regoc_send.py"
+# Pošiljatelj: `<skripta> --chat <id> <tekst>`. Bilo je ~/.tmp/regoc_send.py — ~/.tmp se čisti,
+# pa je slanje od 22.09.2026. šutke padalo. Na REGOČ stroju je trajni alat ispod ~/.claude/regoc;
+# drugdje ga zadaj s TM_TELEGRAM_SEND (nema li ga, ishod je SKIP u TG_LOG-u, ne tihi pad).
+REGOC_SEND = Path(os.environ.get("TM_TELEGRAM_SEND")
+                  or Path.home() / ".claude" / "regoc" / "tools" / "telegram_send_text.py")
 TG_LOG = Path.home() / ".claude" / "regoc" / "data" / "session_usage.telegram.log"
 ENDPOINT = "https://api.anthropic.com/v1/messages"
 PROBE_MODEL = "claude-haiku-4-5-20251001"  # najjeftiniji za probe
@@ -343,6 +347,9 @@ def send_telegram(text: str, session_id: str) -> None:
     Ishod (OK/SKIP/FAIL) upisuje u TG_LOG radi provjere. Nikad ne baca."""
     stamp = datetime.now(timezone.utc).isoformat()
     chat = _chat_for_session(session_id)
+    if not REGOC_SEND.exists():
+        _tg_log(f"{stamp} SKIP nema pošiljatelja {REGOC_SEND} (postavi TM_TELEGRAM_SEND)")
+        return
     if chat is None:
         _tg_log(f"{stamp} SKIP session={session_id or '?'} (nije mapirana na chat)")
         return
