@@ -256,7 +256,7 @@ export async function listCollections(
 export const DEFAULT_SEARCH_EXCLUDED_COLLECTIONS = [
   "pai_agent_Bash",
   "pai_agent_Explore",
-  // Goran, 04.09.2026.: „pai_agent_general — možeš odvojiti po prijedlogu."
+  // Vlasnik, 04.09.2026.: „pai_agent_general — možeš odvojiti po prijedlogu."
   // PRIJE isključenja je 321 dokument sa stvarnim znanjem (FPGA/ULX3S/PDP-1 istraživanja,
   // arhitektura agenata, SERENA/ZOD/RAG) preseljen u kolekciju `regoc_znanje`, koja OSTAJE
   // u zadanoj pretrazi (tools/rag_izdvoji.py). Ostatak su rutinski izlazi podagenata
@@ -269,7 +269,7 @@ export const DEFAULT_SEARCH_EXCLUDED_COLLECTIONS = [
  * Kolekcije koje se ČITAJU PRI POKRETANJU SJEDNICE (LoadContext.hook.ts, LoadDomainContext,
  * START.md/CLAUDE.md) i time drže kontinuitet znanja između sjednica.
  *
- * Goran, 04.09.2026.: „to se pozivalo na inicijalnom sessionu — to ne smije nestati."
+ * Vlasnik, 04.09.2026.: „to se pozivalo na inicijalnom sessionu — to ne smije nestati."
  * Ni jedna od njih ne smije se isključiti iz pretrage ni obrisati bez izričite odluke;
  * `tools/rag_archive.py --drop` ih odbija ukloniti.
  */

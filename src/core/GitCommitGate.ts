@@ -13,7 +13,7 @@
  *   1. `git log --all --grep=TASK-####` u poznatim repozitorijima — dokaz koji piše git.
  *      Agent ga ne može izmisliti; ovo je primarni izvor.
  *   2. SHA naveden u `result_summary` — dopušten jer commit može nastati u repozitoriju koji
- *      nije na popisu (Goranovi projekti izvan `~/app`). Slabiji, ali provjerljiv unatrag.
+ *      nije na popisu (vlasnikovi projekti izvan `~/app`). Slabiji, ali provjerljiv unatrag.
  *
  * ── ZAŠTO DOSEG NIJE „SVI ZADACI" ────────────────────────────────────────────────────────
  * Zahtjev glasi „zadatak bez ijednog commita ne prolazi u completed". Da to danas krene nad

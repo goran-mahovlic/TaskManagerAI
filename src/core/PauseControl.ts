@@ -1,7 +1,7 @@
 /**
  * PauseControl — ručna kočnica nad radom REGOČ-a (TASK-3047).
  *
- * ZAŠTO: Goranov zahtjev 29.07.2026. — „ako vidim da nešto nije kako treba, hoću u
+ * ZAŠTO: Vlasnikov zahtjev 29.07.2026. — „ako vidim da nešto nije kako treba, hoću u
  * TaskManageru kliknuti pauzu i to zaustavlja rad; naravno, treba i gumb nastavi."
  * Do sada je jedini način zaustavljanja bio ubiti daemon, a to zadatke ostavlja u
  * `cancelled` (terminalno, bez povratka) i pobije SVE spawnove, i one ispravne.

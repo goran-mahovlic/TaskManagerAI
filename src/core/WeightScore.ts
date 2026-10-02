@@ -16,7 +16,7 @@
  * ZAŠTO SE BROJ REŽE NA GRANICE RAZREDA (razrada §3, doslovno: „broj nikada ne prelazi u
  * susjedni razred"). Da prikaz ne bi tiho mijenjao odluku. Zadatak koji je klasificiran kao
  * E3 s planom od 7 koraka dobio bi 48 + 21 = 69 — a 69 je E4 raspon, pa bi „prikaz" prešao
- * prag C i tražio Goranovu potvrdu za posao koji je klasifikator ocijenio kao jednodnevni.
+ * prag C i tražio vlasnikovu potvrdu za posao koji je klasifikator ocijenio kao jednodnevni.
  * Rezanje na 60 zadržava odluku ondje gdje ju je donio klasifikator.
  *
  * ZAŠTO BEZ MODELA. Ista pouka kao kod `ModeClassifier` E1-vrata (TASK-2559, mjereno:
@@ -233,7 +233,7 @@ export type Postupak =
   | 'odgovor'            // ispod praga A — odgovori, ploča ostaje čista
   | 'jedan-izvrsitelj'   // A ≤ težina < B — kao danas
   | 'lanac'              // B ≤ težina < C — puni lanac, plan se izvodi sam
-  | 'lanac-uz-potvrdu'   // ≥ C ili > 7 koraka — plan čeka Goranovu potvrdu
+  | 'lanac-uz-potvrdu'   // ≥ C ili > 7 koraka — plan čeka vlasnikovu potvrdu
 
 export interface RouteInput {
   score: number
@@ -242,7 +242,7 @@ export interface RouteInput {
   pragC: number
   /** Broj koraka koje je planer PREDLOŽIO (prije rezanja na 7) — razrada §2, prag C. */
   planSteps?: number
-  /** Goran je izričito rekao „idi do kraja" — puni lanac bez obzira na težinu. */
+  /** Vlasnik je izričito rekao „idi do kraja" — puni lanac bez obzira na težinu. */
   explicitFullChain?: boolean
 }
 
@@ -274,7 +274,7 @@ export function routeByWeight(input: RouteInput): RouteResult {
   }
   if (s >= pragC || previseKoraka) {
     const zasto = s >= pragC ? `${s} ≥ prag C (${pragC})` : `plan ima ${koraka} koraka (> ${KORACI_ZA_POTVRDU})`
-    return { postupak: 'lanac-uz-potvrdu', trebaPotvrdu: true, reason: `${zasto} — plan se zapisuje i šalje Goranu, materijalizacije nema do potvrde` }
+    return { postupak: 'lanac-uz-potvrdu', trebaPotvrdu: true, reason: `${zasto} — plan se zapisuje i šalje vlasniku, materijalizacije nema do potvrde` }
   }
   const zasto = input.explicitFullChain && s < pragB
     ? `izričit nalog „idi do kraja" (težina ${s} ispod praga B)`

@@ -888,7 +888,7 @@ export class TaskManagerSQL {
           // drzi — pa je ovdje postujemo: ovisnost se skida, ali status i razlog ostaju.
           const humanHeld = humanGatedTask(waitingTask.tags);
           const newStatus = (!humanHeld && newBlockedBy.length === 0 && waitingTask.status === 'blocked') ? 'pending' : waitingTask.status;
-          // Razlog blokade mora pratiti stvarnost (Goran, 05.09.2026.: „to bi trebalo biti
+          // Razlog blokade mora pratiti stvarnost (vlasnik, 05.09.2026.: „to bi trebalo biti
           // vidljivije oznaceno jer ovako ne vidim"). Kad ljudska zadrska zadrzi status, a
           // ovisnosti su nestale, stari tekst „Ceka TASK-4620" ostajao je zapisan i nakon sto
           // je TASK-4620 dovrsen — sedam zadataka je 6 h pisalo da cekaju zadatak koji je gotov.

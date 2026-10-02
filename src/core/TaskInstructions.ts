@@ -1,5 +1,5 @@
 // ─── TaskInstructions ────────────────────────────────────────────────────────
-// TASK-5013 (Goran, 24.09.2026.). Dodatne upute agentu DOK RADI.
+// TASK-5013 (vlasnik, 24.09.2026.). Dodatne upute agentu DOK RADI.
 //
 // PROBLEM: spawnani agent (`claude --print`) dobiva opis zadatka JEDNOM, pri spawnu. Bilješke
 // koje REGOČ poslije dopiše u zadatak agent ne vidi (TASK-4999: 16 poziva na API, svi PUT

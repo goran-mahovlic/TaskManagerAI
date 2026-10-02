@@ -22,7 +22,7 @@
  * doista zna samo ju napiše.
  *
  * Zašto ne `smije_kreni: false` globalno: to bi ugasilo odlučitelja i za 99 % zadataka kojima
- * okidač uopće nije stroj — lijek bi bio širi od bolesti (i Goran ga nije odobrio).
+ * okidač uopće nije stroj — lijek bi bio širi od bolesti (i vlasnik ga nije odobrio).
  *
  * ČOVJEKOV IZLAZ U NUŽDI je namjerno odvojen potez: skini oznaku `okidac-strojni` s zadatka
  * (PUT /api/tasks/<ID> `{tags: […bez nje]}`) pa odluči normalno. Odlučitelj to nikad ne radi

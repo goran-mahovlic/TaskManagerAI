@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # install.sh — jedna naredba koja postavi TaskManagerAI na čistom stroju.
 #
-# Goran, 04.09.2026.: „svakako moramo imati ZOD na nodovima, ali mislim da bi ga bilo
+# Vlasnik, 04.09.2026.: „svakako moramo imati ZOD na nodovima, ali mislim da bi ga bilo
 # idealno uključiti i u TaskManager da je on dio instalacije."
 #
 # Zašto skripta, a ne samo `bun install`: pri postavljanju na oba noda ispalo je da

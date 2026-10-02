@@ -109,7 +109,7 @@ STARTUP_KOLEKCIJE = {
 def broj_zasticenih(cid: str) -> int:
     """Koliko dokumenata u kolekciji nosi `zasticeno=True` (pravila, lekcije, pogreške).
 
-    Goran, 04.09.2026.: „treba paziti da ih se ne bi obrisalo — posebno prijašnje pogreške
+    Vlasnik, 04.09.2026.: „treba paziti da ih se ne bi obrisalo — posebno prijašnje pogreške
     i pravila." Oznaku upisuje `tools/rag_tipovi.py`; ovdje je brana. Ako Chroma ne odgovori,
     vraća se -1 i brisanje se odbija — nepoznato stanje nije dopuštenje.
     """

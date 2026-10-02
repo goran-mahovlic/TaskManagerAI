@@ -16,7 +16,13 @@ clone; if you set the repository up by hand, run the line above yourself.
 
 1. the message contains `Co-Authored-By: … Claude` or `noreply@anthropic.com` — no trace of the
    tool that helped write a change belongs in this history;
-2. the author or committer address is not `goran.mahovlic@gmail.com`.
+2. the author or committer address is not on the list in
+   `git config taskmanagerai.dopusteniAutori` (comma-separated). A clone without that list skips
+   this check — there is no built-in default identity:
+
+   ```bash
+   git config taskmanagerai.dopusteniAutori "you@example.com,second@example.com"
+   ```
 
 Both checks look at the commit that is about to be made, not at what is configured: the identity
 is read through `git var GIT_AUTHOR_IDENT` / `GIT_COMMITTER_IDENT`, which also catches an address
@@ -24,7 +30,7 @@ injected through `GIT_AUTHOR_EMAIL` in the environment.
 
 Why this exists: commit
 [241aa89](https://github.com/goran-mahovlic/TaskManagerAI/commit/241aa8961fcc62ab5724325004452194bc84045f)
-reached the public repository carrying `REGOČ System <regoc@intergalaktik.eu>` and a
+reached the public repository carrying the orchestrator's own identity and a
 `Co-Authored-By: Claude` trailer, while every other commit of that day was clean. Commits here
 are made by hand, so a single lapse is enough — a rule that lives only in a document is not a
 mechanism. This one is: git rejects the commit before it exists.

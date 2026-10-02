@@ -1,7 +1,7 @@
 /**
  * ChronoOrder — jedno pravilo poretka za cijeli TaskManager: NAJNOVIJE NA VRHU.
  *
- * Nalaz (Goran, 28.08.2026., TASK-3516): „Na našem task manageru sve mora biti
+ * Nalaz (vlasnik, 28.08.2026., TASK-3516): „Na našem task manageru sve mora biti
  * posloženo kronološki — najnovije na vrhu — to vrijedi i za taskove koje su
  * completed i za projekte i padajuće liste."
  *

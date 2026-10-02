@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """vrijednost_inputa.py — vrijednost rada po korisničkom upitu (cjenik S1–S6).
 
-Goran, 04.09.2026.: „napravi izračun koliko se novaca potrošilo na user input … to mora
+Vlasnik, 04.09.2026.: „napravi izračun koliko se novaca potrošilo na user input … to mora
 biti podijeljeno po korisnicima."
 
-ŠTO OVO JEST: procjena VRIJEDNOSTI isporučenog rada po Goranovu cjeniku, ne trošak tokena.
+ŠTO OVO JEST: procjena VRIJEDNOSTI isporučenog rada po vlasnikovu cjeniku, ne trošak tokena.
 Trošak modela je zasebna brojka (`cost_log`, ~4 400 USD) i njih dvoje se ne miješaju:
 jedno je što nas rad košta, drugo koliko vrijedi.
 
-CJENIK (Goran, 04.09.2026.)
+CJENIK (vlasnik, 04.09.2026.)
     S1 Simple      0,05 €   jednostavno pitanje / naredba
     S2 Standard    0,20 €   normalan poslovni ili informativni upit
     S3 Complex     1,00 €   tehnički problem koji traži razmišljanje
@@ -211,7 +211,7 @@ def projekti_segmenata() -> tuple[dict[str, str], dict[str, str]]:
 
 
 def nazivi_projekata() -> dict[str, str]:
-    """`PRJ-041` → „MUSZG-WEB-PYTHON". Ključ sam po sebi ne kaže ništa (Goran, 04.09.2026.)."""
+    """`PRJ-041` → „MUSZG-WEB-PYTHON". Ključ sam po sebi ne kaže ništa (vlasnik, 04.09.2026.)."""
     import sqlite3
     try:
         con = sqlite3.connect(f"file:{uvoz.DB}?mode=ro", uri=True)
@@ -270,7 +270,7 @@ def main() -> int:
                for k, v in po_korisniku.items()}
         po_segmentu, po_sjednici = projekti_segmenata()
         po_pr: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
-        # Goran, 04.09.2026.: „kada otvorim projekt ne vidi se koliko je od ljudi tko radio."
+        # Vlasnik, 04.09.2026.: „kada otvorim projekt ne vidi se koliko je od ljudi tko radio."
         # Uz razrede se zato vodi i raspodjela po osobama — isti upiti, drugi rez.
         po_pr_kor: dict[str, dict[str, dict]] = defaultdict(lambda: defaultdict(lambda: {"upita": 0, "eur": 0.0}))
         for x in segs:

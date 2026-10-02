@@ -1,7 +1,7 @@
 /**
  * OdlukaPitanje.ts — strukturirano pitanje uz zadatak koji ceka ljudsku odluku.
  *
- * POVOD (Goran, 05.09.2026.): „Dio sa blokiranjem zadataka mi se ne svidja. (…) pitanje mora
+ * POVOD (vlasnik, 05.09.2026.): „Dio sa blokiranjem zadataka mi se ne svidja. (…) pitanje mora
  * biti postavljeno tako da ima opcije, jer samo u slucaju da model ima dilemu izmedju A i B ili
  * ABC ili ABCD treba to staviti u blokadu uz pitanje. To moze napraviti rijetko. Uz opcije mora
  * navesti koji strucnjak mu odgovara, tako da ako je ukljucen AI odgovor moze znati sto treba.
@@ -199,7 +199,7 @@ export function razrijesiOdgovor(odgovor: string, p: OdlukaPitanje | null): stri
   return nadjena ? `${nadjena.oznaka}) ${nadjena.tekst}` : cist
 }
 
-/** Uloga za `odlucitelj` model — doslovno ono sto je Goran trazio da pitanje nosi sa sobom. */
+/** Uloga za `odlucitelj` model — doslovno ono sto je vlasnik trazio da pitanje nosi sa sobom. */
 export function ulogaZaModel(p: OdlukaPitanje | null): string | null {
   if (!p || !p.ekspert) return null
   return `Ti si ekspert za ${p.ekspert}. Sa svog strucnog stajalista objasni predmet pitanja i `

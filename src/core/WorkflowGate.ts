@@ -1,14 +1,14 @@
 /**
  * WorkflowGate — prekidač za tijekove rada, tri razine (W0 / TASK-4620).
  *
- * NALOG (Goran, 04.09.2026., doslovno): „Dodao bih prekidač da radi ili ne radi preko tog
+ * NALOG (vlasnik, 04.09.2026., doslovno): „Dodao bih prekidač da radi ili ne radi preko tog
  * novog sustava, čisto da imamo mogućnost testa." Razrada:
  * `PLAN-workflow-integracija.md` (repozitorij sustava, nije u paketu) §6.1. Ovo je PRVI korak integracije tijekova — prije njega
  * se ne smije ukopčati ništa drugo, jer bi se ukopčalo bez ručke za gašenje.
  *
  * TRI RAZINE, OVIM REDOM SNAGE (jača gasi slabiju):
  *   1. PO ZADATKU — oznaka `bez-workflowa` UVIJEK pobjeđuje. I izričitu oznaku
- *      `workflow:<id>`, i okidače, i način `on`. To je Goranova kočnica za pojedini
+ *      `workflow:<id>`, i okidače, i način `on`. To je vlasnikova kočnica za pojedini
  *      zadatak i ne smije je nadglasati ništa u konfiguraciji.
  *   2. PO TIJEKU — polje `enabled` u `agents/workflows.json`. `false` znači „kao da tijeka
  *      nema": ne bira ga ni okidač ni izričita oznaka.
@@ -103,7 +103,7 @@ interface KesUnos<T> { vrijednost: T; put: string; ucitanoU: number; otisak: Oti
  * Keš s provjerom vremena izmjene. TTL sam (kao kod `CompletionGuard`/`ResearchRagGate`)
  * značio bi do 30 s kašnjenja pri prebacivanju načina; kriterij W0 traži prebacivanje
  * BEZ ponovnog pokretanja, pa se uz TTL gleda i `mtime` — jedan `stat` po zadatku je
- * ništa naspram toga da Goran pomakne prekidač i ne vidi učinak.
+ * ništa naspram toga da vlasnik pomakne prekidač i ne vidi učinak.
  */
 const KES_TTL_MS = 30_000
 

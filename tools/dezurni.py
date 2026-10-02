@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """dezurni.py — rezervni (fallback) agent kad primarni model padne.
 
-Goran, 04.09.2026.: „model mora provjeriti stvarno stanje na Anthropicu — a ne da mi kaže da
+Vlasnik, 04.09.2026.: „model mora provjeriti stvarno stanje na Anthropicu — a ne da mi kaže da
 ja provjerim. Mora dobiti točnu informaciju radi li sustav i što ne radi. Mora se predstaviti
 korisniku, reći što se dogodilo, zašto se javio i da će javiti kad može nastaviti, pa pokrenuti
 skriptu koja svakih pola sata provjerava. Kad se sustav oporavi, javi na Telegram."
@@ -90,7 +90,7 @@ def postavke() -> dict:
 
 
 # ── Davatelji dežurnog (TASK-4709) ───────────────────────────────────────────────────────
-# Goran, 06.09.2026.: „config stranica nudi samo Ollamu, a ne sve providere iz
+# Vlasnik, 06.09.2026.: „config stranica nudi samo Ollamu, a ne sve providere iz
 # model-config.json." Uzrok nije bio popis nego most: znao je samo Ollamin `/api/chat`.
 #
 # Ovdje je ISTO pravilo kao u `tools/Telegram/dezurni.ts` (`NACIN_POZIVA_MOSTA`), jer isti

@@ -33,6 +33,37 @@ Sve radi bez ijedne vanjske usluge. RAG (semantičko pretraživanje) je neobavez
 
 ---
 
+## Značajke
+
+Jedna rečenica po značajki, uz dokument koji je objašnjava do kraja.
+
+**Rad agenata**
+
+- **Ručna kočnica — globalna i po zadatku.** `POST /api/pause` zaustavlja preuzimanje novog posla, a `POST /api/tasks/<ID>/pause` / `resume` zadržava jedan zadatak bez promjene stanja, pa se nastavlja točno ondje gdje je stao — [docs/API.md](docs/API.md) („Pauza”, „Globalna kočnica”), [docs/SUSTAV.md](docs/SUSTAV.md).
+- **Strop usporednih agenata.** Koliko agenata smije raditi istodobno (1–10, zadano 3) postavka je na Config stranici ili `PUT /api/config/concurrency`; vrijedi za najviše 5 s, bez restarta, a svaka promjena ostaje u `settings_history` — [docs/API.md](docs/API.md) („Usporedni agenti”).
+- **Uputa agentu u radu.** `POST /api/tasks/<ID>/uputa` (ili 📨 na kartici) dostavlja poruku u sesiju koja već radi, preko kuke, pa agent ne staje i ne gubi kontekst — [docs/UPUTE-AGENTU.md](docs/UPUTE-AGENTU.md).
+- **Odluka o pokretanju.** Zadatak s oznakom `needs-decision` čeka čovjeka ili model po izboru, iza determinističkog filtra rizika — [docs/ODLUCIVANJE.md](docs/ODLUCIVANJE.md).
+- **Zatvaranje kroz orkestrator.** `TaskCloser`, `SpawnFinalizer` i prekidač `spawnCloseGuard` (zadano isključen) ne daju agentu da sam zatvori zadatak dok njegov spawn drži najam; čovjek s ploče uvijek može pregaziti — [docs/INSTALL.md](docs/INSTALL.md) §5.2, [docs/API.md](docs/API.md).
+- **Straža jeke i pretinac.** `DispatchGuard` ne da da dojava raspoređivača ili obavijest o životnom ciklusu agenta postane novi zadatak, a zadatak bez projekta pada u projekt-pretinac umjesto u `NULL` — [CHANGELOG.md](CHANGELOG.md), [docs/SUSTAV.md](docs/SUSTAV.md).
+
+**Zatvaranje na dokaz**
+
+- **Nezavisni kritičar (`CriticGate`).** Prije zatvaranja kritičar sam pokreće provjere nad onim što je agent ostavio na disku (L0/L1 za dokumente); svaki sud ide u `critic_gate.jsonl`, a `GET /api/critic/unverified` popisuje što nije moglo biti provjereno — [docs/API.md](docs/API.md) („Kritičar”), [docs/INSTALL.md](docs/INSTALL.md) §5.2.
+- **Completion-guard i strukturirani izlaz koraka.** `completed` bez dokaza izvršenja biva uhvaćen, a blok `REGOC-IZLAZ` daje svakom izvještaju zatvoren rječnik dokaza; oboje kreće u sjeni — [docs/INSTALL.md](docs/INSTALL.md) §5.2.
+- **Parsirani rezultat.** Agentov izvještaj poslužitelj razlaže u bedž presude i odjeljke (`resultParsed`), a ploča ga crta kroz `textContent`, nikad kao HTML — [docs/API.md](docs/API.md).
+- **Dopušteni prijelazi stanja.** `pending→completed` se odbija s 409, a zatvoren ili otkazan zadatak može se ponovno otvoriti u `pending` — [docs/API.md](docs/API.md).
+
+**Znanje, trošak i modeli**
+
+- **RAG s dva pozadinska sustava.** ChromaDB, pgvector ili oba (`dual`, za migraciju), s prebacivanjem i migracijom po zbirkama na **Config → RAG Backend**; `pg` je neobavezna ovisnost, a lozinka nikad ne izlazi kroz API — [docs/INSTALL.md](docs/INSTALL.md) §5.3, [docs/API.md](docs/API.md).
+- **Procjena energije.** Struja, CO₂ i voda uz trošak projekta, uvijek kao procjena s rasponom; koeficijenti su u `config/energija.json` — [docs/INSTALL.md](docs/INSTALL.md) §5.2, [docs/DATABASE.md](docs/DATABASE.md).
+- **Postavke modela.** `models/model-config.json` se zapisuje atomno, s revizijskim tragom, a oznaka dugog konteksta `[1m]` je dopuštena — [docs/API.md](docs/API.md) („Modeli i davatelji”).
+- **Konzola.** Uživo tok događaja preko web utičnice i, po želji, pokretanje naredbe — [docs/TOOLS.md](docs/TOOLS.md).
+- **Provjerena prazna instalacija.** init → poslužitelj → ploča 200 → `POST`/`GET` zadatka → okidač prioriteta 1, zapisano u [docs/QA_SVJEZA_INSTALACIJA_2026-10-02.md](docs/QA_SVJEZA_INSTALACIJA_2026-10-02.md).
+- **Kako se oko nje gradi cijeli sustav agenata.** Agenti, znanje, ulazni kanal i nadzor, sloj po sloj — [docs/SUSTAV.md](docs/SUSTAV.md), [docs/AGENTI.md](docs/AGENTI.md), [docs/INTEGRACIJE.md](docs/INTEGRACIJE.md), [REGOC/README.md](REGOC/README.md).
+
+---
+
 ## Brzi početak
 
 Treba ti [Bun](https://bun.sh) 1.1 ili noviji. Ništa drugo.
@@ -151,6 +182,11 @@ Pojedinosti, davatelji i postavke: [docs/ODLUCIVANJE.md](docs/ODLUCIVANJE.md).
 | [CHANGELOG.md](CHANGELOG.md) | što se promijenilo i zašto, najnovije prvo |
 | [docs/JEZICI.md](docs/JEZICI.md) | jezici sučelja: odabir, dodavanje |
 | [docs/ODLUCIVANJE.md](docs/ODLUCIVANJE.md) | zadatci koji čekaju odluku; kad odlučuje model, i filtar rizika |
+| [docs/UPUTE-AGENTU.md](docs/UPUTE-AGENTU.md) | slanje upute agentu koji već radi (API, kuka, fail-open) |
+| [docs/SUSTAV.md](docs/SUSTAV.md) | kako od ploče složiti sustav koji sam radi, sloj po sloj: agenti, RAG, vještine, ulaz, kočnice |
+| [docs/AGENTI.md](docs/AGENTI.md) | registar agenata, vještine i alati — što paket nosi, a što dohvaća |
+| [docs/INTEGRACIJE.md](docs/INTEGRACIJE.md) | integracije Nextcloud, e-pošta, GitLab i GitHub |
+| [docs/adr/](docs/adr/) | arhitekturne odluke paketa |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | git kuke, pravila za commitove, pokretanje testova |
 | [REGOC/README.md](REGOC/README.md) | kako izgleda stvaran sustav agenata izgrađen oko ovoga — po temama (arhitektura, uloge, životni ciklus zadatka, pravila isporuke, vrata i kočnice, baze, trošak i energija, lekcije, složi svoj) |
 
@@ -171,9 +207,9 @@ git config core.hooksPath .githooks
 ```
 
 `.githooks/commit-msg` odbija svaki commit čija poruka nosi `Co-Authored-By: … Claude` ili
-`noreply@anthropic.com`, kao i svaki commit čiji autor ili committer nije
-`goran.mahovlic@gmail.com` (druga se adresa otvara izričito). Pojedinosti i pokretanje testova:
-[CONTRIBUTING.md](CONTRIBUTING.md).
+`noreply@anthropic.com`, a — kad popišeš dopuštene identitete s
+`git config taskmanagerai.dopusteniAutori "ti@example.com"` — i svaki commit čiji autor ili
+committer nije na tom popisu. Pojedinosti i pokretanje testova: [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ---
 

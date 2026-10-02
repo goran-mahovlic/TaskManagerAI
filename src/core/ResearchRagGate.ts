@@ -1,7 +1,7 @@
 /**
  * ResearchRagGate — istraživanje mora završiti u RAG-u (R2 / TASK-4309).
  *
- * KVAR KOJI OVO ZATVARA (Goran, 04.09.2026.): istraživanja žive SAMO u transkriptu.
+ * KVAR KOJI OVO ZATVARA (vlasnik, 04.09.2026.): istraživanja žive SAMO u transkriptu.
  * Transkripti se čuvaju ~30 dana (v. `transkript-arhiv-t9`), pa svaki nalaz stariji od
  * mjesec dana nestaje. Mjereno isti dan: PRJ-041 — projekt s najvećim troškom (1613 USD)
  * — nema NIJEDAN dokument u RAG-u. Plaćeno istraživanje ispari, pa se isti posao naruči

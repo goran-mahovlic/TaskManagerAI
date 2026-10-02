@@ -314,11 +314,11 @@ function getTaskCreateBreaker(): TaskCreateBreaker | null {
 }
 
 /**
- * Dojava Goranu — JEDNA po epizodi rafala, ne po zadatku (686 poruka je isti kvar).
+ * Dojava vlasniku — JEDNA po epizodi rafala, ne po zadatku (686 poruka je isti kvar).
  * Redak u dnevniku ide UVIJEK i prvi: Telegram je najslabija karika (token, mreža,
  * skripta koje u izoliranom HOME-u nema), a zapis mora ostati i kad poruka ne prođe.
  */
-function notifyGoranTaskBurst(text: string): void {
+function notifyOwnerTaskBurst(text: string): void {
   console.warn(`[TaskWebUI] TASK-4628 DOJAVA:\n${text}`)
   try {
     // Bilo je ~/.tmp/agent_telegram_send.sh — skripta REGOČ stroja koje u paketu nema (a na
@@ -1549,7 +1549,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     /* Osam stupaca s nowrap ima min-content sirinu vecu od panela (400/480 px). Dok je
        tablica bila display:table, width:100% je nije mogao stisnuti ispod te sirine, pa se
        prelijevala IZVAN panela — a kako je panel prilijepljen desno, visak je strsio ulijevo
-       i bio odrezan (Goranova snimka 02.09.2026.). display:block pretvara samu tablicu u
+       i bio odrezan (vlasnikova snimka 02.09.2026.). display:block pretvara samu tablicu u
        klizni okvir: redci ostaju poravnati (anonimna tablica unutra), a visak se pomice
        vodoravno umjesto da bjezi iz panela. */
     .tel-table { width: 100%; max-width: 100%; border-collapse: collapse;
@@ -1731,7 +1731,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       font-weight: 600;
     }
 
-    /* Lanac zadataka (Goran, 05.09.2026.): „onim jednim koji blokira cijeli niz, to bi
+    /* Lanac zadataka (vlasnik, 05.09.2026.): „onim jednim koji blokira cijeli niz, to bi
        trebalo biti vidljivije oznaceno jer ovako ne vidim." Broj otkljucanih zadataka je
        jedino sto razlikuje korijen niza od obicne kartice — dosad se nije prikazivao. */
     .lanac-badge {
@@ -2139,7 +2139,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     .odluka-meta { color:#8a7d55; font-size:11px; margin-bottom:8px; }
     .odluka-opis { color:#a89b70; font-size:11.5px; margin-bottom:8px; white-space:pre-wrap;
       max-height:150px; overflow:auto; }
-    /* Goran, 05.09.2026.: „Prvo ne mogu unutra napisati dulji tekst, to mora biti omoguceno."
+    /* Vlasnik, 05.09.2026.: „Prvo ne mogu unutra napisati dulji tekst, to mora biti omoguceno."
        Polje je bilo rows=1 / 36 px pa je izgledalo kao jednoredni unos — obrazlozenje odluke
        se u njemu nije dalo ni procitati. Sada je uspravno slozeno, puna sirina i raste. */
     .odluka-red { display:flex; flex-direction:column; gap:8px; align-items:stretch; }
@@ -2463,7 +2463,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       </div>
       <div id="potrosnja-box" class="tel-box tel-muted" data-i18n="x_2">&hellip;</div>
 
-      <!-- TASK-3691: vrijednost korisničkih upita po cjeniku S1-S6 (Goran, 04.09.2026.).
+      <!-- TASK-3691: vrijednost korisničkih upita po cjeniku S1-S6 (vlasnik, 04.09.2026.).
            Ovo NIJE trošak modela nego procjena vrijednosti isporučenog rada; dvije brojke
            stoje jedna uz drugu i namjerno se ne zbrajaju. -->
       <div class="projects-header" style="margin-top:1.25rem;">
@@ -3193,7 +3193,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       }
     }
 
-    // ─── Lanac zadataka (Goran, 05.09.2026.) ──────────────────────────────────
+    // ─── Lanac zadataka (vlasnik, 05.09.2026.) ──────────────────────────────────
     // „Nakon njega mozes nastaviti sa onim jednim koji blokira cijeli niz, to bi trebalo biti
     // vidljivije oznaceno jer ovako ne vidim." Ploca je znala tko koga blokira (polja
     // blockedBy/blocks), ali to nigdje nije prikazivala — pa je zadatak koji drzi sest drugih
@@ -3629,7 +3629,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
 
 
 
-    // ─── Jezik sučelja (Goran, 04.09.2026.) ───────────────────────────────────
+    // ─── Jezik sučelja (vlasnik, 04.09.2026.) ───────────────────────────────────
     // Prevodi se SAMO sučelje. Naslovi, opisi i bilješke zadataka su podatci i kroz ovo
     // nikad ne prolaze — zamjenjuju se iskljucivo elementi koje je posluzitelj oznacio
     // atributom data-i18n, a njih ima samo u statickom okviru ploce.
@@ -3736,7 +3736,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
 
 
     // ─── Odlučitelj: model odlučuje umjesto korisnika ─────────────────────────
-    // Goran, 04.09.2026. Prekidač stoji uz sam popis, a ne u Configu, jer se odluka donosi
+    // Vlasnik, 04.09.2026. Prekidač stoji uz sam popis, a ne u Configu, jer se odluka donosi
     // ovdje — postavka koja se tiče ovog reda treba biti na dohvat ruke.
     async function ucitajOdlucitelja() {
       try {
@@ -3853,7 +3853,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       }
     }
 
-    // ─── Čeka odluku (Goran, 04.09.2026.) ─────────────────────────────────────
+    // ─── Čeka odluku (vlasnik, 04.09.2026.) ─────────────────────────────────────
     // "taj needs-decision je ok, ali onda mi to napravi da je vidljivo i dodaj polje gdje ću
     // upisati odluku i stisnuti nastavi."
     // Traka je skrivena kad nema takvih zadataka — inače bi postala šum koji se prestane
@@ -3873,7 +3873,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         const blok = d.blokirani || 0;
         // Naslov govori o onome što odluka doista pušta u rad; blokirani se navode odvojeno,
         // jer njih ni odluka ne pokreće dok se ne dovrši zadatak koji ih drži.
-        // Goran, 05.09.2026.: „nista ne treba cekati mene ako sam odabrao da model odlucuje
+        // Vlasnik, 05.09.2026.: „nista ne treba cekati mene ako sam odabrao da model odlucuje
         // za mene." Dok prekidač radi, naslov ne smije tvrditi da zadatci čekaju njega.
         const dodatakBlok = blok
           ? '  ·  ' + _Tv('blokirano_drugim_n', '{broj} blokirano drugim zadatkom', { broj: blok })
@@ -3887,7 +3887,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
           : _Tv(sprem === 1 ? 'odl_naslov_covjek_1' : 'odl_naslov_covjek_n',
                 sprem === 1 ? '{broj} zadatak čeka tvoju odluku' : '{broj} zadataka čeka tvoju odluku',
                 { broj: sprem })) + dodatakBlok;
-        // „Ne vidim da se nesto desava" (Goran, 05.09.2026.) — zato se zadnji prolaz vidi
+        // „Ne vidim da se nesto desava" (vlasnik, 05.09.2026.) — zato se zadnji prolaz vidi
         // UVIJEK, i kad je popis zatvoren, i kad model nije odlucio nista.
         const prolaz = document.getElementById('odluke-prolaz');
         if (prolaz) {
@@ -5196,7 +5196,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       }[r] || '';
     }
 
-    /** „Goran 861,50 € (312) · Martina Sport 758,70 € (140)" — za hover i za popis. */
+    /** „Korisnik A 861,50 € (312) · Korisnik B 758,70 € (140)" — za hover i za popis. */
     function osobeOpis(poKorisniku) {
       if (!poKorisniku) return _T('prj_nema_osoba', 'nema podataka o osobama');
       var k = Object.keys(poKorisniku);
@@ -5255,7 +5255,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         h += '<th>' + _T('vr_st_upita', 'upita') + '</th><th>' + _T('vr_st_vrijednost', 'vrijednost') + '</th></tr></thead><tbody>';
         pids.forEach(function (pid) {
           var v = pp[pid];
-          // Ključ projekta sam po sebi ne kaže ništa (Goran): ide pun naziv, a ključ ostaje
+          // Ključ projekta sam po sebi ne kaže ništa (vlasnik): ide pun naziv, a ključ ostaje
           // sitno uz njega jer se po njemu traži drugdje. Tko je radio — na hover.
           var naziv = v.naziv && v.naziv !== pid ? v.naziv : pid;
           h += '<tr><td title="' + telEsc(osobeOpis(v.poKorisniku)) + '">' + telEsc(naziv)
@@ -5304,7 +5304,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     function initPotrosnja() { ucitajPotrosnju({}); ucitajVrijednost(false); pokreniAutoPotrosnju(); }
 
     /**
-     * TASK-3691 (Goran): „potrošnja se automatski mora osvježavati".
+     * TASK-3691 (vlasnik): „potrošnja se automatski mora osvježavati".
      * Dosad se brojka računala samo pri otvaranju kartice i na klik „Osvježi", pa je
      * ploča znala satima pokazivati stanje od jutros. Sada se kartica sama osvježava
      * dok je otvorena; napuštena kartica gasi svoj interval (isti razlog kao potrosnjaGen —
@@ -5442,7 +5442,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         html += '<div class="tel-muted" style="margin-bottom:0.4rem;">' + telEsc(data.poruka) + '</div>';
       }
 
-      // Goran, 04.09.2026.: „kada otvorim projekt ne vidi se koliko je od ljudi tko radio …
+      // Vlasnik, 04.09.2026.: „kada otvorim projekt ne vidi se koliko je od ljudi tko radio …
       // kod pregleda projekta piše sada ukupno, ali trebalo bi dodati po osobama."
       // Vrijednost po osobama dolazi iz drugog izvora (cjenik S1–S6 nad transkriptima),
       // pa se puni asinkrono i ne zadržava crtanje ostatka panela.
@@ -5717,7 +5717,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
 
     /** Kućica troška na kartici projekta: „…" dok se računa, „—" kad nema mjerenja. */
     function projectVrijednostChip(projectId) {
-      // Vrijednost isporučenog rada po Goranovu cjeniku S1–S6 — NIJE trošak modela.
+      // Vrijednost isporučenog rada po vlasnikovu cjeniku S1–S6 — NIJE trošak modela.
       // Dvije brojke stoje jedna uz drugu na kartici i namjerno se ne zbrajaju.
       var naslov = _T('chip_vrijednost_naslov', 'vrijednost korisničkih upita po cjeniku S1–S6 (procjena isporučenog rada, ne trošak modela)');
       if (!popisVrijednost) {
@@ -6206,7 +6206,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       const container = document.getElementById('projects-rows');
       if (!container) return;
 
-      // TASK-3691 (Goran): poredak po zadnjem radu, potrošnji, imenu, početku ili broju
+      // TASK-3691 (vlasnik): poredak po zadnjem radu, potrošnji, imenu, početku ili broju
       // zadataka. Potrošnja i datumi rada dolaze iz popisTrosak (/api/projects/trosak),
       // pa je poredak po cijeni moguć tek kad ta brojka stigne — do tada se pada natrag
       // na zadnji rad umjesto da se popis prikaže u nasumičnom redu.
@@ -9430,7 +9430,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
 
     // TASK-3053: PLOCA SE PUNI NEOVISNO O WEBSOCKETU.
     //
-    // Kvar (Goran, 29.07.2026: „ne vidim ni jedan task"): jedina dva puta do podataka bila su
+    // Kvar (vlasnik, 29.07.2026: „ne vidim ni jedan task"): jedina dva puta do podataka bila su
     // ws.onopen -> fetchTasks() i setInterval ispod. Kako je connect() stajao IZNAD tog
     // setInterval-a, svaka iznimka iz new WebSocket(...) — a preglednik je baca kad je
     // veza blokirana (mijesani sadrzaj na HTTPS-u, posrednik, stroga polica) — prekidala je
@@ -9501,7 +9501,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
 // ── Model catalog (SSoT za dropdown na Info tabu) ──────────────────────────
 // spawnable=true → agent se MOŽE pokrenuti danas preko `claude --print --model`.
 // spawnable=false → kandidat (Ollama itd.), treba API spawn path (F2 / TASK-2588).
-// Ako Goran odabere override, sprema se u model-config.json → agentOverrides[id].
+// Ako vlasnik odabere override, sprema se u model-config.json → agentOverrides[id].
 // Interface/glavna-petlja agenti — trajni procesi koji NE idu kroz resolveSpawnModel,
 // pa im model-override nema efekta. Dropdown se zaključava, PUT ih odbija.
 // Prazno: glavni agenti (REGOČ/Klaudio/Stribor) su ODKLJUČANI — model im se može mijenjati.
@@ -10771,7 +10771,7 @@ function warnCreateSwallowedFields(
 /**
  * Vrata projekta na ulazu (TASK-3514).
  *
- * NALAZ (Goran, 28. i 29.08.2026.): „zadaci ne mogu biti bez projekta", a zadatci bez
+ * NALAZ (vlasnik, 28. i 29.08.2026.): „zadaci ne mogu biti bez projekta", a zadatci bez
  * projekta su i dalje bili vidljivi na ploči. Pretinac PRJ-033 je bio zamišljen da
  * propust učini VIDLJIVIM, ali dosad je propust bio vidljiv samo u bazi — POST je
  * vraćao uredan 201 i nitko nije imao razloga išta ispraviti, pa je pretinac postao
@@ -10810,7 +10810,7 @@ function resolveProjectForCreate(requested: string | undefined): { projectId: st
 
 
 /**
- * Upute koje se same dopisuju u opis zadatka pri otvaranju (Goran, 04.09.2026.).
+ * Upute koje se same dopisuju u opis zadatka pri otvaranju (vlasnik, 04.09.2026.).
  *
  * Zapisana lekcija pomaže samo onome tko je potraži; izvršitelj koji dobije zadatak čita opis,
  * a ne RAG. Zato se poznati obrasci — oni koji su već jednom prošli krivo — dopisuju u sam
@@ -10960,7 +10960,7 @@ async function handleCreateTask(req: Request): Promise<Response> {
     // Stoji TU, iza sadržajnih vrata (anti-echo, prazan opis) i ispred `createTask`:
     // rafal smeća je već odbijen besplatno, pa kvotu troše samo zadatci koji bi stvarno
     // nastali. Preko praga zadatak NE nestaje — cijelo tijelo zahtjeva ide u
-    // `task_create_queue` i vraća se odgovorom (HTTP 429 + `queueId`), a Goran dobije
+    // `task_create_queue` i vraća se odgovorom (HTTP 429 + `queueId`), a vlasnik dobije
     // JEDNU dojavu po epizodi. Ovo su vrata koja M1 (osigurač spawnova) ne može
     // zamijeniti: on rafal vidi tek kad su zadatci već u bazi i već zovu `claude --print`.
     const createdBy = typeof createFields.normalized.createdBy === 'string' && createFields.normalized.createdBy
@@ -10970,7 +10970,7 @@ async function handleCreateTask(req: Request): Promise<Response> {
     const rateVerdict = breaker?.check(createdBy)
     if (rateVerdict && (rateVerdict.wouldQueue || rateVerdict.alarm)) {
       const queuedNow = breaker!.queuedList({ source: createdBy }).length + (rateVerdict.allowed ? 0 : 1)
-      if (rateVerdict.alarm) notifyGoranTaskBurst(formatTaskCreateAlarm(createdBy, rateVerdict, queuedNow))
+      if (rateVerdict.alarm) notifyOwnerTaskBurst(formatTaskCreateAlarm(createdBy, rateVerdict, queuedNow))
     }
     if (rateVerdict && !rateVerdict.allowed) {
       const q = breaker!.enqueue(createdBy, createFields.normalized, rateVerdict.reason)
@@ -11307,7 +11307,7 @@ const pregledDeps = createPregledDeps(pregledState)
 /**
  * TASK-3691: kontrolni zbroj troška iz `cost_log` za isto razdoblje (i isti projekt).
  *
- * Goran, 04.09.2026.: „to se mora vući iz istog izvora! Ne smije biti razlike."
+ * Vlasnik, 04.09.2026.: „to se mora vući iz istog izvora! Ne smije biti razlike."
  * Pregled zbraja `cost_usd` iz `run_log.jsonl`, kartica projekta iz `cost_log`. Oba zapisa
  * piše isti `SpawnTelemetry.recordSpawn()`, pa se moraju poklapati — izmjereno 04.09.:
  * 3 539,93 vs 3 540,00 USD, i tih 0,07 dolazi od 48 redaka bez `task_id`. Umjesto da se
@@ -12165,7 +12165,7 @@ async function handleClaimInstructions(taskId: string, req: Request): Promise<Re
 /**
  * GET/PUT /api/odlucitelj/config  ·  POST /api/odlucitelj/pokreni
  *
- * Goran, 04.09.2026.: „dodao bi switch i odabir modela koji se moze koristiti umjesto odluke
+ * Vlasnik, 04.09.2026.: „dodao bi switch i odabir modela koji se moze koristiti umjesto odluke
  * korisnika."
  *
  * Odluka modela ide ISTIM putem kao ljudska (`/api/tasks/<ID>/odluka`), pa je trag jednak i
@@ -12325,7 +12325,7 @@ async function handleOdluciteljConfigPut(req: Request): Promise<Response> {
   if (typeof telo.baseUrl === 'string' && telo.baseUrl.trim()) nove.baseUrl = telo.baseUrl.trim()
   const n = Number(telo.najvise_po_prolazu)
   if (Number.isFinite(n) && n >= 1 && n <= 20) nove.najvise_po_prolazu = Math.round(n)
-  // Goran, 05.09.2026.: „dodati opcije za namjestiti koliko je to cekanje." Isti broj vrijedi
+  // Vlasnik, 05.09.2026.: „dodati opcije za namjestiti koliko je to cekanje." Isti broj vrijedi
   // za rok koji čovjek dobije prije nego model odluči i za trajanje odgode. Raspon: 5 min do
   // 3 dana — ispod toga najava nema smisla, iznad toga to više nije odgoda nego zaborav.
   const c = Number(telo.cekanje_sati)
@@ -12367,7 +12367,7 @@ async function handleOdluciteljPokreni(req: Request): Promise<Response> {
  * GET /api/jezici        — koji jezici postoje i koji je zadani
  * GET /api/jezik/<kod>   — rječnik jednog jezika
  *
- * Goran, 04.09.2026.: „ako se to moze odraditi tako da taj vizualni dio ima mogucnost odabira
+ * Vlasnik, 04.09.2026.: „ako se to moze odraditi tako da taj vizualni dio ima mogucnost odabira
  * vise jezika … naknadno mozda samo ako netko zeli doda jezik u nekom fajlu i odabere ga kao
  * default."
  *
@@ -12439,7 +12439,7 @@ function handleGetJezik(kod: string): Response {
  * GET  /api/odluke — zadatci koji čekaju ljudsku odluku (oznaka needs-decision i srodne).
  * POST /api/tasks/:id/odluka `{odluka, by?}` — upiši odluku i vrati zadatak u red.
  *
- * Goran, 04.09.2026.: "taj needs-decision je ok, ali onda mi to napravi da je vidljivo i
+ * Vlasnik, 04.09.2026.: "taj needs-decision je ok, ali onda mi to napravi da je vidljivo i
  * dodaj polje gdje ću upisati odluku i stisnuti nastavi."
  *
  * Povod: devet zadataka stajalo je 1,5 h s tom oznakom, a nigdje se nije vidjelo da čekaju
@@ -12457,7 +12457,7 @@ const ZATVOREN = (s: any) => ['completed', 'cancelled'].includes(String(s))
 /**
  * Koliko zadataka (izravno i posredno) čeka na ovaj — mjera „koliko niza drži".
  *
- * Goran, 05.09.2026.: „onim jednim koji blokira cijeli niz, to bi trebalo biti vidljivije
+ * Vlasnik, 05.09.2026.: „onim jednim koji blokira cijeli niz, to bi trebalo biti vidljivije
  * označeno jer ovako ne vidim." Broj otključanih je jedini podatak koji razlikuje korijen
  * niza od lista, a do sada se nigdje nije računao.
  */
@@ -12478,7 +12478,7 @@ function brojOtkljucanih(id: string, po: Map<string, any>): number {
 function handleGetOdluke(): Response {
   const svi = taskManager.getTasks() as any[]
   const po = new Map<string, any>(svi.map(t => [String(t.id), t]))
-  // Zadnji prolaz odlucitelja. Bez ovoga se s ploce ne vidi RADI LI uopce — Goran je
+  // Zadnji prolaz odlucitelja. Bez ovoga se s ploce ne vidi RADI LI uopce — vlasnik je
   // 05.09.2026. ukljucio prekidac i cekao pola sata pred zelenom oznakom koja nista ne znaci.
   const zadnjiProlaz = citajZadnjiProlaz()
   const kazePoZadatku = new Map<string, any>(
@@ -12838,7 +12838,7 @@ function handleHealthCheck(): Response {
 // ============================================
 
 /**
- * TASK-3691 (Goran, 04.09.2026.): „pod projects moraju biti izlistani svi projekti i mora se
+ * TASK-3691 (vlasnik, 04.09.2026.): „pod projects moraju biti izlistani svi projekti i mora se
  * vidjeti potrošnja po projektu".
  *
  * Zašto zaseban izvor, a ne tjedni pregled: kartica projekta je dosad brojku vukla iz
@@ -12861,7 +12861,7 @@ function getTrosakDb(): Database | null {
 }
 
 /**
- * TASK-3691 (Goran, 04.09.2026.): „napravi izračun koliko se novaca potrošilo na user input …
+ * TASK-3691 (vlasnik, 04.09.2026.): „napravi izračun koliko se novaca potrošilo na user input …
  * podijeljeno po korisnicima."
  *
  * VRIJEDNOST rada po cjeniku S1–S6, ne trošak modela — te dvije brojke stoje jedna uz drugu

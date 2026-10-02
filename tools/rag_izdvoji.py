@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """rag_izdvoji.py — izdvoji vrijedno znanje iz naslijeđene PAI kolekcije prije njezina isključenja.
 
-Goran, 04.09.2026.: „pai_agent_general — možeš odvojiti po prijedlogu — ono što isto moramo
+Vlasnik, 04.09.2026.: „pai_agent_general — možeš odvojiti po prijedlogu — ono što isto moramo
 paziti: REGOČ, kako sustav radi i što radi, sve o agentima, multiagent pristupu… Istraživanja
 van ovih naših projekata koje smo radili davnih dana, ULX3S, FPGA, SERENA, ZOD … to ne smije
 nestati."

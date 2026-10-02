@@ -1,10 +1,9 @@
 /**
  * Vratar identiteta commita — TASK-4723.
  *
- * Nalaz (Goran, 06.09.2026.): commit 241aa89 je otišao na javni GitHub s
- * `Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>` i s autorom
- * `REGOČ System <regoc@intergalaktik.eu>`, dok svi ostali commiti istog dana nose
- * `Goran Mahovlić <goran.mahovlic@gmail.com>` bez traga o alatu.
+ * Nalaz (vlasnik, 06.09.2026.): commit 241aa89 je otišao na javni GitHub s
+ * `Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>` i s identitetom orkestratora kao
+ * autorom, dok svi ostali commiti istog dana nose vlasnikov identitet bez traga o alatu.
  *
  * Uzrok nije bio propust u kodu nego oslanjanje na pamćenje agenta: commit se radi rukom,
  * pa je dovoljno da jedan spawn ne prepiše zadani identitet harnessa. Zato provjera ne
@@ -14,7 +13,11 @@
  * Ugovor koji se ovdje mjeri:
  *   .githooks/commit-msg  odbija (exit != 0) poruku s tragom alata i tuđeg autora,
  *                         propušta ispravan identitet,
- *                         a izuzetak se otvara SAMO izričito (git config).
+ *                         a popis dopuštenih autora dolazi SAMO iz git configa.
+ *
+ * TASK-5109: hook je ranije imao NAŠU adresu kao jedinog zadanog autora. `scripts/install.sh`
+ * uključuje `.githooks` u svakom klonu, pa bi svakom tko nije vlasnik odbio svaki commit.
+ * Sada klon bez `taskmanagerai.dopusteniAutori` ne provjerava identitet (trag alata da).
  */
 import { describe, expect, test, afterAll } from 'bun:test'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs'
@@ -23,12 +26,13 @@ import { join } from 'path'
 
 const KORIJEN = join(import.meta.dir, '..')
 const HOOKS = join(KORIJEN, '.githooks')
-const ISPRAVAN = 'goran.mahovlic@gmail.com'
+const ISPRAVAN = 'vlasnik@example.com'
+const TUDI = 'orkestrator@example.org'
 
 // `/tmp` je u našem kontejneru montiran s `noexec` i zna biti pun (100 MB tmpfs),
 // pa privremeni repozitoriji idu u ~/.tmp.
 const privremeni: string[] = []
-function noviRepo(email = ISPRAVAN, ime = 'Goran Mahovlic'): string {
+function noviRepo(email = ISPRAVAN, ime = 'Vlasnik Repozitorija', dopusteni: string | null = ISPRAVAN): string {
   // TASK-5011: na svježem stroju `~/.tmp` ne postoji — mkdtemp ne stvara roditelja.
   mkdirSync(join(homedir(), '.tmp'), { recursive: true })
   const put = mkdtempSync(join(homedir(), '.tmp', 'tmai-hook-'))
@@ -37,6 +41,7 @@ function noviRepo(email = ISPRAVAN, ime = 'Goran Mahovlic'): string {
   Bun.spawnSync(['git', '-C', put, 'config', 'user.email', email])
   Bun.spawnSync(['git', '-C', put, 'config', 'user.name', ime])
   Bun.spawnSync(['git', '-C', put, 'config', 'commit.gpgsign', 'false'])
+  if (dopusteni !== null) Bun.spawnSync(['git', '-C', put, 'config', 'taskmanagerai.dopusteniAutori', dopusteni])
   // hook se uzima iz OVOG repozitorija — mjeri se datoteka koja se isporučuje
   Bun.spawnSync(['git', '-C', put, 'config', 'core.hooksPath', HOOKS])
   writeFileSync(join(put, 'a.txt'), 'a\n')
@@ -87,36 +92,57 @@ describe('commit-msg — trag alata u poruci', () => {
 
 describe('commit-msg — identitet autora', () => {
   test('tuđi autor je odbijen', () => {
-    const put = noviRepo('regoc@intergalaktik.eu', 'REGOC System')
+    const put = noviRepo(TUDI, 'Orkestrator')
     const r = commit(put, 'TASK-1: proba')
     expect(r.kod).not.toBe(0)
-    expect(r.izlaz).toContain('regoc@intergalaktik.eu')
+    expect(r.izlaz).toContain(TUDI)
   })
 
   test('GIT_AUTHOR_EMAIL koji zaobilazi config je također odbijen', () => {
     const put = noviRepo()
-    const r = commit(put, 'TASK-1: proba', { GIT_AUTHOR_EMAIL: 'regoc@intergalaktik.eu' })
+    const r = commit(put, 'TASK-1: proba', { GIT_AUTHOR_EMAIL: TUDI })
     expect(r.kod).not.toBe(0)
   })
 
   test('tuđi committer je odbijen', () => {
     const put = noviRepo()
-    const r = commit(put, 'TASK-1: proba', { GIT_COMMITTER_EMAIL: 'regoc@intergalaktik.eu' })
+    const r = commit(put, 'TASK-1: proba', { GIT_COMMITTER_EMAIL: TUDI })
     expect(r.kod).not.toBe(0)
   })
 
   test('izuzetak se otvara izričito, preko git configa', () => {
-    const put = noviRepo('netko@example.com', 'Netko Drugi')
-    Bun.spawnSync(['git', '-C', put, 'config', 'taskmanagerai.dopusteniAutori', 'netko@example.com'])
+    const put = noviRepo('netko@example.com', 'Netko Drugi', `${ISPRAVAN},netko@example.com`)
     const r = commit(put, 'TASK-1: proba')
     expect(r.kod).toBe(0)
   })
 
   test('izuzetak vrijedi samo za navedenu adresu', () => {
-    const put = noviRepo('treci@example.com', 'Treci')
-    Bun.spawnSync(['git', '-C', put, 'config', 'taskmanagerai.dopusteniAutori', 'netko@example.com'])
+    const put = noviRepo('treci@example.com', 'Treci', 'netko@example.com')
     const r = commit(put, 'TASK-1: proba')
     expect(r.kod).not.toBe(0)
+  })
+})
+
+describe('commit-msg — svjež klon bez popisa autora (TASK-5109)', () => {
+  test('bez taskmanagerai.dopusteniAutori bilo koji autor prolazi', () => {
+    const put = noviRepo('netko@example.net', 'Netko', null)
+    const r = commit(put, 'TASK-1: proba')
+    expect(r.kod).toBe(0)
+  })
+
+  test('bez popisa autora trag alata je i dalje odbijen', () => {
+    const put = noviRepo('netko@example.net', 'Netko', null)
+    const r = commit(put, 'TASK-1: proba\n\nCo-Authored-By: Claude <noreply@anthropic.com>\n')
+    expect(r.kod).not.toBe(0)
+  })
+
+  test('hook ne nosi ničiju adresu kao zadanog autora', () => {
+    const hook = require('fs').readFileSync(join(HOOKS, 'commit-msg'), 'utf-8')
+    const kod = hook.split('\n').filter((r: string) => !r.trim().startsWith('#'))
+    // `noreply@anthropic.com` je UZORAK koji hook traži u poruci, ne identitet.
+    const adrese = kod.filter((r: string) => /[\w.+-]+@[\w-]+\.[\w.]+/.test(r)
+      && !r.includes('noreply@anthropic.com'))
+    expect(adrese).toEqual([])
   })
 })
 

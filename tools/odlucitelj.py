@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """odlucitelj.py — model odlučuje umjesto korisnika o zadatcima koji čekaju odluku.
 
-Goran, 04.09.2026.: „dodao bi switch i odabir modela koji se moze koristiti umjesto odluke
+Vlasnik, 04.09.2026.: „dodao bi switch i odabir modela koji se moze koristiti umjesto odluke
 korisnika. Tipa da kada je odabran neki od nasih dostupnih modela onda oni odluce umjesto
 korisnika."
 
@@ -11,20 +11,20 @@ toga je svejedno je li odlučio čovjek ili model — trag je jednak, samo se vi
 
     KRENI    — zadatak je jasan i može se raditi
     ODGODI   — nije sada na redu; ostaje čekati
-    COVJEK   — traži Goranovu prosudbu (novac, brisanje, vanjski učinak, nejasan opseg)
+    COVJEK   — traži vlasnikovu prosudbu (novac, brisanje, vanjski učinak, nejasan opseg)
 
 `COVJEK` je namjerno lak izlaz. Model koji ne smije reći „ne znam" počne izmišljati, a ovdje
 izmišljanje znači pokrenut posao koji nitko nije htio.
 
-NIŠTA NE ČEKA ČOVJEKA DOK JE PREKIDAČ UKLJUČEN (Goran, 05.09.2026.): „Ali nista ne treba
+NIŠTA NE ČEKA ČOVJEKA DOK JE PREKIDAČ UKLJUČEN (vlasnik, 05.09.2026.): „Ali nista ne treba
 cekati mene ako sam odabrao da model odlucuje za mene." Zato `covjek` tada NIJE ishod —
 dvojba, nejasan opis, prepoznat rizik i šutnja modela završavaju kao **ODGODI**, s rokom
 (`cekanje_sati`, zadano 1 h) nakon kojeg se zadatak sam vrati u prolaz. Rizik se i dalje
 prepoznaje, ali se modelu **kaže u prompt** umjesto da se zadatak preda čovjeku; nakon tri
-uzastopne odgode stiže javka Goranu — obavijest, ne blokada. Staro ponašanje (rizik ide
+uzastopne odgode stiže javka vlasniku — obavijest, ne blokada. Staro ponašanje (rizik ide
 čovjeku) vraća se s `"smije_rizicno": false`.
 
-DRUGI PUT — STRUČNJAK (Goran, 05.09.2026.): kad zadatak nosi strukturirano pitanje (blok
+DRUGI PUT — STRUČNJAK (vlasnik, 05.09.2026.): kad zadatak nosi strukturirano pitanje (blok
 „PITANJE ZA ODLUKU" s navedenom strukom i opcijama A/B/C…), model ne bira kreni/odgodi nego
 odgovara **u ulozi te struke** i pokazuje na jednu opciju — „Uz opcije mora navesti koji
 strucnjak mu odgovara, tako da ako je ukljucen AI odgovor moze znati sto treba." Filtar rizika
@@ -57,15 +57,15 @@ ZADANE = {
     "baseUrl": ollama_url(),               # TM_OLLAMA_URL, bez zadane adrese
     "najvise_po_prolazu": 3,
     "smije_kreni": True,                    # kad je false, model smije samo odgoditi ili tražiti čovjeka
-    # Goran, 05.09.2026.: „ništa ne treba čekati mene ako sam odabrao da model odlučuje za mene."
+    # Vlasnik, 05.09.2026.: „ništa ne treba čekati mene ako sam odabrao da model odlučuje za mene."
     # Dok je prekidač uključen, `covjek` NIJE ishod: rizičan ili nejasan zadatak model odgađa,
     # ne prosljeđuje. Tko ovo postavi na false, vraća staro ponašanje (rizik ide čovjeku).
     "smije_rizicno": True,
-    # Goran, 05.09.2026.: „Mislim da je dovoljno staviti 1h default ali negdje dodati opcije
+    # Vlasnik, 05.09.2026.: „Mislim da je dovoljno staviti 1h default ali negdje dodati opcije
     # za namjestiti koliko je to cekanje." Jedan broj vrijedi za oboje: koliko čovjek ima
     # vremena prije nego model odluči, i koliko dugo odgođen zadatak ne ulazi u novi prolaz.
     "cekanje_sati": 1,
-    "odgode_prije_javke": 3,                # nakon toliko uzastopnih odgoda javi se Goranu (ne blokira)
+    "odgode_prije_javke": 3,                # nakon toliko uzastopnih odgoda javi se vlasniku (ne blokira)
     # STROJNI OKIDAČ (05.09.2026., ADR-0010). Zadatak s oznakom `okidac-strojni` čeka stanje
     # koje ovaj alat NE VIDI — nastalu datoteku, prošli trenutak, dovršen preduvjet. Sud iz
     # naslova i opisa ondje je nagađanje: mjereno na TASK-4651, isti model je u 7 minuta rekao
@@ -181,7 +181,7 @@ def premalo_opisa(z: dict) -> bool:
 
 
 # ── Davatelji modela ─────────────────────────────────────────────────────────────────────
-# Goran, 04.09.2026.: „kod modela odluke imam samo lokalne, htio bi sve — znaci i anthropic i
+# Vlasnik, 04.09.2026.: „kod modela odluke imam samo lokalne, htio bi sve — znaci i anthropic i
 # google i openrouter i ostale koje sustav nudi."
 #
 # Izvor istine je `models/model-config.json`. Ključ NIKAD ne ulazi u ovaj kod ni u ispis —
@@ -290,7 +290,7 @@ def _odgodi(task_id: str, sati: float) -> int:
 def _najavi(task_id: str, sati: float) -> str:
     """Zabilježi da je čovjeku dan rok; vrati taj rok (ISO, UTC).
 
-    Goran, 05.09.2026.: „imate x vremena za <sto treba odluciti> odluku inace model xx
+    Vlasnik, 05.09.2026.: „imate x vremena za <sto treba odluciti> odluku inace model xx
     odlucuje za vas." Dok rok traje, model taj zadatak ne dira."""
     d = _ucitaj_odgode()
     zapis = d.get(task_id) or {}
@@ -368,7 +368,7 @@ def procitaj(odgovor: str) -> str | None:
 def kartica(z: dict, p: dict, rizik_naziv: str | None = None, bez_covjeka: bool = False) -> str:
     """Kontekst je namjerno kratak — odluka se donosi o JEDNOM zadatku, bez povijesti.
 
-    `bez_covjeka` je stanje iz Goranova naloga (05.09.2026.): „nista ne treba cekati mene ako
+    `bez_covjeka` je stanje iz vlasnikova naloga (05.09.2026.): „nista ne treba cekati mene ako
     sam odabrao da model odlucuje za mene." Tada model NEMA izlaz `covjek` — dvojba zavrsava
     kao ODGODI, sto je odluka koju stroj moze donijeti sam i koja se poslije sama vraca."""
     if bez_covjeka:
@@ -406,7 +406,7 @@ def kartica(z: dict, p: dict, rizik_naziv: str | None = None, bez_covjeka: bool 
 def kartica_strucnjaka(z: dict, p: dict) -> str:
     """Kartica za zadatak koji nosi STRUKTURIRANO PITANJE (blok „PITANJE ZA ODLUKU").
 
-    Goran, 05.09.2026.: „Uz opcije mora navesti koji strucnjak mu odgovara, tako da ako je
+    Vlasnik, 05.09.2026.: „Uz opcije mora navesti koji strucnjak mu odgovara, tako da ako je
     ukljucen AI odgovor moze znati sto treba." Zato model ovdje ne bira kreni/odgodi nego
     odgovara U ULOZI navedene struke i pokazuje na jednu od ponudjenih opcija — a `covjek`
     mu ostaje otvoren kad ni struka ne razrjesava dilemu.
@@ -585,7 +585,7 @@ def obrazlozenje(odgovor: str) -> str:
 def samostalan(p: dict) -> bool:
     """Odlučuje li model doista UMJESTO čovjeka?
 
-    Goran, 05.09.2026.: „Ali nista ne treba cekati mene ako sam odabrao da model odlucuje za
+    Vlasnik, 05.09.2026.: „Ali nista ne treba cekati mene ako sam odabrao da model odlucuje za
     mene." Kad je prekidač uključen, `covjek` prestaje biti ishod: dvojba i rizik završavaju
     kao ODGODI. Odgoda je odluka koju stroj smije donijeti sam — zadatak se poslije vrati, a
     ništa ne stoji na čovjeku."""
@@ -642,7 +642,7 @@ def odluci(z: dict, p: dict) -> dict:
     r = rizik(z)
     sam = samostalan(p)
 
-    # NAJAVA PRIJE ODLUKE (Goran, 05.09.2026.): „imate x vremena za <sto treba odluciti> odluku
+    # NAJAVA PRIJE ODLUKE (vlasnik, 05.09.2026.): „imate x vremena za <sto treba odluciti> odluku
     # inace model xx odlucuje za vas." Rok se daje JEDNOM po zadatku; dok traje, model ga ne
     # dira, a kad istekne, odlučuje bez daljnjeg čekanja.
     if sam and not _vec_najavljen(str(z.get("id")), _ucitaj_odgode()):
@@ -749,7 +749,7 @@ def upisi(z: dict, o: dict, p: dict) -> str:
         return f"nije upisano ({e})"
 
     # Odgoda mora imati rok, inače bi se isti zadatak pitao svakih 5 min i odgoda ne bi
-    # značila ništa. Nakon N uzastopnih odgoda javlja se Goranu — ali zadatak i dalje NE
+    # značila ništa. Nakon N uzastopnih odgoda javlja se vlasniku — ali zadatak i dalje NE
     # čeka njega, nego se sam vraća u sljedeći prolaz.
     if o["rijec"] == "odgodi":
         # ISTI broj kao i rok koji dobiva čovjek (`cekanje_sati`, zadano 1 h). Do 05.09.2026.

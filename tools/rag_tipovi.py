@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """rag_tipovi.py — razvrstavanje i ZAŠTITA RAG dokumenata po vrsti.
 
-Goran, 04.09.2026.: „u RAG smo imali i sistemska pravila i dodatne stvari, treba paziti da
+Vlasnik, 04.09.2026.: „u RAG smo imali i sistemska pravila i dodatne stvari, treba paziti da
 ih se ne bi obrisalo — posebno prijašnje pogreške i pravila — ali bi to trebalo počistiti
 i sortirati."
 

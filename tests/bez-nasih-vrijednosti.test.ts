@@ -78,18 +78,17 @@ const PRAVILA: Pravilo[] = [
   },
   {
     ime: 'naša e-pošta / domena',
-    uzorak: 'goran\\.mahovlic@gmail\\.com|@intergalaktik\\.hr',
+    // TASK-5109: hvata i `.eu` domenu — upravo ta adresa je bila u incidentu 241aa89.
+    uzorak: 'goran\\.mahovlic@gmail\\.com|@intergalaktik\\.(hr|eu)',
     objasnjenje:
-      'u README/LICENCI je autorstvo i to je u redu; u KODU je git identitet i mora biti '
-      + 'konfiguracija bez zadane vrijednosti (ADR-0001 O1.3, v. src/core/WorkflowTemplate.ts)',
-    osnovicaPojava: 7,
-    osnovicaDatoteka: [
-      '.githooks/commit-msg',
-      'CONTRIBUTING.md',
-      'README.hr.md',
-      'README.md',
-      'tests/commit-msg-hook.test.ts',
-    ],
+      'git identitet je konfiguracija bez zadane vrijednosti (ADR-0001 O1.3, v. '
+      + 'src/core/WorkflowTemplate.ts); dopušteni autori commita su `git config '
+      + 'taskmanagerai.dopusteniAutori` (v. .githooks/commit-msg), primjeri koriste example.com',
+    // TASK-5109: 7/5 → 0. Hook je NAŠU adresu imao kao jedinog zadanog autora — svaki tuđi
+    // klon s uključenim kukama (`scripts/install.sh`) bio je odbijen; README/CONTRIBUTING
+    // tu adresu nisu navodili kao autorstvo nego kao pravilo hooka.
+    osnovicaPojava: 0,
+    osnovicaDatoteka: [],
   },
   {
     ime: 'naš Telegram chat id',
@@ -120,6 +119,18 @@ const PRAVILA: Pravilo[] = [
       + 'ili interni alat izvan paketa (TASK-5108, v. .gitignore)',
     osnovicaPojava: 0,
     osnovicaDatoteka: [],
+  },
+  {
+    ime: 'imena naših ljudi (navodi u komentarima, primjeri)',
+    // TASK-5109. Slaže se iz dijelova iz istog razloga kao tailnet gore.
+    uzorak: ['\\bGor', 'an|\\bMart', 'in[aeiu]?\\b'].join(''),
+    objasnjenje:
+      'navod odluke piše „vlasnik, <datum>: …" (bez imena), primjeri koriste „Korisnik A"; '
+      + 'ime smije stajati samo kao AUTORSTVO (LICENSE, package.json, „Credit" u README)',
+    // TASK-5109: 114 pojava / 40 dat. (na `ddfb61a`) → 4/4. Preostale 4 pojave su autorstvo i NAMJERNO ostaju —
+    // osnovica ovog pravila je 4, ne 0; zapor i dalje hvata svaku novu datoteku.
+    osnovicaPojava: 4,
+    osnovicaDatoteka: ['LICENSE', 'README.hr.md', 'README.md', 'package.json'],
   },
   {
     ime: 'naš raspored mapa (~/.claude/regoc)',

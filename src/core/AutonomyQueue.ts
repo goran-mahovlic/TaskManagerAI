@@ -94,7 +94,7 @@ export type QueueVerdict =
   | 'paused'          // ručna kočnica po zadatku (TASK-3047)
   | 'no-assignee'     // nitko nije zadužen
   | 'human-task'      // izvršitelj je čovjek
-  | 'human-gated'     // oznaka kaže da čeka Goranovu odluku
+  | 'human-gated'     // oznaka kaže da čeka vlasnikovu odluku
   | 'fixture'         // prazan/placeholder/test-fixture — auto-exec ga gasi
   | 'orchestrator'    // zadužen je REGOČ — orkestrator radi u svojoj sesiji, ne spawna se
 
@@ -155,7 +155,7 @@ export const DEFAULT_HUMAN_ASSIGNEES = ['user', 'goran']
  * (TASK-3046/3047) o poslu koji je već bio odrađen u glavnoj niti. Oba su nakratko stajala
  * `pending` s `assignee:'regoc'` → auto-exec je pokrenuo DVA Opus agenta da ponove gotov
  * posao. Jedan od njih je, izvodeći „isporuku" pauze, restartao TaskWebUI — i to je bio
- * pad ploče koji je Goran prijavio. Oznaka `no-watchdog` tu ne pomaže: ona sprječava
+ * pad ploče koji je vlasnik prijavio. Oznaka `no-watchdog` tu ne pomaže: ona sprječava
  * reset zadatka, ne spawn.
  */
 export const ORCHESTRATOR_ASSIGNEES = new Set(['regoc', 'regoč'])
@@ -272,7 +272,7 @@ export interface SkippedQueueNotice {
 /**
  * Red pun preskočenih zadataka izgledao je do 04.09.2026. IDENTIČNO kao prazan red: nula
  * zapisa u oba slučaja. Devet zadataka stajalo je 1,5 h s oznakom `needs-decision`, a u
- * dnevniku o tome nije bilo ni retka — pa je Goran morao pitati zašto posao ne kreće.
+ * dnevniku o tome nije bilo ni retka — pa je vlasnik morao pitati zašto posao ne kreće.
  *
  * ZAŠTO OTISAK, a ne bezuvjetan zapis: petlja auto-execa prolazi svakih 15 s. Bezuvjetan
  * redak bio bi 240 redaka na sat o istom nepromijenjenom stanju — dnevnik bi postao šum i

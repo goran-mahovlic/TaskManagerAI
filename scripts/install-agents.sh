@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # install-agents.sh — postavi zadani tim agenata (REGOČ) i provjeri njihove vještine.
 #
-# Goran, 04.09.2026.: „trebamo kao default nuditi opciju za instalaciju naših agenata …
+# Vlasnik, 04.09.2026.: „trebamo kao default nuditi opciju za instalaciju naših agenata …
 # da se oni mogu automatski instalirati zajedno sa svojim skilovima i alatima. Mi ne bismo
 # uključivali alate i skilove u task manager — ali možemo staviti link na PAI sistem."
 #
@@ -92,7 +92,7 @@ else
 fi
 
 # ── 1b. Tijekovi rada i alati ─────────────────────────────────────────────────
-# Goran, 04.09.2026.: „htio bih da naši agenti koriste workflow po potrebi … isto tako, što je
+# Vlasnik, 04.09.2026.: „htio bih da naši agenti koriste workflow po potrebi … isto tako, što je
 # s alatima? Moramo imati popis alata dostupnih koji se onda mogu povući."
 KATALOG_WF="$KORIJEN/agents/workflows.json"
 KATALOG_ALATA="$KORIJEN/agents/alati.json"

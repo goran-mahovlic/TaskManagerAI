@@ -1,24 +1,24 @@
 #!/usr/bin/env bash
 # commit-msg — vratar identiteta commita (TASK-4723).
 #
-# Povod (Goran, 06.09.2026.): commit 241aa89 je otišao na javni GitHub s
-#   Author/Committer: REGOČ System <regoc@intergalaktik.eu>
+# Povod (vlasnik, 06.09.2026.): commit 241aa89 je otišao na javni GitHub s
+#   Author/Committer: identitet orkestratora
 #   Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
-# dok svi ostali commiti istog dana nose Goran Mahovlić <goran.mahovlic@gmail.com>
-# bez ijednog traga o alatu. Commit se radi rukom (scripts/uskladi_s_regocem.sh ne
+# dok svi ostali commiti istog dana nose vlasnikov identitet bez ijednog traga o alatu. Commit se radi rukom (scripts/uskladi_s_regocem.sh ne
 # commita), pa je dovoljno da jedan agent ne prepiše zadani identitet harnessa —
 # pamćenje nije mehanizam. Ovo jest: git odbija commit prije nego nastane.
 #
 # Aktivacija u svakom klonu (`.git/hooks` NIJE dio `git clone`):
 #     git config core.hooksPath .githooks
 #
-# Izuzetak — ako Goran ikad želi commitati pod drugim identitetom, adresu treba
-# navesti izričito (zarezom odvojen popis):
-#     git config taskmanagerai.dopusteniAutori "netko@example.com,drugi@example.com"
+# Dopušteni autori/committeri — zarezom odvojen popis, SAMO iz git configa:
+#     git config taskmanagerai.dopusteniAutori "ja@example.com,drugi@example.com"
+# Bez tog popisa (svjež klon) identitet se ne provjerava; trag alata se provjerava uvijek.
+# TASK-5109: ovdje je bila NAŠA adresa kao jedini zadani autor, a `scripts/install.sh`
+# uključuje ove kuke u svakom klonu — svakom drugom korisniku git je odbijao svaki commit.
 set -uo pipefail
 
 PORUKA="$1"
-ZADANI_AUTOR="goran.mahovlic@gmail.com"
 
 crveno() { printf '\033[31m%s\033[0m\n' "$1" >&2; }
 
@@ -45,7 +45,8 @@ fi
 # identitet podmetnut kroz okolinu, ne samo onaj iz `git config`.
 adresa() { git var "$1" 2>/dev/null | sed -n 's/.*<\(.*\)>.*/\1/p'; }
 
-DOPUSTENI="$ZADANI_AUTOR,$(git config --get taskmanagerai.dopusteniAutori || true)"
+DOPUSTENI="$(git config --get taskmanagerai.dopusteniAutori || true)"
+[ -n "$(printf '%s' "$DOPUSTENI" | tr -d '[:space:],')" ] || exit 0
 
 dopusten() {
   local trazena="$1" e
@@ -60,12 +61,10 @@ dopusten() {
 for ULOGA in AUTHOR COMMITTER; do
   EMAIL="$(adresa "GIT_${ULOGA}_IDENT")"
   if ! dopusten "$EMAIL"; then
-    crveno "commit-msg: ODBIJENO — ${ULOGA,,} je '$EMAIL', a očekuje se '$ZADANI_AUTOR'."
-    crveno "  Ispravi identitet:"
-    crveno "    git config user.name  'Goran Mahovlic'"
-    crveno "    git config user.email '$ZADANI_AUTOR'"
-    crveno "  Ako je drugi identitet namjeran, otvori ga izričito:"
-    crveno "    git config taskmanagerai.dopusteniAutori '$EMAIL'"
+    crveno "commit-msg: ODBIJENO — ${ULOGA,,} je '$EMAIL', a dopušteni su: $DOPUSTENI"
+    crveno "  Ispravi identitet (git config user.name / user.email) na jednog od dopuštenih."
+    crveno "  Ako je ovaj identitet namjeran, dodaj ga izričito:"
+    crveno "    git config taskmanagerai.dopusteniAutori '$DOPUSTENI,$EMAIL'"
     exit 1
   fi
 done

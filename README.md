@@ -37,6 +37,37 @@ Everything runs without a single external service. RAG (semantic search) is an o
 
 ---
 
+## Features
+
+One sentence per feature, with the document that explains it in full.
+
+**Running agents**
+
+- **Manual brake — global and per task.** `POST /api/pause` stops the system from taking on new work, and `POST /api/tasks/<ID>/pause` / `resume` holds a single task without changing its state, so it continues exactly where it stopped — [docs/API.md](docs/API.md) (“Pauza”, “Globalna kočnica”), [docs/SUSTAV.md](docs/SUSTAV.md).
+- **Concurrent-agent ceiling.** How many agents may work at once (1–10, default 3) is a setting on the Config page or `PUT /api/config/concurrency`; it applies within 5 s, without a restart, and every change is kept in `settings_history` — [docs/API.md](docs/API.md) (“Usporedni agenti”).
+- **Instruction to a running agent.** `POST /api/tasks/<ID>/uputa` (or 📨 on the card) delivers a message into the session that is already working, through a hook, so the agent neither stops nor loses context — [docs/UPUTE-AGENTU.md](docs/UPUTE-AGENTU.md).
+- **Decision gate.** A task tagged `needs-decision` waits for a person, or for a model you choose behind a deterministic risk filter — [docs/ODLUCIVANJE.md](docs/ODLUCIVANJE.md).
+- **Closing through the orchestrator.** `TaskCloser`, `SpawnFinalizer` and the `spawnCloseGuard` switch (off by default) keep an agent from closing its own task while its run still holds the lease; a person on the board can always override — [docs/INSTALL.md](docs/INSTALL.md) §5.2, [docs/API.md](docs/API.md).
+- **Echo guard and inbox.** `DispatchGuard` keeps scheduler notices and agent life-cycle messages from becoming new tasks, and a task left without a project lands in the inbox project instead of `NULL` — [CHANGELOG.md](CHANGELOG.md), [docs/SUSTAV.md](docs/SUSTAV.md).
+
+**Closing on evidence**
+
+- **Independent critic (`CriticGate`).** Before a task is closed, a critic runs its own checks over what the agent left on disk (L0/L1 for documents); every verdict lands in `critic_gate.jsonl` and `GET /api/critic/unverified` lists what could not be checked — [docs/API.md](docs/API.md) (“Kritičar”), [docs/INSTALL.md](docs/INSTALL.md) §5.2.
+- **Completion guard and structured step output.** `completed` without proof of execution is caught, and the `REGOC-IZLAZ` block gives each report a closed vocabulary of evidence; both start in shadow mode — [docs/INSTALL.md](docs/INSTALL.md) §5.2.
+- **Parsed results.** The agent's report is parsed on the server into a verdict badge and sections (`resultParsed`) and drawn with `textContent`, never as HTML — [docs/API.md](docs/API.md).
+- **Allowed state transitions.** `pending→completed` is refused with 409, and a closed or cancelled task can be reopened to `pending` — [docs/API.md](docs/API.md).
+
+**Knowledge, cost and models**
+
+- **RAG with two backends.** ChromaDB, pgvector or both (`dual`, for migration), switched and migrated collection by collection from **Config → RAG Backend**; `pg` is an optional dependency and the password never leaves through the API — [docs/INSTALL.md](docs/INSTALL.md) §5.3, [docs/API.md](docs/API.md).
+- **Energy estimate.** Electricity, CO₂ and water next to project cost, always as an estimate with a range; coefficients live in `config/energija.json` — [docs/INSTALL.md](docs/INSTALL.md) §5.2, [docs/DATABASE.md](docs/DATABASE.md).
+- **Model configuration.** `models/model-config.json` is written atomically with an audit trail, and the long-context `[1m]` label is accepted — [docs/API.md](docs/API.md) (“Modeli i davatelji”).
+- **Console.** Live event stream over a WebSocket and, optionally, running a command — [docs/TOOLS.md](docs/TOOLS.md).
+- **A clean install, checked.** init → server → board 200 → `POST`/`GET` task → priority-1 trigger, recorded in [docs/QA_SVJEZA_INSTALACIJA_2026-10-02.md](docs/QA_SVJEZA_INSTALACIJA_2026-10-02.md).
+- **How a full agent system is built around it.** Agents, knowledge, input channel and supervision, layer by layer — [docs/SUSTAV.md](docs/SUSTAV.md), [docs/AGENTI.md](docs/AGENTI.md), [docs/INTEGRACIJE.md](docs/INTEGRACIJE.md), [REGOC/README.en.md](REGOC/README.en.md).
+
+---
+
 ## Quick start
 
 You need [Bun](https://bun.sh) 1.1 or newer. Nothing else.
@@ -155,6 +186,11 @@ Details, providers and settings: [docs/ODLUCIVANJE.md](docs/ODLUCIVANJE.md).
 | [CHANGELOG.md](CHANGELOG.md) | what changed and why, newest first |
 | [docs/JEZICI.md](docs/JEZICI.md) | interface languages: choosing one, adding one |
 | [docs/ODLUCIVANJE.md](docs/ODLUCIVANJE.md) | tasks that wait for a decision; letting a model decide, and the risk filter |
+| [docs/UPUTE-AGENTU.md](docs/UPUTE-AGENTU.md) | sending an instruction to an agent that is already working (API, hook, fail-open) |
+| [docs/SUSTAV.md](docs/SUSTAV.md) | growing the board into a self-running system, layer by layer: agents, RAG, skills, input, brakes |
+| [docs/AGENTI.md](docs/AGENTI.md) | agent registry, skills and tools — what the package carries and what it fetches |
+| [docs/INTEGRACIJE.md](docs/INTEGRACIJE.md) | Nextcloud, e-mail, GitLab and GitHub integrations |
+| [docs/adr/](docs/adr/) | architecture decisions of the package |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | git hooks, commit rules, running the tests |
 | [REGOC/README.en.md](REGOC/README.en.md) | what a real agent system built around this looks like — split into topics (architecture, roles, task life cycle, delivery rules, gates and brakes, databases, cost and energy, lessons, build your own) |
 
@@ -175,9 +211,10 @@ git config core.hooksPath .githooks
 ```
 
 `.githooks/commit-msg` then refuses any commit whose message carries a `Co-Authored-By: … Claude`
-trailer or `noreply@anthropic.com`, and any commit whose author or committer is not
-`goran.mahovlic@gmail.com` (a different address can be opened explicitly). Details, and how to
-run the tests, in [CONTRIBUTING.md](CONTRIBUTING.md).
+trailer or `noreply@anthropic.com`, and — once you list the allowed identities with
+`git config taskmanagerai.dopusteniAutori "you@example.com"` — any commit whose author or
+committer is not on that list. Details, and how to run the tests, in
+[CONTRIBUTING.md](CONTRIBUTING.md).
 
 ---
 

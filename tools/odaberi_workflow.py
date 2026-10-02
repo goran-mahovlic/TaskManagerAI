@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """odaberi_workflow.py — treba li zadatak ići po tijeku rada i po kojem.
 
-Goran, 04.09.2026.: „htio bih da naši agenti koriste workflow po potrebi … to bi se trebalo
+Vlasnik, 04.09.2026.: „htio bih da naši agenti koriste workflow po potrebi … to bi se trebalo
 revidirati kod kreiranja zadatka: koji će se odrađivati po workflowu, koji neće, i koji
 workflow."
 

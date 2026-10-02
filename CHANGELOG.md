@@ -9,6 +9,16 @@
 - Komentari i `agents/workflows.json` navode interne dokumente po imenu („repozitorij sustava,
   nije u paketu") umjesto po našoj putanji.
 - Brana: novo pravilo „naš repozitorij sustava", osnovica 24 pojave / 14 datoteka → 0.
+- **Commit hook bez naše adrese.** `.githooks/commit-msg` je našu adresu imao kao jedinog
+  zadanog autora, a `scripts/install.sh` kuke uključuje u svakom klonu — svakom drugom
+  korisniku git je odbijao svaki commit. Dopušteni autori sada dolaze samo iz
+  `git config taskmanagerai.dopusteniAutori`; klon bez popisa ne provjerava identitet (trag
+  alata u poruci se provjerava uvijek). **Prijelaz:** tko se oslanjao na provjeru identiteta,
+  postavlja taj ključ. Brana: e-pošta 7/5 → 0 (uzorak hvata i `.eu` domenu).
+- Navodi odluka u komentarima pišu „vlasnik, <datum>: …" umjesto imena, primjeri „Korisnik A";
+  `notifyGoranTaskBurst` → `notifyOwnerTaskBurst`. Novo pravilo brane za imena ljudi:
+  114 pojava / 40 datoteka → 4/4 — preostalo je autorstvo (LICENSE, package.json, „Credit" u
+  README) i namjerno ostaje.
 
 ## 2026-10-02 — paket bez naših vrijednosti (TASK-5108, dug iz revizije TASK-5010 §D)
 

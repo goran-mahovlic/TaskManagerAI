@@ -260,7 +260,7 @@ export class ModeClassifier {
    * T1/TASK-3080: poruka ide I kao `description`. Prije je išla samo kao `title`, pa
    * E5 grana (`description && isVeryLongDescription(description) && hasMultipleActions`)
    * nikad nije mogla okinuti iz poruke — najsloženiji zahtjevi padali su u E2 i dobivali
-   * jednog agenta. Dokaz 30.07.: Goranov zahtjev od ~430 znakova s pet odvojenih poslova
+   * jednog agenta. Dokaz 30.07.: Vlasnikov zahtjev od ~430 znakova s pet odvojenih poslova
    * klasificiran kao E2/STANDARD, tim=[manda]; nakon ovoga dobiva puni tim.
    * Naslov ostaje skraćen jer duljina naslova nigdje nije mjerilo težine.
    */

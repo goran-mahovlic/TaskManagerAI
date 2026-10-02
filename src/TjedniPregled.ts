@@ -66,7 +66,7 @@ export const DANA_MIN = 1
 export const DANA_MAX = 3650
 export const SVE_VRIJEME_DANA = 3650
 /**
- * TASK-3691 (Goran, 04.09.2026.): „to se mora vući iz istog izvora! Ne smije biti razlike
+ * TASK-3691 (vlasnik, 04.09.2026.): „to se mora vući iz istog izvora! Ne smije biti razlike
  * i sve mora biti uključeno."
  *
  * Kartica projekta pokazuje UKUPNU potrošnju, a pregled je zadano gledao zadnjih 7 dana —

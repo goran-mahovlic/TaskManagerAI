@@ -1,7 +1,7 @@
 /**
  * OdluciteljPogon.ts — pogon za „neka model odluci umjesto mene".
  *
- * POVOD (Goran, 05.09.2026.): „prebacio sam odluku na model, ali ne vidim da se nesto desava."
+ * POVOD (vlasnik, 05.09.2026.): „prebacio sam odluku na model, ali ne vidim da se nesto desava."
  *
  * I nije se desavalo. Prekidac je od 04.09. samo UPISIVAO zeljeni nacin u
  * `config/odlucitelj.json`; jedini pozivatelj `tools/odlucitelj.py` bio je gumb „Odluci sada"
@@ -124,7 +124,7 @@ export function sazmiIshode(ishodi: OdluciteljIshod[]): {
   const pregledano = ishodi.length
   const upisani = ishodi.filter(i => i.ishod === 'upisano')
   // Najava NIJE „ostavljeno tebi": rok teče i model odlučuje sam kad istekne. Brojati je kao
-  // predaju čovjeku značilo bi tvrditi upravo ono što je Goran rekao da ne smije biti.
+  // predaju čovjeku značilo bi tvrditi upravo ono što je vlasnik rekao da ne smije biti.
   const najave = ishodi.filter(i => i.rijec === 'najava').length
   return {
     pregledano,
@@ -139,7 +139,7 @@ export function sazmiIshode(ishodi: OdluciteljIshod[]): {
  * Jednoredni sazetak za dnevnik i za ploču.
  *
  * „Ostavio tebi" se ispisuje SAMO kad ih doista ima — dok je prekidac ukljucen taj broj mora
- * biti 0 (Goran, 05.09.2026.: „nista ne treba cekati mene ako sam odabrao da model odlucuje
+ * biti 0 (vlasnik, 05.09.2026.: „nista ne treba cekati mene ako sam odabrao da model odlucuje
  * za mene"), pa bi stalni „ostavio tebi 0" bio šum.
  */
 export function opisiProlaz(z: OdluciteljZapis | null): string {
@@ -273,7 +273,7 @@ export interface NeizvedivoPustanje {
 }
 
 /**
- * Puštanje koje stroj NE MOŽE podići (Goran, 05.09.2026.: „izgleda da se zadaci nisu
+ * Puštanje koje stroj NE MOŽE podići (vlasnik, 05.09.2026.: „izgleda da se zadaci nisu
  * odključali").
  *
  * ODLUKA I POKRETANJE NISU ISTO. Odlučitelj napiše KRENI, ploča skine `needs-decision` i

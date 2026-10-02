@@ -3,7 +3,7 @@
  *
  * Razrada: `RAZRADA-3691_workflow_i_pragovi.md` (repozitorij sustava, nije u paketu) §4.
  *
- * ŠTO OVO RJEŠAVA. Zadatak koji nastane iz Goranove poruke dosad je dobivao samo naslov i
+ * ŠTO OVO RJEŠAVA. Zadatak koji nastane iz vlasnikove poruke dosad je dobivao samo naslov i
  * prepričan tekst. Što će se s njim raditi odlučivao je model u trenutku spawna — pa je isti
  * oblik posla svaki put išao drugim putem: nekad s istraživanjem, nekad bez, nekad s granom,
  * najčešće bez ijednog commita. Mjereno (A4/MergeGate): samo 1,4 % zadataka uopće dodiruje git

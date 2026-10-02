@@ -39,7 +39,7 @@
  *    zadanog za tog agenta. Promašen downgrade košta jedan ponovni pokušaj.
  * 2. NEODLUČENO = DANAŠNJE PONAŠANJE. Ako plan ne prođe provjeru, nema
  *    razlaganja — zadatak ide starim putem (jedan agent). Fail-safe, ne fail-open.
- * 3. NIŠTA SE NE STVARA BEZ POTVRDE. Plan se ZAPIŠE i JAVI Goranu; podzadaci
+ * 3. NIŠTA SE NE STVARA BEZ POTVRDE. Plan se ZAPIŠE i JAVI vlasniku; podzadaci
  *    nastaju tek na `approve` (PLAN mod: predloži, ne izvrši).
  *
  * ── ZAŠTO ULAZI/IZLAZI MORAJU BITI EKSPLICITNI ───────────────────────────────

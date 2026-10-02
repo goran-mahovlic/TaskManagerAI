@@ -48,7 +48,7 @@ export const ZADANE_POSTAVKE: DezurniPostavke = {
 }
 
 // ── Davatelji (TASK-4709) ───────────────────────────────────────────────────────────────
-// Goran, 06.09.2026.: ploča je nudila samo Ollamu jer je most znao samo njezin `/api/chat`.
+// Vlasnik, 06.09.2026.: ploča je nudila samo Ollamu jer je most znao samo njezin `/api/chat`.
 // Most sada zna pet oblika poziva (`dezurni.ts → NACIN_POZIVA_MOSTA`), pa se popis davatelja
 // više NE piše rukom nego IZVODI iz `models/model-config.json`. Ručni popis je jednom već
 // zaostao za mostom; izvod ne može.
@@ -133,7 +133,7 @@ function imaKljuc(ime: string, credPath: string): boolean {
 /**
  * Svi davatelji iz `model-config.json` + je li svaki stvarno upotrebljiv.
  * Davatelj bez ključa se NE skriva nego pošteno prijavi — skriven bi izgledao kao da ga nema,
- * a prijavljen kaže Goranu točno koji redak fali u `credentials.env`.
+ * a prijavljen kaže vlasniku točno koji redak fali u `credentials.env`.
  */
 export function davateljiDezurnog(
   mcPath: string = MODEL_CONFIG_PATH,

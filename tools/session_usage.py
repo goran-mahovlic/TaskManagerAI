@@ -127,7 +127,7 @@ def probe_with_reload() -> dict:
     se čeka idući ciklus. Ako je token isti, drugi pokušaj se NE radi — nema što promijeniti.
 
     VLASTITO osvježavanje preko `refreshToken` se NE radi: pisanje u datoteku s tajnama
-    može se sudariti s CLI-jem koji piše istu datoteku. To čeka Goranovu izričitu odluku.
+    može se sudariti s CLI-jem koji piše istu datoteku. To čeka vlasnikovu izričitu odluku.
     """
     token = load_token()
     headers = probe(token)

@@ -53,7 +53,7 @@ export const RAGFilterSchema = z.object({
   // R4/TASK-4311: filtar po projektu ide u Chroma `where {"project_id": ...}`,
   // ne u naknadno prosijavanje u memoriji.
   projectId: z.string().min(1).optional(),
-  // Goran, 04.09.2026.: „treba paziti da se ne obrišu pravila i pogreške … počistiti i
+  // Vlasnik, 04.09.2026.: „treba paziti da se ne obrišu pravila i pogreške … počistiti i
   // sortirati." Vrstu upisuje tools/rag_tipovi.py u `tip_regoc`; ovdje je filtar po njoj.
   tip: z.enum(['pravilo', 'lekcija', 'pogreska', 'istrazivanje', 'spec',
                'referenca', 'sjednica', 'izlaz-agenta', 'ocjena', 'ostalo']).optional(),

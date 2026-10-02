@@ -116,7 +116,7 @@ export function isEmptyOrFixtureTask(title?: string | null, description?: string
  *
  * Do 02.09.2026. vrata su stajala samo na dispatchu, pa je `POST /api/tasks` s
  * `description: ""` vracao 201 (probni TASK-3620/3621) — pravilo „task description
- * OBAVEZAN" (Goran, TASK-2406) nije bilo strojno provedeno na ULAZU, samo pri
+ * OBAVEZAN" (vlasnik, TASK-2406) nije bilo strojno provedeno na ULAZU, samo pri
  * pokretanju agenta. Rupa je ista kao TASK-2701: prazan zapis kasnije spawna
  * pravu Opus sesiju nad nicim.
  */

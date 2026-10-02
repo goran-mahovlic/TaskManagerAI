@@ -1,7 +1,7 @@
 /**
  * Tecaj — pretvorba USD → EUR za prikaz troška na ploči (TASK-3609)
  *
- * Goran, 02.09.2026.: „neka budu u € ne u $ — cijene idu za zadatke i za projekte."
+ * Vlasnik, 02.09.2026.: „neka budu u € ne u $ — cijene idu za zadatke i za projekte."
  *
  * MJERENJE OSTAJE U DOLARIMA. `run_log.jsonl` bilježi `cost_usd` jer dobavljač tako
  * naplaćuje; `agent_telemetry.py` i `tjedni_pregled.py` se ne diraju. Euro je stvar

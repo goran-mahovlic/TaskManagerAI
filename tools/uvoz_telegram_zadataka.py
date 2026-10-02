@@ -330,7 +330,7 @@ def trosak_transkripta(path: Path) -> dict | None:
 def uvezi_ostatak(samo_proba: bool) -> int:
     """Sve što je potrošeno, a nije ni na jednom zadatku — zbirno po danu.
 
-    Goran, 04.09.2026.: „sve mora biti uključeno". Segmentni uvoz hvata telegramske
+    Vlasnik, 04.09.2026.: „sve mora biti uključeno". Segmentni uvoz hvata telegramske
     zahtjeve od 13.07. (otkad transkript nosi biljeg `[OD: …]`), a agentski spawnovi su
     ionako u `cost_log`. Ostaje treći dio: sjednice bez ijednog zadatka (starije
     telegramske bez biljega i lokalne konzolne) i dijelovi sjednica PRIJE prve poruke.
@@ -344,7 +344,7 @@ def uvezi_ostatak(samo_proba: bool) -> int:
     for r in con.execute("SELECT session_id, SUM(cost_usd) s FROM cost_log WHERE session_id IS NOT NULL GROUP BY session_id"):
         vec_upisano[r["session_id"]] = r["s"] or 0.0
     # Projekt sjednice: ako su segmenti te iste sjednice već razvrstani, ostatak ide onamo.
-    # Bez toga bi se 645 USD zauvijek zadržalo u Pretincu kao „nerazvrstano" (Goran, 04.09.).
+    # Bez toga bi se 645 USD zauvijek zadržalo u Pretincu kao „nerazvrstano" (vlasnik, 04.09.).
     projekt_sesije: dict[str, Counter] = defaultdict(Counter)
     for r in con.execute("SELECT project_id, description FROM tasks WHERE description LIKE '%[uvoz:telegram segment=%'"):
         m = re.search(r"\[uvoz:telegram segment=([0-9a-f-]+)#", r["description"] or "")
@@ -537,8 +537,8 @@ def main() -> int:
                 continue
             s["grupa"] = grupa_iz_posiljatelja(s["posiljatelj"])
             pid = projekt_iz_teksta(s["zahtjev"], s["grupa"])
-            # Nasljeđivanje vrijedi samo unutar istog sugovornika: „nastavi" od Martine
-            # ne smije pokupiti projekt Goranove prethodne poruke.
+            # Nasljeđivanje vrijedi samo unutar istog sugovornika: „nastavi" od drugog korisnika
+            # ne smije pokupiti projekt vlasnikove prethodne poruke.
             isti = (s["posiljatelj"] == zadnji_posiljatelj)
             if pid:
                 s["projekt"], s["izvor"] = pid, "tekst"

@@ -16,7 +16,7 @@
  * autonomije propuste. Okidač radi jednu stvar: u trenutku `session_reset_at + ZAŠTITNI
  * RAZMAK` prisili SVJEŽE mjerenje potrošnje, pa se vrata otvore odmah umjesto da čekaju
  * redovni probe. Bez razmaka mjerenje zna vratiti staru brojku jer se kvota ne obnovi u
- * sekundi (Goranov prijedlog ~10 min).
+ * sekundi (vlasnikov prijedlog ~10 min).
  *
  * ČETIRI PRAVILA KOJA GA ČUVAJU OD SAMOG SEBE:
  *   1. NEMA BUĐENJA BEZ POSLA — prazan red čekanja (DIO 3) znači da se ne budi nitko;
@@ -26,7 +26,7 @@
  *      termin računa iz ZADNJE snimke pri svakom prolazu, nikad kao „prošli + 5 h".
  *   3. RAZMAK IZMEĐU POKUŠAJA RASTE — probudi se, kvote još nema, pokušaj opet: bez
  *      eksponencijalnog razmaka to je petlja koja troši upravo ono što čeka.
- *   4. ČOVJEK IMA PREDNOST — ako Goran upravo radi, buđenje se odgađa. Njegovih 30 pp
+ *   4. ČOVJEK IMA PREDNOST — ako vlasnik upravo radi, buđenje se odgađa. Njegovih 30 pp
  *      prozora ne smije pojesti stroj koji se probudio u istoj minuti.
  *
  * VRIJEME: sva se aritmetika radi ISKLJUČIVO nad `session_reset_at` (ISO s oznakom zone).
@@ -56,7 +56,7 @@ export const QUOTA_WAKEUP_LOG_PATH =
 // ============================================
 
 /**
- * Zaštitni razmak nakon `session_reset_at`. Goranov prijedlog (29.07.2026): ~10 min.
+ * Zaštitni razmak nakon `session_reset_at`. Vlasnikov prijedlog (29.07.2026): ~10 min.
  * Kvota se ne obnovi u sekundi — probe prerano vraća staru brojku, pa bi se okidač
  * ponašao kao da reset nije bio i potrošio pokušaj.
  */
