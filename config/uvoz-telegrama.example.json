@@ -1,0 +1,13 @@
+{
+  "_opis": "Primjer za tools/uvoz_telegram_zadataka.py (i vrijednost_inputa.py). Kopiraj u config/uvoz-telegrama.json ili $TM_HOME/config/uvoz-telegrama.json. Pravila se čitaju po redu; prvo čiji se uzorak (regex, bez obzira na veličinu slova) nađe u poruci određuje projekt. `osimGrupa` isključuje pravilo u navedenim grupama.",
+  "zadanaGrupa": "glavna",
+  "grupe": {
+    "klub": { "ljudi": ["ana", "marko"], "zadaniProjekt": "PRJ-200" }
+  },
+  "pravila": [
+    { "uzorak": "web ?stranic|landing", "projekt": "PRJ-201" },
+    { "uzorak": "task ?manager|daemon\\b", "projekt": "PRJ-100" },
+    { "uzorak": "modul|testiranje", "projekt": "PRJ-100", "osimGrupa": ["klub"] }
+  ],
+  "korisnici": { "ana": "Ana", "marko": "Marko" }
+}

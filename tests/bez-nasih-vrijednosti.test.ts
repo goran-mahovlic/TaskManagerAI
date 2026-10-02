@@ -106,10 +106,20 @@ const PRAVILA: Pravilo[] = [
     objasnjenje:
       'testovi i primjeri koriste neutralno ime (npr. „Korisnik"); popis korisnika je '
       + 'konfiguracija, ne kod (TASK-5108, v. tests/ingest.test.ts)',
-    osnovicaPojava: 1,
-    osnovicaDatoteka: [
-      'tools/vrijednost_inputa.py',
-    ],
+    // TASK-5108: 1 → 0, nadimci korisnika su `korisnici` u uvoz-telegrama.json.
+    osnovicaPojava: 0,
+    osnovicaDatoteka: [],
+  },
+  {
+    ime: 'nazivi naših internih projekata i RAG kolekcija',
+    // `ULX5M` samo kao literal u navodnicima (ID projekta): kao ključna riječ teme uz
+    // ULX3S/ECP5 u tools/rag_izdvoji.py to je javni naziv pločice, ne naš podatak.
+    uzorak: ['REGOC_', 'SYSTEM|Sport', 'AI|intergalaktik_', 'sportai|agent_', 'emard|[\'"]ULX', '5M[\'"]'].join(''),
+    objasnjenje:
+      'projekti i kolekcije su podatak instalacije — konfiguracija (npr. uvoz-telegrama.json) '
+      + 'ili interni alat izvan paketa (TASK-5108, v. .gitignore)',
+    osnovicaPojava: 0,
+    osnovicaDatoteka: [],
   },
   {
     ime: 'naš raspored mapa (~/.claude/regoc)',
@@ -119,12 +129,9 @@ const PRAVILA: Pravilo[] = [
     uzorak: '\\.claude/regoc|\\.claude[\'"]\\s*[,/]\\s*[\'"]regoc',
     objasnjenje: 'konfiguracija kroz `konfigPutanja()`, stanje kroz `stanjePutanja()` (src/core/paths.ts) '
       + 'ili `tools/tm_putanje.py` u Pythonu (ADR-0001 O1.4)',
-    // TASK-5108: 120/34 → 2/2. Ostatak su dva interna alata koja izlaze iz paketa (D4).
-    osnovicaPojava: 2,
-    osnovicaDatoteka: [
-      'tools/razvrstaj_pretinac.py',
-      'tools/razvrstaj_prijave.py',
-    ],
+    // TASK-5108: 120/34 → 0 (D3), zadnja dva interna alata izbačena iz paketa (D4).
+    osnovicaPojava: 0,
+    osnovicaDatoteka: [],
   },
 ]
 

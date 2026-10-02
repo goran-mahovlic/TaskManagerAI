@@ -85,3 +85,9 @@ config/odlucitelj.json
 config/workflow-gate.json
 config/memory-config.json
 config/stale-watchdog.json
+config/uvoz-telegrama.json
+# Jednokratni interni alati (naši projekti, kolekcije i ljudi u kodu) — žive u repozitoriju
+# sustava, ne u paketu (TASK-5108, kao scripts/uskladi_s_regocem.sh).
+tools/rag_audit.py
+tools/razvrstaj_pretinac.py
+tools/razvrstaj_prijave.py

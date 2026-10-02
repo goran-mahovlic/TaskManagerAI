@@ -79,3 +79,34 @@ describe('tools/dezurni.py — putovi servisa i slanja samo iz okoline (TASK-510
       + "[PosixPath('/opt/posalji.py')]")
   })
 })
+
+describe('tools/uvoz_telegram_zadataka.py — projekti, grupe i ljudi su konfiguracija (TASK-5108)', () => {
+  const PROBA = 'import uvoz_telegram_zadataka as u; '
+    + 'print(u.grupa_iz_posiljatelja("Ana (uid:2)"), u.grupa_iz_posiljatelja("Netko")); '
+    + 'print(u.projekt_iz_teksta("popravi daemon", "glavna"), u.projekt_iz_teksta("popravi daemon", "klub"), '
+    + 'u.projekt_iz_teksta("restart daemon u task manager", "klub"), u.projekt_iz_teksta("bez veze"))'
+
+  test('bez konfiguracije: nema pravila, jedna zadana grupa, pretinac paketa', () => {
+    const dom = mkdtempSync(join(tmpdir(), 'tm-uvoz-'))
+    const r = py(PROBA + '; print(u.ZADANO_PO_GRUPI.get("glavna", u.ZADANI_PROJEKT))', { TM_HOME: dom })
+    expect(r.izlaz).toBe('glavna glavna\nNone None None None\nPRJ-033')
+  })
+
+  test('s konfiguracijom: pravila po redu, osimGrupa, grupe po pošiljatelju, nadimci korisnika', () => {
+    const dom = mkdtempSync(join(tmpdir(), 'tm-uvoz-'))
+    mkdirSync(join(dom, 'config'))
+    writeFileSync(join(dom, 'config', 'uvoz-telegrama.json'), JSON.stringify({
+      zadanaGrupa: 'glavna',
+      grupe: { klub: { ljudi: ['ana'], zadaniProjekt: 'PRJ-200' } },
+      pravila: [
+        { uzorak: 'task ?manager', projekt: 'PRJ-100' },
+        { uzorak: 'daemon', projekt: 'PRJ-100', osimGrupa: ['klub'] },
+      ],
+      korisnici: { ana: 'Ana K.' },
+    }))
+    const r = py(PROBA + '; print(u.ZADANO_PO_GRUPI); print(u.KORISNICI)', { TM_HOME: dom })
+    expect(r.izlaz).toBe(
+      "klub glavna\nPRJ-100 None PRJ-100 None\n{'klub': 'PRJ-200'}\n{'ana': 'Ana K.'}")
+  })
+})
+

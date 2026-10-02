@@ -12,7 +12,7 @@ JEDINICA UVOZA = SEGMENT, NE SJEDNICA
     troška, a svaka pokriva CIJELI radni dan i 10–40 zasebnih zahtjeva. Uvoz po
     sjednici bi dao 52 zadatka naslovljena prvom porukom jutra — netočan naslov,
     netočan projekt i neupotrebljiv datum. Zato se transkript reže na segmente:
-    jedan segment = jedna Goranova/Martinina poruka + sav rad do sljedeće poruke.
+    jedan segment = jedna korisnikova poruka + sav rad do sljedeće poruke.
     Preostalih 754 transkripta traju ~2 s i imaju 1 korak (prekinuti pokušaji) —
     oni ne postaju zadatci.
 
@@ -22,14 +22,15 @@ JEDINICA UVOZA = SEGMENT, NE SJEDNICA
     da trošak ostane zbrojen, a ploča čitljiva.
 
 PROJEKT
-    1. ključne riječi u tekstu segmenta (mapa niže),
+    1. pravila iz `uvoz-telegrama.json` (uzorak u tekstu segmenta → projekt),
     2. ako nema pogotka — projekt prethodnog segmenta iste sjednice („nastavi", „ok idemo"),
-    3. inače zadani projekt grupe (REGOČ → PRJ-033 Pretinac, SportAI → PRJ-034).
+    3. inače zadani projekt grupe, odnosno pretinac PRJ-033.
     Izvor odluke se zapisuje u opis zadatka, pa je ispravak kasnije ciljan.
 
 GRUPA
     Radni direktorij ne razlikuje grupe (797 od 800 sjednica ima isti `cwd`), ali
-    biljeg `[OD: <ime>]` razlikuje: Goran → REGOČ, Martina/Deborah → IntergalaktikSportAI.
+    biljeg `[OD: <ime>]` razlikuje: tko pripada kojoj grupi zadaje se u konfiguraciji
+    (`grupe.<ime>.ljudi`); svi ostali su u zadanoj grupi.
 
 TROŠAK
     Iste tarife kao tools/run_tokens.py, uz dedup po `message.id` (isti API odgovor
@@ -129,50 +130,41 @@ def cijena(inp, out, cr, cw, model, cw1h=0) -> float:
             + max(0, cw - cw1h) * t["cw"] + cw1h * t["cw1h"]) / 1e6
 
 
-SPORTAI_LJUDI = {"martina", "deborah", "debora"}
+# ── Projekti, grupe i ljudi su KONFIGURACIJA (TASK-5108) ────────────────────────────────
+# Prije su ovdje bili nazivi naših projekata, imena naših ljudi i podjela na naše dvije
+# Telegram grupe. To je podatak jedne instalacije, ne kod paketa: čita se iz
+# `uvoz-telegrama.json` (TM_UVOZ_TELEGRAMA_CONFIG → $TM_HOME/config → config/ uz paket),
+# primjer je `config/uvoz-telegrama.example.json`. Bez datoteke: nijedno pravilo, jedna
+# grupa, sve ide u pretinac paketa (PRJ-033, v. INBOX_PROJECT_ID u TaskManagerSQL.ts).
+ZADANI_PROJEKT = "PRJ-033"
+
+
+def _ucitaj_konfiguraciju() -> dict:
+    put = konfig("uvoz-telegrama.json", "TM_UVOZ_TELEGRAMA_CONFIG")
+    try:
+        return json.loads(put.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+_KONF = _ucitaj_konfiguraciju()
+ZADANA_GRUPA: str = _KONF.get("zadanaGrupa") or "glavna"
+#: {grupa: {ljudi: [ime…], zadaniProjekt: "PRJ-…"}}
+GRUPE: dict = _KONF.get("grupe") or {}
+#: Pravila po redu, prvo koje se poklopi odlučuje: {uzorak, projekt, osimGrupa?: [grupa…]}.
+TEKST_PRAVILA: list[dict] = _KONF.get("pravila") or []
+ZADANO_PO_GRUPI = {g: v["zadaniProjekt"] for g, v in GRUPE.items() if v.get("zadaniProjekt")}
+#: Nadimak pošiljatelja (mala slova) → ime na računu; koristi ga tools/vrijednost_inputa.py.
+KORISNICI: dict = _KONF.get("korisnici") or {}
 
 
 def grupa_iz_posiljatelja(posiljatelj: str) -> str:
     ime = (posiljatelj or "").split("(")[0].strip().lower()
-    return "SportAI" if ime in SPORTAI_LJUDI else "REGOČ"
+    for grupa, v in GRUPE.items():
+        if ime in {str(x).lower() for x in v.get("ljudi") or []}:
+            return grupa
+    return ZADANA_GRUPA
 
-
-TEKST_PRAVILA: list[tuple[str, str]] = [
-    (r"muszg|volfram|pusti\.sh|turnir|planinarsk|trešnjevk|tresnjevk", "PRJ-041"),
-    (r"opensport|karta sporta|sportskih objekata", "PRJ-044"),
-    (r"kinemotion|skok u dalj|skok s motkom", "PRJ-045"),
-    (r"playvision|en garde|eu prijav|prijav\w* za eu|natječaj|natjecaj|pismo namjere", "PRJ-034"),
-    (r"pk\.?1\.?1\.?17|ulx-precom|ekohezij", "PRJ-042"),
-    (r"regoč enterprise|regoc enterprise", "PRJ-043"),
-    (r"dribler", "PRJ-021"),
-    (r"cubes|ch32|kockic", "CUBES_2026"),
-    (r"tinysa|litevna|sensorberg|\bemc\b|lisn", "REGOC_EMC"),
-    (r"gladius|chasing|podvodn", "PRJ-018"),
-    (r"\bigor\b|bm20c|bmh20c|guardian|nrf54", "PRJ-027"),
-    (r"\bcm5\b|test ?point|breakout", "PRJ-039"),
-    (r"mio168|\beez\b|\bbb3\b", "PRJ-054"),
-    (r"e-?bbes|ffm-a7100|vtm-ac7200|vgp-j11|mpm3833", "PRJ-053"),
-    (r"ulx5m|serdes|pcie|gatemate|ksz9031", "ULX5M"),
-    (r"ulx3s|reach|rohs", "PRJ-057"),
-    (r"piper|\btts\b|voice studio|naglas|glasovn", "PRJ-035"),
-    (r"regoč music|regoc music|pjesm|glazb", "PRJ-038"),
-    (r"regocmobile|node-a|node-b|appliance|virtualbox", "PRJ-032"),
-    (r"taskmanagerai|samostalan paket|standalone", "PRJ-048"),
-    (r"kicad.?timetrack", "PRJ-049"),
-    (r"espacenet|patent|\bepo\b|\bfto\b", "PRJ-046"),
-    (r"pcbparts|jlcpcb|lcsc|mouser", "PRJ-058"),
-    (r"preš\w* za|presa za|zatik", "PRJ-036"),
-    (r"magaphone|mppt|bq24650", "PRJ-037"),
-    (r"sunčan\w* elektran|fotonapon|\bhep\b|\bfne\b", "PRJ-056"),
-    (r"lifeos", "PRJ-059"),
-    (r"certifikat.*prompt|prompting certifikat", "PRJ-031"),
-    (r"telemetrij", "PRJ-060"),
-    (r"pravopis|hrvatsk\w* jezik", "PRJ-050"),
-    (r"regoč|regoc|daemon|task ?manager|spawn|agent|autonomij|telegram|zadat\w*k|token", "REGOC_SYSTEM"),
-    (r"intergalaktik", "INTERGALAKTIK"),
-]
-
-ZADANO_PO_GRUPI = {"SportAI": "PRJ-034", "REGOČ": "PRJ-033"}
 
 BILJEG = re.compile(r"\[OD:\s*([^\]]*)\]")
 KONTEKST = re.compile(r"\[PRETHODNI KONTEKST.*?\]\s*", re.DOTALL)
@@ -186,19 +178,17 @@ def ocisti(tekst: str) -> str:
     return re.sub(r"\s+", " ", t).strip()
 
 
-# U grupi IntergalaktikSportAI se NE radi na REGOČ sustavu — ondje „modul", „stranica"
-# i „testiranje" znače muzejsku stranicu, ne daemon. Zato se REGOC_SYSTEM tamo prihvaća
-# samo na izričit spomen sustava.
-IZRICITO_SUSTAV = re.compile(r"regoč|regoc|task ?manager|daemon|spawn|agent\b|token", re.IGNORECASE)
-
-
-def projekt_iz_teksta(tekst: str, grupa: str = "REGOČ") -> str | None:
+def projekt_iz_teksta(tekst: str, grupa: str | None = None) -> str | None:
+    """Prvo pravilo čiji se uzorak nađe u tekstu. `osimGrupa` isključuje pravilo u tim
+    grupama — npr. u grupi u kojoj „modul" i „stranica" ne znače naš sustav; izričit
+    spomen sustava se tada zadaje kao zasebno, ranije pravilo bez `osimGrupa`."""
+    grupa = grupa or ZADANA_GRUPA
     t = (tekst or "").lower()
-    for uzorak, pid in TEKST_PRAVILA:
-        if re.search(uzorak, t, re.IGNORECASE):
-            if pid == "REGOC_SYSTEM" and grupa == "SportAI" and not IZRICITO_SUSTAV.search(tekst or ""):
-                continue
-            return pid
+    for pravilo in TEKST_PRAVILA:
+        if grupa in (pravilo.get("osimGrupa") or []):
+            continue
+        if re.search(pravilo["uzorak"], t, re.IGNORECASE):
+            return pravilo["projekt"]
     return None
 
 
@@ -389,7 +379,7 @@ def uvezi_ostatak(samo_proba: bool) -> int:
             # Sadržaj odlučuje samo kad ga ima dovoljno: sjednica od dvije sekunde s jednim
             # korakom nosi previše malo teksta da bi pogodak bio dokaz, a ne nagađanje.
             dovoljno_traga = t["usd"] >= 0.50 or len(t.get("uvod", "")) >= 400
-            pid = (projekt_iz_teksta(t.get("uvod", "")) if dovoljno_traga else None) or "PRJ-033"
+            pid = (projekt_iz_teksta(t.get("uvod", "")) if dovoljno_traga else None) or ZADANI_PROJEKT
         kljuc = f"{dan}|{pid}"
         if kljuc in postojeci_dani or dan in postojeci_dani:
             continue
@@ -441,7 +431,7 @@ def uvezi_ostatak(samo_proba: bool) -> int:
                    VALUES (?,?,?,'completed',3,'regoc',?,?,'uvoz','[]',?,100,'[]',?,?,'[]',?,?,'',0)""",
                 (tid, f"[zbirno] Sjednice bez zadatka — {dan} ({v['sjednica']})", opis,
                  v["start"], v["kraj"], pid,
-                 json.dumps(["uvoz-ostatak"] + (["nerazvrstano"] if pid == "PRJ-033" else []), ensure_ascii=False),
+                 json.dumps(["uvoz-ostatak"] + (["nerazvrstano"] if pid == ZADANI_PROJEKT else []), ensure_ascii=False),
                  f"Zbirno uvezena neuknjižena potrošnja: {v['usd']:.2f} USD iz {v['sjednica']} sjednica.",
                  v["start"], v["kraj"]))
             con.execute(
@@ -556,7 +546,7 @@ def main() -> int:
             elif zadnji_projekt and isti:
                 s["projekt"], s["izvor"] = zadnji_projekt, "nastavak"
             else:
-                s["projekt"], s["izvor"] = ZADANO_PO_GRUPI.get(s["grupa"], "PRJ-033"), "grupa"
+                s["projekt"], s["izvor"] = ZADANO_PO_GRUPI.get(s["grupa"], ZADANI_PROJEKT), "grupa"
                 zadnji_projekt = s["projekt"]
             zadnji_posiljatelj = s["posiljatelj"]
             svi.append(s)

@@ -1,3 +1,26 @@
+## 2026-10-02 — paket bez naših vrijednosti (TASK-5108, dug iz revizije TASK-5010 §D)
+
+- **Adrese servisa samo iz okoline.** Alati u `tools/` više nemaju naš LAN kao zadanu
+  vrijednost: Ollama iz `TM_OLLAMA_URL`, Chroma iz `TM_CHROMA_HOST`/`TM_CHROMA_PORT`, kroz
+  novi `tools/tm_putanje.py` (Python zrcalo `src/core/paths.ts`). Bez varijable alat jasno
+  odbija umjesto da gađa tuđu adresu.
+- **Bez rasporeda mapa izvornog sustava.** Ploča, jezgra i alati čitaju konfiguraciju kroz
+  `konfigPutanja()` (`model-config.json` → `TM_MODEL_CONFIG`, registar agenata
+  `REGOC_AGENTS.json` → `TM_AGENTS_REGISTRY`, `module-config.json`, `odlucitelj.json`,
+  `workflow-gate.json`, `memory-config.json`…), a stanje u `$TM_HOME/data`. **Prijelaz:**
+  instalacija koja je te datoteke držala u naslijeđenoj mapi postavlja `TM_HOME` (i po potrebi
+  pojedine varijable) ili ih kopira u `$TM_HOME/config/`.
+- Dežurni: podizanje servisa iz `TM_SERVIS_RESTART` (`"skripta arg {s}; druga"`), slanje iz
+  `TM_TELEGRAM_SEND` — bez zadanih putanja. `LiveDbGuard` dodatne žive baze dobiva iz
+  `TM_LIVE_DB`. `install.sh` posuđuje ovisnosti iz `TM_POSUDI_IZ`.
+- Uvoz Telegrama: pravila projekata, grupe i nadimci ljudi su konfiguracija
+  (`config/uvoz-telegrama.example.json`). `tools/rag_audit.py`, `tools/razvrstaj_prijave.py`
+  i `tools/razvrstaj_pretinac.py` izbačeni iz paketa (interni jednokratni alati).
+- Primjeri i testovi: izmišljeni Telegram chat id `-1001234567890`, neutralan pošiljatelj.
+- Brana `tests/bez-nasih-vrijednosti.test.ts`: uzorak rasporeda mapa hvata i rastavljeni oblik
+  (putanja složena iz dijelova u `join()`), nova pravila za ime vlasnika kao podatak i za nazive
+  internih projekata; osnovice IP, chat id, HOME i raspored mapa na 0.
+
 ## 2026-10-02 — svježa instalacija po INSTALL.md stvarno radi (QA svježeg klona)
 
 QA svježeg klona s praznim `HOME`-om, korak po korak prema `docs/INSTALL.md`, našao je dva

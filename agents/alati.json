@@ -53,8 +53,8 @@
       "naziv": "RAG alati (u paketu)",
       "svrha": "Pregled, tipizacija, zaštita i arhiviranje znanja.",
       "vrsta": "u-paketu",
-      "instalacija": "već su u tools/ (rag_audit.py, rag_tipovi.py, rag_archive.py, rag_izdvoji.py)",
-      "provjera": "python3 tools/rag_audit.py --pregled",
+      "instalacija": "već su u tools/ (rag_tipovi.py, rag_archive.py, rag_izdvoji.py); adresa iz TM_CHROMA_HOST/TM_CHROMA_PORT",
+      "provjera": "python3 tools/rag_tipovi.py --pregled",
       "za_agente": ["manda", "regoc"]
     },
     "mjerenja": {

@@ -59,7 +59,9 @@ NAZIVI = {
 ALATI_ISTRAZIVANJA = {"WebSearch", "WebFetch", "mcp__pcbparts", "Agent", "Task"}
 ALATI_PISANJA = {"Write", "Edit", "NotebookEdit", "MultiEdit"}
 
-KORISNICI = {"goran": "Goran", "martina": "Martina Sport", "deborah": "Deborah", "debora": "Deborah"}
+# Nadimci pošiljatelja → ime na računu: `korisnici` u uvoz-telegrama.json (TASK-5108 — imena
+# ljudi su podatak instalacije, ne kod). Bez konfiguracije ime ide kako je napisano.
+KORISNICI = uvoz.KORISNICI
 
 
 def korisnik(posiljatelj: str) -> str:
