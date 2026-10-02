@@ -1,3 +1,17 @@
+## 2026-10-02 — README: odjeljak „Značajke” (TASK-5110)
+
+- `README.md` (**Features**) i `README.hr.md` (**Značajke**): jedna rečenica po značajki s
+  poveznicom na dokument — ručna kočnica (globalna i po zadatku), strop usporednih agenata
+  (`PUT /api/config/concurrency`), uputa agentu u radu (`POST /api/tasks/<ID>/uputa`),
+  odluka o pokretanju, zatvaranje kroz orkestrator, straža jeke i pretinac, nezavisni kritičar
+  (`CriticGate`), completion-guard i `REGOC-IZLAZ`, parsirani rezultat, prijelazi stanja,
+  RAG s dva pozadinska sustava, procjena energije, postavke modela, konzola, provjerena
+  prazna instalacija (J1–J12 iz `docs/GAP_20260924.md`).
+- Tablica dokumentacije dobila je `docs/UPUTE-AGENTU.md`, `docs/SUSTAV.md`, `docs/AGENTI.md`,
+  `docs/INTEGRACIJE.md` i `docs/adr/`.
+- Sam tekst README-a ušao je u commit 5da4841 (TASK-5109): dva zadatka radila su u istom
+  radnom stablu, a taj je commit pokupio i ove izmjene. Ovaj zapis je trag TASK-5110.
+
 ## 2026-10-02 — bez zadane mape repozitorija sustava (TASK-5109)
 
 - **Repozitorij sustava samo iz okoline.** Ploča, `TaskTelemetry`, `TjedniPregled`,
