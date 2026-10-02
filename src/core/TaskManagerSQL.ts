@@ -15,6 +15,7 @@ import { ensureInstructionsSchema, addInstruction, listInstructions, claimUndeli
 import Database, { type Statement } from "bun:sqlite";
 import { TaskIdAllocator } from "./TaskIdAllocator";
 import { seedConcurrency, getConcurrency, setConcurrency, concurrencyHistory, CONCURRENCY_KEY, CONCURRENCY_ENV } from "./ConcurrencySetting";
+import { getAutonomyThresholds, setAutonomyThresholds, autonomyThresholdsHistory, type AutonomyThresholds } from "./AutonomyThresholdSetting";
 import { assertNotLiveDbInTest } from "./LiveDbGuard";
 import { TM_DB, osigurajMapu } from "./paths";
 // TASK-3516: jedno pravilo poretka za cijeli TaskManager — najnovije na vrhu.
@@ -577,6 +578,11 @@ export class TaskManagerSQL {
   getConcurrencySetting() { return getConcurrency(this.db); }
   setConcurrencySetting(value: number, by: string, source = 'api') { return setConcurrency(this.db, value, by, source); }
   getConcurrencyHistory(limit = 20) { return concurrencyHistory(this.db, limit); }
+
+  // Pragovi vrata autonomije (settings: autonomy.*). Bez seeda — nepostojeći redak = zadano.
+  getAutonomySetting() { return getAutonomyThresholds(this.db); }
+  setAutonomySetting(input: Partial<AutonomyThresholds>, by: string, source = 'api') { return setAutonomyThresholds(this.db, input, by, source); }
+  getAutonomyHistory(limit = 20) { return autonomyThresholdsHistory(this.db, limit); }
 
   /**
    * Pauziraj/nastavi zadatak. Status se NE dira — pauza je ortogonalna dimenzija

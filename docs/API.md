@@ -143,6 +143,31 @@ curl -X PUT http://localhost:17781/api/config/concurrency \
   početna vrijednost dok postavka još ne postoji. Ako je postavljena, odgovor to javlja u
   `envDeprecated`.
 
+### Vrata autonomije (pragovi)
+
+Postotci potrošnje na kojima autonomija usporava ili staje. **Postavka TaskManagera** (tablica
+`settings`, ključevi `autonomy.session_autonomy`, `autonomy.session_caution`,
+`autonomy.session_block`, `autonomy.weekly_block`), mijenja se uživo bez restarta. Zadano:
+sesija **70 / 85 / 95 %**, tjedan **90 %**.
+
+```bash
+curl http://localhost:17781/api/config/autonomy
+# {"sessionAutonomy":70,"sessionCaution":85,"sessionBlock":95,"weeklyBlock":90,"min":10,"max":100,
+#  "source":"default","usage":{"sessionPercent":73,"weeklyPercent":40,…},
+#  "zone":{"session":"task-by-task","weeklyBlocked":false},"history":[]}
+
+curl -X PUT http://localhost:17781/api/config/autonomy \
+  -H "Content-Type: application/json" \
+  -d '{"sessionAutonomy":80,"by":"ana"}'
+```
+
+- Cijeli postotci **10–100**, strogo `sessionAutonomy < sessionCaution < sessionBlock`; tjedni je
+  neovisan. Djelomičan PUT je dopušten; nepoznato polje ili nevaljan skup vraća `400`.
+- Povijest promjena (staro → novo, tko, izvor) ide u `settings_history`, po ključu.
+- `usage` je trenutačna potrošnja (isti izvor kao `/api/session-usage`), `zone` gdje je ona s
+  obzirom na pragove — za prikaz na klizaču.
+- Nevaljan zapis u bazi znači zadnji dobar skup, pa zadane vrijednosti — nikad „bez praga”.
+
 ### Odluka o pokretanju (`needs-decision`)
 
 Zadatak s oznakom `needs-decision` (ili `no-autonomy`, `waiting-for-human`, `interactive`) čeka

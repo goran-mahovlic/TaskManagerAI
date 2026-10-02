@@ -1,3 +1,14 @@
+## 2026-10-02 — pragovi vrata autonomije su postavka, promjenjiva uživo
+
+- Modul `src/core/AutonomyThresholdSetting.ts` (ista datoteka kao u REGOČ pogonu): ključevi
+  `autonomy.session_autonomy|session_caution|session_block|weekly_block` u tablici `settings`,
+  zadano 70/85/95/90, audit po ključu u `settings_history`, čitač s kešom ≤5 s.
+- `GET/PUT /api/config/autonomy`: validacija 10–100 i redoslijed autonomija < oprez < blokada,
+  djelomičan PUT, odgovor s trenutačnom potrošnjom (`usage`) i zonom za klizač (`zone`),
+  WebSocket `autonomy_changed`.
+- Nevaljan ili nečitljiv zapis → zadnji dobar skup, pa zadano (nikad „bez praga”).
+- Testovi: `tests/autonomy-threshold-setting.test.ts` (6, uključujući HTTP na pravoj ploči).
+
 ## 2026-10-02 — README: odjeljak „Značajke” (TASK-5110)
 
 - `README.md` (**Features**) i `README.hr.md` (**Značajke**): jedna rečenica po značajki s

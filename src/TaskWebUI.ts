@@ -67,6 +67,7 @@ import { KonfiguracijskiRegistar } from './core/orchestrator/AgentRegistry'
 import { readPauseState, writePauseState, describePause } from './core/PauseControl'
 import { parseInstructionInput } from './core/TaskInstructions'
 import { parseConcurrencyInput, formatConcurrencyChange, CONCURRENCY_ENV, CONCURRENCY_MIN, CONCURRENCY_MAX, CONCURRENCY_DEFAULT } from './core/ConcurrencySetting'
+import { parseAutonomyInput, formatAutonomyChanges, usageZone, AUTONOMY_DEFAULTS, AUTONOMY_MIN, AUTONOMY_MAX, AUTONOMY_KEYS, AUTONOMY_CACHE_MS } from './core/AutonomyThresholdSetting'
 // TASK-3461: stanje MJERILA potrošnje (razlikuje „čekam kvotu" od „mjerilo ne radi").
 import { readWaitingQueue } from './core/AutonomyQueue'
 import { formatLocalTime } from './core/QuotaWakeup'
@@ -13005,6 +13006,58 @@ async function handleConcurrencyPut(req: Request): Promise<Response> {
   return new Response(JSON.stringify({ ...concurrencyPayload(), change: ch }), { headers: { 'Content-Type': 'application/json' } })
 }
 
+// ─── Vrata autonomije: pragovi ───────────────────────────────────────────────
+// Izvor istine: tablica `settings` (core/AutonomyThresholdSetting.ts, ključevi autonomy.*):
+// sesija 70/85/95 %, tjedan 90 % su ZADANE vrijednosti. Uz pragove ide trenutačna potrošnja
+// (isti izvor kao /api/session-usage) i zona, da Config može pokazati gdje smo na klizaču.
+async function autonomyPayload() {
+  const cur = taskManager.getAutonomySetting()
+  let usage: any = null
+  try {
+    const u = await resolveSessionUsage({ force: false }, sessionUsageDeps)
+    usage = { sessionPercent: u.sessionPercent, weeklyPercent: u.weeklyPercent, status: u.status,
+      sessionResetAt: u.sessionResetAt, ageMs: u.ageMs, stale: u.stale, source: u.source }
+  } catch (e) { usage = { error: String(e) } }
+  return {
+    ...cur.values,
+    min: AUTONOMY_MIN, max: AUTONOMY_MAX, defaults: AUTONOMY_DEFAULTS, keys: AUTONOMY_KEYS,
+    cacheMs: AUTONOMY_CACHE_MS,
+    source: cur.source, updatedBy: cur.updatedBy, updatedAt: cur.updatedAt, invalid: cur.invalid,
+    usage,
+    zone: usageZone(usage?.sessionPercent, usage?.weeklyPercent, cur.values),
+    history: taskManager.getAutonomyHistory(20),
+  }
+}
+
+async function handleAutonomyGet(): Promise<Response> {
+  try {
+    return new Response(JSON.stringify(await autonomyPayload()), { headers: { 'Content-Type': 'application/json' } })
+  } catch (error) {
+    return new Response(JSON.stringify({ error: String(error) }), { status: 500, headers: { 'Content-Type': 'application/json' } })
+  }
+}
+
+async function handleAutonomyPut(req: Request): Promise<Response> {
+  let body: any
+  try { body = await req.json() } catch {
+    return new Response(JSON.stringify({ error: 'Neispravno JSON tijelo' }), { status: 400, headers: { 'Content-Type': 'application/json' } })
+  }
+  const p = parseAutonomyInput(body, taskManager.getAutonomySetting().values)
+  if (!p.ok) return new Response(JSON.stringify({ error: p.error }), { status: 400, headers: { 'Content-Type': 'application/json' } })
+  const by = typeof body.by === 'string' && body.by.trim() ? body.by.trim() : 'config'
+  const source = typeof body.source === 'string' && body.source.trim() ? body.source.trim().slice(0, 32) : 'config'
+  const input: Record<string, number> = {}
+  for (const k of Object.keys(AUTONOMY_KEYS)) if (k in body) input[k] = (p.values as any)[k]
+  let ch
+  try { ch = taskManager.setAutonomySetting(input, by, source) } catch (e) {
+    return new Response(JSON.stringify({ error: e instanceof Error ? e.message : String(e) }), { status: 400, headers: { 'Content-Type': 'application/json' } })
+  }
+  if (ch.changes.length) console.log(`[API] 🎚️ ${formatAutonomyChanges(ch.changes, ch.changedBy, source)}`)
+  const message = JSON.stringify({ type: 'autonomy_changed', autonomy: { ...ch.values, by: ch.changedBy } })
+  wsClients.forEach(client => { try { client.send(message) } catch { wsClients.delete(client) } })
+  return new Response(JSON.stringify({ ...(await autonomyPayload()), change: ch }), { headers: { 'Content-Type': 'application/json' } })
+}
+
 async function handleSetPause(req: Request): Promise<Response> {
   try {
     const body = await req.json() as any
@@ -15398,6 +15451,8 @@ const server = Bun.serve({
     if (url.pathname === '/api/pause' && req.method === 'GET') return handleGetPause()
     if (url.pathname === '/api/config/concurrency' && req.method === 'GET') return handleConcurrencyGet()
     if (url.pathname === '/api/config/concurrency' && req.method === 'PUT') return handleConcurrencyPut(req)
+    if (url.pathname === '/api/config/autonomy' && req.method === 'GET') return handleAutonomyGet()
+    if (url.pathname === '/api/config/autonomy' && req.method === 'PUT') return handleAutonomyPut(req)
     if (url.pathname === '/api/pause' && req.method === 'POST') return handleSetPause(req)
     if (url.pathname.match(/^\/api\/tasks\/[^\/]+\/pause$/) && req.method === 'POST') {
       return handleTaskPause(url.pathname.split('/')[3], true, req)
