@@ -30,8 +30,9 @@ import { dopusteniAgenti } from './AgentIds'
 // instalacije: `new Database(...)` nad nepostojećom mapom baca „unable to open database
 // file", i to izvan try/catch-a (mjereno 05.09.2026. na praznom $HOME). Bez tih varijabli
 // putanja je nepromijenjena.
-const LEGACY_DIR = join(process.env.HOME || '', '.claude/regoc')
-const REGOC_DIR = (process.env.TM_DB || process.env.TM_HOME) ? dirname(TM_DB) : LEGACY_DIR
+// TASK-5011: i bez tih varijabli red poruka ide uz bazu (`core/paths.ts`), ne u
+// naslijeđenu mapu izvornog sustava.
+const REGOC_DIR = dirname(TM_DB)
 const DB_PATH = join(REGOC_DIR, 'messages.db')
 const SCHEMA_PATH = join(REGOC_DIR, 'schema.sql')
 if (!existsSync(REGOC_DIR)) { try { mkdirSync(REGOC_DIR, { recursive: true }) } catch { /* pada na otvaranju */ } }

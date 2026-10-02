@@ -60,6 +60,13 @@ export function realHomedir(): string {
 export const LIVE_DB_PATH = path.join(realHomedir(), ...LIVE_DB_RELATIVE);
 
 /**
+ * Zadana baza paketa (`core/paths.ts` bez TM_HOME/TM_DB) pod PRAVIM home-om.
+ * TASK-5011: otkad paket bez varijabli okoline otvara `~/.taskmanager/data/tasks.db`,
+ * to je ziva baza svakog korisnika paketa — test bez izricite putanje ne smije u nju.
+ */
+export const PAKET_DB_PATH = path.join(realHomedir(), '.taskmanager', 'data', 'tasks.db');
+
+/**
  * Vrtimo li se pod test-runnerom.
  *
  * POZOR: `BUN_TEST` NE POSTOJI u Bunu 1.3.6 (izmjereno — undefined pod `bun test`),
@@ -97,10 +104,11 @@ function samePath(a: string, b: string): boolean {
 export function assertNotLiveDbInTest(dbPath: string, opener: string): void {
   if (!isTestRuntime()) return;
   if (process.env[ESCAPE_HATCH_ENV] === '1') return;
-  if (!samePath(dbPath, LIVE_DB_PATH)) return;
+  const ziva = [LIVE_DB_PATH, PAKET_DB_PATH].find((p) => samePath(dbPath, p));
+  if (!ziva) return;
 
   throw new Error(
-    `[LiveDbGuard] ${opener} je pod test-runnerom pokusao otvoriti ZIVU bazu ${LIVE_DB_PATH}.\n` +
+    `[LiveDbGuard] ${opener} je pod test-runnerom pokusao otvoriti ZIVU bazu ${ziva}.\n` +
       'Testovi moraju koristiti izoliranu bazu: `new ' +
       opener +
       '(dbPath)` uz tests/helpers/db-fixture.ts\n' +

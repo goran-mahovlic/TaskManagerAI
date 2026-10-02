@@ -17,7 +17,7 @@
  *                         a izuzetak se otvara SAMO izričito (git config).
  */
 import { describe, expect, test, afterAll } from 'bun:test'
-import { mkdtempSync, rmSync, writeFileSync } from 'fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs'
 import { homedir } from 'os'
 import { join } from 'path'
 
@@ -29,6 +29,8 @@ const ISPRAVAN = 'goran.mahovlic@gmail.com'
 // pa privremeni repozitoriji idu u ~/.tmp.
 const privremeni: string[] = []
 function noviRepo(email = ISPRAVAN, ime = 'Goran Mahovlic'): string {
+  // TASK-5011: na svježem stroju `~/.tmp` ne postoji — mkdtemp ne stvara roditelja.
+  mkdirSync(join(homedir(), '.tmp'), { recursive: true })
   const put = mkdtempSync(join(homedir(), '.tmp', 'tmai-hook-'))
   privremeni.push(put)
   Bun.spawnSync(['git', 'init', '-q', '-b', 'main', put])

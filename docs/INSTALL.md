@@ -63,10 +63,15 @@ bun run init
 ```
 
 Skripta pročita `db/schema.sql` i stvori bazu na `$HOME/.taskmanager/data/tasks.db`. Ispiše
-koliko je tablica, kazala i okidača nastalo — očekuj **13 tablica i 5 okidača**.
+koliko je tablica, kazala i okidača nastalo — očekuj **15 tablica i 5 okidača**.
 
 Baza namjerno **nije** u repozitoriju: shema jest, podatci nisu. Skriptu smiješ pokrenuti i nad
-postojećom bazom jer su sve naredbe u shemi „stvori ako ne postoji“; postojeći podatci ostaju.
+postojećom bazom: tablice i kazala su „stvori ako ne postoji“, a okidači i pogledi se stvaraju
+iznova (tako nadogradnja dobije njihovu novu inačicu); postojeći podatci ostaju.
+
+Ploča, projekti i red poruka čitaju **istu** putanju (`src/core/paths.ts`), pa `bun run start`
+bez ikakve varijable okoline otvara upravo bazu koju je `init` stvorio. Ako bazu držiš drugdje,
+postavi `TM_HOME` ili `TM_DB` i za `init` i za `start`.
 
 Drugo mjesto za bazu:
 

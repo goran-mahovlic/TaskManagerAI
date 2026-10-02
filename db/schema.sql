@@ -1,8 +1,11 @@
 -- Shema baze TaskManagerAI (SQLite, WAL).
--- Stvara se skriptom scripts/init-db.sh; ovo je jedini izvor istine o shemi.
+-- Stvara se skriptom scripts/init-db.ts; ovo je jedini izvor istine o shemi.
+-- Smije se primijeniti nad postojećom bazom (`bun run init`, INSTALL.md §4 i §10): tablice i
+-- kazala su „IF NOT EXISTS", a okidači i pogledi se brišu i stvaraju iznova, da nadogradnja
+-- dobije njihovu novu inačicu. Podatci se ne diraju (TASK-5011).
 
 -- table: cost_log
-CREATE TABLE cost_log (
+CREATE TABLE IF NOT EXISTS cost_log (
         id TEXT PRIMARY KEY,
         timestamp TEXT NOT NULL DEFAULT (datetime('now')),
         agent_id TEXT NOT NULL,
@@ -14,7 +17,7 @@ CREATE TABLE cost_log (
       , cache_read_tokens INTEGER DEFAULT 0, cache_write_tokens INTEGER DEFAULT 0, session_id TEXT, turns INTEGER, project_id TEXT);
 
 -- table: execution_queue
-CREATE TABLE execution_queue (
+CREATE TABLE IF NOT EXISTS execution_queue (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   task_id TEXT NOT NULL,
   task_type TEXT DEFAULT 'task',
@@ -30,7 +33,7 @@ CREATE TABLE execution_queue (
 );
 
 -- table: knowledge
-CREATE TABLE knowledge (
+CREATE TABLE IF NOT EXISTS knowledge (
         id TEXT PRIMARY KEY,
         title TEXT NOT NULL,
         type TEXT NOT NULL,
@@ -43,7 +46,7 @@ CREATE TABLE knowledge (
       );
 
 -- table: knowledge_relations
-CREATE TABLE knowledge_relations (
+CREATE TABLE IF NOT EXISTS knowledge_relations (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         from_id TEXT NOT NULL REFERENCES knowledge(id),
         to_id TEXT NOT NULL REFERENCES knowledge(id),
@@ -54,7 +57,7 @@ CREATE TABLE knowledge_relations (
       );
 
 -- table: project_agents
-CREATE TABLE project_agents (
+CREATE TABLE IF NOT EXISTS project_agents (
   project_id TEXT NOT NULL,
   agent_id TEXT NOT NULL,
   role TEXT DEFAULT 'member' CHECK(role IN ('lead', 'member', 'reviewer', 'observer')),
@@ -64,7 +67,7 @@ CREATE TABLE project_agents (
 );
 
 -- table: project_rag_entries
-CREATE TABLE project_rag_entries (
+CREATE TABLE IF NOT EXISTS project_rag_entries (
   project_id TEXT NOT NULL,
   rag_collection TEXT NOT NULL,                 -- ChromaDB collection name
   rag_document_id TEXT NOT NULL,                -- Document ID in ChromaDB
@@ -75,13 +78,13 @@ CREATE TABLE project_rag_entries (
 );
 
 -- table: project_sequence
-CREATE TABLE project_sequence (
+CREATE TABLE IF NOT EXISTS project_sequence (
   id INTEGER PRIMARY KEY CHECK(id = 1),         -- Single row table
   next_id INTEGER DEFAULT 1
 );
 
 -- table: project_spec_history
-CREATE TABLE project_spec_history (
+CREATE TABLE IF NOT EXISTS project_spec_history (
       id            TEXT PRIMARY KEY,
       project_id    TEXT NOT NULL,
       specification TEXT NOT NULL,
@@ -91,7 +94,7 @@ CREATE TABLE project_spec_history (
     );
 
 -- table: projects
-CREATE TABLE projects (
+CREATE TABLE IF NOT EXISTS projects (
   id TEXT PRIMARY KEY,                          -- PRJ-001 format
   name TEXT NOT NULL,                           -- Human-readable project name
   description TEXT,                             -- Detailed description (markdown supported)
@@ -106,7 +109,7 @@ CREATE TABLE projects (
 , nextcloud_folder_id TEXT, nextcloud_share_url TEXT, specification TEXT DEFAULT '', spec_updated_at TEXT);
 
 -- table: task_history
-CREATE TABLE task_history (
+CREATE TABLE IF NOT EXISTS task_history (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     task_id TEXT NOT NULL,
     field TEXT NOT NULL,
@@ -117,14 +120,14 @@ CREATE TABLE task_history (
   );
 
 -- table: task_id_seq
-CREATE TABLE task_id_seq (
+CREATE TABLE IF NOT EXISTS task_id_seq (
         key        TEXT PRIMARY KEY,
         next_id    INTEGER NOT NULL,
         updated_at TEXT DEFAULT (datetime('now'))
       );
 
 -- table: tasks
-CREATE TABLE tasks (
+CREATE TABLE IF NOT EXISTS tasks (
   id TEXT PRIMARY KEY,
   title TEXT NOT NULL,
   description TEXT,
@@ -138,69 +141,70 @@ CREATE TABLE tasks (
 , project_id TEXT REFERENCES projects(id) ON DELETE SET NULL, progress_percent INTEGER DEFAULT NULL, nextcloud_folder TEXT DEFAULT NULL, progress_notes TEXT DEFAULT '[]', tags TEXT DEFAULT '[]', result_summary TEXT DEFAULT '', blocks TEXT DEFAULT '[]', started_at TEXT, completed_at TEXT, blocked_reason TEXT DEFAULT '', due_date TEXT, paused INTEGER NOT NULL DEFAULT 0, paused_at TEXT, paused_by TEXT, pause_reason TEXT);
 
 -- index: idx_cost_log_agent
-CREATE INDEX idx_cost_log_agent ON cost_log(agent_id);
+CREATE INDEX IF NOT EXISTS idx_cost_log_agent ON cost_log(agent_id);
 
 -- index: idx_cost_log_model
-CREATE INDEX idx_cost_log_model ON cost_log(model);
+CREATE INDEX IF NOT EXISTS idx_cost_log_model ON cost_log(model);
 
 -- index: idx_cost_log_project
-CREATE INDEX idx_cost_log_project ON cost_log(project_id);
+CREATE INDEX IF NOT EXISTS idx_cost_log_project ON cost_log(project_id);
 
 -- index: idx_cost_log_task
-CREATE INDEX idx_cost_log_task ON cost_log(task_id);
+CREATE INDEX IF NOT EXISTS idx_cost_log_task ON cost_log(task_id);
 
 -- index: idx_cost_log_timestamp
-CREATE INDEX idx_cost_log_timestamp ON cost_log(timestamp);
+CREATE INDEX IF NOT EXISTS idx_cost_log_timestamp ON cost_log(timestamp);
 
 -- index: idx_project_agents_agent
-CREATE INDEX idx_project_agents_agent ON project_agents(agent_id);
+CREATE INDEX IF NOT EXISTS idx_project_agents_agent ON project_agents(agent_id);
 
 -- index: idx_project_agents_project
-CREATE INDEX idx_project_agents_project ON project_agents(project_id);
+CREATE INDEX IF NOT EXISTS idx_project_agents_project ON project_agents(project_id);
 
 -- index: idx_project_rag_collection
-CREATE INDEX idx_project_rag_collection ON project_rag_entries(rag_collection);
+CREATE INDEX IF NOT EXISTS idx_project_rag_collection ON project_rag_entries(rag_collection);
 
 -- index: idx_project_rag_project
-CREATE INDEX idx_project_rag_project ON project_rag_entries(project_id);
+CREATE INDEX IF NOT EXISTS idx_project_rag_project ON project_rag_entries(project_id);
 
 -- index: idx_projects_lead_agent
-CREATE INDEX idx_projects_lead_agent ON projects(lead_agent);
+CREATE INDEX IF NOT EXISTS idx_projects_lead_agent ON projects(lead_agent);
 
 -- index: idx_projects_priority
-CREATE INDEX idx_projects_priority ON projects(priority);
+CREATE INDEX IF NOT EXISTS idx_projects_priority ON projects(priority);
 
 -- index: idx_projects_status
-CREATE INDEX idx_projects_status ON projects(status);
+CREATE INDEX IF NOT EXISTS idx_projects_status ON projects(status);
 
 -- index: idx_queue_status
-CREATE INDEX idx_queue_status ON execution_queue(status, priority);
+CREATE INDEX IF NOT EXISTS idx_queue_status ON execution_queue(status, priority);
 
 -- index: idx_queue_task
-CREATE INDEX idx_queue_task ON execution_queue(task_id);
+CREATE INDEX IF NOT EXISTS idx_queue_task ON execution_queue(task_id);
 
 -- index: idx_spec_history_project
-CREATE INDEX idx_spec_history_project ON project_spec_history(project_id);
+CREATE INDEX IF NOT EXISTS idx_spec_history_project ON project_spec_history(project_id);
 
 -- index: idx_task_history_changed_at
-CREATE INDEX idx_task_history_changed_at ON task_history(changed_at);
+CREATE INDEX IF NOT EXISTS idx_task_history_changed_at ON task_history(changed_at);
 
 -- index: idx_task_history_task
-CREATE INDEX idx_task_history_task ON task_history(task_id);
+CREATE INDEX IF NOT EXISTS idx_task_history_task ON task_history(task_id);
 
 -- index: idx_tasks_assignee
-CREATE INDEX idx_tasks_assignee ON tasks(assignee);
+CREATE INDEX IF NOT EXISTS idx_tasks_assignee ON tasks(assignee);
 
 -- index: idx_tasks_priority
-CREATE INDEX idx_tasks_priority ON tasks(priority);
+CREATE INDEX IF NOT EXISTS idx_tasks_priority ON tasks(priority);
 
 -- index: idx_tasks_project
-CREATE INDEX idx_tasks_project ON tasks(project_id);
+CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id);
 
 -- index: idx_tasks_status
-CREATE INDEX idx_tasks_status ON tasks(status);
+CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
 
 -- trigger: auto_queue_p1_on_update
+DROP TRIGGER IF EXISTS auto_queue_p1_on_update;
 CREATE TRIGGER auto_queue_p1_on_update
 AFTER UPDATE ON tasks
 WHEN NEW.priority = 1
@@ -218,6 +222,7 @@ BEGIN
 END;
 
 -- trigger: auto_queue_p1_tasks
+DROP TRIGGER IF EXISTS auto_queue_p1_tasks;
 CREATE TRIGGER auto_queue_p1_tasks
 AFTER INSERT ON tasks
 WHEN NEW.priority = 1 AND NEW.status = 'pending'
@@ -227,6 +232,7 @@ BEGIN
 END;
 
 -- trigger: dequeue_on_complete
+DROP TRIGGER IF EXISTS dequeue_on_complete;
 CREATE TRIGGER dequeue_on_complete
 AFTER UPDATE ON tasks
 WHEN NEW.status IN ('completed', 'cancelled')
@@ -239,6 +245,7 @@ BEGIN
 END;
 
 -- trigger: projects_updated_at
+DROP TRIGGER IF EXISTS projects_updated_at;
 CREATE TRIGGER projects_updated_at
 AFTER UPDATE ON projects
 BEGIN
@@ -248,6 +255,7 @@ BEGIN
 END;
 
 -- trigger: tasks_updated_at
+DROP TRIGGER IF EXISTS tasks_updated_at;
 CREATE TRIGGER tasks_updated_at
 AFTER UPDATE ON tasks
 BEGIN
@@ -257,6 +265,7 @@ BEGIN
 END;
 
 -- view: v_cost_log
+DROP VIEW IF EXISTS v_cost_log;
 CREATE VIEW v_cost_log AS
 SELECT id, timestamp, agent_id, task_id, model,
        input_tokens, output_tokens, cache_read_tokens, cache_write_tokens,
@@ -269,6 +278,7 @@ SELECT id, timestamp, agent_id, task_id, model,
 FROM cost_log;
 
 -- view: v_projects_summary
+DROP VIEW IF EXISTS v_projects_summary;
 CREATE VIEW v_projects_summary AS
     SELECT
       p.id,

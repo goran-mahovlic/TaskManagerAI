@@ -146,7 +146,10 @@ describe('paket na disku — jesu li TASK-4709/4710/4720 doista stigli', () => {
     expect(dez).toContain('export function upotrebljiviProvideri')
   })
 
-  test('prijenos iz žive instalacije ne smije ispustiti rječnike (TASK-4713)', () => {
+  // Alat prijenosa je interni i namjerno nije u gitu (.gitignore) — u svježem klonu ga nema,
+  // pa se provjera preskače umjesto da padne (TASK-5011).
+  test.skipIf(!existsSync(join(KORIJEN, 'scripts/uskladi_s_regocem.sh')))(
+    'prijenos iz žive instalacije ne smije ispustiti rječnike (TASK-4713)', () => {
     const skripta = require('fs')
       .readFileSync(join(KORIJEN, 'scripts/uskladi_s_regocem.sh'), 'utf-8') as string
     expect(skripta).toContain('TaskManagerMD/locales/')

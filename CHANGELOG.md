@@ -1,4 +1,22 @@
-## 2026-09-24 — prijenos značajki iz živog sustava (GAP 24.09.)
+## 2026-10-02 — svježa instalacija po INSTALL.md stvarno radi (QA svježeg klona)
+
+QA svježeg klona s praznim `HOME`-om, korak po korak prema `docs/INSTALL.md`, našao je dva
+kvara koja su postojala od prvog izdanja, a nijedan test ih nije vidio jer su svi e2e testovi
+postavljali `TM_HOME`:
+
+- **`bash scripts/install.sh` je padao sa `SQLITE_CANTOPEN`.** `init` je bazu stvarao u
+  `$HOME/.taskmanager/data/tasks.db` (kako piše u dokumentaciji), a ploča, projekti i red
+  poruka su bez `TM_HOME`/`TM_DB` otvarali naslijeđenu putanju izvornog sustava. Sada sva tri
+  i čitanje troška idu kroz `src/core/paths.ts`. **Prijelaz:** instalacija koja je radila uz
+  tu naslijeđenu putanju postavlja `TM_DB` na nju; `LiveDbGuard` sada čuva i zadanu bazu
+  paketa od testova.
+- **`bun run init` nad postojećom bazom** padao je s `table cost_log already exists`, iako ga
+  §4 i §10 („Nadogradnja") opisuju kao bezopasan. Shema je sada idempotentna (tablice i
+  kazala `IF NOT EXISTS`, okidači i pogledi se stvaraju iznova).
+- Testovi u svježem klonu: `~/.tmp` se stvara ako ga nema; provjera internog alata prijenosa
+  (namjerno izvan gita) se preskače umjesto da padne. Novi `tests/svjeza-instalacija.test.ts`
+  ponavlja točno put novog korisnika (samo `HOME`): init ×2 → ploča → `POST` → P1 red.
+
 
 Plan i odluke po značajki: [`docs/GAP_20260924.md`](docs/GAP_20260924.md). Prijenos je išao
 **po značajkama, ne po datotekama** — svaki hunk iz žive instalacije dobio je paketne obrasce

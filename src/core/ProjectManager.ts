@@ -10,7 +10,6 @@
  */
 
 import Database from 'bun:sqlite'
-import { homedir } from 'os'
 import { join } from 'path'
 import { existsSync, readFileSync } from 'fs'
 import { randomUUID } from 'crypto'
@@ -55,12 +54,10 @@ function projectStatusCountsSelect(srcAlias: string): string {
 // CONFIGURATION
 // ============================================
 
-// U6/TASK-4266: projekti moraju živjeti u istoj bazi kao zadatci — i ondje gdje
-// `~/.claude/regoc` ne postoji. Prekidač je `TM_DB`/`TM_HOME`; bez njih je putanja
-// nepromijenjena, pa živa REGOČ instalacija nastavlja čitati svoju bazu.
-const LEGACY_DATA_DIR = join(homedir(), '.claude/regoc/data')
-const DATA_DIR = (process.env.TM_DB || process.env.TM_HOME) ? TM_DATA : LEGACY_DATA_DIR
-const DB_PATH = (process.env.TM_DB || process.env.TM_HOME) ? TM_DB : join(LEGACY_DATA_DIR, 'regoc.db')
+// Projekti žive u istoj bazi kao zadatci; putanju određuje samo `core/paths.ts`
+// (TASK-5011: bez `TM_HOME` je ovdje bila naslijeđena putanja izvornog sustava).
+const DATA_DIR = TM_DATA
+const DB_PATH = TM_DB
 const PROJECTS_SCHEMA_PATH = join(DATA_DIR, 'projects-schema.sql')
 const MIGRATE_TASKS_PATH = join(DATA_DIR, 'migrate-tasks-project.sql')
 

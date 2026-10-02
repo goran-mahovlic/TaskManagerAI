@@ -9,7 +9,7 @@
  */
 
 import { describe, expect, test, beforeEach, afterEach } from 'bun:test'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
 import { join } from 'path'
 
 import {
@@ -25,7 +25,9 @@ import { ucitajKorake, renderirajOpis, PREDLOSCI_DIR } from '../src/core/IngestT
 // ─── pomoćno ────────────────────────────────────────────────────────────────
 
 let tmp = ''
-beforeEach(() => { tmp = mkdtempSync(join(process.env.HOME || '/tmp', '.tmp/ingest-test-')) })
+// TASK-5011: na svježem stroju `~/.tmp` ne postoji — mkdtemp ne stvara roditelja.
+const TMP_KORIJEN = join(process.env.HOME || '/tmp', '.tmp')
+beforeEach(() => { mkdirSync(TMP_KORIJEN, { recursive: true }); tmp = mkdtempSync(join(TMP_KORIJEN, 'ingest-test-')) })
 afterEach(() => { try { rmSync(tmp, { recursive: true, force: true }) } catch { /* */ } })
 
 const cfg = (over: Record<string, unknown> = {}) => ({

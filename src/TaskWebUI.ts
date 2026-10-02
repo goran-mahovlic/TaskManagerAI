@@ -16,11 +16,11 @@
  */
 
 import { watch, existsSync, readFileSync, readdirSync, statSync, writeFileSync, mkdirSync, rmSync, renameSync, appendFileSync } from 'fs'
-import { join, resolve } from 'path'
+import { dirname, join, resolve } from 'path'
 import { hostname as osHostname, networkInterfaces as osNetworkInterfaces, homedir } from 'os'
 // SQL-Only TaskManager (v2.0) - replaces MD+SQLite dual-write
 import { getTaskManagerSQL, INBOX_PROJECT_ID } from './core/TaskManagerSQL'
-import { konfigPutanja, osigurajMapu, stanjePutanja } from './core/paths'
+import { konfigPutanja, osigurajMapu, stanjePutanja, TM_DB } from './core/paths'
 // ADR-0012 (TASK-4827): `spawnCloseGuard` — dok na zadatku DOKAZIVO radi spawn, prijelaz u
 // TERMINALNO stanje ne dolazi od sustava (orkestrator najam pušta prije svog zapisa) nego od
 // agenta koji sam sebe zatvara prije suda kritičara. Zadano isključeno (features.json).
@@ -273,7 +273,8 @@ const messageQueue = getMessageQueue()
 
 // Read-only DB for konzola streaming (MQ + event_log)
 import { Database } from 'bun:sqlite'
-const MESSAGES_DB_PATH = join(process.env.HOME || homedir(), '.claude/regoc/messages.db')
+// TASK-5011: ista mapa u kojoj ga stvara MessageQueue (uz bazu iz core/paths.ts).
+const MESSAGES_DB_PATH = join(dirname(TM_DB), 'messages.db')
 let konzolaDb: Database | null = null
 try {
   konzolaDb = new Database(MESSAGES_DB_PATH, { readonly: true })
@@ -12843,7 +12844,7 @@ let trosakDb: Database | null = null
 function getTrosakDb(): Database | null {
   if (trosakDb) return trosakDb
   try {
-    trosakDb = new Database(join(process.env.HOME || homedir(), '.claude/regoc/data/regoc.db'), { readonly: true })
+    trosakDb = new Database(TM_DB, { readonly: true })
   } catch {
     trosakDb = null
   }

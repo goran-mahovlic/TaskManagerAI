@@ -13,11 +13,10 @@
 
 import { ensureInstructionsSchema, addInstruction, listInstructions, claimUndelivered, instructionCounts, instructionSummary, type InstructionRow } from './TaskInstructions';
 import Database, { type Statement } from "bun:sqlite";
-import { homedir } from 'os'
 import { TaskIdAllocator } from "./TaskIdAllocator";
 import { seedConcurrency, getConcurrency, setConcurrency, concurrencyHistory, CONCURRENCY_KEY, CONCURRENCY_ENV } from "./ConcurrencySetting";
 import { assertNotLiveDbInTest } from "./LiveDbGuard";
-import { TM_DB } from "./paths";
+import { TM_DB, osigurajMapu } from "./paths";
 // TASK-3516: jedno pravilo poretka za cijeli TaskManager — najnovije na vrhu.
 import { TASKS_ORDER_BY } from "./ChronoOrder";
 import { dopusteniAgenti } from "./AgentIds";
@@ -195,15 +194,12 @@ const ValidStatusTransitions: Record<string, string[]> = {
 // DB PATH
 // ============================================
 
-const HOME = process.env.HOME || homedir();
-
-// U6/TASK-4266: paket mora raditi i ondje gdje `~/.claude/regoc` uopće ne postoji.
-// `TM_DB` (ili `TM_HOME`) je jedini prekidač; BEZ NJIH je putanja doslovno ista kao
-// dosad, pa se ponašanje žive REGOČ instalacije ne mijenja ni za jedan bajt.
-// SSOT razrješenja je `core/paths.ts` — ovdje se samo bira između njega i naslijeđene
-// putanje, jer bi bezuvjetni prelazak na `~/.taskmanager` živoj ploči podmetnuo praznu bazu.
-export const LEGACY_DB_PATH = `${HOME}/.claude/regoc/data/regoc.db`;
-export const DB_PATH = (process.env.TM_DB || process.env.TM_HOME) ? TM_DB : LEGACY_DB_PATH;
+// SSOT je `core/paths.ts` (ADR-0001 O1.1): `$TM_DB`, inače `$TM_HOME/data/tasks.db`, inače
+// `$HOME/.taskmanager/data/tasks.db` — isto mjesto na kojem bazu stvara `bun run init`.
+// TASK-5011: do 02.10.2026. je bez `TM_HOME`/`TM_DB` ovdje stajala naslijeđena putanja
+// izvornog sustava, pa je svježa instalacija po docs/INSTALL.md padala na SQLITE_CANTOPEN.
+// Instalacija koja bazu drži na staroj putanji to kaže izričito: `TM_DB=<putanja>`.
+export const DB_PATH = TM_DB;
 
 // ============================================
 // ROW → TASK MAPPER
@@ -276,6 +272,7 @@ export class TaskManagerSQL {
   constructor(dbPath: string = DB_PATH) {
     // TASK-3020: pod test-runnerom je otvaranje ZIVE baze zabranjeno (LiveDbGuard.ts).
     assertNotLiveDbInTest(dbPath, 'TaskManagerSQL');
+    osigurajMapu(dbPath);
     this.db = new Database(dbPath);
     this.db.exec("PRAGMA journal_mode=WAL");
     this.db.exec("PRAGMA foreign_keys=ON");
