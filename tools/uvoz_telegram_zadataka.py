@@ -46,6 +46,7 @@ from __future__ import annotations
 import argparse
 import gzip
 import json
+import os
 import re
 import shutil
 import sqlite3
@@ -55,10 +56,13 @@ from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from tm_putanje import TM_DB, konfig, stanje  # noqa: E402
+
 HOME = Path.home()
 PROJECTS_DIR = HOME / ".claude/projects"
-DB = HOME / ".claude/regoc/data/regoc.db"
-ARHIV = HOME / ".claude/regoc/data/transkript_arhiv"
+DB = TM_DB
+ARHIV = stanje("transkript_arhiv")
 
 
 def sesija_id(path: Path) -> str:
@@ -277,7 +281,7 @@ def naslov_iz(zahtjev: str, grupa: str) -> str:
     return f"[TG:{grupa}] {t or 'Telegram zahtjev'}"
 
 
-RUN_LOG = HOME / ".claude/regoc/data/run_log.jsonl"
+RUN_LOG = Path(os.environ.get("TM_RUN_LOG") or stanje("run_log.jsonl"))
 
 
 def trosak_transkripta(path: Path) -> dict | None:

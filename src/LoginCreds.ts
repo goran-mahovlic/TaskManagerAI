@@ -1,6 +1,6 @@
 /**
  * LoginCreds — jedan izvor istine za tajne davatelja u sigurnom spremištu
- * (`~/.claude/regoc/credentials.env`, redci oblika `IME=vrijednost`).
+ * (`credentials.env`, v. ConfigModul.datotekaTajni(); redci oblika `IME=vrijednost`).
  *
  * ZAŠTO POSTOJI (TASK-4796): mjerilo „je li davatelj prijavljen" i radnja „odjavi ga"
  * bile su dva odvojena, ručno prepisana izraza u TaskWebUI.ts. Mjerilo je gledalo ključ u

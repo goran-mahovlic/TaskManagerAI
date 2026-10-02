@@ -33,11 +33,11 @@ Bez transkripta `trenje` ostaje `null` — nedostajuća vrijednost je `null`, ni
 IZVOR ISTINE (ADR O3)
     transkript ~/.claude/projects/<projekt-slug>/<session_id>.jsonl
                (rezerva kad ga Claude Code obriše nakon ~30 dana: trajni arhiv
-                ~/.claude/regoc/data/transkript_arhiv/**/<session_id>.jsonl.gz — T9)
+                $TM_HOME/data/transkript_arhiv/**/<session_id>.jsonl.gz — T9)
         → vrijeme, latencija, alati, tokeni
-    ~/.claude/regoc/data/run_log.jsonl
+    $TM_HOME/data/run_log.jsonl
         → task_id, agent, ishod, exit_code, cost_usd, num_turns, duration_s
-    ~/.claude/regoc/data/regoc.db (samo za čitanje)
+    $TM_DB — baza ploče (samo za čitanje)
         → tasks.project_id
 
 TRI ODLUKE KOJE OVAJ ALAT PROVODI (ADR §3)
@@ -62,7 +62,7 @@ UPORABA
     python3 tools/agent_telemetry.py --zadnjih 3 --json          # zadnji retci run_log.jsonl
     python3 tools/agent_telemetry.py --task TASK-3565 --validiraj
     python3 tools/agent_telemetry.py --task TASK-3503 --json --primjeri   # trenje odvojeno
-    python3 tools/agent_telemetry.py --zadnjih 5 --jsonl-out ~/.claude/regoc/data/task_telemetry.jsonl
+    python3 tools/agent_telemetry.py --zadnjih 5 --jsonl-out $TM_HOME/data/task_telemetry.jsonl
 
     Sve vremenske oznake u izlazu su UTC sa sufiksom `Z` (ADR §9).
 """
@@ -85,10 +85,13 @@ from glob import glob
 from pathlib import Path
 from typing import Iterator
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from tm_putanje import TM_DB, stanje  # noqa: E402
+
 SHEMA_ID = "regoc.telemetrija-zadatka/v1"
 PROJECTS_DIR = Path.home() / ".claude" / "projects"
-RUN_LOG = Path.home() / ".claude" / "regoc" / "data" / "run_log.jsonl"
-REGOC_DB = Path.home() / ".claude" / "regoc" / "data" / "regoc.db"
+RUN_LOG = Path(os.environ.get("TM_RUN_LOG") or stanje("run_log.jsonl"))
+REGOC_DB = TM_DB
 SHEMA_PUT = Path(__file__).resolve().parent.parent / "docs" / "schema" / "telemetrija-zadatka.schema.json"
 
 # T9 (TASK-3574): Claude Code briše transkripte starije od ~30 dana, pa se telemetrija

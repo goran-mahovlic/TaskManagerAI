@@ -1,11 +1,11 @@
-// ~/.claude/regoc/LiveDbGuard.ts
+// src/core/LiveDbGuard.ts
 //
 // ZADNJA LINIJA OBRANE: test-proces ne smije otvoriti ZIVU regoc.db za pisanje.
 //
 // ZASTO POSTOJI (TASK-3020, nalaz iz TASK-2560):
 //   `bun test` je kroz TaskManager/TaskManagerSQL bez eksplicitnog dbPath-a pisao
 //   fixture taskove ("Full Task", "Task 1", "Pending 2"...) ravno u produkcijsku
-//   ~/.claude/regoc/data/regoc.db. Posljedica NIJE bila samo prljava statistika:
+//   bazu orkestratora. Posljedica NIJE bila samo prljava statistika:
 //   pending fixture s assigneejem je RegocDaemon.processP1Tasks pokupio kao pravi
 //   zadatak i 2026-07-27 spawnao tri Opus sesije na smecu (TASK-2794/2829/2947),
 //   a fixture s priority=1 je trigger auto_queue_p1_tasks gurao u execution_queue.
@@ -20,7 +20,7 @@
 // Zasto se PRAVI home cita iz /etc/passwd, a ne iz $HOME:
 //   e2e testovi (completion-guard-e2e, project-inheritance-e2e, task-field-aliases,
 //   prompt-project-live) namjerno podizu TaskWebUI s podmetnutim HOME-om, pa im je
-//   `$HOME/.claude/regoc/data/regoc.db` VLASTITA sandbox baza koju smiju pisati.
+//   `$HOME/.taskmanager/data/tasks.db` VLASTITA sandbox baza koju smiju pisati.
 //   Guard vezan uz $HOME bi njih lazno blokirao, a pravu bazu propustio kad je HOME
 //   podmetnut. os.homedir()/os.userInfo() u Bunu 1.3.6 slijede $HOME (izmjereno),
 //   pa je passwd jedini izvor koji spoofing ne moze pomaknuti.
@@ -29,8 +29,12 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
-/** Relativna putanja produkcijske baze unutar korisnickog home-a. */
-const LIVE_DB_RELATIVE = ['.claude', 'regoc', 'data', 'regoc.db'];
+/**
+ * Dodatne zive baze (npr. orkestrator koji na istom stroju vrti vlastitu plocu) — popis
+ * putanja odvojen dvotockom. TASK-5108: prije je to bio tvrdi raspored mapa jedne
+ * instalacije; paket ga ne smije podrazumijevati, pa se zadaje izricito.
+ */
+const LIVE_DB_ENV = 'TM_LIVE_DB';
 
 /** Izlaz za nuzdu: test koji SVJESNO smije dirati zivu bazu (npr. readonly probe). */
 const ESCAPE_HATCH_ENV = 'REGOC_ALLOW_LIVE_DB_IN_TEST';
@@ -56,8 +60,10 @@ export function realHomedir(): string {
   return os.homedir();
 }
 
-/** Apsolutna putanja ZIVE produkcijske baze, neovisna o $HOME. */
-export const LIVE_DB_PATH = path.join(realHomedir(), ...LIVE_DB_RELATIVE);
+/** Zive baze zadane kroz `TM_LIVE_DB` — cita se pri svakoj provjeri. */
+export function dodatneZiveBaze(): string[] {
+  return String(process.env[LIVE_DB_ENV] || '').split(':').map((p) => p.trim()).filter(Boolean);
+}
 
 /**
  * Zadana baza paketa (`core/paths.ts` bez TM_HOME/TM_DB) pod PRAVIM home-om.
@@ -104,7 +110,7 @@ function samePath(a: string, b: string): boolean {
 export function assertNotLiveDbInTest(dbPath: string, opener: string): void {
   if (!isTestRuntime()) return;
   if (process.env[ESCAPE_HATCH_ENV] === '1') return;
-  const ziva = [LIVE_DB_PATH, PAKET_DB_PATH].find((p) => samePath(dbPath, p));
+  const ziva = [PAKET_DB_PATH, ...dodatneZiveBaze()].find((p) => samePath(dbPath, p));
   if (!ziva) return;
 
   throw new Error(

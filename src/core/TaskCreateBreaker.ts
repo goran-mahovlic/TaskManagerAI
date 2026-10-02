@@ -1,5 +1,5 @@
 // ─── TaskCreateBreaker ───────────────────────────────────────────────────────
-// M2 / TASK-4628 (PRJ REGOC_SYSTEM): OSIGURAČ NA VRATIMA STVARANJA ZADATAKA.
+// M2 / TASK-4628: OSIGURAČ NA VRATIMA STVARANJA ZADATAKA.
 //
 // NALAZ (docs/ISTRAZIVANJE-neuspjesi-i-greske.md §1 i §4 M2): pravi uzrok incidenta
 // 02.09.2026. nije 683 spawna nego **686 ZADATAKA u dva sata**. `SpawnBreaker` (M1) stoji
@@ -555,5 +555,5 @@ export function formatTaskCreateAlarm(source: string, v: TaskCreateVerdict, queu
     + `${v.count} novih zadataka u ${Math.round(v.windowMs / 60000)} min (prag ${v.limit}).\n`
     + `Novi zadatci ${v.mode === 'enforce' ? 'IDU U RED ČEKANJA' : 'i dalje prolaze (shadow)'}; u redu ih je ${queuedNow}.\n`
     + `Prvo mjesto slobodno za ~${min} min.\n`
-    + `Pregled i pražnjenje: bun ~/.claude/regoc/tools/task-create-queue.ts --list`
+    + `Red čekanja: tablica task_create_queue u bazi ploče.`
 }

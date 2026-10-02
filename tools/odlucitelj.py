@@ -44,11 +44,11 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-from tm_putanje import ollama_url
+from tm_putanje import konfig, ollama_url, stanje
 
 HOME = Path.home()
 PLOCA = "http://localhost:17781"
-POSTAVKE = HOME / ".claude/regoc/config/odlucitelj.json"
+POSTAVKE = konfig("odlucitelj.json", "TM_ODLUCITELJ_CONFIG")   # isti lanac kao OdluciteljPogon.ts
 
 ZADANE = {
     "ukljucen": False,                      # fail-safe: bez izričitog uključivanja ne radi
@@ -75,7 +75,7 @@ ZADANE = {
     "pusta_strojni_okidac": False,
 }
 
-ODGODE = HOME / ".claude/regoc/data/odlucitelj_odgode.json"
+ODGODE = stanje("odlucitelj_odgode.json")
 
 
 def cekanje_sati(p: dict) -> float:
@@ -187,8 +187,8 @@ def premalo_opisa(z: dict) -> bool:
 # Izvor istine je `models/model-config.json`. Ključ NIKAD ne ulazi u ovaj kod ni u ispis —
 # čita se iz okoline, a ako ga nema, davatelj se pošteno prijavi kao nespreman umjesto da
 # tiho ne radi.
-KONFIG_MODELA = HOME / ".claude/regoc/models/model-config.json"
-CREDENTIALS = HOME / ".claude/regoc/credentials.env"
+KONFIG_MODELA = konfig("model-config.json", "TM_MODEL_CONFIG")
+CREDENTIALS = konfig("credentials.env", "TM_CREDENTIALS")
 
 
 def _ucitaj_kljuc(ime: str) -> str:

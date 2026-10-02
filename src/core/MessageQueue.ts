@@ -5,10 +5,10 @@
  * SQLite-based message queue for inter-agent communication.
  * Replaces file-based IPC with reliable, persistent storage.
  *
- * Location: ~/.claude/regoc/ (PERSISTENT - survives container restart!)
+ * Location: uz bazu ploče (`dirname(TM_DB)`, v. core/paths.ts)
  *
  * Usage:
- *   import { getMessageQueue } from '~/.claude/regoc/MessageQueue'
+ *   import { getMessageQueue } from './core/MessageQueue'
  *   const mq = getMessageQueue()
  *   mq.sendMessage('scheduler', 'assistant', 'Hello!')
  */
@@ -25,7 +25,7 @@ import { dopusteniAgenti } from './AgentIds'
 // Configuration
 // ============================================
 
-// U6/TASK-4266: `TM_HOME`/`TM_DB` premještaju red poruka izvan `~/.claude/regoc`, a mapa
+// U6/TASK-4266: `TM_HOME`/`TM_DB` premještaju red poruka izvan rasporeda orkestratora, a mapa
 // se stvara ako je nema. Bez toga poslužitelj NIJE MOGAO krenuti na stroju bez REGOČ
 // instalacije: `new Database(...)` nad nepostojećom mapom baca „unable to open database
 // file", i to izvan try/catch-a (mjereno 05.09.2026. na praznom $HOME). Bez tih varijabli

@@ -22,16 +22,19 @@
  */
 import { existsSync, readFileSync, writeFileSync, mkdirSync, renameSync } from 'fs'
 import { homedir } from 'os'
-import { dirname } from 'path'
+import { dirname, join } from 'path'
+import { konfigPutanja, PAKET_DIR, stanjePutanja } from './paths'
 // Isti popisi kojima se ravna red autonomije — da se „tko se smije spawnati" ne razidje
 // na dva mjesta. Puštanje koje red ne bi podigao mora se ovdje prepoznati kao neizvedivo.
 import { ORCHESTRATOR_ASSIGNEES, DEFAULT_HUMAN_ASSIGNEES } from './AutonomyQueue'
 
 const HOME = process.env.HOME || homedir()
-export const ODLUCITELJ_CONFIG = `${HOME}/.claude/regoc/config/odlucitelj.json`
-export const ODLUCITELJ_ZAPIS = `${HOME}/.claude/regoc/data/odlucitelj_zadnji.json`
+// TASK-5108: isti lanac kao `tools/odlucitelj.py` (tools/tm_putanje.py) — konfiguracija
+// ide kroz konfigPutanja, stanje u $TM_HOME/data. Nikad raspored mapa orkestratora.
+export const ODLUCITELJ_CONFIG = konfigPutanja('odlucitelj.json', 'TM_ODLUCITELJ_CONFIG')
+export const ODLUCITELJ_ZAPIS = stanjePutanja('odlucitelj_zadnji.json')
 /** Odgodjeni zadatci: {TASK-ID: {do: iso, puta: n}} — pise ih `tools/odlucitelj.py`. */
-export const ODLUCITELJ_ODGODE = `${HOME}/.claude/regoc/data/odlucitelj_odgode.json`
+export const ODLUCITELJ_ODGODE = stanjePutanja('odlucitelj_odgode.json')
 
 /** Razmak izmedju prolaza. Odluka nije hitna — ceka se covjek, a ne stroj. */
 export const ODLUCITELJ_INTERVAL_MS = 5 * 60_000
@@ -107,10 +110,10 @@ export function trebaProlaz(zadnjiMs: number, sadaMs: number,
   return sadaMs - zadnjiMs >= interval
 }
 
-/** Alat zivi na jednom od tri mjesta, ovisno o tome je li repozitorij spojen. */
+/** Alat zivi u repozitoriju sustava ili uz sam paket (`tools/odlucitelj.py`). */
 export function nadjiAlat(): string | null {
   for (const put of [`${HOME}/app/regoc_system/tools/odlucitelj.py`,
-                     `${HOME}/.claude/regoc/tools/odlucitelj.py`]) {
+                     join(PAKET_DIR, 'tools', 'odlucitelj.py')]) {
     if (existsSync(put)) return put
   }
   return null

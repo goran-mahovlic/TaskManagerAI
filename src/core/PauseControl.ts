@@ -26,12 +26,13 @@
 import { existsSync, readFileSync, writeFileSync, renameSync, mkdirSync } from 'fs'
 import { homedir } from 'os'
 import { dirname, join } from 'path'
+import { stanjePutanja } from './paths'
 
 const HOME = process.env.HOME || homedir()
 
 /** Testni harnessi preusmjeravaju stanje da ne diraju živu kočnicu. */
 export const PAUSE_STATE_FILE =
-  process.env.REGOC_PAUSE_STATE || join(HOME, '.claude/regoc/data/pause.state.json')
+  process.env.REGOC_PAUSE_STATE || stanjePutanja('pause.state.json')
 
 export interface PauseState {
   paused: boolean

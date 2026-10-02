@@ -7,10 +7,10 @@ na disku. Arhiva je JSONL (jedan dokument = jedan redak), po kolekciji, plus
 manifest.json sa zbrojevima i vremenom. Vraćanje je JEDNA naredba (--restore).
 
 ŠTO RADI
-  --export KOL [KOL ...]   izvezi navedene kolekcije u ~/.claude/regoc/data/rag_arhiv/
+  --export KOL [KOL ...]   izvezi navedene kolekcije u $TM_HOME/data/rag_arhiv/
   --drop KOL [KOL ...]     obriši kolekciju iz Chrome (SAMO ako je već arhivirana --export)
   --restore KOL            vrati arhiviranu kolekciju natrag u Chromu (getOrCreate + add)
-  --out DIR                ciljni direktorij arhive (default ~/.claude/regoc/data/rag_arhiv)
+  --out DIR                ciljni direktorij arhive (default $TM_HOME/data/rag_arhiv)
 
 Primjer (točno R3 iz docs/RAG-2026-09-04_pregled_i_prijedlog.md):
   python3 rag_archive.py --export test regoc_seedtest_2620 pai_agent_unknown \
@@ -22,8 +22,9 @@ from __future__ import annotations
 import argparse, json, os, sys, urllib.request
 from datetime import datetime, timezone
 
+from tm_putanje import stanje
 from tm_putanje import chroma_kolekcije as baza  # TM_CHROMA_HOST/TM_CHROMA_PORT, bez zadane adrese
-DEFAULT_OUT = os.path.expanduser("~/.claude/regoc/data/rag_arhiv")
+DEFAULT_OUT = str(stanje("rag_arhiv"))
 
 
 def dohvati(put: str, tijelo=None):

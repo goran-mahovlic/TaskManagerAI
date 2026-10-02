@@ -22,12 +22,13 @@ import {
   CLOSED_STATUSES, isReportBackTask, runReportBackSweep,
   type ReportBackTaskView, type SweepDeps, type SweepResult,
 } from './ReportBackTask'
+import { stanjePutanja } from './paths'
 
 const HOME = process.env.HOME || homedir()
 
 /** Dnevnik isporučenih poruka — jedini izvor istine o tome je li korisnik nešto DOBIO. */
 export function sentLogPath(): string {
-  return process.env.REGOC_REPORT_BACK_LOG || join(HOME, '.claude/regoc/data/report_back_sent.jsonl')
+  return process.env.REGOC_REPORT_BACK_LOG || stanjePutanja('report_back_sent.jsonl')
 }
 
 /** Postavke bota čita samo ova funkcija; vrijednost nikad ne izlazi iz modula. */

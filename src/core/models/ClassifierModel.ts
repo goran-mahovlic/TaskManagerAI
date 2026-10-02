@@ -18,6 +18,7 @@
  */
 import { readFileSync, writeFileSync, existsSync, chmodSync } from 'fs'
 import { join } from 'path'
+import { konfigPutanja } from '../paths'
 
 export const CLASSIFIER_DEFAULT_SPEC = 'ollama:qwen3:8b'
 export const CLASSIFIER_ENV_KEY = 'REGOC_INFERENCE_MODEL'
@@ -44,12 +45,14 @@ export type ClassifierSetting = {
   baseUrl: string
 }
 
-export function classifierStorePath(HOME: string): string {
-  return join(HOME, '.claude/regoc/credentials.env')
+// TASK-5108: ista spremišta kao ostatak paketa (ConfigModul / DezurniConfig), ne raspored
+// orkestratora. Parametar `HOME` je ostao radi potpisa pozivatelja.
+export function classifierStorePath(_HOME: string): string {
+  return konfigPutanja('credentials.env', 'TM_CREDENTIALS')
 }
 
-function configPath(HOME: string): string {
-  return join(HOME, '.claude/regoc/models/model-config.json')
+function configPath(_HOME: string): string {
+  return konfigPutanja('model-config.json', 'TM_MODEL_CONFIG')
 }
 
 /** Naziv modela → spec `ollama:<model>`; sve što nije lokalno se odbija. */

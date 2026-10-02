@@ -20,7 +20,7 @@ REDOSLIJED (prvi koji se poklopi) — W0/TASK-4620:
 Tijek s `enabled: false` (razina 2 prekidača) ponaša se kao da ga u katalogu nema — ne bira
 ga ni okidač ni izričita oznaka. Globalni prekidač (`config/workflow-gate.json`, razina 3)
 NIJE posao ovog alata: on je CLI za ljude i uvijek odgovara na pitanje „što BI se odabralo".
-Način rada primjenjuje pogon — `~/.claude/regoc/WorkflowGate.ts`, koji je izvor istine za
+Način rada primjenjuje pogon — `src/core/WorkflowGate.ts`, koji je izvor istine za
 odluku; parnost dviju preslika drži `tests/workflow-gate-parity.test.ts` (ADR-0004).
 
 Težina je ljestvica 1–100 (E1 1–15, E2 16–35, E3 36–60, E4 61–80, E5 81–100). Ako nije

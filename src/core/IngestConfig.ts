@@ -13,7 +13,7 @@
  *   1. `$TM_INGEST_GATE_CONFIG` — puna putanja, za instalaciju koja drži postavke drugdje;
  *   2. `$TM_HOME/config/ingest-gate.json` — uz bazu, ako je `TM_HOME` postavljen;
  *   3. `config/ingest-gate.json` uz sam paket — zadano, radi bez ijedne varijable okoline.
- * Nigdje se ne spominje `~/.claude/regoc`: paket mora raditi i na stroju na kojem REGOČ
+ * Nigdje se ne spominje raspored mapa orkestratora: paket mora raditi i na stroju na kojem REGOČ
  * uopće nije instaliran (prihvatni kriterij U6).
  *
  * ZAŠTO BEZ KEŠA: datoteku čita svaki poziv `/api/ingest`. Keš bi bio jedina stvar koja bi

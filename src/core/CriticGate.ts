@@ -256,7 +256,7 @@ export interface ScanResult {
 /**
  * Dodatni korijen pretrage vezan uz JEDAN spawn (A4 dopuna / TASK-3052).
  *
- * ZAŠTO POSTOJI: `watchRoots` je globalan i statičan (~/.claude/regoc). A1 worktreejevi
+ * ZAŠTO POSTOJI: `watchRoots` je globalan i statičan (korijen orkestratora). A1 worktreejevi
  * žive pod ~/app/.regoc-worktrees i imaju ime po spawnu, pa se u konfiguraciju ne mogu
  * upisati unaprijed. Bez ovoga kritičar izoliranog spawna NE VIDI nijednu datoteku koju
  * je agent stvarno dirao, pa njegov `pass` ne pokriva ništa što se spaja (A4 to hvata
@@ -1944,7 +1944,7 @@ function prepareScan(input: CritiqueInput, cfg: CriticConfig): ScanPrep {
     if (scan.truncated > 0) notes.push(`strop ${cfg.maxFiles} datoteka: ${scan.truncated} izmijenjenih NIJE provjereno`)
     if (scan.missingRoots.length) notes.push(`nadzirani korijen ne postoji: ${scan.missingRoots.join(', ')}`)
     // Vidljivo u tragu i u logu: bez ovoga se ne razlikuje „kritičar je gledao worktree
-    // spawna" od „gledao je samo ~/.claude/regoc pa mu je potpis prazan" (A4 scope-mismatch).
+    // spawna" od „gledao je samo korijen orkestratora pa mu je potpis prazan" (A4 scope-mismatch).
     if (extraRoots.length) {
       const paths = extraRoots.map((r) => (typeof r === 'string' ? r : r.path))
       notes.push(`dodatni korijen ovog spawna: ${paths.join(', ')}`)

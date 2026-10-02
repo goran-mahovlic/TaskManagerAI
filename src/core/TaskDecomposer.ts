@@ -58,6 +58,7 @@
 import { Database } from 'bun:sqlite'
 import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, appendFileSync } from 'fs'
 import { join } from 'path'
+import { TM_ROOT } from './paths'
 
 // ─── Tipovi ───────────────────────────────────────────────────────────────────
 
@@ -104,7 +105,8 @@ export interface PlanIssue { level: 'error' | 'warn'; msg: string }
 // ─── Putanje ──────────────────────────────────────────────────────────────────
 
 const HOME = process.env.HOME || process.env.USERPROFILE || ''
-export const REGOC_DIR = join(HOME, '.claude', 'regoc')
+/** Korijen podataka razlagača = korijen paketa (`TM_ROOT`, paths.ts), ne raspored orkestratora. */
+export const REGOC_DIR = TM_ROOT
 export function plansDir(): string {
   return process.env.REGOC_PLANS_DIR || join(REGOC_DIR, 'data', 'decomposition_plans')
 }
@@ -353,7 +355,7 @@ function expandHome(p: string): string {
 function makeExists(opts: GroundingOpts): (t: string) => boolean {
   if (opts.exists) return opts.exists
   const home = process.env.HOME || ''
-  const roots = opts.roots ?? [process.cwd(), join(home, '.claude/regoc'), join(home, '.claude'), home]
+  const roots = opts.roots ?? [process.cwd(), TM_ROOT, join(home, '.claude'), home]
   return (token: string) => {
     const t = expandHome(token.trim())
     try {
@@ -606,7 +608,7 @@ export function buildPlannerPrompt(task: TaskFacts, ctx: NormalizeCtx, effort: s
     `PRAVILA PLANA:`,
     `1. 3 do 7 koraka. Svaki korak mora biti izvediv u JEDNOM prolazu bez šireg konteksta.`,
     `2. Svaki korak MORA imati eksplicitne "inputs" (konkretne datoteke/zadaci/naredbe koje čita) i "outputs" (konkretne artefakte koje ostavlja).`,
-    `2a. ULAZ i IZLAZ su PUNE PUTANJE do datoteka koje POSTOJE ili nastaju u postojećem direktoriju (npr. ~/.claude/regoc/RegocDaemon.ts). NE izmišljaj imena tipa "cancelled-log.db" ni nove .db/.sqlite baze — plan s neutemeljenim artefaktom se ODBIJA.`,
+    `2a. ULAZ i IZLAZ su PUNE PUTANJE do datoteka koje POSTOJE ili nastaju u postojećem direktoriju (npr. ~/app/projekt/src/server.ts). NE izmišljaj imena tipa "cancelled-log.db" ni nove .db/.sqlite baze — plan s neutemeljenim artefaktom se ODBIJA.`,
     `2b. ULAZ koraka mora biti IZLAZ nekog ranijeg koraka ili datoteka koja već postoji. Ako ga nitko ne proizvodi, korak se blokira prvog trena.`,
     `2c. NE pretvaraj opis ponašanja sustava u korake plana. Koraci su IZMJENE KODA/DOKUMENATA i njihove provjere, a ne prepričan tijek izvođenja.`,
     `2d. Vođenje ploče (postavljanje statusa, progressNote, zatvaranje zadatka) NIJE korak — svaki radnik to radi po protokolu.`,

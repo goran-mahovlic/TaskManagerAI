@@ -62,3 +62,20 @@ describe('tools/tm_putanje.py — isti korijen kao src/core/paths.ts', () => {
     expect(s.izlaz).toBe('http://c.lan:18765/api/v2/tenants/default_tenant/databases/default_database/collections')
   })
 })
+
+describe('tools/dezurni.py — putovi servisa i slanja samo iz okoline (TASK-5108)', () => {
+  test('bez varijabli nema nijednog puta (nema tuđeg rasporeda kao rezerve)', () => {
+    const r = py('import dezurni as d; print(d.PUTOVI_SERVISA); print(d.PUTOVI_SLANJA); print(d.DNEVNIK)', { HOME: '/h' })
+    expect(r.izlaz).toBe('[]\n[]\n/h/.taskmanager/data/daemon.log')
+  })
+
+  test('TM_SERVIS_RESTART (više naredbi odvojeno s ;) i TM_TELEGRAM_SEND', () => {
+    const r = py('import dezurni as d; print(d.PUTOVI_SERVISA); print(d.PUTOVI_SLANJA)', {
+      TM_SERVIS_RESTART: '/opt/svc.sh restart-service {s}; /opt/drugi.sh',
+      TM_TELEGRAM_SEND: '/opt/posalji.py',
+    })
+    expect(r.izlaz).toBe(
+      "[(PosixPath('/opt/svc.sh'), ['restart-service', '{s}']), (PosixPath('/opt/drugi.sh'), [])]\n"
+      + "[PosixPath('/opt/posalji.py')]")
+  })
+})

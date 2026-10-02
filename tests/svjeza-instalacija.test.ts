@@ -117,4 +117,21 @@ describe('LiveDbGuard čuva i zadanu bazu paketa', () => {
     // privremena baza i dalje prolazi
     expect(() => assertNotLiveDbInTest(join(tmpdir(), 'x', 'tasks.db'), 'TaskManagerSQL')).not.toThrow()
   })
+
+  // TASK-5108: baza orkestratora na istom stroju više nije tvrdi raspored mapa u kodu —
+  // zaštićuje se izričito, varijablom `TM_LIVE_DB` (popis odvojen dvotočkom).
+  test('TM_LIVE_DB dodaje zaštićene baze; bez nje se tuđi raspored ne podrazumijeva', async () => {
+    const { assertNotLiveDbInTest } = await import('../src/core/LiveDbGuard')
+    const orkestrator = join(tmpdir(), 'orkestrator', 'live.db')
+    const prije = process.env.TM_LIVE_DB
+    try {
+      delete process.env.TM_LIVE_DB
+      expect(() => assertNotLiveDbInTest(orkestrator, 'TaskManagerSQL')).not.toThrow()
+      process.env.TM_LIVE_DB = `/nema/druga.db:${orkestrator}`
+      expect(() => assertNotLiveDbInTest(orkestrator, 'TaskManagerSQL')).toThrow('LiveDbGuard')
+    } finally {
+      if (prije === undefined) delete process.env.TM_LIVE_DB
+      else process.env.TM_LIVE_DB = prije
+    }
+  })
 })

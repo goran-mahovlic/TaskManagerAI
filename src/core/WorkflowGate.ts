@@ -46,6 +46,7 @@ import { dirname, join, resolve } from 'path'
 
 import { isTestRuntime, realHomedir } from './LiveDbGuard'
 import { parseWeightTag } from './WeightScore'
+import { konfigPutanja, PAKET_DIR, stanjePutanja } from './paths'
 
 /**
  * Inačica zapisa — izvještaj mora znati po kojim je pravilima redak nastao.
@@ -67,13 +68,13 @@ export const OZNAKA_PREFIKS = 'workflow:'
 const HOME = process.env.HOME || homedir()
 
 export const WORKFLOW_GATE_CONFIG_PATH =
-  process.env.REGOC_WORKFLOW_GATE_CONFIG || join(HOME, '.claude/regoc/config/workflow-gate.json')
+  process.env.REGOC_WORKFLOW_GATE_CONFIG || konfigPutanja('workflow-gate.json')
 
 export const WORKFLOWS_KATALOG_PATH =
-  process.env.REGOC_WORKFLOWS_KATALOG || join(HOME, 'app/TaskManager/TaskManagerAI/agents/workflows.json')
+  process.env.REGOC_WORKFLOWS_KATALOG || join(PAKET_DIR, 'agents', 'workflows.json')
 
 export const WORKFLOW_ODLUKE_LOG_PATH =
-  process.env.REGOC_WORKFLOW_ODLUKE_LOG || join(HOME, '.claude/regoc/data/workflow_odluke.jsonl')
+  process.env.REGOC_WORKFLOW_ODLUKE_LOG || stanjePutanja('workflow_odluke.jsonl')
 
 /** Koliko znakova naslova ide u zapis — dnevnik nije preslika ploče. */
 export const ISJECAK_NASLOVA = 160
@@ -486,7 +487,7 @@ export interface OdlukaZapis {
  * e2e testovi namjerno podmeću HOME, pa bi provjera vezana uz `$HOME` propustila baš onaj
  * slučaj zbog kojega guard postoji.
  */
-export const LIVE_ODLUKE_LOG_PATH = join(realHomedir(), '.claude/regoc/data/workflow_odluke.jsonl')
+export const LIVE_ODLUKE_LOG_PATH = join(realHomedir(), '.taskmanager', 'data', 'workflow_odluke.jsonl')
 
 /**
  * Smije li se u OVOM procesu pisati u OVU datoteku.

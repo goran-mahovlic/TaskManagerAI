@@ -40,6 +40,7 @@ import {
   OZNAKA_PREFIKS, WORKFLOW_GATE_CONFIG_PATH, tijekUkljucen,
   type Korak, type Tijek,
 } from './WorkflowGate'
+import { konfigPutanja, stanjePutanja } from './paths'
 
 const HOME = process.env.HOME || realHomedir()
 
@@ -141,7 +142,8 @@ function sustavskiPut(...dijelovi: string[]): string {
 }
 
 export const SKILLS_DIR = sustavskiPut('.claude', 'skills')
-export const AGENTI_PATH = sustavskiPut('.claude', 'regoc', 'REGOC_AGENTS.json')
+/** Registar PAI agenata — isti lanac kao ploča (`TM_AGENTS_REGISTRY`, TASK-5108). */
+export const AGENTI_PATH = konfigPutanja('REGOC_AGENTS.json', 'TM_AGENTS_REGISTRY')
 /** Vještina koju ima SVAKI agent u registru — zadnja postaja, nikad izmišljotina. */
 export const ZADANA_VJESTINA = 'CORE'
 
@@ -641,8 +643,8 @@ export function formatLanacLog(i: MaterijalizacijaIshod): string {
 
 // ─── Dnevnik lanaca ──────────────────────────────────────────────────────────
 
-export const LANCI_LOG_PATH = join(HOME, '.claude', 'regoc', 'data', 'tijek_lanci.jsonl')
-export const LIVE_LANCI_LOG_PATH = join(realHomedir(), '.claude', 'regoc', 'data', 'tijek_lanci.jsonl')
+export const LANCI_LOG_PATH = stanjePutanja('tijek_lanci.jsonl')
+export const LIVE_LANCI_LOG_PATH = join(realHomedir(), '.taskmanager', 'data', 'tijek_lanci.jsonl')
 export const LANCI_VERZIJA = 1
 
 /**

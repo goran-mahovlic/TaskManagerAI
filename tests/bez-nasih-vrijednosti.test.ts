@@ -64,10 +64,9 @@ const PRAVILA: Pravilo[] = [
     ime: 'naš HOME kao zadana vrijednost',
     uzorak: '/home/klaudio',
     objasnjenje: 'koristi `src/core/paths.ts` (TM_ROOT), nikad tuđi $HOME kao rezervu (ADR-0001 O1.1)',
-    osnovicaPojava: 1,
-    osnovicaDatoteka: [
-      'scripts/zakrpe/u6-ingest.patch',
-    ],
+    // TASK-5108: 1 → 0, zakrpa za živu instalaciju izbačena iz paketa (scripts/zakrpe/ u .gitignore).
+    osnovicaPojava: 0,
+    osnovicaDatoteka: [],
   },
   {
     ime: 'naši IP-ovi',
@@ -114,44 +113,17 @@ const PRAVILA: Pravilo[] = [
   },
   {
     ime: 'naš raspored mapa (~/.claude/regoc)',
-    uzorak: '\\.claude/regoc',
-    objasnjenje: 'putanja konfiguracije ide obrascem iz `IngestConfig.zadanaPutanja()` (ADR-0001 O1.4)',
-    osnovicaPojava: 120,
+    // TASK-5108: uzorak hvata i rastavljeni oblik — `join(HOME, '.claude', 'regoc', …)` i
+    // `Path.home() / ".claude" / "regoc"` su isti raspored, a stari ga uzorak nije vidio
+    // (11 pojava u src/, 3 u tools/ — sve očišćene u istom koraku).
+    uzorak: '\\.claude/regoc|\\.claude[\'"]\\s*[,/]\\s*[\'"]regoc',
+    objasnjenje: 'konfiguracija kroz `konfigPutanja()`, stanje kroz `stanjePutanja()` (src/core/paths.ts) '
+      + 'ili `tools/tm_putanje.py` u Pythonu (ADR-0001 O1.4)',
+    // TASK-5108: 120/34 → 2/2. Ostatak su dva interna alata koja izlaze iz paketa (D4).
+    osnovicaPojava: 2,
     osnovicaDatoteka: [
-      'CHANGELOG.md',
-      'agents/workflows.json',
-      'config/postavke.env.primjer',
-      'scripts/install-agents.sh',
-      'scripts/install.sh',
-      'scripts/zakrpe/u6-ingest.patch',
-      'src/LoginCreds.ts',
-      'src/TaskWebUI.ts',
-      'src/core/CriticGate.ts',
-      'src/core/IngestConfig.ts',
-      'src/core/LiveDbGuard.ts',
-      'src/core/MessageQueue.ts',
-      'src/core/ModeClassifier.ts',
-      'src/core/OdluciteljPogon.ts',
-      'src/core/PauseControl.ts',
-      'src/core/ProjectManager.ts',
-      'src/core/ReportBackSweepLive.ts',
-      'src/core/TaskCreateBreaker.ts',
-      'src/core/TaskDecomposer.ts',
-      'src/core/TaskManagerSQL.ts',
-      'src/core/WorkflowGate.ts',
-      'src/core/models/ClassifierModel.ts',
-      'src/rag/memory-config.ts',
-      'src/rag/rag-memory.ts',
-      'tools/agent_telemetry.py',
-      'tools/dezurni.py',
-      'tools/odaberi_workflow.py',
-      'tools/odlucitelj.py',
-      'tools/rag_archive.py',
       'tools/razvrstaj_pretinac.py',
       'tools/razvrstaj_prijave.py',
-      'tools/test_tjedni_pregled.py',
-      'tools/tjedni_pregled.py',
-      'tools/uvoz_telegram_zadataka.py',
     ],
   },
 ]

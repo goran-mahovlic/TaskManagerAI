@@ -25,7 +25,7 @@ export interface RAGConfig {
 }
 
 /**
- * SSOT: ~/.claude/regoc/memory-config.json + env (vidi lib/memory-config.ts).
+ * SSOT: memory-config.json (konfigPutanja) + env (vidi lib/memory-config.ts).
  * Ugrađeni default je LOKALNI appliance (127.0.0.1) + `bge-m3` (CPU-realan, dobar hrvatski);
  * mrežni hostovi (.200/.4) i drugi embed model postavljaju se u memory-config.json ili envom.
  * NAPOMENA: vektori različitih modela nisu usporedivi (bge-m3=1024 dim, qwen3=4096) —
@@ -247,7 +247,7 @@ export async function listCollections(
  * — R3, TASK-4310 (docs/RAG-2026-09-04_pregled_i_prijedlog.md).
  *
  * Ne diraju se: `test`, `regoc_seedtest_2620` i `pai_agent_unknown` su izvezene u
- * ~/.claude/regoc/data/rag_arhiv/ i UKLONJENE iz Chrome (tools/rag_archive.py --drop).
+ * $TM_HOME/data/rag_arhiv/ i UKLONJENE iz Chrome (tools/rag_archive.py --drop).
  * `pai_agent_Bash`/`pai_agent_Explore` su izvezene ali OSTAJU u Chromi — samo se
  * isključuju iz automatskog fan-outa (rag-router klasifikacija, board "browse svih
  * kolekcija") jer su naslijeđeni PAI izlazi bez `project_id` koji razrjeđuju pogotke.
@@ -261,7 +261,7 @@ export const DEFAULT_SEARCH_EXCLUDED_COLLECTIONS = [
   // arhitektura agenata, SERENA/ZOD/RAG) preseljen u kolekciju `regoc_znanje`, koja OSTAJE
   // u zadanoj pretrazi (tools/rag_izdvoji.py). Ostatak su rutinski izlazi podagenata
   // („conversion complete…") bez `project_id`. Izvornik je izvezen u
-  // ~/.claude/regoc/data/rag_arhiv/ i ostaje u Chromi — dostupan s `-c pai_agent_general-purpose`.
+  // $TM_HOME/data/rag_arhiv/ i ostaje u Chromi — dostupan s `-c pai_agent_general-purpose`.
   "pai_agent_general-purpose",
 ];
 

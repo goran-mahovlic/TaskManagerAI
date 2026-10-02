@@ -5,7 +5,7 @@
  * Tier 0 (uvijek ON, offline): markdown memorija (MEMORY.md + memory/*.md + LESSONS/*.md).
  * Tier 1 (opcionalni toggle): ChromaDB + Ollama embeddings (RAG).
  *
- * Jedan izvor istine za oboje = ~/.claude/regoc/memory-config.json.
+ * Jedan izvor istine za oboje = memory-config.json (konfigPutanja, paths.ts).
  * Prioritet: process.env  >  memory-config.json  >  ugrađeni defaulti (127.0.0.1 + bge-m3).
  *
  * Čitaju ga: lib/rag-memory.ts (DEFAULT_CONFIG), ContextPacker.ts, WikilinkParser.ts,
@@ -19,6 +19,7 @@
 
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
 import { join, dirname } from 'path'
+import { konfigPutanja, stanjePutanja } from '../core/paths'
 
 // ============================================================================
 // Tipovi
@@ -67,7 +68,7 @@ const PROJECT_ROOT = join(HOME, 'app', 'regoc_system')
 const LEGACY_SLUG = '-home-klaudio-app-regoc-system'
 
 export function configPath(): string {
-  return process.env.REGOC_MEMORY_CONFIG || join(HOME, '.claude', 'regoc', 'memory-config.json')
+  return process.env.REGOC_MEMORY_CONFIG || konfigPutanja('memory-config.json')
 }
 
 /** Claude Code slug: apsolutna putanja s '/', '_' i '.' zamijenjenim crticom. */
@@ -123,7 +124,7 @@ export function defaultMemoryConfig(): MemoryConfig {
       enabled: false,
       chromaHost: '127.0.0.1',
       chromaPort: 18765,
-      chromaDataDir: join(HOME, '.claude', 'regoc', 'data', 'chroma-data'),
+      chromaDataDir: stanjePutanja('chroma-data'),
       ollamaHost: 'http://127.0.0.1:11434',
       embedModel: 'bge-m3',
       collection: 'regoc_memory',

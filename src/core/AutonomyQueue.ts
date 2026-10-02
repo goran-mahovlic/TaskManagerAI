@@ -44,16 +44,17 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync, renameSync } from '
 import { homedir } from 'os'
 import { dirname, join } from 'path'
 import { isEmptyOrFixtureTask } from './DispatchGuard'
+import { konfigPutanja, TM_DATA } from './paths'
 
 const HOME = process.env.HOME || homedir()
-const DATA_DIR = join(HOME, '.claude', 'regoc', 'data')
+const DATA_DIR = TM_DATA
 
 /** Trenutni red čekanja — čita ga okidač, alat i (ubuduće) ploča. */
 export const AUTONOMY_QUEUE_PATH =
   process.env.REGOC_AUTONOMY_QUEUE || join(DATA_DIR, 'autonomy_queue.json')
 
 /** Popis oznaka dijeli se sa stale-watchdogom da ne nastanu dva popisa iste stvari. */
-export const STALE_WATCHDOG_CONFIG_PATH = join(HOME, '.claude', 'regoc', 'config', 'stale-watchdog.json')
+export const STALE_WATCHDOG_CONFIG_PATH = konfigPutanja('stale-watchdog.json')
 
 /** Izričito dopuštenje čovjeka. Nije uvjet (0 zadataka ga ima), nego zapisana potvrda. */
 export const AUTONOMY_OPT_IN_TAG = 'autonomy-ok'

@@ -23,7 +23,11 @@ IZVOR="$KORIJEN/agents/regoc-tim.json"
 # TM_AGENTS_REGISTRY, ne TM_AGENTS: `TM_AGENTS` je popis dopuštenih nositelja zadatka
 # (docs/INSTALL.md §5.1), a ovo je PUTANJA do registra PAI agenata. Isto ime za dvije
 # stvari bio je nalaz N1 iz docs/QA_E2E_SAMOSTALNOST_2026-09-10.md.
-ODREDISTE="${TM_AGENTS_REGISTRY:-$HOME/.claude/regoc/REGOC_AGENTS.json}"
+# Zadano isto mjesto koje ploča čita (konfigPutanja u src/core/paths.ts): $TM_HOME/config
+# ako je TM_HOME zadan, inače config/ uz paket (TASK-5108).
+if [ -n "${TM_HOME:-}" ]; then ZADANI_REGISTAR="$TM_HOME/config/REGOC_AGENTS.json"
+else ZADANI_REGISTAR="$KORIJEN/config/REGOC_AGENTS.json"; fi
+ODREDISTE="${TM_AGENTS_REGISTRY:-$ZADANI_REGISTAR}"
 VJESTINE_DIR="${TM_SKILLS_DIR:-$HOME/.claude/skills}"
 PAI_REPO="${PAI_REPO:-https://github.com/danielmiessler/PAI}"
 PAI_KOPIJA="${PAI_KOPIJA:-$HOME/.cache/pai-izvor}"

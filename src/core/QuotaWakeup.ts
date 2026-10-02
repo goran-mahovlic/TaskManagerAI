@@ -39,9 +39,10 @@
 import { existsSync, readFileSync, writeFileSync, appendFileSync, mkdirSync, renameSync } from 'fs'
 import { homedir } from 'os'
 import { dirname, join } from 'path'
+import { TM_DATA } from './paths'
 
 const HOME = process.env.HOME || homedir()
-const DATA_DIR = join(HOME, '.claude', 'regoc', 'data')
+const DATA_DIR = TM_DATA
 
 /** Stanje okidača — mora preživjeti restart, inače svaki start izgleda kao prvi pokušaj. */
 export const QUOTA_WAKEUP_STATE_PATH =

@@ -1,4 +1,4 @@
-// ~/.claude/regoc/ModeClassifier.ts
+// src/core/ModeClassifier.ts
 // Mode Classifier - classifies incoming tasks into effort tiers for routing
 // FAZA 3.2 - F3.2 Mode Classification
 // Autor: Jelena (Engineer Agent)

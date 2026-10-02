@@ -141,10 +141,10 @@ Testovi: s ovim prijenosom `bun test` broji 800+ prolaza i 0 padova.
 
 **Paket radi bez REGOČ instalacije**
 - `TM_DB` / `TM_HOME` sada premještaju bazu zadataka, projekata, troška i reda poruka izvan
-  `~/.claude/regoc`. Bez tih varijabli je putanja nepromijenjena.
+  rasporeda mapa orkestratora. Bez tih varijabli je putanja nepromijenjena.
 - Red poruka stvara svoju mapu ako je nema — dotad poslužitelj na praznom `$HOME` uopće nije
   mogao krenuti (`unable to open database file`, izvan `try/catch`).
-- Provjereno: `HOME` bez `~/.claude/regoc`, `bun src/TaskWebUI.ts`, `curl POST /api/ingest`
+- Provjereno: `HOME` bez mapa orkestratora, `bun src/TaskWebUI.ts`, `curl POST /api/ingest`
   → `TASK-001` u `$TM_HOME/data/tasks.db`.
 
 ## 2026-09-04 — potrošnja, vrijednost rada i RAG

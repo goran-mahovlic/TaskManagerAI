@@ -21,6 +21,13 @@ import { hostname as osHostname, networkInterfaces as osNetworkInterfaces, homed
 // SQL-Only TaskManager (v2.0) - replaces MD+SQLite dual-write
 import { getTaskManagerSQL, INBOX_PROJECT_ID } from './core/TaskManagerSQL'
 import { konfigPutanja, osigurajMapu, stanjePutanja, TM_DB } from './core/paths'
+import { datotekaTajni, datotekaTajniZaPisanje } from './core/ConfigModul'
+/**
+ * Registar PAI agenata (`REGOC_AGENTS.json`, upisuje ga `scripts/install-agents.sh`).
+ * TASK-5108: bio je u rasporedu žive REGOČ instalacije; sada `TM_AGENTS_REGISTRY` ili
+ * `$TM_HOME/config`/`config/` uz paket — isti lanac kao svaka konfiguracija (paths.ts).
+ */
+const AGENTS_REGISTRY_FILE = konfigPutanja('REGOC_AGENTS.json', 'TM_AGENTS_REGISTRY')
 // ADR-0012 (TASK-4827): `spawnCloseGuard` — dok na zadatku DOKAZIVO radi spawn, prijelaz u
 // TERMINALNO stanje ne dolazi od sustava (orkestrator najam pušta prije svog zapisa) nego od
 // agenta koji sam sebe zatvara prije suda kritičara. Zadano isključeno (features.json).
@@ -137,7 +144,7 @@ import { resolveSessionUsage, createDefaultDeps, type UsageState } from './Sessi
 // D4/TASK-4633: postavke dežurnog (rezervnog modela) — izbor modela s ploče, bez restarta.
 // TASK-4709: davatelji dežurnog više nisu tvrdi popis nego izvod iz `model-config.json`.
 import {
-  DEZURNI_CONFIG_PATH, GRANICE, POZNATI_MODELI_DEZURNI,
+  DEZURNI_CONFIG_PATH, GRANICE, MODEL_CONFIG_PATH, POZNATI_MODELI_DEZURNI,
   davateljiDezurnog, loadDezurniConfig, podrzaniProvideri, saveDezurniConfig,
   upotrebljiviProvideri, validateDezurniPatch, zadaniModelZa,
 } from './DezurniConfig'
@@ -339,7 +346,7 @@ const TOKEN_WINDOW_DAYS = 30
 const SCHEDULER_STATE_FILE = join(process.env.HOME || homedir(), '.tmp/regoc_scheduler_state.json')
 const REGOC_SERVICES_SCRIPT = join(process.env.HOME || homedir(), 'app/regoc_system/regoc-services.sh')
 /** PID koji piše RegocDaemon — tvrdi signal živosti uz (meku) starost status datoteke. */
-const DAEMON_PID_FILE = join(process.env.HOME || homedir(), '.claude/regoc/daemon.pid')
+const DAEMON_PID_FILE = process.env.TM_DAEMON_PID || stanjePutanja('daemon.pid')
 
 /**
  * Produkcijske ovisnosti za DaemonLiveness (TASK-2991). Sama logika resolvera je bez I/O
@@ -9524,7 +9531,7 @@ function getEffectiveModels(): typeof AVAILABLE_MODELS {
   const extra: typeof AVAILABLE_MODELS = []
   try {
     const H = process.env.HOME || ''
-    const _cf = join(H, '.claude/regoc/credentials.env')
+    const _cf = datotekaTajni()
     const _geminiKey = existsSync(_cf) && /^GEMINI_API_KEY=.+/m.test(readFileSync(_cf, 'utf-8'))
     if (existsSync(join(H, '.gemini/oauth_creds.json')) || _geminiKey) {
       extra.push(
@@ -9542,7 +9549,7 @@ function getEffectiveModels(): typeof AVAILABLE_MODELS {
 function loadAgentOverrides(HOME: string): Record<string, string> {
   const out: Record<string, string> = {}
   try {
-    const p = join(HOME, '.claude/regoc/models/model-config.json')
+    const p = MODEL_CONFIG_PATH
     if (existsSync(p)) {
       const mc = JSON.parse(readFileSync(p, 'utf-8'))
       const ov = mc.agentOverrides || {}
@@ -9586,7 +9593,7 @@ async function buildModelsAvailable(): Promise<{ providers: any[]; models: any[]
   const HOME = process.env.HOME || homedir()
   let provCfg: Record<string, any> = {}
   try {
-    const mc = JSON.parse(readFileSync(join(HOME, '.claude/regoc/models/model-config.json'), 'utf-8'))
+    const mc = JSON.parse(readFileSync(MODEL_CONFIG_PATH, 'utf-8'))
     provCfg = mc.providers || {}
   } catch {}
 
@@ -9742,7 +9749,7 @@ async function handleDezurniProba(): Promise<Response> {
 /** Radi li dežurstvo upravo sada — isti zapis koji piše `dezurni.ts` (data/dezurni.stanje.json). */
 function citajDezurniStanje(): { dezurstvo: boolean; uzastopnihGresaka: number; od?: string } {
   try {
-    const p = join(process.env.HOME || homedir(), '.claude/regoc/data/dezurni.stanje.json')
+    const p = stanjePutanja('dezurni.stanje.json')
     const s = JSON.parse(readFileSync(p, 'utf-8'))
     return {
       dezurstvo: !!s.dezurstvo,
@@ -10217,7 +10224,7 @@ async function handleSetProvider(providerId: string, req: Request): Promise<Resp
   try {
     const body = (await req.json()) as { enabled?: boolean; baseUrl?: string; apiKey?: string }
     const HOME = process.env.HOME || homedir()
-    const mcPath = join(HOME, '.claude/regoc/models/model-config.json')
+    const mcPath = MODEL_CONFIG_PATH
     if (!existsSync(mcPath)) return json({ error: 'model-config.json not found' }, 500)
     const mc = JSON.parse(readFileSync(mcPath, 'utf-8'))
     if (!mc.providers) mc.providers = {}
@@ -10253,7 +10260,7 @@ function buildInfoPayload(): Record<string, unknown> {
   let agents: Record<string, unknown>[] = []
   let agentCount = 0
   try {
-    const regPath = join(HOME, '.claude/regoc/REGOC_AGENTS.json')
+    const regPath = AGENTS_REGISTRY_FILE
     if (existsSync(regPath)) {
       const reg = JSON.parse(readFileSync(regPath, 'utf-8'))
       const agentMap = reg.agents || {}
@@ -10309,7 +10316,7 @@ function buildInfoPayload(): Record<string, unknown> {
   let providers: Record<string, unknown>[] = []
   let providerCount = 0
   try {
-    const mcPath = join(HOME, '.claude/regoc/models/model-config.json')
+    const mcPath = MODEL_CONFIG_PATH
     if (existsSync(mcPath)) {
       const mc = JSON.parse(readFileSync(mcPath, 'utf-8'))
       const provs = mc.providers || {}
@@ -10355,7 +10362,7 @@ function buildInfoPayload(): Record<string, unknown> {
   let modules: Record<string, unknown>[] = []
   let modulesEnabled = 0
   try {
-    const modPath = join(HOME, '.claude/regoc/modules/module-config.json')
+    const modPath = konfigPutanja('module-config.json', 'TM_MODULE_CONFIG')
     if (existsSync(modPath)) {
       const mc = JSON.parse(readFileSync(modPath, 'utf-8'))
       const mods = mc.modules || {}
@@ -10567,7 +10574,7 @@ async function handleSetAgentModel(agentId: string, req: Request): Promise<Respo
     }
 
     const HOME = process.env.HOME || homedir()
-    const mcPath = join(HOME, '.claude/regoc/models/model-config.json')
+    const mcPath = MODEL_CONFIG_PATH
     if (!existsSync(mcPath)) return json({ error: 'model-config.json not found' }, 500)
 
     const mc = JSON.parse(readFileSync(mcPath, 'utf-8'))
@@ -10607,7 +10614,7 @@ async function handleGetClassifier(): Promise<Response> {
     try {
       let apiKey: string | undefined
       try {
-        const mc = JSON.parse(readFileSync(join(HOME, '.claude/regoc/models/model-config.json'), 'utf-8'))
+        const mc = JSON.parse(readFileSync(MODEL_CONFIG_PATH, 'utf-8'))
         if (typeof mc?.providers?.ollama?.apiKey === 'string') apiKey = mc.providers.ollama.apiKey
       } catch {}
       models = await fetchOllamaModels(cur.baseUrl, apiKey)
@@ -10809,7 +10816,7 @@ function resolveProjectForCreate(requested: string | undefined): { projectId: st
  * Pravila su u `config/upute-po-tipu.json` i čitaju se pri svakom otvaranju, pa novo pravilo
  * vrijedi odmah, bez izmjene koda i bez restarta.
  */
-const UPUTE_PATH = `${process.env.HOME}/.claude/regoc/config/upute-po-tipu.json`
+const UPUTE_PATH = konfigPutanja('upute-po-tipu.json', 'TM_UPUTE_PO_TIPU')
 
 function upozorenjaZaZadatak(zadatak: {
   title?: unknown; description?: unknown; assignee?: unknown; tags?: unknown
@@ -10978,8 +10985,8 @@ async function handleCreateTask(req: Request): Promise<Response> {
         count: rateVerdict.count,
         limit: rateVerdict.limit,
         retryAfterMs: rateVerdict.retryAfterMs,
-        reason: rateVerdict.reason + '. Zadatak NIJE izgubljen: čeka u redu i pušta se s '
-          + 'bun ~/.claude/regoc/tools/task-create-queue.ts --release',
+        reason: rateVerdict.reason + '. Zadatak NIJE izgubljen: čeka u redu (tablica '
+          + '`task_create_queue` u bazi ploče) dok se prozor ne oslobodi.',
       }), {
         status: 429,
         headers: {
@@ -11161,7 +11168,7 @@ function loginBinPath(bin?: string): string | null {
 // Mjerilo prijavljenosti i odjava dijele `src/LoginCreds.ts` — dok su bila dva prepisana
 // izraza, odjava je brisala OAuth datoteku a mjerilo gledalo ključ, pa je gumb zauvijek
 // ostajao „prijavljen" (TASK-4796).
-function loginStorePath(): string { return loginHomeExpand('~/.claude/regoc/credentials.env') }
+function loginStorePath(): string { return datotekaTajni() }
 function loginCredsPresent(def: LoginProviderDef): boolean {
   try {
     if (def.kind === 'apikey') return kljucPrisutanUDatoteci(loginStorePath(), def.envKey || '')
@@ -11175,7 +11182,7 @@ function loginCredsPresent(def: LoginProviderDef): boolean {
 }
 function loginSetProviderEnabled(id: string, enabled: boolean): void {
   try {
-    const mcPath = loginHomeExpand('~/.claude/regoc/models/model-config.json')
+    const mcPath = MODEL_CONFIG_PATH
     const mc = existsSync(mcPath) ? JSON.parse(readFileSync(mcPath, 'utf-8')) : {}
     mc.providers = mc.providers || {}
     mc.providers[id] = { ...(mc.providers[id] || {}), enabled }
@@ -11558,7 +11565,7 @@ async function handleLoginApikey(req: Request): Promise<Response> {
     const def = LOGIN_PROVIDERS.find(d => d.id === id)
     if (!def || !def.envKey) return json({ error: 'Provider ne podržava API ključ' }, 400)
     if (!key || !key.trim()) return json({ error: 'Prazan ključ' }, 400)
-    const f = loginHomeExpand('~/.claude/regoc/credentials.env')
+    const f = osigurajMapu(datotekaTajniZaPisanje())
     let txt = existsSync(f) ? readFileSync(f, 'utf-8') : ''
     const line = `${def.envKey}=${key.trim()}`
     txt = new RegExp('^' + def.envKey + '=.*$', 'm').test(txt) ? txt.replace(new RegExp('^' + def.envKey + '=.*$', 'm'), line) : (txt.replace(/\s*$/, '') + '\n' + line + '\n')
@@ -12182,8 +12189,7 @@ function ucitajOdluciteljConfig(): Record<string, any> {
 function putanjaOdlucitelja(): string | null {
   const fs = require('fs')
   for (const put of [`${process.env.HOME}/app/regoc_system/tools/odlucitelj.py`,
-                     `${import.meta.dir}/../tools/odlucitelj.py`,
-                     `${process.env.HOME}/.claude/regoc/tools/odlucitelj.py`]) {
+                     `${import.meta.dir}/../tools/odlucitelj.py`]) {
     if (fs.existsSync(put)) return put
   }
   return null
@@ -12230,11 +12236,11 @@ function odluciteljDavatelji(): Record<string, any> {
   let konf: Record<string, any> = {}
   try {
     konf = JSON.parse(fs.readFileSync(
-      `${process.env.HOME}/.claude/regoc/models/model-config.json`, 'utf-8')).providers || {}
+      MODEL_CONFIG_PATH, 'utf-8')).providers || {}
   } catch { /* bez konfiguracije ostaje samo lokalni put */ }
   let spremiste = ''
   try {
-    spremiste = fs.readFileSync(`${process.env.HOME}/.claude/regoc/credentials.env`, 'utf-8')
+    spremiste = fs.readFileSync(datotekaTajni(), 'utf-8')
   } catch { /* nema spremišta — tada odlučuje samo okolina */ }
   // Provjerava se SAMO postoji li redak s tim imenom; vrijednost se nikad ne čita ni ne šalje.
   const imaKljuc = (ime: string) =>
@@ -13137,7 +13143,7 @@ async function handleUpdateProject(projectId: string, req: Request): Promise<Res
 // SPEC DISPATCH-UPGRADE + TEMPLATES
 // ============================================
 
-const TEMPLATES_DIR = join(process.env.HOME || homedir(), '.claude/regoc/templates')
+const TEMPLATES_DIR = process.env.TM_TEMPLATES_DIR || konfigPutanja('templates')
 
 // Hardcoded fallback ako spec-upgrade.md fizički nestane (dispatch mora preživjeti).
 const FALLBACK_SPEC_TEMPLATE = '[[AGENT:$agent]]\nNadogradi projekt $projekt po specifikaciji:\n\n$spec'
@@ -13149,7 +13155,7 @@ const FALLBACK_SPEC_TEMPLATE = '[[AGENT:$agent]]\nNadogradi projekt $projekt po 
  */
 function loadKnownAgentIds(): Set<string> {
   try {
-    const regPath = join(process.env.HOME || homedir(), '.claude/regoc/REGOC_AGENTS.json')
+    const regPath = AGENTS_REGISTRY_FILE
     const reg = JSON.parse(readFileSync(regPath, 'utf-8'))
     return new Set(Object.keys(reg.agents || {}))
   } catch {
@@ -14338,7 +14344,7 @@ async function handleStatusDashboard(): Promise<Response> {
 function handleGetAgents(): Response {
   const HOME = process.env.HOME || homedir()
   try {
-    const regPath = join(HOME, '.claude/regoc/REGOC_AGENTS.json')
+    const regPath = AGENTS_REGISTRY_FILE
     const tierMap: Record<string, string> = { opus: 'frontier', sonnet: 'strong', haiku: 'basic' }
     if (!existsSync(regPath)) {
       return new Response(JSON.stringify({ agents: [], totalAgents: 0, activeCount: 0 }), { headers: { 'Content-Type': 'application/json' } })
@@ -14412,7 +14418,7 @@ function handleGetAgents(): Response {
 function handleGetModules(): Response {
   const HOME = process.env.HOME || homedir()
   try {
-    const modPath = join(HOME, '.claude/regoc/modules/module-config.json')
+    const modPath = konfigPutanja('module-config.json', 'TM_MODULE_CONFIG')
     if (!existsSync(modPath)) {
       return new Response(JSON.stringify({ modules: [] }), { headers: { 'Content-Type': 'application/json' } })
     }
@@ -14536,15 +14542,16 @@ async function handleGetSecurity(): Promise<Response> {
   // PromptGuard availability
   let promptGuard = { available: false }
   try {
-    const pgPath = join(process.env.HOME || homedir(), '.claude/regoc/security/PromptGuard.ts')
-    promptGuard = { available: existsSync(pgPath) }
+    // Sigurnosni moduli orkestratora nisu dio paketa — vide se samo ako je TM_SECURITY_DIR zadan.
+    const pgPath = process.env.TM_SECURITY_DIR ? join(process.env.TM_SECURITY_DIR, 'PromptGuard.ts') : ''
+    promptGuard = { available: !!pgPath && existsSync(pgPath) }
   } catch {}
 
   // SecurityPipeline availability
   let securityPipeline: any = { available: false, mode: 'unknown' }
   try {
-    const spPath = join(process.env.HOME || homedir(), '.claude/regoc/security/SecurityPipeline.ts')
-    securityPipeline = { available: existsSync(spPath), mode: 'localSafe' }
+    const spPath = process.env.TM_SECURITY_DIR ? join(process.env.TM_SECURITY_DIR, 'SecurityPipeline.ts') : ''
+    securityPipeline = { available: !!spPath && existsSync(spPath), mode: 'localSafe' }
   } catch {}
 
   return new Response(JSON.stringify({
@@ -14561,7 +14568,6 @@ async function handleGetSecurity(): Promise<Response> {
 
 const SYSTEM_MODE_FILE = join(process.env.HOME || homedir(), '.tmp/regoc_mode.json')
 const PERSISTENT_CONFIG_FILE = join(process.env.HOME || homedir(), '.tmp/regoc_persistent_config.json')
-const AGENTS_REGISTRY_FILE = join(process.env.HOME || homedir(), '.claude/regoc/REGOC_AGENTS.json')
 
 function handleGetSystemMode(): Response {
   try {

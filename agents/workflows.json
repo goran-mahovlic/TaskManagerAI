@@ -159,7 +159,7 @@
         }
       ],
       "enabled": true,
-      "izvor": "~/.claude/regoc/TeamWorkflow.ts (implement-feature)"
+      "izvor": "REGOČ TeamWorkflow.ts (implement-feature)"
     },
     "bug-fix": {
       "id": "bug-fix",
@@ -207,7 +207,7 @@
         }
       ],
       "enabled": true,
-      "izvor": "~/.claude/regoc/TeamWorkflow.ts (bug-fix) + faze ANALIZA i DOKUMENTACIJA iz ~/.claude/regoc/workflows/BugFixWorkflow.ts"
+      "izvor": "REGOČ TeamWorkflow.ts (bug-fix) + faze ANALIZA i DOKUMENTACIJA iz REGOČ workflows/BugFixWorkflow.ts"
     },
     "pregled-popravak": {
       "id": "pregled-popravak",
@@ -406,7 +406,7 @@
         }
       ],
       "enabled": true,
-      "izvor": "~/.claude/regoc/TeamWorkflow.ts (research)"
+      "izvor": "REGOČ TeamWorkflow.ts (research)"
     },
     "security-audit": {
       "id": "security-audit",
@@ -451,13 +451,13 @@
         }
       ],
       "enabled": true,
-      "izvor": "~/.claude/regoc/TeamWorkflow.ts (security-audit)"
+      "izvor": "REGOČ TeamWorkflow.ts (security-audit)"
     },
     "novi-projekt": {
       "id": "novi-projekt",
       "naziv": "Otvaranje novog projekta",
       "opis": "Novi projekt na jednom mjestu: mapa i dijeljenje na Nextcloudu, zapis projekta na ploči, prvi zadatci i specifikacija.",
-      "izvor": "~/.claude/regoc/workflows/CreateProjectWorkflow.ts (v1.0.0)",
+      "izvor": "REGOČ workflows/CreateProjectWorkflow.ts (v1.0.0)",
       "najmanja_tezina": 0,
       "okidaci": [
         "(otvori|kreiraj|napravi|pokreni|osnuj) (mi )?(novi )?projekt",
@@ -477,7 +477,7 @@
         {
           "agent": "regoc",
           "uloga": "izvedba",
-          "opis": "Pokreni `bun ~/.claude/regoc/workflows/CreateProjectWorkflow.ts \"<ime>\" --description … --priority … --lead … --tags …` — mapa /PROJEKTI/<ime> na Nextcloudu, dijeljenje, zapis projekta i metapodatci (folder path, share url). Provjeri povratni projectId.",
+          "opis": "Pokreni `bun <orkestrator>/workflows/CreateProjectWorkflow.ts \"<ime>\" --description … --priority … --lead … --tags …` — mapa /PROJEKTI/<ime> na Nextcloudu, dijeljenje, zapis projekta i metapodatci (folder path, share url). Provjeri povratni projectId.",
           "treba": [
             "alate",
             "web",

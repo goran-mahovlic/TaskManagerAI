@@ -74,3 +74,14 @@ config/critic-gate.json
 config/features.json
 config/energija.json
 config/rag-backend.json
+
+# Zakrpe za živu instalaciju (interni raspored mapa) — ne idu u paket (TASK-5108).
+scripts/zakrpe/
+# Konfiguracija koju upisuje instalacija ili ploča (TASK-5108: čita se kroz konfigPutanja).
+config/REGOC_AGENTS.json
+config/model-config.json
+config/module-config.json
+config/odlucitelj.json
+config/workflow-gate.json
+config/memory-config.json
+config/stale-watchdog.json

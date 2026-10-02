@@ -18,11 +18,12 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync, renameSync } from 'fs'
 import { homedir } from 'os'
 import { join, dirname } from 'path'
+import { stanjePutanja } from './core/paths'
 
 const HOME = process.env.HOME || homedir()
 
 export const TECAJ_PUT = process.env.TM_TECAJ_FILE
-  || join(HOME, '.claude', 'regoc', 'data', 'tecaj_usd_eur.json')
+  || stanjePutanja('tecaj_usd_eur.json')
 
 /** ECB-ov dnevni tečaj preko frankfurter.dev — bez ključa, bez registracije. */
 export const TECAJ_URL = 'https://api.frankfurter.dev/v1/latest?base=USD&symbols=EUR'

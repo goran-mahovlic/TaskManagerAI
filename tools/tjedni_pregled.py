@@ -6,14 +6,14 @@ Kriška T5 uz ISTRAZIVANJE_AGENTSIGHT_2026-09-01.md §7 (tablica šest mjera, re
 
 IZVOR ISTINE — ništa se ovdje ne izmišlja i ne duplicira:
 
-    ~/.claude/regoc/data/run_log.jsonl      → koja su se izvođenja dogodila
+    $TM_HOME/data/run_log.jsonl             → koja su se izvođenja dogodila
                                               (task_id, agent, model, outcome, exit_code,
                                                duration_s, tokens{}, cost_usd, session_id)
     ~/.claude/projects/**/<session_id>.jsonl → NAŠI transkripti: vrijeme, latencija po
                                               pozivu modela, pozivi alata, `usage` polja
-    ~/.claude/regoc/data/transkript_arhiv/  → arhiv istih transkripata (.jsonl.gz) —
+    $TM_HOME/data/transkript_arhiv/         → arhiv istih transkripata (.jsonl.gz) —
                                               čita se kad je živi obrisan (T9/TASK-3574)
-    ~/.claude/regoc/data/regoc.db (ro)      → tasks.project_id i projects.name
+    $TM_DB (ro)                             → tasks.project_id i projects.name
 
 Veza zadatak ↔ transkript ide preko `session_id`, točno kao u `agent_telemetry.py`.
 Sam izračun po jednom izvođenju NE pišemo ponovo — zovemo `agent_telemetry.sastavi_zapis()`
@@ -66,9 +66,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import agent_telemetry as at  # noqa: E402  (isti direktorij; SSOT za izračun po zadatku)
+from tm_putanje import stanje  # noqa: E402
 
 SHEMA_ID = "regoc.tjedni-pregled/v1"
-KES_PUT = Path.home() / ".claude" / "regoc" / "data" / "tjedni_pregled_kes.jsonl"
+KES_PUT = stanje("tjedni_pregled_kes.jsonl")
 KES_MAX = 2000
 # Koliko svježe izračunatih zapisa smije proći prije nego keš ode na disk. Bez međuspremanja
 # prolaz koji pozivatelj ubije na roku ne ostavi ništa (v. petlju u `zapisi_u_razdoblju`).
@@ -436,9 +437,9 @@ def agregiraj(zapisi: list[dict]) -> dict:
 
 # ── M3/TASK-4625: tri stupca ishoda ──────────────────────────────────────────
 # `run_log.outcome` ima ČETIRI vrijednosti, a ploča pokazuje TRI stupca. Taksonomija i
-# obrazloženje su u ~/.claude/regoc/RunOutcome.ts (SSOT); ovdje je samo preslikavanje,
+# obrazloženje su u RunOutcome.ts orkestratora (SSOT); ovdje je samo preslikavanje,
 # jer python ne može uvesti TypeScript. Test koji brani da se dvije kopije ne raziđu:
-# ~/.claude/regoc/tests/run-outcome.test.ts + tools/test_tjedni_pregled.py.
+# run-outcome.test.ts orkestratora + tools/test_tjedni_pregled.py.
 #
 #   completed  → completed   posao isporučen i prihvaćen
 #   blocked_ok → blocked_ok  agent je SAM stao pred preprekom (nije kvar)

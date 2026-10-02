@@ -491,9 +491,9 @@ def test_ispis_navodi_da_je_izvor_arhiv(arhivirano_izvodjenje, capsys):
 
 
 # ── M3/TASK-4625: tri stupca ishoda ─────────────────────────────────────────
-# SSOT taksonomije je ~/.claude/regoc/RunOutcome.ts; python ga ne može uvesti, pa ovaj
+# SSOT taksonomije je RunOutcome.ts orkestratora; python ga ne može uvesti, pa ovaj
 # test brani da se dvije kopije ne raziđu. Istovjetna tvrdnja u TypeScriptu:
-# ~/.claude/regoc/tests/run-outcome.test.ts → "outcomeColumn — četiri ishoda u tri stupca".
+# run-outcome.test.ts orkestratora → "outcomeColumn — četiri ishoda u tri stupca".
 
 def test_stupac_ishoda_preslikava_cetiri_ishoda_u_tri_stupca():
     assert tp.stupac_ishoda("completed") == "completed"

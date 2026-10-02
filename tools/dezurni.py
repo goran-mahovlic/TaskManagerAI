@@ -35,29 +35,42 @@ import datetime as dt
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 import time
 import urllib.request
 from pathlib import Path
 
-from tm_putanje import ollama_url
+from tm_putanje import konfig, ollama_url, stanje
 from zoneinfo import ZoneInfo
 
 HOME = Path.home()
 ZONA = ZoneInfo("Europe/Zagreb")
 PLOCA = "http://localhost:17781"
-DNEVNIK = HOME / ".claude/regoc/daemon.log"
-KES_KVOTE = HOME / ".claude/regoc/data/session_usage.cache.json"
-PUTOVI_SERVISA = [                      # glavni stroj, pa čvorovi (RegocMobile)
-    (HOME / "app/regoc_system/regoc-services.sh", ["restart-service", "{s}"]),
-    (HOME / ".claude/regoc/manage.sh", ["restart"]),
-    (HOME / "tmai_start.sh", []),
-]
-# Bilo ~/.tmp/regoc_send.py — ~/.tmp se čisti, pa je slanje šutke nestalo. TM_TELEGRAM_SEND ima prednost.
-PUTOVI_SLANJA = [Path(os.environ.get("TM_TELEGRAM_SEND") or HOME / ".claude/regoc/tools/telegram_send_text.py")]
-POSTAVKE = HOME / ".claude/regoc/config/dezurni.json"
-STANJE_STRAZE = HOME / ".claude/regoc/data/dezurni.straza.json"
+DNEVNIK = Path(os.environ.get("TM_DAEMON_LOG") or stanje("daemon.log"))
+KES_KVOTE = stanje("session_usage.cache.json")     # isti keš koji piše tools/session_usage.py
+
+
+def _putovi_servisa(vrijednost: str) -> list[tuple[Path, list[str]]]:
+    """`TM_SERVIS_RESTART` → [(skripta, argumenti)]. Više naredbi odvaja `;`, `{s}` je servis.
+
+    TASK-5108: prije je ovdje stajao raspored mapa jednog stroja (glavni stroj pa čvorovi);
+    na tuđoj instalaciji to su putanje kojih nema. Bez varijable dežurni ne podiže ništa.
+    """
+    putovi = []
+    for naredba in vrijednost.split(";"):
+        dijelovi = shlex.split(naredba)
+        if dijelovi:
+            putovi.append((Path(dijelovi[0]).expanduser(), dijelovi[1:]))
+    return putovi
+
+
+PUTOVI_SERVISA = _putovi_servisa(os.environ.get("TM_SERVIS_RESTART") or "")
+# Alat za slanje na Telegram (prima tekst kao prvi argument) — samo iz okoline.
+PUTOVI_SLANJA = [Path(p).expanduser() for p in [os.environ.get("TM_TELEGRAM_SEND")] if p]
+POSTAVKE = konfig("dezurni.json", "TM_DEZURNI_CONFIG")   # isti lanac kao src/DezurniConfig.ts
+STANJE_STRAZE = stanje("dezurni.straza.json")
 
 ZADANE_POSTAVKE = {
     "provider": "ollama",
@@ -86,9 +99,9 @@ def postavke() -> dict:
 # `DezurniDavatelji.test.ts → BRANA` na TS strani i `proba` ovdje.
 #
 # Ključ se čita iz okoline pa iz spremišta, ide SAMO u zaglavlje zahtjeva i nikad u ispis.
-KONFIG_MODELA = HOME / ".claude/regoc/models/model-config.json"
+KONFIG_MODELA = konfig("model-config.json", "TM_MODEL_CONFIG")
 CREDENTIALS = Path(os.environ.get("REGOC_CREDENTIALS_PATH")
-                   or (HOME / ".claude/regoc/credentials.env"))
+                   or konfig("credentials.env", "TM_CREDENTIALS"))
 
 NACIN_PO_IMENU = {
     "ollama": "ollama",

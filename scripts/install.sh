@@ -64,7 +64,9 @@ osiguraj_zod() {
   return 1
 }
 
-IZVORI=("$HOME/.claude/regoc/TaskManagerMD/node_modules" "$HOME/.claude/node_modules")
+# Postojeće instalacije iz kojih se ovisnosti smiju posuditi — samo izričito (TASK-5108):
+#   TM_POSUDI_IZ="/put/do/node_modules:/drugi/node_modules" bash scripts/install.sh
+IFS=: read -r -a IZVORI <<< "${TM_POSUDI_IZ:-$HOME/.claude/node_modules}"
 if [ "$POSUDI" = "1" ]; then
   echo "  ovisnosti: povezujem iz postojećih instalacija"
   rm -f node_modules 2>/dev/null
