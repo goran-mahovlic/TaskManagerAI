@@ -172,6 +172,7 @@ import {
 import { resolveDaemonLiveness, type LivenessDeps } from './DaemonLiveness'
 // TASK-3568 (T4): „Potrošnja zadatka" na kartici — poziva agent_telemetry.py (T2/T3).
 import { resolveTaskTelemetry, createTelemetryState, createTelemetryDeps } from './TaskTelemetry'
+import { paketVerzija } from './Verzija'  // TASK-5025: jedan izvor verzije (package.json)
 // TASK-3569 (T5): kartica „Potrošnja" — tjedni pregled po projektu i agentu (mjera 6).
 // TASK-3572 (T8): „Potrošnja projekta" — isti pregled, filtriran na jedan projekt.
 import {
@@ -750,7 +751,16 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       display: flex;
       gap: 0.5rem;
       align-items: center;
+      min-width: 0;
     }
+    /* TASK-5025: izbornik projekta poprimi širinu najduljeg naziva i gurne stranicu u
+       vodoravni preljev (1435 px na zaslonu od 1366). Strop širine + prelamanje trake. */
+    .tab-nav { flex-wrap: wrap; }
+    .tab-nav-left { flex-wrap: wrap; }
+    .tab-nav-right { flex: 0 1 320px; }
+    .tab-nav-right .filter-select { width: 100%; min-width: 0; text-overflow: ellipsis; }
+    @media (max-width: 600px) { header { flex-wrap: wrap; gap: 0.5rem; } header .status { flex-wrap: wrap; } }
+
 
     .tab-nav-right .filter-select {
       padding: 0.5rem 1rem;
@@ -2041,9 +2051,13 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     /* align-items: start — kartica se ne rasteze na visinu susjede. Dok kartice nisu
        imale podlogu to se nije vidjelo; sada bi kraca kartica bila prazna ploha visine
        duze (System uz AI Providers: 320 px praznine). */
-    .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; align-items: start; }
-    @media (max-width: 900px) { .info-grid { grid-template-columns: 1fr; } }
-    .info-card { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 8px; padding: 1rem; }
+    /* Info Tab (Config) — TASK-5025 (usklađeno s REGOČ pločom): skupine, ujednačene kartice i kontrole.
+       minmax(0,1fr): bez toga široka tablica (agenti, modeli) raširi stupac i cijelu
+       stranicu (izmjereno 1435 px na zaslonu od 1366 i 420). */
+    .info-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+    @media (max-width: 900px) { .info-grid { grid-template-columns: minmax(0, 1fr); } }
+    .info-card { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 8px; padding: 1rem 1.1rem; min-width: 0; }
+    .info-card > div:last-child { overflow-x: auto; }
     .info-card-title { font-size: 0.85rem; font-weight: 700; color: var(--accent-blue); margin-bottom: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px; display: flex; align-items: center; gap: 0.5rem; }
     .info-card-title .icon { font-size: 1rem; }
 
@@ -2071,10 +2085,45 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     /* Naslov skupine kartica (TASK-4803). Osamnaest kartica bez ijedne podjele citalo se
        kao jedan zid: podesavanje i puki ispis stanja stajali su izmijesano, pa se nije
        vidjelo gdje se sto MIJENJA a gdje se samo CITA. */
-    .info-skupina { grid-column: 1 / -1; margin: 0.5rem 0 0; border-top: 1px solid var(--border-color); padding-top: 0.9rem; }
-    .info-skupina:first-child { border-top: none; margin-top: 0; padding-top: 0; }
-    .info-skupina h3 { margin: 0; font-size: 0.9rem; color: var(--text-primary); letter-spacing: 0.3px; }
-    .info-skupina p { margin: 0.2rem 0 0; font-size: 0.72rem; color: var(--text-secondary); }
+    .info-card-istaknuta { border-color: rgba(59,130,246,0.55); box-shadow: inset 3px 0 0 var(--accent-blue); }
+    .info-skupina { grid-column: 1 / -1; display: flex; align-items: baseline; gap: 0.75rem; margin: 1.25rem 0 0; padding-top: 1rem; border-top: 1px solid var(--border-color); scroll-margin-top: 4.5rem; }
+    .info-skupina:first-child { border-top: none; margin-top: 0; padding-top: 0.25rem; }
+    .info-skupina-broj { font-family: monospace; font-size: 0.75rem; font-weight: 700; color: var(--accent-blue); letter-spacing: 1px; }
+    .info-skupina h3 { margin: 0; font-size: 0.95rem; color: var(--text-primary); letter-spacing: 0.3px; }
+    .info-skupina p { margin: 0; font-size: 0.72rem; color: var(--text-secondary); }
+    @media (max-width: 600px) { .info-skupina { flex-wrap: wrap; row-gap: 0.2rem; } .info-skupina p { flex-basis: 100%; } }
+    .cfg-skok { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; gap: 0.4rem; padding: 0.5rem 0; margin-bottom: 0.75rem; background: var(--bg-primary); border-bottom: 1px solid var(--border-color); }
+    .cfg-skok button { font-size: 0.75rem; padding: 0.3rem 0.75rem; border-radius: 999px; background: var(--bg-secondary); color: var(--text-secondary); border: 1px solid var(--border-color); cursor: pointer; }
+    .cfg-skok button:hover { color: var(--text-primary); border-color: var(--accent-blue); }
+    .cfg-skok button .info-skupina-broj { margin-right: 0.35rem; }
+    /* Jedan izgled kontrola za sve kartice. :where() nosi nultu specifičnost, pa klasa ili
+       inline stil pojedine kartice i dalje imaju prednost — mijenja se samo nativni bijeli izgled. */
+    :where(#tab-info .info-card) button { font-size: 0.75rem; padding: 0.3rem 0.75rem; border-radius: 4px; background: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border-color); cursor: pointer; line-height: 1.3; }
+    :where(#tab-info .info-card) button:hover:enabled { background: var(--accent-blue); border-color: var(--accent-blue); color: #fff; }
+    :where(#tab-info .info-card) button:disabled { opacity: 0.5; cursor: default; }
+    :where(#tab-info .info-card) :is(input:not([type=checkbox]):not([type=radio]):not([type=range]), select, textarea) { background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 4px; padding: 0.25rem 0.5rem; font-size: 0.78rem; }
+    :where(#tab-info .info-card) :is(input, select, textarea):focus { outline: none; border-color: var(--accent-blue); }
+    :where(#tab-info .info-card) :is(input[type=checkbox], input[type=radio], input[type=range]) { accent-color: var(--accent-blue); }
+    .cfg-napomena { font-size: 0.72rem; color: var(--text-secondary); margin-top: 0.5rem; line-height: 1.45; }
+    .cfg-povijest { font-size: 0.7rem; color: var(--text-secondary); margin: 0.4rem 0 0 1rem; font-family: monospace; }
+    /* Usporedni agenti — broj je glavna informacija, pa je velik i stoji uz klizač. */
+    .usp-red { display: flex; align-items: center; gap: 0.9rem; flex-wrap: wrap; }
+    .usp-red input[type=range] { flex: 1 1 180px; max-width: 320px; }
+    .usp-broj { font-size: 1.6rem; font-weight: 800; font-family: monospace; color: var(--text-primary); min-width: 2ch; text-align: center; }
+    .usp-zauzeto { font-size: 0.78rem; color: var(--text-secondary); }
+    .usp-zauzeto b { color: var(--text-primary); font-family: monospace; }
+    /* Vrata autonomije — četiri klizača na zajedničkoj skali 0–100 % s oznakom trenutačne potrošnje. */
+    .vrata-red { display: grid; grid-template-columns: minmax(8rem, 11rem) minmax(0, 1fr) 3.2rem; gap: 0.35rem 0.75rem; align-items: center; padding: 0.55rem 0; border-bottom: 1px solid rgba(255,255,255,0.04); }
+    .vrata-red.s-oznakom { padding-top: 1.35rem; }
+    .vrata-red:last-of-type { border-bottom: none; }
+    .vrata-red label { font-size: 0.78rem; font-weight: 600; color: var(--text-primary); }
+    .vrata-red output { font-family: monospace; font-weight: 700; text-align: right; color: var(--text-primary); }
+    .vrata-red .vrata-opis { grid-column: 1 / -1; font-size: 0.7rem; color: var(--text-secondary); }
+    .vrata-skala { position: relative; height: 1.1rem; }
+    .vrata-skala input[type=range] { width: 100%; margin: 0; }
+    .vrata-sada { position: absolute; top: -0.2rem; bottom: -0.2rem; width: 2px; background: var(--accent-yellow); border-radius: 1px; pointer-events: none; }
+    .vrata-sada span { position: absolute; top: -1.05rem; left: 50%; transform: translateX(-50%); font-size: 0.62rem; font-weight: 700; color: var(--accent-yellow); white-space: nowrap; }
+    .vrata-ceka { font-size: 0.72rem; color: var(--accent-yellow); background: rgba(234,179,8,0.08); border: 1px solid rgba(234,179,8,0.3); border-radius: 4px; padding: 0.4rem 0.6rem; margin-bottom: 0.6rem; }
     .info-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
     .info-table th { text-align: left; padding: 0.4rem 0.5rem; color: var(--text-secondary); font-size: 0.7rem; text-transform: uppercase; border-bottom: 1px solid var(--border-color); }
     .info-table td { padding: 0.4rem 0.5rem; border-bottom: 1px solid rgba(255,255,255,0.04); vertical-align: top; }
@@ -2519,50 +2568,89 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         <h2 style="margin:0;font-size:1.1rem;" data-i18n="rego_config">REGO&#268; Config</h2>
         <button id="info-refresh-btn" class="konzola-mode-btn plan-mode" style="border-color:var(--accent-blue);color:var(--accent-blue);" data-i18n="refresh">Refresh</button>
       </div>
+      <!-- TASK-5025: skok na skupinu. Traka je ljepljiva, pa je put do svake skupine jedan klik. -->
+      <div class="cfg-skok" id="cfg-skok" role="navigation">
+        <button type="button" data-cfg-skok="cfg-skupina-1"><span class="info-skupina-broj">01</span><span data-i18n="cfg_skok_strop">Strop i vrata</span></button>
+        <button type="button" data-cfg-skok="cfg-skupina-2"><span class="info-skupina-broj">02</span><span data-i18n="cfg_skok_agenti">Agenti i modeli</span></button>
+        <button type="button" data-cfg-skok="cfg-skupina-3"><span class="info-skupina-broj">03</span><span data-i18n="cfg_skok_integracije">Integracije</span></button>
+        <button type="button" data-cfg-skok="cfg-skupina-4"><span class="info-skupina-broj">04</span><span data-i18n="cfg_skok_rag">RAG</span></button>
+        <button type="button" data-cfg-skok="cfg-skupina-5"><span class="info-skupina-broj">05</span><span data-i18n="cfg_skok_sustav">Sustav</span></button>
+      </div>
       <div class="info-grid" id="info-grid">
-        <div class="info-skupina info-full">
-          <h3 data-i18n="cfg_skupina_podesavanje">Pode&#353;avanje &mdash; ovo mijenja&#353; ti</h3>
-          <p data-i18n="cfg_skupina_podesavanje_opis">Kartice u kojima se ne&#353;to upisuje ili prebacuje. Promjena vrijedi odmah, bez ponovnog pokretanja.</p>
+        <div class="info-skupina" id="cfg-skupina-1">
+          <span class="info-skupina-broj">01</span>
+          <h3 data-i18n="cfg_skupina_strop">Strop i vrata autonomije</h3>
+          <p data-i18n="cfg_skupina_strop_opis">Koliko agenata smije raditi istodobno i kada autonomija staje. Vrijedi odmah, bez ponovnog pokretanja.</p>
         </div>
-        <div class="info-card info-full" id="info-login-card">
-          <div class="info-card-title"><span class="icon">&#8599;</span> <span data-i18n="cfg_kartica_prijave">Prijave (login preko linka)</span></div>
-          <div id="info-login-content"><div class="empty" data-i18n="loading">Loading...</div></div>
-        </div>
-        <div class="info-card info-full" id="info-modelsetup-card">
-          <div class="info-card-title"><span class="icon">&#9881;</span> <span data-i18n="cfg_kartica_modeli">Podržani modeli &amp; postavke providera</span></div>
-          <div id="info-modelsetup-content"><div class="empty" data-i18n="loading">Loading...</div></div>
-        </div>
-        <div class="info-card info-full" id="info-classifier-card">
-          <div class="info-card-title"><span class="icon">&#8644;</span> <span data-i18n="cfg_kartica_klasifikator">Klasifikacijski model &mdash; rutiranje poruka (odvojeno od izvr&#353;nog)</span></div>
-          <div id="info-classifier-content"><div class="empty" data-i18n="loading">Loading...</div></div>
-        </div>
-        <div class="info-card info-full" id="info-concurrency-card">
+        <div class="info-card info-card-istaknuta" id="info-concurrency-card">
           <div class="info-card-title"><span class="icon">&#8793;</span> <span data-i18n="cfg_kartica_usporedni">Usporedni agenti (1&ndash;10)</span></div>
           <div id="info-concurrency-content"><div class="empty" data-i18n="loading">Loading...</div></div>
         </div>
-        <div class="info-card info-full" id="info-dezurni-card">
-          <div class="info-card-title"><span class="icon">&#9873;</span> <span data-i18n="cfg_kartica_dezurni">De&#382;urni &mdash; rezervni model kad primarni padne</span></div>
-          <div id="info-dezurni-content"><div class="empty" data-i18n="loading">Loading...</div></div>
-        </div>
-        <div class="info-card info-full" id="info-telegram-card">
-          <div class="info-card-title"><span class="icon">&#9993;</span> <span data-i18n="cfg_kartica_telegram">Telegram obavijesti &mdash; bot token + chat id (u paketu)</span></div>
-          <div id="info-telegram-content"><div class="empty" data-i18n="loading">Loading...</div></div>
-        </div>
-        <div class="info-card info-full" id="info-ulaz-card">
-          <div class="info-card-title"><span class="icon">&#8623;</span> <span data-i18n="cfg_kartica_ulaz">Ulazna vrata &mdash; kako telegramska poruka ulazi u plo&#269;u</span></div>
-          <div id="info-ulaz-content"><div class="empty" data-i18n="loading">Loading...</div></div>
-        </div>
-        <div class="info-card info-full" id="info-integracije-card">
-          <div class="info-card-title"><span class="icon">&#8853;</span> <span data-i18n="cfg_kartica_integracije">Integracije &mdash; Nextcloud, e-po&#353;ta, GitLab, GitHub</span></div>
-          <div id="info-integracije-content"><div class="empty" data-i18n="loading">Loading...</div></div>
+        <!-- TASK-5025 (dopuna 19:03): klizači pragova; API GET/PUT /api/config/autonomy dolazi iz TASK-5028. -->
+        <div class="info-card info-card-istaknuta" id="info-autonomija-card">
+          <div class="info-card-title"><span class="icon">&#9878;</span> <span data-i18n="cfg_kartica_autonomija">Vrata autonomije</span></div>
+          <div id="info-autonomija-content"><div class="empty" data-i18n="loading">Loading...</div></div>
         </div>
         <div class="info-card info-full" id="info-orkestrator-card">
           <div class="info-card-title"><span class="icon">&#9881;</span> <span data-i18n="cfg_kartica_orkestrator">Orkestrator &mdash; sloj koji sam pokre&#263;e agente na zadatku</span></div>
           <div id="info-orkestrator-content"><div class="empty" data-i18n="loading">Loading...</div></div>
         </div>
-        <div class="info-skupina info-full">
-          <h3 data-i18n="cfg_skupina_stanje">Stanje sustava &mdash; ovo se samo &#269;ita</h3>
-          <p data-i18n="cfg_skupina_stanje_opis">Ispis zate&#269;enog stanja: ina&#269;ice, moduli, baze, mjere. Ovdje se ni&#353;ta ne mijenja.</p>
+        <div class="info-skupina" id="cfg-skupina-2">
+          <span class="info-skupina-broj">02</span>
+          <h3 data-i18n="cfg_skupina_agenti">Agenti i modeli</h3>
+          <p data-i18n="cfg_skupina_agenti_opis">Koji model pokre&#263;e kojeg agenta, kako se poruke rutiraju i &#353;to nude davatelji.</p>
+        </div>
+        <div class="info-card info-full" id="info-agents-card">
+          <div class="info-card-title"><span class="icon">&#9733;</span> Agents &amp; Model Requirements</div>
+          <div id="info-agents-content"><div class="empty" data-i18n="loading">Loading...</div></div>
+        </div>
+        <div class="info-card info-full" id="info-classifier-card">
+          <div class="info-card-title"><span class="icon">&#8644;</span> <span data-i18n="cfg_kartica_klasifikator">Klasifikacijski model &mdash; rutiranje poruka (odvojeno od izvr&#353;nog)</span></div>
+          <div id="info-classifier-content"><div class="empty" data-i18n="loading">Loading...</div></div>
+        </div>
+        <div class="info-card info-full" id="info-modelsetup-card">
+          <div class="info-card-title"><span class="icon">&#9881;</span> <span data-i18n="cfg_kartica_modeli">Podržani modeli &amp; postavke providera</span></div>
+          <div id="info-modelsetup-content"><div class="empty" data-i18n="loading">Loading...</div></div>
+        </div>
+        <div class="info-skupina" id="cfg-skupina-3">
+          <span class="info-skupina-broj">03</span>
+          <h3 data-i18n="cfg_skupina_integracije">Integracije</h3>
+          <p data-i18n="cfg_skupina_integracije_opis">Prijave davatelja, de&#382;urni model, Telegram, ulazna vrata i vanjske usluge.</p>
+        </div>
+        <div class="info-card" id="info-login-card">
+          <div class="info-card-title"><span class="icon">&#8599;</span> <span data-i18n="cfg_kartica_prijave">Prijave (login preko linka)</span></div>
+          <div id="info-login-content"><div class="empty" data-i18n="loading">Loading...</div></div>
+        </div>
+        <div class="info-card" id="info-dezurni-card">
+          <div class="info-card-title"><span class="icon">&#9873;</span> <span data-i18n="cfg_kartica_dezurni">De&#382;urni &mdash; rezervni model kad primarni padne</span></div>
+          <div id="info-dezurni-content"><div class="empty" data-i18n="loading">Loading...</div></div>
+        </div>
+        <div class="info-card" id="info-telegram-card">
+          <div class="info-card-title"><span class="icon">&#9993;</span> <span data-i18n="cfg_kartica_telegram">Telegram obavijesti &mdash; bot token + chat id (u paketu)</span></div>
+          <div id="info-telegram-content"><div class="empty" data-i18n="loading">Loading...</div></div>
+        </div>
+        <div class="info-card" id="info-integracije-card">
+          <div class="info-card-title"><span class="icon">&#8853;</span> <span data-i18n="cfg_kartica_integracije">Integracije &mdash; Nextcloud, e-po&#353;ta, GitLab, GitHub</span></div>
+          <div id="info-integracije-content"><div class="empty" data-i18n="loading">Loading...</div></div>
+        </div>
+        <div class="info-card info-full" id="info-ulaz-card">
+          <div class="info-card-title"><span class="icon">&#8623;</span> <span data-i18n="cfg_kartica_ulaz">Ulazna vrata &mdash; kako telegramska poruka ulazi u plo&#269;u</span></div>
+          <div id="info-ulaz-content"><div class="empty" data-i18n="loading">Loading...</div></div>
+        </div>
+        <div class="info-skupina" id="cfg-skupina-4">
+          <span class="info-skupina-broj">04</span>
+          <h3 data-i18n="cfg_skupina_rag">RAG</h3>
+          <p data-i18n="cfg_skupina_rag_opis">Pozadina memorije &mdash; ChromaDB ili pgvector.</p>
+        </div>
+        <!-- TASK-4972: RAG Backend upravljanje (ChromaDB/pgvector) -->
+        <div class="info-card info-full" id="info-rag-card">
+          <div class="info-card-title"><span class="icon">&#128451;</span> <span data-i18n="cfg_kartica_rag">RAG Backend</span></div>
+          <div id="info-rag-content"><div class="empty" data-i18n="loading">Loading...</div></div>
+        </div>
+        <div class="info-skupina" id="cfg-skupina-5">
+          <span class="info-skupina-broj">05</span>
+          <h3 data-i18n="cfg_skupina_sustav">Sustav i verzija</h3>
+          <p data-i18n="cfg_skupina_sustav_opis">Samo za &#269;itanje: verzija, infrastruktura, baze, metrike, komponente i pravila.</p>
         </div>
         <div class="info-card" id="info-system-card">
           <div class="info-card-title"><span class="icon">&#9646;</span> System</div>
@@ -2580,20 +2668,16 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
           <div class="info-card-title"><span class="icon">&#9744;</span> Databases</div>
           <div id="info-databases-content"><div class="empty" data-i18n="loading">Loading...</div></div>
         </div>
-        <div class="info-card info-full" id="info-agents-card">
-          <div class="info-card-title"><span class="icon">&#9733;</span> Agents &amp; Model Requirements</div>
-          <div id="info-agents-content"><div class="empty" data-i18n="loading">Loading...</div></div>
-        </div>
-        <div class="info-card info-full" id="info-modules-card">
-          <div class="info-card-title"><span class="icon">&#9670;</span> Modules</div>
-          <div id="info-modules-content"><div class="empty" data-i18n="loading">Loading...</div></div>
-        </div>
         <div class="info-card" id="info-metrics-card">
           <div class="info-card-title"><span class="icon">&#9776;</span> Metrics Summary</div>
           <div id="info-metrics-content"><div class="empty" data-i18n="loading">Loading...</div></div>
         </div>
+        <div class="info-card" id="info-modules-card">
+          <div class="info-card-title"><span class="icon">&#9670;</span> Modules</div>
+          <div id="info-modules-content"><div class="empty" data-i18n="loading">Loading...</div></div>
+        </div>
         <div class="info-card info-full" id="info-components-card">
-          <div class="info-card-title"><span class="icon">&#9881;</span> Core Components (v4.4.0)</div>
+          <div class="info-card-title"><span class="icon">&#9881;</span> Core Components</div>
           <div id="info-components-content"><div class="empty" data-i18n="loading">Loading...</div></div>
         </div>
         <div class="info-card info-full" id="info-skills-card">
@@ -2601,13 +2685,8 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
           <div id="info-skills-content"><div class="empty" data-i18n="loading">Loading...</div></div>
         </div>
         <div class="info-card info-full" id="info-rules-card">
-          <div class="info-card-title"><span class="icon">&#9888;</span> Critical Rules (27)</div>
+          <div class="info-card-title"><span class="icon">&#9888;</span> Critical Rules <span id="info-rules-broj"></span></div>
           <div id="info-rules-content"><div class="empty" data-i18n="loading">Loading...</div></div>
-        </div>
-        <!-- TASK-4972: RAG Backend upravljanje (ChromaDB/pgvector) -->
-        <div class="info-card info-full" id="info-rag-card">
-          <div class="info-card-title"><span class="icon">&#128451;</span> <span data-i18n="cfg_kartica_rag">RAG Backend</span></div>
-          <div id="info-rag-content"><div class="empty" data-i18n="loading">Loading...</div></div>
         </div>
       </div>
     </div>
@@ -7638,7 +7717,18 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     function initInfo() {
       fetchInfoData();
       document.getElementById('info-refresh-btn').onclick = fetchInfoData;
+      // TASK-5025: traka skokova — jedan klik do skupine (ljepljiva, pa ostaje pri ruci).
+      var skok = document.getElementById('cfg-skok');
+      if (skok && !skok.dataset.spojeno) {
+        skok.dataset.spojeno = '1';
+        skok.addEventListener('click', function(ev) {
+          var b = ev.target.closest('button[data-cfg-skok]');
+          var cilj = b && document.getElementById(b.getAttribute('data-cfg-skok'));
+          if (cilj) cilj.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+      }
     }
+
 
     async function fetchInfoData() {
       try {
@@ -7661,6 +7751,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         loadLoginProviders();
         loadDezurni();
         loadConcurrency();
+        loadAutonomija();
         loadTelegram();
         loadUlaznaVrata();
         loadIntegracije();
@@ -8475,21 +8566,21 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         return '<li>' + _esc(r.changedAt || '') + ' — ' + _esc(String(r.oldValue == null ? '—' : r.oldValue)) +
           ' → ' + _esc(String(r.newValue)) + ' (' + _esc(r.changedBy) + ', ' + _esc(r.source) + ')</li>';
       }).join('');
-      return '<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">' +
-        '<label for="usp-strop">' + _T('cfg_usp_oznaka', 'Usporedni agenti') + '</label>' +
+      return '<div class="usp-red">' +
+        '<label for="usp-strop" class="usp-zauzeto">' + _T('cfg_usp_oznaka', 'Usporedni agenti') + '</label>' +
         '<input id="usp-strop" type="range" min="' + d.min + '" max="' + d.max + '" value="' + d.maxConcurrent + '" ' +
           'oninput="document.getElementById(&quot;usp-vrijednost&quot;).textContent=this.value">' +
-        '<b id="usp-vrijednost">' + d.maxConcurrent + '</b>' +
+        '<span class="usp-broj" id="usp-vrijednost">' + d.maxConcurrent + '</span>' +
         '<button class="cfg-btn" onclick="spremiConcurrency(this)">' + _T('tel_spremi', 'Spremi') + '</button>' +
-        '<span id="usp-zauzeto" title="' + _T('cfg_usp_zauzeto_title', 'zauzeta mjesta / strop') + '">' +
+        '<span id="usp-zauzeto" class="usp-zauzeto" title="' + _T('cfg_usp_zauzeto_title', 'zauzeta mjesta / strop') + '">' +
           _T('cfg_usp_zauzeto', 'Zauzeto') + ': <b>' + d.active + '/' + d.maxConcurrent + '</b></span>' +
         '</div>' +
-        '<div style="opacity:.75;font-size:12px;margin-top:6px">' +
+        '<div class="cfg-napomena">' +
           _T('cfg_usp_napomena', 'Promjena vrijedi odmah (daemon je čita najkasnije za 5 s). Smanjenje ne prekida agente koji rade — samo ne pušta nove. Vrata autonomije (70/85 %) i dalje nadjačavaju strop.') +
           (d.updatedBy ? '<br>' + _T('cfg_usp_zadnje', 'Zadnja promjena') + ': ' + _esc(d.updatedBy) + ', ' + _esc(d.updatedAt || '') : '') +
           (d.envDeprecated ? '<br>⚠️ ' + _esc(d.envDeprecated) : '') +
         '</div>' +
-        (h ? '<ul style="font-size:12px;opacity:.75;margin:6px 0 0 16px">' + h + '</ul>' : '');
+        (h ? '<ul class="cfg-povijest">' + h + '</ul>' : '');
     }
 
     async function spremiConcurrency(btn) {
@@ -8505,6 +8596,144 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         await loadConcurrency();
       } catch(e) {
         alert(_T('cfg_usp_greska_spremanje', 'Greška pri spremanju stropa') + ': ' + e.message);
+        if (btn) btn.disabled = false;
+      }
+    }
+
+    // ── Vrata autonomije (TASK-5025, dopuna 19:03) — klizači pragova potrošnje ──────────
+    // Backend i API (GET/PUT /api/config/autonomy) dolaze zasebno. Dok API ne postoji (404),
+    // kartica pokazuje sadašnje vrijednosti iz koda i trenutačnu potrošnju, a klizači su
+    // zaključani — ništa se ne sprema naslijepo. Redoslijed sesijskih pragova je tvrd:
+    // autonomija < oprez < blokada (klizač ne smije prijeći susjeda).
+    var VRATA_POLJA = [
+      { k: 'sessionAutonomy', snake: 'session_autonomy', zad: 70, mjeri: 'session' },
+      { k: 'sessionCaution',  snake: 'session_caution',  zad: 85, mjeri: 'session' },
+      { k: 'sessionBlock',    snake: 'session_block',    zad: 95, mjeri: 'session' },
+      { k: 'weeklyBlock',     snake: 'weekly_block',     zad: 90, mjeri: 'weekly' }
+    ];
+    var _vrataGranice = { min: 10, max: 100 };
+
+    function _vrataVrijednost(d, f) {
+      if (!d) return f.zad;
+      var v = d[f.k];
+      if (v == null) v = d[f.snake];
+      if (v == null && d.values) v = d.values[f.k] != null ? d.values[f.k] : d.values['autonomy.' + f.snake];
+      if (v == null) v = d['autonomy.' + f.snake];
+      v = Number(v);
+      return isFinite(v) ? v : f.zad;
+    }
+
+    async function loadAutonomija() {
+      var el = document.getElementById('info-autonomija-content');
+      if (!el) return;
+      var d = null, api = false, potrosnja = null;
+      try {
+        var r = await fetch('/api/config/autonomy');
+        if (r.ok) { d = await r.json(); api = !d.error; if (!api) d = null; }
+      } catch(e) { /* nema API-ja — prikaz bez spremanja */ }
+      try {
+        var ru = await fetch('/api/session-usage');
+        if (ru.ok) potrosnja = await ru.json();
+      } catch(e) { /* potrošnja nije nužna za prikaz pragova */ }
+      el.innerHTML = renderAutonomija(d, api, potrosnja);
+    }
+
+    function _vrataSada(postotak, min, max, sOznakom) {
+      if (postotak == null || !isFinite(postotak)) return '';
+      var p = Math.max(0, Math.min(100, (postotak - min) / (max - min) * 100));
+      // Pomak za pola palca (16 px), da se oznaka poklopi s položajem palca klizača.
+      var px = ((0.5 - p / 100) * 16 - 1).toFixed(1);
+      return '<div class="vrata-sada" style="left:calc(' + p.toFixed(1) + '% + ' + px + 'px)">' +
+        (sOznakom ? '<span>' + _Tv('cfg_vr_sada', 'sada {p} %', { p: Math.round(postotak) }) + '</span>' : '') + '</div>';
+    }
+
+    function renderAutonomija(d, api, potrosnja) {
+      var min = (d && d.min) || _vrataGranice.min, max = (d && d.max) || _vrataGranice.max;
+      var sp = potrosnja && potrosnja.session_percent != null ? Number(potrosnja.session_percent) : null;
+      var wp = potrosnja && potrosnja.weekly_percent != null ? Number(potrosnja.weekly_percent) : null;
+      var nazivi = {
+        sessionAutonomy: _T('cfg_vr_autonomija', 'Autonomija (sesija)'),
+        sessionCaution: _T('cfg_vr_oprez', 'Oprez — 1 agent'),
+        sessionBlock: _T('cfg_vr_blokada', 'Blokada (sesija)'),
+        weeklyBlock: _T('cfg_vr_tjedni', 'Tjedni strop')
+      };
+      var opisi = {
+        sessionAutonomy: _T('cfg_vr_autonomija_opis', 'Iznad ovog postotka sesije autonomija prestaje sama vući posao iz reda. Nalog s Telegrama i dalje prolazi.'),
+        sessionCaution: _T('cfg_vr_oprez_opis', 'Iznad ovoga radi najviše jedan agent istodobno (strop usporednih agenata se ne gleda).'),
+        sessionBlock: _T('cfg_vr_blokada_opis', 'Iznad ovoga nijedan novi agent ne kreće dok se sesija ne obnovi.'),
+        weeklyBlock: _T('cfg_vr_tjedni_opis', 'Tjedna kvota: iznad ovoga gasi se samo autonomija. Provjerava se prije sesijskih pragova jer se obnavlja tek za nekoliko dana.')
+      };
+      var h = '';
+      if (!api) {
+        h += '<div class="vrata-ceka">' + _T('cfg_vr_ceka_api', 'Podešavanje čeka API pragova (GET/PUT /api/config/autonomy). Prikazane su zadane vrijednosti; klizači su zaključani dok API ne proradi.') + '</div>';
+      }
+      h += '<div>';
+      VRATA_POLJA.forEach(function(f, i) {
+        var v = _vrataVrijednost(d, f);
+        var id = 'vr-' + f.k;
+        // Oznaka „sada X %" samo na prvom retku svake skale (sesija, tjedan); ostali retci
+        // iste skale dobiju samo crtu — tri ista natpisa jedan ispod drugog su šum.
+        var oznaka = (i === 0 || f.mjeri === 'weekly');
+        var pot = f.mjeri === 'weekly' ? wp : sp;
+        h += '<div class="vrata-red' + (oznaka && pot != null ? ' s-oznakom' : '') + '">' +
+          '<label for="' + id + '">' + nazivi[f.k] + '</label>' +
+          '<div class="vrata-skala">' +
+            '<input type="range" id="' + id + '" data-polje="' + f.k + '" min="' + min + '" max="' + max + '" value="' + v + '"' +
+              (api ? '' : ' disabled') + ' oninput="vrataPomak(this)">' +
+            _vrataSada(pot, min, max, oznaka) +
+          '</div>' +
+          '<output id="' + id + '-v">' + v + ' %</output>' +
+          '<div class="vrata-opis">' + opisi[f.k] + '</div>' +
+        '</div>';
+      });
+      h += '</div>';
+      h += '<div class="usp-red" style="margin-top:0.6rem">' +
+        '<button class="cfg-btn" id="vr-spremi" onclick="spremiAutonomiju(this)"' + (api ? '' : ' disabled') + '>' + _T('tel_spremi', 'Spremi') + '</button>' +
+        '<span class="usp-zauzeto">' + _Tv('cfg_vr_potrosnja', 'Potrošnja: sesija {s} · tjedan {t}', {
+          s: sp == null ? '—' : Math.round(sp) + ' %', t: wp == null ? '—' : Math.round(wp) + ' %' }) + '</span>' +
+        '</div>';
+      h += '<div class="cfg-napomena">' + _T('cfg_vr_napomena', 'Redoslijed je obvezan: autonomija < oprez < blokada. Promjena vrijedi odmah, bez ponovnog pokretanja. Kad mjerilo ne radi, vrata ostaju zatvorena bez obzira na pragove.') +
+        (d && d.updatedBy ? '<br>' + _T('cfg_usp_zadnje', 'Zadnja promjena') + ': ' + _esc(d.updatedBy) + ', ' + _esc(d.updatedAt || '') : '') +
+        '</div>';
+      return h;
+    }
+
+    // Sesijski klizači se ne smiju prijeći: svaki je omeđen susjedima (razmak barem 1 %).
+    function vrataPomak(inp) {
+      var red = ['sessionAutonomy', 'sessionCaution', 'sessionBlock'];
+      var i = red.indexOf(inp.getAttribute('data-polje'));
+      var v = Number(inp.value);
+      if (i >= 0) {
+        var prije = i > 0 ? document.getElementById('vr-' + red[i - 1]) : null;
+        var poslije = i < red.length - 1 ? document.getElementById('vr-' + red[i + 1]) : null;
+        if (prije && v <= Number(prije.value)) v = Number(prije.value) + 1;
+        if (poslije && v >= Number(poslije.value)) v = Number(poslije.value) - 1;
+        inp.value = v;
+      }
+      var out = document.getElementById(inp.id + '-v');
+      if (out) out.textContent = inp.value + ' %';
+    }
+
+    async function spremiAutonomiju(btn) {
+      var tijelo = { by: 'goran' };
+      VRATA_POLJA.forEach(function(f) {
+        var el = document.getElementById('vr-' + f.k);
+        if (el) tijelo[f.k] = Number(el.value);
+      });
+      if (!(tijelo.sessionAutonomy < tijelo.sessionCaution && tijelo.sessionCaution < tijelo.sessionBlock)) {
+        alert(_T('cfg_vr_redoslijed', 'Redoslijed mora biti: autonomija < oprez < blokada.'));
+        return;
+      }
+      if (btn) btn.disabled = true;
+      try {
+        var res = await fetch('/api/config/autonomy', {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(tijelo)
+        });
+        var d = await res.json();
+        if (!res.ok || d.error) throw new Error(d.error || 'save failed');
+        await loadAutonomija();
+      } catch(e) {
+        alert(_T('cfg_vr_greska_spremanje', 'Greška pri spremanju pragova') + ': ' + e.message);
         if (btn) btn.disabled = false;
       }
     }
@@ -9103,6 +9332,9 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       });
       h += '</tbody></table>';
       document.getElementById('info-rules-content').innerHTML = h;
+      // Broj iz podataka, ne tvrdo u naslovu (stajalo je „(27)" uz popis od 23).
+      var broj = document.getElementById('info-rules-broj');
+      if (broj) broj.textContent = '(' + rules.length + ')';
     }
 
     function renderInfoMetrics(m) {
@@ -10445,7 +10677,7 @@ function buildInfoPayload(): Record<string, unknown> {
 
   return {
     system: {
-      version: '5.0.0',
+      version: paketVerzija(),        // TASK-5025: iz package.json, ne tvrdo
       fullName: 'REsursni Gestor za Orkestraciju Članova',
       principle: 'Orchestrate, don\'t execute',
       orchestratorModel: 'opus (frontier tier)',
