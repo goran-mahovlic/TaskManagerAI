@@ -16,7 +16,7 @@ import { MAX_MSG_LEN, parseAgentOutput, summaryLine } from './AgentOutputParser'
  * popisom i ona ne bi znala o čemu javlja. Zato niz živi u OPISU zadatka dojave, u biljegu
  * koji nijedna automatika ne dira:
  *
- *     [report-back chatId=-5161938429 tasks=TASK-4270,TASK-4271,TASK-4272]
+ *     [report-back chatId=-1001234567890 tasks=TASK-4270,TASK-4271,TASK-4272]
  *
  * Isti razlog zbog kojeg `parent:<ID>` stoji u oznakama (RegocDaemon, R2 helper).
  *

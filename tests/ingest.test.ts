@@ -60,8 +60,8 @@ describe('IngestConfig — postavke uz TM_HOME/TM_AGENTS', () => {
   })
 
   test('ključ izvora ide od najužeg prema najširem', () => {
-    expect(kljuceviIzvora('telegram', '-5161938429'))
-      .toEqual(['telegram:-5161938429', '-5161938429', 'telegram', '*'])
+    expect(kljuceviIzvora('telegram', '-1001234567890'))
+      .toEqual(['telegram:-1001234567890', '-1001234567890', 'telegram', '*'])
     expect(kljuceviIzvora('email', '')).toEqual(['email', '*'])
   })
 
@@ -84,14 +84,14 @@ describe('IngestConfig — postavke uz TM_HOME/TM_AGENTS', () => {
     const f = join(tmp, 'staro.json')
     writeFileSync(f, JSON.stringify({
       enabled: true,
-      perGroup: { '-5161938429': 'on' },
-      projectByGroup: { '-5161938429': 'REGOC_SYSTEM' },
+      perGroup: { '-1001234567890': 'on' },
+      projectByGroup: { '-1001234567890': 'PRJ-010' },
     }))
     const p = loadIngestConfig(f)
-    expect(nacinZaIzvor(p, 'telegram', '-5161938429')).toBe('on')
-    expect(projektZaIzvor(p, 'telegram', '-5161938429')).toBe('REGOC_SYSTEM')
+    expect(nacinZaIzvor(p, 'telegram', '-1001234567890')).toBe('on')
+    expect(projektZaIzvor(p, 'telegram', '-1001234567890')).toBe('PRJ-010')
     // Ploča čita `perGroup` — zrcalo mora ostati da sučelje ne pukne.
-    expect(p.perGroup['-5161938429']).toBe('on')
+    expect(p.perGroup['-1001234567890']).toBe('on')
   })
 
   test('zakrpa odbija nepoznato polje i obrnut poredak pragova', () => {
@@ -139,11 +139,11 @@ describe('Ingest — provjera zahtjeva', () => {
   test('externalId, replyTo i senderName su neobavezni i ne mijenjaju ishod', () => {
     const r = validirajZahtjev({
       source: 'email', text: 'Popravi grešku u izvozu.',
-      externalId: 'inbox-42', replyTo: 'goran@example.com', senderName: 'Goran',
+      externalId: 'inbox-42', replyTo: 'korisnik@example.com', senderName: 'Korisnik',
     })
     expect(r.ok).toBe(true)
-    expect(r.zahtjev!.replyTo).toBe('goran@example.com')
-    expect(r.zahtjev!.senderName).toBe('Goran')
+    expect(r.zahtjev!.replyTo).toBe('korisnik@example.com')
+    expect(r.zahtjev!.senderName).toBe('Korisnik')
   })
 })
 
@@ -151,7 +151,7 @@ describe('Ingest — provjera zahtjeva', () => {
 
 describe('Ingest — prag A', () => {
   test('biljezi pozivatelja se skidaju prije ocjene', () => {
-    expect(ocistiTekst('[OD: Goran (uid:1)] Popravi  ovo')).toBe('Popravi ovo')
+    expect(ocistiTekst('[OD: Korisnik (uid:1)] Popravi  ovo')).toBe('Popravi ovo')
     expect(ocistiTekst('[PRETHODNI KONTEKST xyz] pitanje?')).toBe('pitanje?')
   })
 
@@ -226,10 +226,10 @@ describe('Ingest — projekt', () => {
   test('inače zadani projekt izvora, po najužem ključu', () => {
     const c = cfg({
       enabled: true,
-      projectBySource: { 'telegram:-1': 'REGOC_SYSTEM', telegram: 'PRJ-034' },
+      projectBySource: { 'telegram:-1': 'PRJ-010', telegram: 'PRJ-034' },
     })
     expect(procijeniIngest({ source: 'telegram', externalId: '-1', text: PORUKA_ZADATAK }, c as any).projectId)
-      .toBe('REGOC_SYSTEM')
+      .toBe('PRJ-010')
     expect(procijeniIngest({ source: 'telegram', externalId: '-2', text: PORUKA_ZADATAK }, c as any).projectId)
       .toBe('PRJ-034')
   })
@@ -267,9 +267,9 @@ describe('IngestTemplate — koraci iz templates/', () => {
   test('opis nosi izvor, težinu, korake i obvezu commita', () => {
     const opis = renderirajOpis({
       message: PORUKA_LANAC, weight: 65, source: 'email', externalId: 'inbox-42',
-      senderName: 'Goran', projectId: 'REGOC_SYSTEM', taskId: 'TASK-1', pragB: 36,
+      senderName: 'Korisnik', projectId: 'PRJ-010', taskId: 'TASK-1', pragB: 36,
     })
-    expect(opis).toContain('REGOC_SYSTEM')
+    expect(opis).toContain('PRJ-010')
     expect(opis).toContain('email')
     expect(opis).toContain('zadatak/TASK-1')
     expect(opis).toContain('65/100')

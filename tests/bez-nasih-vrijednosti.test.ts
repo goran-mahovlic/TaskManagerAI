@@ -96,11 +96,20 @@ const PRAVILA: Pravilo[] = [
     ime: 'naš Telegram chat id',
     uzorak: '5161938429',
     objasnjenje: 'u primjerima koristi izmišljeni id (npr. -1001234567890)',
-    osnovicaPojava: 11,
+    // TASK-5108: 11 → 0, primjeri i testovi nose izmišljeni -1001234567890.
+    osnovicaPojava: 0,
+    osnovicaDatoteka: [],
+  },
+  {
+    ime: 'ime vlasnika kao podatak (pošiljatelj, korisnik)',
+    // Slaže se iz dijelova iz istog razloga kao tailnet gore.
+    uzorak: ['[\'"]', 'Gor', 'an', '[\'"]'].join(''),
+    objasnjenje:
+      'testovi i primjeri koriste neutralno ime (npr. „Korisnik"); popis korisnika je '
+      + 'konfiguracija, ne kod (TASK-5108, v. tests/ingest.test.ts)',
+    osnovicaPojava: 1,
     osnovicaDatoteka: [
-      'src/core/IngestConfig.ts',
-      'src/core/ReportBackTask.ts',
-      'tests/ingest.test.ts',
+      'tools/vrijednost_inputa.py',
     ],
   },
   {

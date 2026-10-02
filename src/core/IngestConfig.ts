@@ -6,7 +6,7 @@
  * ŠTO SE OVDJE PROMIJENILO U ODNOSU NA U1. Prvotna izvedba znala je samo za Telegram:
  * ključ postavke bio je `chatId`, a provjera je odbijala sve što nije niz od 5–20 znamenki.
  * Paket ne smije poznavati nijedan kanal, pa je ključ sada **izvor**: `email`,
- * `telegram:-5161938429`, `konzola`, ili `*` za sve. Stari zapis (`perGroup`,
+ * `telegram:-1001234567890`, `konzola`, ili `*` za sve. Stari zapis (`perGroup`,
  * `projectByGroup`) i dalje se čita — inače bi nadogradnja tiho vratila sve grupe na `off`.
  *
  * GDJE ŽIVI DATOTEKA (istim redom kojim se traži):
@@ -89,7 +89,7 @@ export const GRANICE = {
   pragC: { min: 1, max: 100 },
 } as const
 
-/** Ključ izvora: `email`, `telegram:-5161938429`, stari goli `chatId`, ili `*`. */
+/** Ključ izvora: `email`, `telegram:-1001234567890`, stari goli `chatId`, ili `*`. */
 const RE_KLJUC = /^(\*|[A-Za-z0-9_.@+\-]{1,64}(:[A-Za-z0-9_.@+\-]{1,64})?)$/
 const RE_PROJEKT = /^[A-Za-z0-9_\-]{2,40}$/
 
