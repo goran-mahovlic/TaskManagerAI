@@ -33,6 +33,10 @@ Plan i odluke po značajki: [`docs/GAP_20260924.md`](docs/GAP_20260924.md). Prij
 - `CostTracker`, `CriticGate`, `UnverifiedReport`, `FeatureFlags`, `TaskCloser`: putanje kroz
   `konfigPutanja`/`stanjePutanja` umjesto tuđeg kućnog direktorija.
 - Nove konfiguracije isporučuju se kao `config/*.example.json`; žive su u `.gitignore`.
+- Mjerilo potrošnje `tools/session_usage.py` piše dnevnik i keš u `$TM_HOME/data` (zadano
+  `~/.taskmanager/data`), a ploča (`src/SessionUsage.ts`) čita isti keš i zove skriptu iz
+  paketa. Pošiljatelj i mapa sesija zadaju se s `TM_TELEGRAM_SEND` / `TM_TELEGRAM_SESSIONS`;
+  drugo mjerilo s `TM_SESSION_USAGE_SCRIPT`.
 
 **Dokumentacija**
 - `REGOC/` razdijeljen po temama, svaka na hrvatskom i engleskom (`X.md` + `X.en.md`), uz

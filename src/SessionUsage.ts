@@ -1,7 +1,7 @@
 /**
  * SessionUsage — potrošnja tekuće Claude sesije za konzolu TaskWebUI-ja (TASK-2694)
  *
- * Izvor istine je `~/app/regoc_system/tools/session_usage.py` (probe na
+ * Izvor istine je `tools/session_usage.py` iz paketa (probe na
  * api.anthropic.com → rate-limit headeri). Ovdje NE dupliciramo taj mehanizam:
  *   1. keš u memoriji procesa (najjeftinije),
  *   2. `session_usage.cache.json` koji pišu Stop/UserPromptSubmit hookovi,
@@ -12,11 +12,13 @@
  */
 import { join } from 'path'
 import { homedir } from 'os'
+import { PAKET_DIR, TM_DATA } from './core/paths'
 
-const HOME = process.env.HOME || homedir()
-
-export const SESSION_USAGE_CACHE_FILE = join(HOME, '.claude/regoc/data/session_usage.cache.json')
-export const SESSION_USAGE_SCRIPT = join(HOME, 'app/regoc_system/tools/session_usage.py')
+/** Isti keš koji piše `tools/session_usage.py` — oba idu iz `$TM_HOME/data` (ADR-0001 O1.1). */
+export const SESSION_USAGE_CACHE_FILE = join(TM_DATA, 'session_usage.cache.json')
+/** Mjerilo iz paketa; drugu skriptu zadaje `TM_SESSION_USAGE_SCRIPT`. */
+export const SESSION_USAGE_SCRIPT =
+  process.env.TM_SESSION_USAGE_SCRIPT || join(PAKET_DIR, 'tools', 'session_usage.py')
 
 /** Redovno osvježavanje: UI pita svakih 60 s, probe najviše jednom u minuti. */
 export const SESSION_USAGE_TTL_MS = 60_000
@@ -214,7 +216,9 @@ export function createDefaultDeps(state: UsageState): UsageDeps {
         stdout: 'pipe',
         stderr: 'pipe',
         env: {
-          HOME,
+          HOME: process.env.HOME || homedir(),
+          // Skripta piše keš pod istim korijenom iz kojeg ga ploča čita.
+          ...(process.env.TM_HOME ? { TM_HOME: process.env.TM_HOME } : {}),
           PATH: process.env.PATH || '/usr/local/bin:/usr/bin:/bin',
           LANG: 'en_US.UTF-8',
         },

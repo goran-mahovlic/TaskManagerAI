@@ -49,15 +49,19 @@ from zoneinfo import ZoneInfo
 from pathlib import Path
 
 CRED_FILE = Path.home() / ".claude" / ".credentials.json"
-LOG_FILE = Path.home() / ".claude" / "regoc" / "data" / "session_usage.jsonl"
-CACHE_FILE = Path.home() / ".claude" / "regoc" / "data" / "session_usage.cache.json"
-SESSIONS_PATH = Path.home() / ".claude" / "tools" / "Telegram" / "chat_sessions.json"
-# Pošiljatelj: `<skripta> --chat <id> <tekst>`. Bilo je ~/.tmp/regoc_send.py — ~/.tmp se čisti,
-# pa je slanje od 22.09.2026. šutke padalo. Na REGOČ stroju je trajni alat ispod ~/.claude/regoc;
-# drugdje ga zadaj s TM_TELEGRAM_SEND (nema li ga, ishod je SKIP u TG_LOG-u, ne tihi pad).
-REGOC_SEND = Path(os.environ.get("TM_TELEGRAM_SEND")
-                  or Path.home() / ".claude" / "regoc" / "tools" / "telegram_send_text.py")
-TG_LOG = Path.home() / ".claude" / "regoc" / "data" / "session_usage.telegram.log"
+# Korijen instalacije isti kao u `src/core/paths.ts` (ADR-0001 O1.1): $TM_HOME, zadano
+# ~/.taskmanager. Mjerilo piše u <korijen>/data, odakle ploča (`src/SessionUsage.ts`) čita keš.
+TM_ROOT = Path(os.environ.get("TM_HOME") or Path.home() / ".taskmanager")
+TM_DATA = TM_ROOT / "data"
+LOG_FILE = TM_DATA / "session_usage.jsonl"
+CACHE_FILE = TM_DATA / "session_usage.cache.json"
+# Mapa chat_id → {sessionId} za dojavu na Telegram; nema li je, dojava se preskače.
+SESSIONS_PATH = Path(os.environ.get("TM_TELEGRAM_SESSIONS") or TM_DATA / "chat_sessions.json")
+# Pošiljatelj: `<skripta> --chat <id> <tekst>`, zadaje se s TM_TELEGRAM_SEND. Bez njega je
+# ishod SKIP u TG_LOG-u, ne tihi pad (do 22.09.2026. slanje je šutke padalo na nestaloj skripti).
+_SEND = os.environ.get("TM_TELEGRAM_SEND")
+REGOC_SEND = Path(_SEND) if _SEND else None
+TG_LOG = TM_DATA / "session_usage.telegram.log"
 ENDPOINT = "https://api.anthropic.com/v1/messages"
 PROBE_MODEL = "claude-haiku-4-5-20251001"  # najjeftiniji za probe
 BLOCK_THRESHOLD = 97.0  # ≥ ovo % sesije → zaustavi početak rada (UserPromptSubmit hook)
@@ -347,7 +351,7 @@ def send_telegram(text: str, session_id: str) -> None:
     Ishod (OK/SKIP/FAIL) upisuje u TG_LOG radi provjere. Nikad ne baca."""
     stamp = datetime.now(timezone.utc).isoformat()
     chat = _chat_for_session(session_id)
-    if not REGOC_SEND.exists():
+    if REGOC_SEND is None or not REGOC_SEND.exists():
         _tg_log(f"{stamp} SKIP nema pošiljatelja {REGOC_SEND} (postavi TM_TELEGRAM_SEND)")
         return
     if chat is None:
