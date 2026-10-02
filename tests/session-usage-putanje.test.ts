@@ -37,7 +37,9 @@ describe('session_usage — putanje iz okoline', () => {
   test('bez TM_HOME zadano je ~/.taskmanager/data, bez ičijeg drugog rasporeda', () => {
     const p = putanjePythona({ HOME: '/h' })
     expect(p.CACHE_FILE).toBe('/h/.taskmanager/data/session_usage.cache.json')
-    for (const v of Object.values(p)) expect(v).not.toContain('.claude/regoc')
+    for (const k of ['LOG_FILE', 'CACHE_FILE', 'TG_LOG', 'SESSIONS_PATH'])
+      expect(p[k].startsWith('/h/.taskmanager/data/')).toBe(true)
+    expect(p.REGOC_SEND).toBe('None') // bez TM_TELEGRAM_SEND nema pošiljatelja
   })
 
   test('pošiljatelj i sesije se zadaju okolinom', () => {
