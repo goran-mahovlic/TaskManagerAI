@@ -73,15 +73,9 @@ const PRAVILA: Pravilo[] = [
     ime: 'naši IP-ovi',
     uzorak: '192\\.168\\.10\\.\\d+',
     objasnjenje: 'adresa nikad nije zadana vrijednost — `null` + varijabla okoline (ADR-0001 §5.1)',
-    osnovicaPojava: 7,
-    osnovicaDatoteka: [
-      'tools/dezurni.py',
-      'tools/odlucitelj.py',
-      'tools/rag_archive.py',
-      'tools/rag_audit.py',
-      'tools/rag_izdvoji.py',
-      'tools/rag_tipovi.py',
-    ],
+    // TASK-5108: 7 → 0. Alati čitaju `TM_OLLAMA_URL` / `TM_CHROMA_HOST` kroz tools/tm_putanje.py.
+    osnovicaPojava: 0,
+    osnovicaDatoteka: [],
   },
   {
     ime: 'naša e-pošta / domena',

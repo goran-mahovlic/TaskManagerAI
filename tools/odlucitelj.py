@@ -44,6 +44,8 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+from tm_putanje import ollama_url
+
 HOME = Path.home()
 PLOCA = "http://localhost:17781"
 POSTAVKE = HOME / ".claude/regoc/config/odlucitelj.json"
@@ -52,7 +54,7 @@ ZADANE = {
     "ukljucen": False,                      # fail-safe: bez izričitog uključivanja ne radi
     "provider": "ollama",
     "model": "qwen3:8b",
-    "baseUrl": "http://192.168.10.4:11434",
+    "baseUrl": ollama_url(),               # TM_OLLAMA_URL, bez zadane adrese
     "najvise_po_prolazu": 3,
     "smije_kreni": True,                    # kad je false, model smije samo odgoditi ili tražiti čovjeka
     # Goran, 05.09.2026.: „ništa ne treba čekati mene ako sam odabrao da model odlučuje za mene."
@@ -477,8 +479,12 @@ def _pitaj_ollama(p: dict, tekst: str) -> str | None:
         "options": {"temperature": 0, "num_predict": 80},
         "messages": [{"role": "user", "content": tekst}],
     }
+    adresa = p.get('baseUrl') or ollama_url()
+    if not adresa:
+        print("ollama nije podesena — postavi TM_OLLAMA_URL ili baseUrl u postavkama", file=sys.stderr)
+        return None
     try:
-        r = urllib.request.Request(f"{p.get('baseUrl') or 'http://192.168.10.4:11434'}/api/chat",
+        r = urllib.request.Request(f"{adresa}/api/chat",
                                    json.dumps(tijelo).encode(), {"Content-Type": "application/json"})
         odg = json.load(urllib.request.urlopen(r, timeout=180))
         return ((odg.get("message") or {}).get("content") or "").strip() or None

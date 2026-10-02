@@ -20,7 +20,7 @@ from __future__ import annotations
 import argparse, json, sys, urllib.request
 from collections import Counter
 
-BAZA = "http://192.168.10.200:18765/api/v2/tenants/default_tenant/databases/default_database/collections"
+from tm_putanje import chroma_kolekcije as baza  # TM_CHROMA_HOST/TM_CHROMA_PORT, bez zadane adrese
 
 # Kolekcija → ključ projekta na ploči. Samo dokazane veze; nepoznato se ne pogađa.
 MAPA = {
@@ -69,18 +69,18 @@ def dohvati(put: str, tijelo=None):
 
 
 def kolekcije() -> dict[str, str]:
-    return {c["name"]: c["id"] for c in dohvati(BAZA + "?limit=500")}
+    return {c["name"]: c["id"] for c in dohvati(baza() + "?limit=500")}
 
 
 def pregled() -> int:
     kol = kolekcije()
     red = []
     for ime, cid in kol.items():
-        n = dohvati(f"{BAZA}/{cid}/count")
+        n = dohvati(f"{baza()}/{cid}/count")
         s_proj = s_task = 0
         kljucevi: Counter = Counter()
         if n:
-            d = dohvati(f"{BAZA}/{cid}/get", {"limit": min(n, 500), "include": ["metadatas"]})
+            d = dohvati(f"{baza()}/{cid}/get", {"limit": min(n, 500), "include": ["metadatas"]})
             for m in (d.get("metadatas") or []):
                 for k in (m or {}):
                     kljucevi[k] += 1
@@ -117,10 +117,10 @@ def tagiraj(primijeni: bool) -> int:
         if ime not in kol:
             continue
         cid = kol[ime]
-        n = dohvati(f"{BAZA}/{cid}/count")
+        n = dohvati(f"{baza()}/{cid}/count")
         if not n:
             continue
-        d = dohvati(f"{BAZA}/{cid}/get", {"limit": n, "include": ["metadatas"]})
+        d = dohvati(f"{baza()}/{cid}/get", {"limit": n, "include": ["metadatas"]})
         ids = d.get("ids") or []
         metas = d.get("metadatas") or []
         novi_ids, novi_metas = [], []
@@ -140,7 +140,7 @@ def tagiraj(primijeni: bool) -> int:
         ukupno += len(novi_ids)
         if primijeni:
             for k in range(0, len(novi_ids), 100):
-                dohvati(f"{BAZA}/{cid}/update",
+                dohvati(f"{baza()}/{cid}/update",
                         {"ids": novi_ids[k:k+100], "metadatas": novi_metas[k:k+100]})
     print(f"\n{'Označeno' if primijeni else 'Bilo bi označeno'}: {ukupno} dokumenata")
     return 0
@@ -153,8 +153,8 @@ def tagiraj_vrijednosti(primijeni: bool, ime_kolekcije: str = "pai_learning_syst
         print(f"nema kolekcije {ime_kolekcije}")
         return 1
     cid = kol[ime_kolekcije]
-    n = dohvati(f"{BAZA}/{cid}/count")
-    d = dohvati(f"{BAZA}/{cid}/get", {"limit": n, "include": ["metadatas"]})
+    n = dohvati(f"{baza()}/{cid}/count")
+    d = dohvati(f"{baza()}/{cid}/get", {"limit": n, "include": ["metadatas"]})
     ids, metas = d.get("ids") or [], d.get("metadatas") or []
     po_pid = Counter()
     novi_ids, novi_metas = [], []
@@ -181,7 +181,7 @@ def tagiraj_vrijednosti(primijeni: bool, ime_kolekcije: str = "pai_learning_syst
           + ", ".join(f"{k}({n})" for k, n in bez_mape.most_common(8)))
     if primijeni and novi_ids:
         for k in range(0, len(novi_ids), 100):
-            dohvati(f"{BAZA}/{cid}/update", {"ids": novi_ids[k:k+100], "metadatas": novi_metas[k:k+100]})
+            dohvati(f"{baza()}/{cid}/update", {"ids": novi_ids[k:k+100], "metadatas": novi_metas[k:k+100]})
         print(f"Označeno: {len(novi_ids)} dokumenata u {ime_kolekcije}")
     elif novi_ids:
         print(f"Bilo bi označeno: {len(novi_ids)} dokumenata u {ime_kolekcije}")

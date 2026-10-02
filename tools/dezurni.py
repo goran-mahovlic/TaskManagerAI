@@ -40,6 +40,8 @@ import sys
 import time
 import urllib.request
 from pathlib import Path
+
+from tm_putanje import ollama_url
 from zoneinfo import ZoneInfo
 
 HOME = Path.home()
@@ -60,7 +62,7 @@ STANJE_STRAZE = HOME / ".claude/regoc/data/dezurni.straza.json"
 ZADANE_POSTAVKE = {
     "provider": "ollama",
     "model": "qwen3:8b",
-    "baseUrl": "http://192.168.10.4:11434",
+    "baseUrl": ollama_url(),               # TM_OLLAMA_URL, bez zadane adrese
     "okidac_uzastopnih_gresaka": 2,
     "smije_podici": True,
     "razmak_straze_min": 30,
@@ -154,7 +156,11 @@ def pitaj_model(kartica: str, pitanje: str, tokena: int = 200, p: dict | None = 
         return None
     try:
         if nacin == "ollama":
-            d = _http_json(f"{p.get('baseUrl') or ZADANE_POSTAVKE['baseUrl']}/api/chat", {
+            adresa = p.get('baseUrl') or ZADANE_POSTAVKE['baseUrl']
+            if not adresa:
+                print("ollama nije podesena — postavi TM_OLLAMA_URL ili baseUrl u postavkama", file=sys.stderr)
+                return None
+            d = _http_json(f"{adresa}/api/chat", {
                 "model": model, "stream": False, "think": False,
                 "options": {"temperature": 0, "num_predict": tokena},
                 "messages": [{"role": "system", "content": kartica},

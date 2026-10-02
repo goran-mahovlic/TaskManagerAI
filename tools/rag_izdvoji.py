@@ -36,7 +36,7 @@ import sys
 import urllib.request
 from collections import Counter
 
-BAZA = "http://192.168.10.200:18765/api/v2/tenants/default_tenant/databases/default_database/collections"
+from tm_putanje import chroma_kolekcije as baza  # TM_CHROMA_HOST/TM_CHROMA_PORT, bez zadane adrese
 IZVOR = "pai_agent_general-purpose"
 ODREDISTE = "regoc_znanje"
 MIN_ZNAKOVA = 800
@@ -60,7 +60,7 @@ def dohvati(put: str, tijelo=None):
 
 
 def kolekcije() -> dict[str, str]:
-    return {c["name"]: c["id"] for c in dohvati(BAZA + "?limit=500")}
+    return {c["name"]: c["id"] for c in dohvati(baza() + "?limit=500")}
 
 
 def main() -> int:
@@ -76,8 +76,8 @@ def main() -> int:
         print(f"nema kolekcije {IZVOR}")
         return 1
     cid = kol[IZVOR]
-    n = dohvati(f"{BAZA}/{cid}/count")
-    d = dohvati(f"{BAZA}/{cid}/get",
+    n = dohvati(f"{baza()}/{cid}/count")
+    d = dohvati(f"{baza()}/{cid}/get",
                 {"limit": n, "include": ["documents", "metadatas", "embeddings"]})
     ids, docs = d["ids"], d["documents"]
     metas = d.get("metadatas") or [{}] * len(ids)
@@ -116,17 +116,17 @@ def main() -> int:
         return 0
 
     if ODREDISTE not in kol:
-        dohvati(BAZA, {"name": ODREDISTE, "metadata": {"svrha": "REGOČ znanje izdvojeno iz naslijeđenih PAI kolekcija"}})
+        dohvati(baza(), {"name": ODREDISTE, "metadata": {"svrha": "REGOČ znanje izdvojeno iz naslijeđenih PAI kolekcija"}})
         kol = kolekcije()
     cilj = kol[ODREDISTE]
     for k in range(0, len(izbor["ids"]), 100):
-        dohvati(f"{BAZA}/{cilj}/upsert", {
+        dohvati(f"{baza()}/{cilj}/upsert", {
             "ids": izbor["ids"][k:k + 100],
             "documents": izbor["documents"][k:k + 100],
             "metadatas": izbor["metadatas"][k:k + 100],
             "embeddings": izbor["embeddings"][k:k + 100],
         })
-    novo = dohvati(f"{BAZA}/{cilj}/count")
+    novo = dohvati(f"{baza()}/{cilj}/count")
     print(f"\n{ODREDISTE}: sada {novo} dokumenata (izvornik ostaje netaknut)")
     return 0
 

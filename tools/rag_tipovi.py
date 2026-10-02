@@ -39,7 +39,7 @@ import sys
 import urllib.request
 from collections import Counter
 
-BAZA = "http://192.168.10.200:18765/api/v2/tenants/default_tenant/databases/default_database/collections"
+from tm_putanje import chroma_kolekcije as baza  # TM_CHROMA_HOST/TM_CHROMA_PORT, bez zadane adrese
 
 # Povijesne vrijednosti `type` → normalizirana vrsta. Sve ostalo ide kroz sadržaj.
 PO_TIPU = {
@@ -79,7 +79,7 @@ def dohvati(put: str, tijelo=None):
 
 
 def kolekcije() -> dict[str, str]:
-    return {c["name"]: c["id"] for c in dohvati(BAZA + "?limit=500")}
+    return {c["name"]: c["id"] for c in dohvati(baza() + "?limit=500")}
 
 
 def vrsta(meta: dict, tekst: str) -> str:
@@ -99,10 +99,10 @@ def prolaz(primijeni: bool, samo_popis: str | None = None) -> int:
     zasticenih = 0
     primjeri: dict[str, list] = {}
     for ime, cid in sorted(kol.items()):
-        n = dohvati(f"{BAZA}/{cid}/count")
+        n = dohvati(f"{baza()}/{cid}/count")
         if not n:
             continue
-        d = dohvati(f"{BAZA}/{cid}/get", {"limit": n, "include": ["metadatas", "documents"]})
+        d = dohvati(f"{baza()}/{cid}/get", {"limit": n, "include": ["metadatas", "documents"]})
         ids = d.get("ids") or []
         metas = d.get("metadatas") or []
         docs = d.get("documents") or []
@@ -124,7 +124,7 @@ def prolaz(primijeni: bool, samo_popis: str | None = None) -> int:
             novi_metas.append(m)
         if primijeni and novi_ids:
             for k in range(0, len(novi_ids), 100):
-                dohvati(f"{BAZA}/{cid}/update",
+                dohvati(f"{baza()}/{cid}/update",
                         {"ids": novi_ids[k:k + 100], "metadatas": novi_metas[k:k + 100]})
             print(f"  {ime:28} označeno {len(novi_ids):>5}")
 

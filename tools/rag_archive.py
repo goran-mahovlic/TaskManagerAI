@@ -22,7 +22,7 @@ from __future__ import annotations
 import argparse, json, os, sys, urllib.request
 from datetime import datetime, timezone
 
-BAZA = "http://192.168.10.200:18765/api/v2/tenants/default_tenant/databases/default_database/collections"
+from tm_putanje import chroma_kolekcije as baza  # TM_CHROMA_HOST/TM_CHROMA_PORT, bez zadane adrese
 DEFAULT_OUT = os.path.expanduser("~/.claude/regoc/data/rag_arhiv")
 
 
@@ -34,7 +34,7 @@ def dohvati(put: str, tijelo=None):
 
 
 def kolekcije() -> dict[str, str]:
-    return {c["name"]: c["id"] for c in dohvati(BAZA + "?limit=500")}
+    return {c["name"]: c["id"] for c in dohvati(baza() + "?limit=500")}
 
 
 def _manifest_path(out_dir: str) -> str:
@@ -64,7 +64,7 @@ def export_kolekcija(ime: str, out_dir: str, kol: dict[str, str]) -> int:
         return 0
 
     cid = kol[ime]
-    n = dohvati(f"{BAZA}/{cid}/count")
+    n = dohvati(f"{baza()}/{cid}/count")
     jsonl_path = os.path.join(out_dir, f"{ime}.jsonl")
     zapisano = 0
     korak = 200
@@ -72,7 +72,7 @@ def export_kolekcija(ime: str, out_dir: str, kol: dict[str, str]) -> int:
         offset = 0
         while offset < n:
             limit = min(korak, n - offset)
-            d = dohvati(f"{BAZA}/{cid}/get",
+            d = dohvati(f"{baza()}/{cid}/get",
                         {"limit": limit, "offset": offset,
                          "include": ["metadatas", "documents", "embeddings"]})
             ids = d.get("ids") or []
@@ -89,7 +89,7 @@ def export_kolekcija(ime: str, out_dir: str, kol: dict[str, str]) -> int:
         "broj_dokumenata": zapisano,
         "izvezeno_u": os.path.abspath(jsonl_path),
         "izvezeno_at": datetime.now(timezone.utc).isoformat(),
-        "izvor": BAZA,
+        "izvor": baza(),
     }
     _save_manifest(out_dir, manifest)
     print(f"  {ime}: {zapisano} dokumenata → {jsonl_path}")
@@ -114,7 +114,7 @@ def broj_zasticenih(cid: str) -> int:
     """
     try:
         req = urllib.request.Request(
-            f"{BAZA}/{cid}/get",
+            f"{baza()}/{cid}/get",
             json.dumps({"where": {"zasticeno": True}, "limit": 1000, "include": []}).encode(),
             {"Content-Type": "application/json"})
         d = json.load(urllib.request.urlopen(req, timeout=60))
@@ -146,13 +146,13 @@ def drop_kolekcija(ime: str, out_dir: str, kol: dict[str, str], dopusti_zasticen
             print(f"  {ime}: sadrži {zast} ZAŠTIĆENIH dokumenata (pravila/lekcije/pogreške) — "
                   f"odbijam obrisati. Ako je doista potrebno: --dopusti-zasticeno")
         return 1
-    n_prije = dohvati(f"{BAZA}/{cid}/count")
+    n_prije = dohvati(f"{baza()}/{cid}/count")
     if n_prije != zapis["broj_dokumenata"]:
         print(f"  {ime}: UPOZORENJE broj u Chromi ({n_prije}) != broj u arhivi "
               f"({zapis['broj_dokumenata']}) — provjeri prije brisanja")
         return 1
     # v2 API: DELETE .../collections/{ime} radi po IMENU, ne po id-u (id vraća 404).
-    req = urllib.request.Request(f"{BAZA}/{ime}", method="DELETE")
+    req = urllib.request.Request(f"{baza()}/{ime}", method="DELETE")
     urllib.request.urlopen(req, timeout=60)
     print(f"  {ime}: obrisana iz Chrome ({n_prije} dokumenata, arhiva ostaje na disku)")
     return 0
@@ -171,7 +171,7 @@ def restore_kolekcija(ime: str, out_dir: str) -> int:
     if ime in kol:
         cid = kol[ime]
     else:
-        created = dohvati(BAZA, {"name": ime})
+        created = dohvati(baza(), {"name": ime})
         cid = created["id"]
 
     ids, docs, metas, embs = [], [], [], []
@@ -186,7 +186,7 @@ def restore_kolekcija(ime: str, out_dir: str) -> int:
     korak = 100
     vraceno = 0
     for k in range(0, len(ids), korak):
-        dohvati(f"{BAZA}/{cid}/add", {
+        dohvati(f"{baza()}/{cid}/add", {
             "ids": ids[k:k + korak],
             "documents": docs[k:k + korak],
             "metadatas": metas[k:k + korak],
