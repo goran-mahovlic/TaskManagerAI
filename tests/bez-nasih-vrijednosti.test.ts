@@ -33,7 +33,7 @@ const BINARNO = /\.(png|jpg|jpeg|gif|ico|webp|pdf|zip|db|lock)$/
 
 /** Popis onoga što se isporučuje = ono što git prati. */
 function pratiGit(): string[] {
-  const r = Bun.spawnSync(['git', 'ls-files'], { cwd: KORIJEN })
+  const r = Bun.spawnSync(['git', '-c', `safe.directory=${KORIJEN}`, 'ls-files'], { cwd: KORIJEN })
   if (r.exitCode !== 0) return []
   return r.stdout.toString().trim().split('\n')
     .filter(p => p && !p.startsWith('docs/') && p !== SAMA_BRANA && !BINARNO.test(p))
