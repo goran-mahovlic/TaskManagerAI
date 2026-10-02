@@ -1,7 +1,7 @@
 /**
  * GitCommitGate — zadatak bez ijednog commita ne prolazi u `completed` (U4 / TASK-4264).
  *
- * Razrada: `~/app/regoc_system/docs/RAZRADA-3691_workflow_i_pragovi.md` §4 („Git — obavezno i
+ * Razrada: `RAZRADA-3691_workflow_i_pragovi.md` (repozitorij sustava, nije u paketu) §4 („Git — obavezno i
  * mjerljivo"), pravilo 15: napredak mora biti durabilan.
  *
  * KVAR KOJI OVO ZATVARA. Rad koji nije commitan živi u radnom stablu jedne sjednice: sljedeći
@@ -161,7 +161,7 @@ export const DEFAULT_GIT_COMMIT_GATE_CONFIG: GitCommitGateConfig = {
   verifyWithGit: true,
   /**
    * `~/app/*` se ŠIRI u sve podmape koje stvarno imaju `.git` (jedan readdir). Tvrd popis
-   * putanja ovdje je bio pogrešan iz prve: `~/app/regoc_system` — mjesto gdje živi najviše
+   * putanja ovdje je bio pogrešan iz prve: repozitorij sustava — mjesto gdje živi najviše
    * REGOČ-evih zadataka — NIJE git repozitorij, pa bi vratar tražio dokaz u nepostojećem
    * spremištu. Popis koji se sam održava ne može ostarjeti u tišini.
    */

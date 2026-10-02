@@ -5,7 +5,7 @@
  * i telemetrije NAŠIH transkripata (`~/.claude/projects/**\/*.jsonl`) po projektu
  * (`tasks.project_id`) i po agentu za zadnjih N dana.
  *
- * Izračun se ovdje NE duplicira — sve radi `~/app/regoc_system/tools/tjedni_pregled.py`,
+ * Izračun se ovdje NE duplicira — sve radi `tools/tjedni_pregled.py`,
  * koji za pojedino izvođenje zove `agent_telemetry.py` (kriške T2/T3). Ovaj modul je
  * samo prijenos: poziv alata, keš, propusnica i svođenje na oblik koji pregled prikazuje.
  *
@@ -28,10 +28,11 @@
 import { join } from 'path'
 import { homedir } from 'os'
 import { existsSync } from 'fs'
+import { sustavPutanja } from './core/paths'
 
 const HOME = process.env.HOME || homedir()
 
-/** Isti odabir kao u TaskTelemetry: paket prvo gleda uz sebe, pa u REGOČ instalaciju. */
+/** Isti odabir kao u TaskTelemetry: paket prvo gleda uz sebe, pa u `TM_SUSTAV_DIR`. */
 function prviPostojeci(putovi: string[]): string {
   for (const p of putovi) { try { if (existsSync(p)) return p } catch { /* dalje */ } }
   return putovi[putovi.length - 1]
@@ -40,8 +41,8 @@ function prviPostojeci(putovi: string[]): string {
 export const PREGLED_SCRIPT = process.env.TM_PREGLED_SCRIPT
   || prviPostojeci([
        join(import.meta.dir, '..', 'tools', 'tjedni_pregled.py'),
-       join(HOME, 'app/regoc_system/tools/tjedni_pregled.py'),
-     ])
+       sustavPutanja('tools/tjedni_pregled.py'),
+     ].filter((p): p is string => p !== null))
 
 /** Razdoblje se mijenja tek novim izvođenjima; keš je tu da ploča ne pokreće python po kliku. */
 export const PREGLED_TTL_MS = 5 * 60_000

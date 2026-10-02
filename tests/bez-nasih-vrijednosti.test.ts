@@ -133,6 +133,18 @@ const PRAVILA: Pravilo[] = [
     osnovicaPojava: 0,
     osnovicaDatoteka: [],
   },
+  {
+    ime: 'naš repozitorij sustava (~/app/…_system)',
+    // TASK-5109: hvata i slug Claude projekta (`-app-…-system`) i rastavljeni
+    // `join(HOME, 'app', '…_system')` — sve su to imena NAŠE mape. Slaže se iz dijelova
+    // iz istog razloga kao tailnet gore.
+    uzorak: ['reg', 'oc[_-]system'].join(''),
+    objasnjenje: 'repozitorij sustava domaćina dolazi samo iz `TM_SUSTAV_DIR` kroz `sustavPutanja()` '
+      + '(src/core/paths.ts); bez varijable alat se traži uz paket (`PAKET_DIR/tools`)',
+    // TASK-5109: 24/14 → 0 u istom koraku (izmjereno prije popravka na `2268db7`).
+    osnovicaPojava: 0,
+    osnovicaDatoteka: [],
+  },
 ]
 
 interface Nalaz { pojava: number; datoteke: string[] }

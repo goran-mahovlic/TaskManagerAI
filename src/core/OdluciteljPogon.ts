@@ -21,14 +21,12 @@
  *   - Rok od 3 min: mrezni model koji visi ne smije zaustaviti daemonovu petlju.
  */
 import { existsSync, readFileSync, writeFileSync, mkdirSync, renameSync } from 'fs'
-import { homedir } from 'os'
 import { dirname, join } from 'path'
-import { konfigPutanja, PAKET_DIR, stanjePutanja } from './paths'
+import { konfigPutanja, PAKET_DIR, stanjePutanja, sustavPutanja } from './paths'
 // Isti popisi kojima se ravna red autonomije — da se „tko se smije spawnati" ne razidje
 // na dva mjesta. Puštanje koje red ne bi podigao mora se ovdje prepoznati kao neizvedivo.
 import { ORCHESTRATOR_ASSIGNEES, DEFAULT_HUMAN_ASSIGNEES } from './AutonomyQueue'
 
-const HOME = process.env.HOME || homedir()
 // TASK-5108: isti lanac kao `tools/odlucitelj.py` (tools/tm_putanje.py) — konfiguracija
 // ide kroz konfigPutanja, stanje u $TM_HOME/data. Nikad raspored mapa orkestratora.
 export const ODLUCITELJ_CONFIG = konfigPutanja('odlucitelj.json', 'TM_ODLUCITELJ_CONFIG')
@@ -110,11 +108,11 @@ export function trebaProlaz(zadnjiMs: number, sadaMs: number,
   return sadaMs - zadnjiMs >= interval
 }
 
-/** Alat zivi u repozitoriju sustava ili uz sam paket (`tools/odlucitelj.py`). */
+/** Alat zivi u repozitoriju sustava (`TM_SUSTAV_DIR`) ili uz sam paket (`tools/odlucitelj.py`). */
 export function nadjiAlat(): string | null {
-  for (const put of [`${HOME}/app/regoc_system/tools/odlucitelj.py`,
+  for (const put of [sustavPutanja('tools/odlucitelj.py'),
                      join(PAKET_DIR, 'tools', 'odlucitelj.py')]) {
-    if (existsSync(put)) return put
+    if (put && existsSync(put)) return put
   }
   return null
 }

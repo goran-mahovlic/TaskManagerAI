@@ -2,8 +2,8 @@
  * WorkflowGate — prekidač za tijekove rada, tri razine (W0 / TASK-4620).
  *
  * NALOG (Goran, 04.09.2026., doslovno): „Dodao bih prekidač da radi ili ne radi preko tog
- * novog sustava, čisto da imamo mogućnost testa." Razrada: `~/app/regoc_system/docs/
- * PLAN-workflow-integracija.md` §6.1. Ovo je PRVI korak integracije tijekova — prije njega
+ * novog sustava, čisto da imamo mogućnost testa." Razrada:
+ * `PLAN-workflow-integracija.md` (repozitorij sustava, nije u paketu) §6.1. Ovo je PRVI korak integracije tijekova — prije njega
  * se ne smije ukopčati ništa drugo, jer bi se ukopčalo bez ručke za gašenje.
  *
  * TRI RAZINE, OVIM REDOM SNAGE (jača gasi slabiju):

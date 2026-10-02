@@ -32,6 +32,20 @@ export const TM_DATA: string = join(TM_ROOT, 'data')
 export const PAKET_DIR: string = join(import.meta.dir, '..', '..')
 
 /**
+ * Repozitorij sustava domaćina — alati i skripte koje paket NE nosi, a instalacija ih ima
+ * (npr. novija inačica `tools/odlucitelj.py` ili skripta za servise). Dolazi ISKLJUČIVO iz
+ * `TM_SUSTAV_DIR`; bez nje je `null` i paket traži alat samo uz sebe (`PAKET_DIR/tools`).
+ *
+ * TASK-5109: prije je ovdje bila zadana mapa našeg repozitorija pod $HOME — na drugom
+ * stroju je nema, pa je svaki takav kandidat bio tiho mrtav. Varijabla se čita pri pozivu,
+ * ne pri uvozu, da je testovi i dugotrajni procesi vide jednako.
+ */
+export function sustavPutanja(rel: string): string | null {
+  const korijen = (process.env.TM_SUSTAV_DIR || '').trim()
+  return korijen ? join(korijen, rel) : null
+}
+
+/**
  * Gdje živi konfiguracijska datoteka — obrazac iz `IngestConfig.zadanaPutanja()`,
  * podignut na zajedničko mjesto jer ga od ADR-0001 O1.4 koristi devet modula:
  *

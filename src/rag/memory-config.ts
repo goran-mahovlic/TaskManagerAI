@@ -19,14 +19,14 @@
 
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
 import { join, dirname } from 'path'
-import { konfigPutanja, stanjePutanja } from '../core/paths'
+import { konfigPutanja, PAKET_DIR, stanjePutanja } from '../core/paths'
 
 // ============================================================================
 // Tipovi
 // ============================================================================
 
 export interface Tier0Config {
-  /** Claude Code project-slug (npr. "-home-regoc-app-regoc-system") */
+  /** Claude Code project-slug (npr. "-srv-sustav" za /srv/sustav) */
   projectSlug: string
   /** Apsolutna putanja do memory/ direktorija (sadrži MEMORY.md + *.md) */
   memoryDir: string
@@ -62,10 +62,12 @@ export interface MemoryConfig {
 // ============================================================================
 
 const HOME = process.env.HOME || ''
-/** Projekt na kojem REGOČ radi — memorija živi u ~/.claude/projects/<slug>/memory */
-const PROJECT_ROOT = join(HOME, 'app', 'regoc_system')
-/** Legacy slug s razvojne mašine — fallback kad izvedeni slug ne postoji (npr. transferirani ISO) */
-const LEGACY_SLUG = '-home-klaudio-app-regoc-system'
+/**
+ * Projekt na kojem orkestrator radi — memorija živi u ~/.claude/projects/<slug>/memory.
+ * Repozitorij sustava iz `TM_SUSTAV_DIR`, inače sam paket (TASK-5109: bez zadane mape
+ * našeg repozitorija i bez slug-a naše razvojne mašine kao rezerve).
+ */
+const PROJECT_ROOT = (process.env.TM_SUSTAV_DIR || '').trim() || PAKET_DIR
 
 export function configPath(): string {
   return process.env.REGOC_MEMORY_CONFIG || konfigPutanja('memory-config.json')
@@ -80,12 +82,9 @@ function memoryDirForSlug(slug: string): string {
   return join(HOME, '.claude', 'projects', slug, 'memory')
 }
 
-/** Slug izveden iz $HOME; ako taj memory/ ne postoji, a legacy postoji → legacy (transferirani ISO). */
+/** Slug izveden iz korijena projekta (v. PROJECT_ROOT). */
 function defaultProjectSlug(): string {
-  const derived = deriveProjectSlug()
-  if (existsSync(memoryDirForSlug(derived))) return derived
-  if (existsSync(memoryDirForSlug(LEGACY_SLUG))) return LEGACY_SLUG
-  return derived
+  return deriveProjectSlug()
 }
 
 function bool(v: unknown, fallback: boolean): boolean {

@@ -1,7 +1,7 @@
 /**
  * WorkflowTemplate — PREDLOŽAK PRVOG ZADATKA (U4 / TASK-4264).
  *
- * Razrada: `~/app/regoc_system/docs/RAZRADA-3691_workflow_i_pragovi.md` §4.
+ * Razrada: `RAZRADA-3691_workflow_i_pragovi.md` (repozitorij sustava, nije u paketu) §4.
  *
  * ŠTO OVO RJEŠAVA. Zadatak koji nastane iz Goranove poruke dosad je dobivao samo naslov i
  * prepričan tekst. Što će se s njim raditi odlučivao je model u trenutku spawna — pa je isti

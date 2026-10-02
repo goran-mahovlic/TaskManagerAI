@@ -1,7 +1,7 @@
 /**
  * StepSchema — strukturirani izlaz koraka (W3 / TASK-4615).
  *
- * NALOG: `~/app/regoc_system/docs/PLAN-workflow-integracija.md` §3 W3 — „svaki korak dobiva
+ * NALOG: `PLAN-workflow-integracija.md` (repozitorij sustava, nije u paketu) §3 W3 — „svaki korak dobiva
  * shemu izlaza (JSON: napravljeno, dokaz, datoteke, sljedeci_korak, nesigurnosti). Vratar
  * tada provjerava POLJA, a ne prozu."
  *

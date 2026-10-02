@@ -1,7 +1,7 @@
 /**
  * TaskTelemetry — „Potrošnja zadatka" za karticu zadatka (TASK-3568, kriška T4)
  *
- * Izvor istine je `~/app/regoc_system/tools/agent_telemetry.py` (kriške T2/T3):
+ * Izvor istine je `tools/agent_telemetry.py` (kriške T2/T3):
  * on čita NAŠE transkripte `~/.claude/projects/**\/*.jsonl` i `run_log.jsonl`.
  * Ovdje se taj izračun NE duplicira — ovaj modul ga samo poziva, keširaj i svodi
  * na ono što kartica prikazuje (mjere 1, 2, 3, 4 i 5 iz ISTRAZIVANJE_AGENTSIGHT §7).
@@ -19,13 +19,14 @@
 import { join } from 'path'
 import { homedir } from 'os'
 import { existsSync } from 'fs'
+import { sustavPutanja } from './core/paths'
 
 const HOME = process.env.HOME || homedir()
 
 /**
- * Putanja alata. U REGOČ instalaciji stoji u `~/app/regoc_system/tools/`, a u portabilnom
- * paketu (TaskManagerAI) uz sam paket — zato je odabir kroz okolinu, s prvim postojećim
- * kao pretpostavkom. Bez njega „Potrošnja" javlja da alat nedostaje, a ploča i dalje radi.
+ * Putanja alata. Paket ga nosi u `tools/`; instalacija koja drži vlastitu inačicu postavlja
+ * `TM_TELEMETRY_SCRIPT` ili `TM_SUSTAV_DIR` (v. `sustavPutanja()` u src/core/paths.ts) —
+ * odabir je kroz okolinu, s prvim postojećim kao pretpostavkom. Bez njega „Potrošnja" javlja da alat nedostaje, a ploča i dalje radi.
  */
 function prviPostojeci(putovi: string[]): string {
   for (const p of putovi) { try { if (existsSync(p)) return p } catch { /* dalje */ } }
@@ -35,8 +36,8 @@ function prviPostojeci(putovi: string[]): string {
 export const TELEMETRY_SCRIPT = process.env.TM_TELEMETRY_SCRIPT
   || prviPostojeci([
        join(import.meta.dir, '..', 'tools', 'agent_telemetry.py'),
-       join(HOME, 'app/regoc_system/tools/agent_telemetry.py'),
-     ])
+       sustavPutanja('tools/agent_telemetry.py'),
+     ].filter((p): p is string => p !== null))
 
 /** Završeno izvođenje se više ne mijenja; keš je tu zbog ponovnog otvaranja kartice. */
 export const TELEMETRY_TTL_MS = 10 * 60_000

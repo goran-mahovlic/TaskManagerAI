@@ -1,3 +1,15 @@
+## 2026-10-02 — bez zadane mape repozitorija sustava (TASK-5109)
+
+- **Repozitorij sustava samo iz okoline.** Ploča, `TaskTelemetry`, `TjedniPregled`,
+  `OdluciteljPogon` i memorijska konfiguracija više ne traže alate u zadanoj mapi našeg
+  repozitorija pod `$HOME`: novi `sustavPutanja()` (src/core/paths.ts) čita `TM_SUSTAV_DIR`,
+  a bez nje se alat traži samo uz paket. Skripta servisa iz `TM_SERVICES_SCRIPT`.
+  Memorijski slug više nema rezervu sa slug-a naše razvojne mašine. **Prijelaz:** instalacija
+  koja je alate držala u repozitoriju sustava postavlja `TM_SUSTAV_DIR`.
+- Komentari i `agents/workflows.json` navode interne dokumente po imenu („repozitorij sustava,
+  nije u paketu") umjesto po našoj putanji.
+- Brana: novo pravilo „naš repozitorij sustava", osnovica 24 pojave / 14 datoteka → 0.
+
 ## 2026-10-02 — paket bez naših vrijednosti (TASK-5108, dug iz revizije TASK-5010 §D)
 
 - **Adrese servisa samo iz okoline.** Alati u `tools/` više nemaju naš LAN kao zadanu

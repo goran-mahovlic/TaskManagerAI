@@ -1,7 +1,7 @@
 /**
  * WeightScore — OCJENA TEŽINE 1–100 i odluka po pragovima A/B/C (U5 / TASK-4265).
  *
- * Razrada: `~/app/regoc_system/docs/RAZRADA-3691_workflow_i_pragovi.md` §2 (pragovi) i §3 (ocjena).
+ * Razrada: `RAZRADA-3691_workflow_i_pragovi.md` (repozitorij sustava, nije u paketu) §2 (pragovi) i §3 (ocjena).
  *
  * ŠTO OVAJ MODUL JEST: čista, deterministička aritmetika nad već donesenom odlukom.
  * Razred težine (E1–E5) daje `ModeClassifier`; ovdje se iz njega izvodi JEDAN broj koji

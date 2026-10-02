@@ -20,7 +20,7 @@ import { dirname, join, resolve } from 'path'
 import { hostname as osHostname, networkInterfaces as osNetworkInterfaces, homedir } from 'os'
 // SQL-Only TaskManager (v2.0) - replaces MD+SQLite dual-write
 import { getTaskManagerSQL, INBOX_PROJECT_ID } from './core/TaskManagerSQL'
-import { konfigPutanja, osigurajMapu, stanjePutanja, TM_DB } from './core/paths'
+import { konfigPutanja, osigurajMapu, PAKET_DIR, stanjePutanja, sustavPutanja, TM_DB } from './core/paths'
 import { datotekaTajni, datotekaTajniZaPisanje } from './core/ConfigModul'
 /**
  * Registar PAI agenata (`REGOC_AGENTS.json`, upisuje ga `scripts/install-agents.sh`).
@@ -344,7 +344,10 @@ const STATS_CACHE_FILE = join(process.env.HOME || homedir(), '.claude/stats-cach
 /** Prozor za prikaz potrošnje na ploči (dana). */
 const TOKEN_WINDOW_DAYS = 30
 const SCHEDULER_STATE_FILE = join(process.env.HOME || homedir(), '.tmp/regoc_scheduler_state.json')
-const REGOC_SERVICES_SCRIPT = join(process.env.HOME || homedir(), 'app/regoc_system/regoc-services.sh')
+/** TASK-5109: skripta servisa iz `TM_SERVICES_SCRIPT`, inače iz repozitorija sustava (`TM_SUSTAV_DIR`),
+ *  inače uz paket — nikad zadana mapa našeg repozitorija. Nepostojeća skripta = prazno zdravlje. */
+const REGOC_SERVICES_SCRIPT = process.env.TM_SERVICES_SCRIPT
+  || sustavPutanja('regoc-services.sh') || join(PAKET_DIR, 'regoc-services.sh')
 /** PID koji piše RegocDaemon — tvrdi signal živosti uz (meku) starost status datoteke. */
 const DAEMON_PID_FILE = process.env.TM_DAEMON_PID || stanjePutanja('daemon.pid')
 
@@ -2440,7 +2443,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
 
     <!-- POTROŠNJA TAB — TASK-3569 (T5), mjera 6: tjedni pregled po projektu i agentu.
          Sve brojke dolaze s GET /api/pregled/tjedni, koji zove
-         ~/app/regoc_system/tools/tjedni_pregled.py nad run_log.jsonl i NAŠIM
+         tools/tjedni_pregled.py nad run_log.jsonl i NAŠIM
          transkriptima. Uz svaku agregaciju stoji IZ KOLIKO je izvođenja izračunata. -->
     <div id="tab-potrosnja" class="tab-content">
       <div class="status-header-bar">
@@ -10415,7 +10418,7 @@ function buildInfoPayload(): Record<string, unknown> {
   } catch {}
 
   const rules = [
-    { number: 1, name: 'WRITE PERMISSIONS', summary: 'Only ./  and ~/app/regoc_system/ — rest is read-only' },
+    { number: 1, name: 'WRITE PERMISSIONS', summary: 'Only ./  and the system repository ($TM_SUSTAV_DIR) — rest is read-only' },
     { number: 2, name: 'RAG-FIRST', summary: 'Search RAG before saying "I don\'t know"' },
     { number: 3, name: 'SAMO REGOČ AGENTI', summary: '12 named agents only — never PAI generic (Serena, Marcus...)' },
     { number: 4, name: 'PUNI IDENTITET PRI SPAWNU', summary: 'Full identity pre-loaded at spawn — IdentityBlock.ts builds it from REGOC_AGENTS.json (AgentFactory + UnifiedSpawnPipeline deprecated, ADR-0004)' },
@@ -11263,7 +11266,7 @@ async function handleSessionUsage(req?: Request): Promise<Response> {
 
 // ============================================================================
 // TASK-3568 (T4): GET /api/tasks/:id/telemetry — „Potrošnja zadatka".
-// Izračun je u `~/app/regoc_system/tools/agent_telemetry.py` (kriške T2/T3) i čita
+// Izračun je u `tools/agent_telemetry.py` (kriške T2/T3) i čita
 // NAŠE transkripte; ploča ga samo poziva i keširaj. Zahtjev čeka najviše
 // TELEMETRY_WAIT_MS pa vraća 202 „racuna" — kartica se ne smije zaglaviti na
 // pythonu. Stari zadatci bez transkripta vraćaju 200 uz `imaPodatke:false`
@@ -11295,7 +11298,7 @@ async function handleTaskTelemetry(taskId: string, url: URL): Promise<Response> 
 // TASK-3569 (T5): GET /api/pregled/tjedni — kartica „Potrošnja" (mjera 6).
 // Agregacija `run_log.jsonl` + telemetrije NAŠIH transkripata po projektu
 // (`tasks.project_id`) i po agentu za zadnjih N dana. Izračun je u
-// `~/app/regoc_system/tools/tjedni_pregled.py`; ploča ga samo poziva i keširaj.
+// `tools/tjedni_pregled.py`; ploča ga samo poziva i keširaj.
 // Neispravan `dana`/`najskupljih` je 400 — python se ne pokreće s tuđim nizom.
 // ============================================================================
 const pregledState = createPregledState()
@@ -12188,9 +12191,9 @@ function ucitajOdluciteljConfig(): Record<string, any> {
 
 function putanjaOdlucitelja(): string | null {
   const fs = require('fs')
-  for (const put of [`${process.env.HOME}/app/regoc_system/tools/odlucitelj.py`,
+  for (const put of [sustavPutanja('tools/odlucitelj.py'),
                      `${import.meta.dir}/../tools/odlucitelj.py`]) {
-    if (fs.existsSync(put)) return put
+    if (put && fs.existsSync(put)) return put
   }
   return null
 }
@@ -12874,13 +12877,13 @@ async function handleVrijednostInputa(url: URL): Promise<Response> {
     return json({ ...vrijednostKes.podatci, izvor: 'kes',
                   staroS: Math.round((Date.now() - vrijednostKes.u) / 1000) })
   }
-  // Alat se traži prvo UZ PAKET (samostalna instalacija na nodu), pa u REGOČ instalaciji —
-  // isti redoslijed kao TjedniPregled.prviPostojeci. Bez toga je ruta na nodovima vraćala
-  // 503 jer ondje `~/app/regoc_system` ne postoji.
+  // Alat se traži prvo UZ PAKET (samostalna instalacija na nodu), pa u repozitoriju sustava
+  // (`TM_SUSTAV_DIR`) — isti redoslijed kao TjedniPregled.prviPostojeci. Bez toga je ruta na
+  // nodovima vraćala 503 jer ondje mapa repozitorija sustava ne postoji.
   const kandidati = [
     join(import.meta.dir, '..', 'tools', 'vrijednost_inputa.py'),
-    join(process.env.HOME || homedir(), 'app/regoc_system/tools/vrijednost_inputa.py'),
-  ]
+    sustavPutanja('tools/vrijednost_inputa.py'),
+  ].filter((p): p is string => p !== null)
   const alat = kandidati.find(p => existsSync(p))
   if (!alat) return json({ error: 'alat nije pronađen', trazeno: kandidati }, 503)
   try {
@@ -14024,6 +14027,8 @@ function formatObsEvent(ev: any) {
 
 // --- Stream 5: Session JSONL watcher (agent reasoning/thinking) ---
 const CLAUDE_PROJECTS_DIR = join(process.env.HOME || homedir(), '.claude/projects')
+/** Slug Claude projekta repozitorija sustava (`TM_SUSTAV_DIR`) — ondje je NAŠA velika sesija. */
+const VLASTITI_PROJEKT_SLUG = (process.env.TM_SUSTAV_DIR || '').trim().replace(/\/+$/, '').replace(/[/_.]/g, '-') || null
 const sessionFilePositions: Record<string, number> = {}
 let activeSessionFiles: string[] = []
 let lastSessionScan = 0
@@ -14045,14 +14050,14 @@ function scanActiveSessions() {
         if (!statSync(projectPath).isDirectory()) continue
         const files = readdirSync(projectPath)
 
-        // Main session files — only from non-regoc-system projects (skip our own huge session)
-        const isRegocProject = dir.includes('regoc-system')
+        // Main session files — skip our own huge session in the system repository project
+        const isRegocProject = VLASTITI_PROJEKT_SLUG !== null && dir.startsWith(VLASTITI_PROJEKT_SLUG)
         for (const file of files) {
           if (!file.endsWith('.jsonl')) continue
           const filePath = join(projectPath, file)
           try {
             const fstat = statSync(filePath)
-            // Skip our own main session (>500KB) in regoc-system project
+            // Skip our own main session (>500KB) in the system repository project
             if (isRegocProject && fstat.size > 512000) continue
             if (now - fstat.mtimeMs < 300000) {
               results.push({ path: filePath, mtime: fstat.mtimeMs })

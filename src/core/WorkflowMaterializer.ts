@@ -1,7 +1,7 @@
 /**
  * WorkflowMaterializer — W2/TASK-4616: odabrani TIJEK RADA postaje LANAC ZADATAKA NA PLOČI.
  *
- * Plan: `~/app/regoc_system/docs/PLAN-workflow-integracija.md` §3 W2.
+ * Plan: `PLAN-workflow-integracija.md` (repozitorij sustava, nije u paketu) §3 W2.
  *
  * ZAŠTO OVAKO. Kod Anthropica je tijek efemeran — živi u jednom procesu i nestaje s njim.
  * Kod nas je svaki korak ZADATAK NA PLOČI: preživi restart, ima izvršitelja, trošak i

@@ -2,7 +2,7 @@ import { MAX_MSG_LEN, parseAgentOutput, summaryLine } from './AgentOutputParser'
 /**
  * ReportBackTask — ZADATAK DOJAVE: niz zadataka daje JEDNU poruku korisniku (U4 / TASK-4264).
  *
- * Razrada: `~/app/regoc_system/docs/RAZRADA-3691_workflow_i_pragovi.md` §4, korak 9.
+ * Razrada: `RAZRADA-3691_workflow_i_pragovi.md` (repozitorij sustava, nije u paketu) §4, korak 9.
  *
  * KVAR KOJI OVO ZATVARA. Dojava je dosad bila usputna: svaki agent koji je nešto završio slao
  * je svoju poruku (ili je nije slao nitko — v. `kosjenka-self-analysis-delivery-rot`, 13
