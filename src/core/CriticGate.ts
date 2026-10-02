@@ -665,7 +665,7 @@ export function resolveDeclaredChecks(
  * OBLIKA — ne tvrde da je dokument točan, nego da je tvar, a ne ljuska.
  *
  * Pravila su prenesena 1:1 iz mjerenog prototipa
- * (`~/app/regoc_system/docs/prototip/prototip-doc-provjera-4833.py`; 53/53 stvarna
+ * (prototip provjere dokumenata, izvan paketa; 53/53 stvarna
  * dokumenta prolaze, 7/7 sintetičkih kvarova uhvaćeno, 1,2 ms/dok). Svako je pravilo ondje
  * SUŽENO tek nakon što je oborilo nedužan dokument — zato se uska mjesta ne smiju „očistiti":
  *   • ograda ``` broji se SAMO na početku retka (inače ograda u umetnutom kodu lažno
@@ -751,7 +751,7 @@ export function jeRedakNepopunjenUgao(tekst: string): boolean {
  *   (a) ASCII/Unicode okvir — `════ NT-D golden-set ════` u istom retku, ili redak od `=`
  *       iznad/ispod naslovnog retka (`TASK-065-COMPLETE.txt`, `BUG-004-SUMMARY.txt`);
  *   (d) PAI memory format — YAML zaglavlje s poljem `name:`, pa podebljani vodeći redci
- *       (`memory/ulx5m-m2-serdes-pcie.md`).
+ *       (zapis memorije oblika `memory/<projekt>.md`).
  *
  * Osjetljivost ostaje: gola proza bez ijednog od tih oblika i dalje pada, jer okvirni redak
  * mora imati SUSJEDNI tekstovni redak (sama vodoravna crta nije naslov), a YAML zaglavlje

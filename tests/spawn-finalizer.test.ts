@@ -42,7 +42,7 @@ describe('F1 — pred-provjera vratara (§12): ono što API odbija s 400, daemon
   test('istraživački zadatak BEZ RAG ID-a: vratar ne prolazi, razlog imenuje vratara', async () => {
     const { provjeriVratareZatvaranja } = await ucitaj()
     const s = provjeriVratareZatvaranja({
-      taskId: 'TASK-F1', tags: ['istrazivanje'], projectId: 'REGOC_SYSTEM',
+      taskId: 'TASK-F1', tags: ['istrazivanje'], projectId: 'PRJ-001',
       resultText: 'Istraživanje gotovo, nalaz u izvještaju.',
     })
     expect(s.ok).toBe(false)
@@ -53,7 +53,7 @@ describe('F1 — pred-provjera vratara (§12): ono što API odbija s 400, daemon
   test('isti zadatak S RAG ID-em prolazi', async () => {
     const { provjeriVratareZatvaranja } = await ucitaj()
     const s = provjeriVratareZatvaranja({
-      taskId: 'TASK-F1', tags: ['istrazivanje'], projectId: 'REGOC_SYSTEM',
+      taskId: 'TASK-F1', tags: ['istrazivanje'], projectId: 'PRJ-001',
       resultText: 'Spremljeno: doc_1788958329155_jydtuo',
     })
     expect(s.ok).toBe(true)
@@ -117,7 +117,7 @@ describe('F2 — simulacija TASK-3068: FAIL kritičara završava u blocked, nika
       resultText: REZULTAT, sinceMs: Date.now() - 1000,
       kritikaFn: async () => ({ enforce: false, blockedReason: '', brief: '' }),
       fetchFn: async (_u: any, init: any) => { zapisi.push(JSON.parse(init.body)); return odgovor(200) },
-      dohvatiZadatakFn: async () => ({ tags: ['istrazivanje'], projectId: 'REGOC_SYSTEM' }),
+      dohvatiZadatakFn: async () => ({ tags: ['istrazivanje'], projectId: 'PRJ-001' }),
     })
     expect(r.status).toBe('blocked')
     expect(zapisi[0].status).toBe('blocked')

@@ -605,8 +605,8 @@ describe('L0 — naslov nije samo `#` (TASK-4839, klase a i d)', () => {
   })
 
   test('(d) PAI memory: YAML zaglavlje s `name:` + podebljani redak je naslov (memory/*.md)', () => {
-    const t = '---\nname: ulx5m-m2-serdes-pcie\ndescription: "ULX5M-M2 projekt"\nmetadata:\n  type: project\n---\n\n'
-      + 'ULX5M-M2 = GateMate FPGA na M.2 kartici.\n\n**VERZIJE (kritično):** v1 = commit `f7192d1`.\n'
+    const t = '---\nname: primjer-projekt\ndescription: "Primjer projekta"\nmetadata:\n  type: project\n---\n\n'
+      + 'Primjer = FPGA ploča na M.2 kartici.\n\n**VERZIJE (kritično):** v1 = commit `abc1234`.\n'
     expect(nemaNaslov(t)).toBe(false)
   })
 

@@ -402,7 +402,7 @@ describe("TASK-3589 — minimalni CORE format i podebljani markeri", () => {
   });
 
   test("sama govorna linija bez SUMMARY-ja NIJE dovoljna", () => {
-    expect(isRecycledAgentReport("🗣️ Goran: napravi mi X u datoteci Y")).toBe(false);
+    expect(isRecycledAgentReport("🗣️ Ana: napravi mi X u datoteci Y")).toBe(false);
   });
 
   test("prava specifikacija (bez CORE markera) prolazi", () => {

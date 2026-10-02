@@ -113,7 +113,7 @@ const PRAVILA: Pravilo[] = [
     ime: 'naš raspored mapa (~/.claude/regoc)',
     uzorak: '\\.claude/regoc',
     objasnjenje: 'putanja konfiguracije ide obrascem iz `IngestConfig.zadanaPutanja()` (ADR-0001 O1.4)',
-    osnovicaPojava: 121,
+    osnovicaPojava: 120,
     osnovicaDatoteka: [
       'CHANGELOG.md',
       'agents/workflows.json',

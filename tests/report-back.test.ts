@@ -31,7 +31,7 @@ function makeBoard(chainStatuses: string[], opts: { live?: boolean; sendOk?: boo
     title: '📣 Dojava: Napravi X',
     status: 'blocked',
     tags: [REPORT_BACK_TAG, NO_AUTONOMY_TAG],
-    projectId: 'REGOC_SYSTEM',
+    projectId: 'PRJ-001',
     description: 'blabla\n' + formatReportBackMarker({ chatId: CHAT, taskIds: chain.map(c => c.id) }) + '\nblabla',
   }
   const sent: Array<{ chatId: number; text: string }> = []
@@ -77,7 +77,7 @@ describe('biljeg niza u opisu (preživljava brisanje blockedBy)', () => {
 })
 
 describe('otvaranje zadatka dojave', () => {
-  const body = buildReportBackTaskBody({ chatId: CHAT, chainTaskIds: ['TASK-1', 'TASK-2', 'TASK-3'], subject: 'Napravi X', projectId: 'REGOC_SYSTEM' })
+  const body = buildReportBackTaskBody({ chatId: CHAT, chainTaskIds: ['TASK-1', 'TASK-2', 'TASK-3'], subject: 'Napravi X', projectId: 'PRJ-001' })
   test('nosi chatId izvorne poruke i cijeli niz', () => {
     expect(parseReportBackMarker(body.description)).toEqual({ chatId: CHAT, taskIds: ['TASK-1', 'TASK-2', 'TASK-3'] })
   })
@@ -136,7 +136,7 @@ describe('poruka', () => {
         { id: 'TASK-2', title: 'Drugi', status: 'completed', resultSummary: 'b' },
         { id: 'TASK-3', title: 'Treći', status: 'cancelled', resultSummary: 'c' },
       ],
-      projectId: 'REGOC_SYSTEM', reportBackId: 'TASK-4',
+      projectId: 'PRJ-001', reportBackId: 'TASK-4',
     })
     expect(txt).toContain('Niz od 3 zadataka: 2 završeno, 1 otkazano')
     for (const id of ['TASK-1', 'TASK-2', 'TASK-3']) expect(txt).toContain(id)

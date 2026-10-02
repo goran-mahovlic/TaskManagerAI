@@ -3133,7 +3133,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       try {
         const res = await fetch('/api/tasks/' + encodeURIComponent(taskId) + '/uputa', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text: tekst, author: 'goran' })
+          body: JSON.stringify({ text: tekst })
         });
         const d = await res.json().catch(() => ({}));
         if (!res.ok) { alert(_T('uputa_nije_spremljena', 'Uputa nije spremljena:') + ' ' + (d.error || ('HTTP ' + res.status))); return false; }
@@ -9219,17 +9219,17 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         'IP adresa ili hostname PostgreSQL poslužitelja');
       h += _red('Port',
         '<input id="rag-pg-port" type="number" value="' + _esc(pg.port == null ? '' : pg.port) + '" style="' + _stil() + ';width:80px">',
-        'Port (zadano: 17791, mapira se na 5432)');
+        'Port PostgreSQL poslužitelja (standardno 5432)');
       h += _red('Database',
         '<input id="rag-pg-database" value="' + _esc(pg.database) + '" style="' + _stil() + ';width:150px">',
         'Ime baze podataka');
       h += _red('User',
-        '<input id="rag-pg-user" value="regoc" style="' + _stil() + ';width:100px">',
+        '<input id="rag-pg-user" value="' + _esc(pg.user || '') + '" style="' + _stil() + ';width:100px">',
         'Korisničko ime');
       h += _red('Password',
         '<input id="rag-pg-password" type="password" placeholder="••••••••" style="' + _stil() + ';width:150px">' +
         ' <span style="font-size:0.68rem;color:var(--text-secondary)">' + _T('rag_pass_hint', '(iz TM_PGVECTOR_PASSWORD ili datoteke tajni)') + '</span>',
-        'Lozinka se čita iz ~/.claude/regoc/credentials.env');
+        'Lozinka se čita iz TM_PGVECTOR_PASSWORD (okolina ili datoteka tajni)');
       h += '</tbody></table>';
       h += '<div style="margin-top:0.75rem;display:flex;gap:0.5rem">' +
         '<button style="font-size:0.72rem;padding:4px 12px" onclick="testRagPgConnection(this)">' + _T('rag_test', 'Test konekcije') + '</button>' +
