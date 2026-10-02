@@ -282,7 +282,10 @@ describe('B4 -- vrata ulaza se ne isporucuju kao pracena datoteka', () => {
   const ZIVA = 'config/ingest-gate.json'
   const OBRAZAC = 'config/ingest-gate.example.json'
 
-  const git = (...argv: string[]) => Bun.spawnSync(['git', ...argv], { cwd: KORIJEN })
+  // safe.directory: repozitorij je tuđeg vlasnika (kritičar radi pod drugim uid-om) —
+  // bez toga git vraća „dubious ownership", exit 128 i prazan popis.
+  const git = (...argv: string[]) =>
+    Bun.spawnSync(['git', '-c', `safe.directory=${KORIJEN}`, ...argv], { cwd: KORIJEN })
 
   test('ziva datoteka je ignorirana i git ju vise ne prati', () => {
     expect(git('check-ignore', '-q', ZIVA).exitCode).toBe(0)
