@@ -1,0 +1,60 @@
+== chromium desktop
+  PASS [chromium] početno stanje: ✎ Uredi raspored 
+  PASS [chromium] klik → uređivanje (traka + 💾 Spremi) 
+  PASS [chromium] klizač vrijednosti u uređivanju NE reagira (inert) 2→2
+  PASS [chromium] drag&drop mišem: Vrata autonomije na 1. mjesto ['info-autonomija-card', 'info-concurrency-card', 'info-hindsight-card']
+  PASS [chromium] kartica ne prelazi u drugu skupinu 
+  PASS [chromium] resize kutom: ½ → ¼ i visina u koracima od 40 px ['1', '240', 240]
+  PASS [chromium] brojač izmjena na gumbu > 0 4
+  PASS [chromium] tipkovnica: Shift+← smanjuje širinu 
+  PASS [chromium] tipkovnica: ↓ pomiče karticu 
+  PASS [chromium] Esc: izlaz bez spremanja, raspored vraćen 
+  PASS [chromium] poruka „Poništeno" s gumbom Vrati 
+  PASS [chromium] Vrati: nacrt i uređivanje se vraćaju 
+  PASS [chromium] isti gumb sprema i izlazi 
+  PASS [chromium] nakon osvježavanja raspored ostaje 
+  PASS [chromium] Spremi bez izmjena: ništa nije zapisano 
+  PASS [chromium] ↺ Zadano + Spremi: ključ obrisan, zadani raspored 
+  PASS [chromium] nevaljan raspored (w=9): odbijen, ostaje uređivanje, poruka greške 
+  PASS [chromium] bez JS grešaka u konzoli []
+== chromium mobitel
+  PASS [chromium-mob] dodir gumba → uređivanje, sažeto uključeno 
+  PASS [chromium-mob] ručke: touch-action none, ≥44 px 
+  PASS [chromium-mob] ručka i cilj u vidnom polju 600/189
+  PASS [chromium-mob] dodirom povučeno (CDP touch): Podržani modeli na 1. mjesto ['info-modelsetup-card', 'info-agents-card', 'info-classifier-card', 'info-hindsight-model-card', 'info-memorija-card']
+  PASS [chromium-mob] Sažmi isključuje sažeti prikaz 
+  PASS [chromium-mob] na mobitelu kut mijenja samo visinu (širina ostaje) ['4', '320']
+  PASS [chromium-mob] nema vodoravnog preljeva na 390 px scrollWidth=390
+  PASS [chromium-mob] dodir istog gumba sprema 
+  PASS [chromium-mob] bez JS grešaka []
+== firefox desktop
+  PASS [firefox] početno stanje: ✎ Uredi raspored 
+  PASS [firefox] klik → uređivanje (traka + 💾 Spremi) 
+  PASS [firefox] klizač vrijednosti u uređivanju NE reagira (inert) 2→2
+  PASS [firefox] drag&drop mišem: Vrata autonomije na 1. mjesto ['info-autonomija-card', 'info-concurrency-card', 'info-hindsight-card']
+  PASS [firefox] kartica ne prelazi u drugu skupinu 
+  PASS [firefox] resize kutom: ½ → ¼ i visina u koracima od 40 px ['1', '240', 240]
+  PASS [firefox] brojač izmjena na gumbu > 0 4
+  PASS [firefox] tipkovnica: Shift+← smanjuje širinu 
+  PASS [firefox] tipkovnica: ↓ pomiče karticu 
+  PASS [firefox] Esc: izlaz bez spremanja, raspored vraćen 
+  PASS [firefox] poruka „Poništeno" s gumbom Vrati 
+  PASS [firefox] Vrati: nacrt i uređivanje se vraćaju 
+  PASS [firefox] isti gumb sprema i izlazi 
+  PASS [firefox] nakon osvježavanja raspored ostaje 
+  PASS [firefox] Spremi bez izmjena: ništa nije zapisano 
+  PASS [firefox] ↺ Zadano + Spremi: ključ obrisan, zadani raspored 
+  PASS [firefox] nevaljan raspored (w=9): odbijen, ostaje uređivanje, poruka greške 
+  PASS [firefox] bez JS grešaka u konzoli []
+== firefox mobitel
+  PASS [firefox-mob] dodir gumba → uređivanje, sažeto uključeno 
+  PASS [firefox-mob] ručke: touch-action none, ≥44 px 
+  PASS [firefox-mob] ručka i cilj u vidnom polju 616/191
+  PASS [firefox-mob] dodirom povučeno (PointerEvent touch): Podržani modeli na 1. mjesto ['info-modelsetup-card', 'info-agents-card', 'info-classifier-card', 'info-hindsight-model-card', 'info-memorija-card']
+  PASS [firefox-mob] Sažmi isključuje sažeti prikaz 
+  PASS [firefox-mob] na mobitelu kut mijenja samo visinu (širina ostaje) ['4', '320']
+  PASS [firefox-mob] nema vodoravnog preljeva na 390 px scrollWidth=390
+  PASS [firefox-mob] dodir istog gumba sprema 
+  PASS [firefox-mob] bez JS grešaka []
+
+54 pass, 0 fail

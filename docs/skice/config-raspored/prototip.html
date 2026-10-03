@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="hr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prototip — uređivač rasporeda Config stranice (TASK-5169)</title>
+<!--
+  Samostalni prototip (bez poslužitelja, bez biblioteka). Kartice, ID-jevi i CSS varijable su
+  preslikani s Config stranice TaskWebUI-ja; tijela kartica su lažna. „Poslužitelj" je
+  localStorage iza iste validacije koju propisuje dizajn (raspored-logika.js).
+  Dizajn: docs/DIZAJN-config-uredivac-rasporeda.md
+-->
+<style>
+  :root {
+    --bg-primary: #0f172a; --bg-secondary: #1e293b; --bg-tertiary: #334155;
+    --text-primary: #f1f5f9; --text-secondary: #94a3b8;
+    --accent-blue: #3b82f6; --accent-green: #22c55e; --accent-yellow: #eab308; --accent-red: #ef4444;
+    --card-bg: #1e293b; --border-color: #334155;
+    /* Uređivanje rasporeda ima VLASTITU boju: jantar. Plava ostaje boja vrijednosti. */
+    --cr-jantar: #f59e0b; --cr-jantar-slabo: rgba(245,158,11,0.14);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg-primary); color: var(--text-primary); font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { padding: 1rem; max-width: 1400px; margin: 0 auto; }
+
+  /* ── preslikano s Config stranice ── */
+  .status-header-bar { display: flex; align-items: center; justify-content: space-between; gap: .5rem; margin-bottom: .75rem; flex-wrap: wrap; }
+  .konzola-mode-btn { padding: .25rem .75rem; border: 1px solid var(--accent-blue); border-radius: .25rem; background: transparent; color: var(--accent-blue); font-size: .75rem; font-weight: 700; font-family: monospace; cursor: pointer; letter-spacing: .05em; min-height: 32px; }
+  .cfg-skok { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; gap: .4rem; padding: .5rem 0; margin-bottom: .75rem; background: var(--bg-primary); border-bottom: 1px solid var(--border-color); }
+  .cfg-skok button { font-size: .75rem; padding: .3rem .75rem; border-radius: 999px; background: var(--bg-secondary); color: var(--text-secondary); border: 1px solid var(--border-color); cursor: pointer; }
+  .info-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1rem; align-items: start; }
+  .info-card { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 8px; padding: 1rem 1.1rem; min-width: 0; position: relative;
+    grid-column: span var(--cr-w, 2); height: var(--cr-h, auto); }
+  .info-card[data-cr-h] { overflow: auto; }
+  .info-card-title { font-size: .85rem; font-weight: 700; color: var(--accent-blue); margin-bottom: .75rem; text-transform: uppercase; letter-spacing: .5px; display: flex; align-items: center; gap: .5rem; }
+  .info-card-istaknuta { border-color: rgba(59,130,246,.55); box-shadow: inset 3px 0 0 var(--accent-blue); }
+  .info-skupina { grid-column: 1 / -1; display: flex; align-items: baseline; gap: .75rem; margin: 1.25rem 0 0; padding-top: 1rem; border-top: 1px solid var(--border-color); }
+  .info-skupina:first-child { border-top: none; margin-top: 0; padding-top: .25rem; }
+  .info-skupina-broj { font-family: monospace; font-size: .75rem; font-weight: 700; color: var(--accent-blue); letter-spacing: 1px; }
+  .info-skupina h3 { margin: 0; font-size: .95rem; }
+  .info-skupina p { margin: 0; font-size: .72rem; color: var(--text-secondary); }
+  .lazno { font-size: .78rem; color: var(--text-secondary); line-height: 1.5; }
+  .lazno .red { display: flex; align-items: center; gap: .6rem; margin: .35rem 0; }
+  .lazno input[type=range] { flex: 1; accent-color: var(--accent-blue); }
+  .lazno button { font-size: .75rem; padding: .3rem .75rem; border-radius: 4px; background: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border-color); }
+  .lazno b { color: var(--text-primary); font-size: 1.4rem; }
+  /* Između 900 i 1199 px četvrtina je preuska za slider — 1 stupac se crta kao 2. */
+  @media (max-width: 1199px) { .info-card[data-cr-w="1"] { grid-column: span 2; } }
+  @media (max-width: 899px) { .info-grid { grid-template-columns: minmax(0, 1fr); } .info-card { grid-column: 1 / -1 !important; } }
+
+  /* ── JEDAN GUMB ── */
+  .cr-gumbi button, .cr-poruka button { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+  .cr-gumbi { display: flex; gap: .4rem; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+  body.cr-uredivanje #info-refresh-btn { display: none; }
+  .cr-uredi { position: relative; border-color: var(--cr-jantar); color: var(--cr-jantar); }
+  .cr-uredi:hover { background: var(--cr-jantar-slabo); }
+  body.cr-uredivanje .konzola-mode-btn.cr-uredi { background: var(--cr-jantar); border-color: var(--cr-jantar); color: #1a1205; }
+  .cr-uredi[aria-busy="true"] { opacity: .7; cursor: progress; }
+  .cr-uredi .cr-broj { display: none; position: absolute; top: -7px; right: -7px; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 9px; background: var(--accent-red); color: #fff; font-size: 10px; line-height: 18px; }
+  .cr-uredi[data-izmjena]:not([data-izmjena="0"]) .cr-broj { display: block; }
+  .cr-sporedni { display: none; }
+  body.cr-uredivanje .cr-sporedni { display: inline-block; }
+  .cr-sporedni { border-color: var(--border-color); color: var(--text-secondary); }
+
+  /* ── ZNAK DA JE UREĐIVANJE AKTIVNO ── */
+  /* U uređivanju zaglavlje (s JEDNIM gumbom) postaje ljepljivo: Spremi je uvijek pod prstom. */
+  body.cr-uredivanje .status-header-bar { position: sticky; top: 0; z-index: 30; margin: 0 -1rem .75rem; padding: .55rem 1rem .5rem; background: var(--bg-primary);
+    border-bottom: 6px solid transparent; border-image: repeating-linear-gradient(-45deg, var(--cr-jantar) 0 10px, #111827 10px 20px) 6; box-shadow: 0 8px 20px rgba(0,0,0,.45); }
+  .cr-traka { display: none; flex-basis: 100%; gap: .35rem 1rem; flex-wrap: wrap; font-size: .72rem; color: var(--text-secondary); }
+  .cr-traka-glavno { color: var(--cr-jantar); font-weight: 700; letter-spacing: .06em; }
+  .cr-traka kbd { border: 1px solid var(--border-color); border-radius: 3px; padding: 0 .3rem; font-family: monospace; color: var(--text-primary); }
+  body.cr-uredivanje .cr-traka { display: flex; }
+  body.cr-uredivanje .cfg-skok { position: static; }
+  @media (max-width: 899px) {
+    .cr-traka-sire, body.cr-uredivanje .cr-naslov, .cr-tekst { display: none; }
+    body.cr-uredivanje .status-header-bar { flex-wrap: nowrap; }
+    body.cr-uredivanje .cr-gumbi { flex-wrap: nowrap; width: 100%; }
+    body.cr-uredivanje .cr-gumbi .cr-sporedni { min-width: 44px; min-height: 44px; font-size: 1rem; }
+    body.cr-uredivanje .cr-uredi { flex: 1; min-height: 44px; }
+    body.cr-uredivanje .status-header-bar { flex-wrap: wrap; }
+  }
+  body.cr-uredivanje .info-grid { position: relative; user-select: none; -webkit-user-select: none; }
+  /* Vodilice stupaca — stranica postaje crtaći stol. */
+  body.cr-uredivanje .info-grid::before { content: ""; position: absolute; inset: -.5rem 0; pointer-events: none; z-index: 0; border-radius: 6px;
+    background-image: radial-gradient(circle, rgba(245,158,11,.22) 1px, transparent 1.4px); background-size: 20px 20px; }
+  body.cr-uredivanje .info-card { outline: 1.5px dashed rgba(245,158,11,.55); outline-offset: 3px; cursor: default; transition: outline-color .15s, transform .15s; }
+  body.cr-uredivanje .info-card:hover, body.cr-uredivanje .info-card:focus-visible { outline-color: var(--cr-jantar); outline-style: solid; }
+  body.cr-uredivanje .info-card > :not(.info-card-title):not(.cr-kut) { opacity: .55; pointer-events: none; } /* + inert iz JS-a */
+
+  /* ── RUČKE (vidljive samo u uređivanju; 44 px za prst) ── */
+  .cr-hvat, .cr-kut, .cr-mjera { display: none; }
+  body.cr-uredivanje .cr-hvat { display: inline-grid; background: none; border: 0; padding: 0; font-family: inherit; place-items: center; width: 44px; height: 44px; margin: -12px 0 -12px -10px; border-radius: 6px; color: var(--cr-jantar); font-size: 1.25rem; cursor: grab; touch-action: none; flex: none; }
+  body.cr-uredivanje .cr-hvat:hover { background: var(--cr-jantar-slabo); }
+  body.cr-uredivanje .cr-kut { display: block; position: absolute; right: 0; bottom: 0; width: 44px; height: 44px; cursor: nwse-resize; touch-action: none; z-index: 2;
+    background: linear-gradient(135deg, transparent 0 55%, var(--cr-jantar) 55% 60%, transparent 60% 68%, var(--cr-jantar) 68% 73%, transparent 73% 81%, var(--cr-jantar) 81% 86%, transparent 86%); }
+  @media (max-width: 899px) { body.cr-uredivanje .cr-kut { cursor: ns-resize; } }
+  body.cr-uredivanje .cr-mjera { display: inline-block; margin-left: auto; font: 600 .68rem monospace; color: var(--cr-jantar); background: var(--cr-jantar-slabo); border: 1px solid rgba(245,158,11,.4); border-radius: 999px; padding: .1rem .5rem; text-transform: none; letter-spacing: 0; white-space: nowrap; }
+  .info-card.cr-promijenjena .cr-mjera { background: var(--cr-jantar); color: #1a1205; }
+
+  /* Sažeto: samo naslovi — premještanje kroz dugu stranicu (mobitel: 16 000 px) postaje kratko. */
+  body.cr-uredivanje.cr-sazeto .info-card { height: auto !important; overflow: hidden; }
+  body.cr-uredivanje.cr-sazeto .info-card > :not(.info-card-title):not(.cr-kut) { display: none; }
+  body.cr-uredivanje.cr-sazeto .info-card-title { margin-bottom: 0; }
+
+  /* ── VUČENJE ── */
+  .cr-mjesto { border: 2px dashed var(--cr-jantar); border-radius: 8px; background: var(--cr-jantar-slabo); grid-column: span var(--cr-w, 2); min-height: 56px; }
+  @media (max-width: 899px) { .cr-mjesto { grid-column: 1 / -1; } }
+  .info-card.cr-vucem { position: fixed !important; z-index: 50; pointer-events: none; margin: 0; opacity: .92; box-shadow: 0 18px 40px rgba(0,0,0,.55); transform: rotate(.6deg); outline: 2px solid var(--cr-jantar) !important; }
+  body.cr-vuce, body.cr-vuce * { cursor: grabbing !important; }
+  .info-card.cr-mijenjam { outline: 2px solid var(--cr-jantar) !important; }
+
+  /* ── PORUKE ── */
+  .cr-poruka { position: fixed; left: 50%; bottom: 1.25rem; transform: translateX(-50%); z-index: 60; background: var(--bg-secondary); border: 1px solid var(--border-color); border-left: 4px solid var(--accent-green);
+    padding: .6rem .9rem; border-radius: 6px; font-size: .82rem; display: none; gap: .75rem; align-items: center; box-shadow: 0 10px 30px rgba(0,0,0,.5); max-width: calc(100vw - 2rem); }
+  .cr-poruka.vidljiva { display: flex; }
+  .cr-poruka.greska { border-left-color: var(--accent-red); }
+  .cr-poruka button { background: none; border: 1px solid var(--cr-jantar); color: var(--cr-jantar); border-radius: 4px; padding: .2rem .6rem; cursor: pointer; font-size: .78rem; }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } .info-card.cr-vucem { transform: none; } }
+</style>
+</head>
+<body>
+<main>
+  <div class="status-header-bar">
+    <h2 class="cr-naslov" style="margin:0;font-size:1.1rem">REGOČ postavke</h2>
+    <div class="cr-gumbi">
+      <button type="button" class="konzola-mode-btn cr-sporedni" id="cr-sazmi" aria-pressed="false" aria-label="Sažmi kartice na naslove">▤<span class="cr-tekst"> Sažmi</span></button>
+      <button type="button" class="konzola-mode-btn cr-sporedni" id="cr-zadano" aria-label="Vrati zadani raspored">↺<span class="cr-tekst"> Zadano</span></button>
+      <button type="button" class="konzola-mode-btn cr-sporedni" id="cr-odustani" aria-label="Odustani od izmjena rasporeda">✕<span class="cr-tekst"> Odustani</span></button>
+      <button type="button" class="konzola-mode-btn cr-uredi" id="cr-uredi" aria-pressed="false" data-izmjena="0"><span class="cr-oznaka">✎ Uredi raspored</span><span class="cr-broj" aria-hidden="true"></span></button>
+      <button type="button" class="konzola-mode-btn" id="info-refresh-btn">Osvježi</button>
+    </div>
+    <div class="cr-traka" id="cr-traka" role="status">
+      <span class="cr-traka-glavno">✎ UREĐIVANJE RASPOREDA</span>
+      <span class="cr-traka-sire">⠿ povuci za premještanje · ◢ kut za veličinu (dvoklik = prirodna visina) · strelice / Shift+strelice</span>
+      <span><span class="cr-traka-sire"><kbd>Esc</kbd> odustaje · </span>vrijednosti su zaključane</span>
+    </div>
+  </div>
+  <div class="cfg-skok" id="cfg-skok">
+    <button type="button"><span class="info-skupina-broj">01</span> Strop i vrata</button>
+    <button type="button"><span class="info-skupina-broj">02</span> Agenti i modeli</button>
+    <button type="button"><span class="info-skupina-broj">03</span> Integracije</button>
+    <button type="button"><span class="info-skupina-broj">04</span> RAG</button>
+    <button type="button"><span class="info-skupina-broj">05</span> Sustav</button>
+  </div>
+  <div class="sr-only" id="cr-najava" aria-live="assertive"></div>
+
+  <div class="info-grid" id="info-grid"></div>
+</main>
+<div class="cr-poruka" id="cr-poruka" role="alert"><span id="cr-poruka-tekst"></span><button type="button" id="cr-poruka-gumb" hidden>Vrati</button></div>
+
+<script src="raspored-logika.js"></script>
+<script>
+// ── Lažne kartice: ID-jevi i naslovi su stvarni (pogon, 03.10.2026.) ─────────────
+var SKUPINE = [
+  ['cfg-skupina-1', '01', 'Strop i vrata autonomije', 'Koliko agenata smije raditi istodobno i kada autonomija staje.', [
+    ['info-concurrency-card', 'Usporedni agenti (1–10)', 0, 1, 'klizac'], ['info-hindsight-card', 'Usporedni pozivi Hindsighta (1–10)', 0, 1, 'klizac'], ['info-autonomija-card', 'Vrata autonomije', 0, 1, 'vrata']]],
+  ['cfg-skupina-2', '02', 'Agenti i modeli', 'Koji model pokreće kojeg agenta.', [
+    ['info-agents-card', 'Agents & Model Requirements', 1, 0, 9], ['info-classifier-card', 'Klasifikacijski model — rutiranje poruka', 1, 0, 3], ['info-hindsight-model-card', 'Hindsight model — memorija sustava', 1, 0, 4],
+    ['info-memorija-card', 'Memorija (test) — Hindsight u pogonu: prekidač i upotreba', 1, 0, 'prekidac'], ['info-modelsetup-card', 'Podržani modeli & postavke providera', 1, 0, 10]]],
+  ['cfg-skupina-3', '03', 'Integracije', 'Prijave davatelja, dežurni model i telegramska ulazna vrata.', [
+    ['info-login-card', 'Prijave (login preko linka)', 0, 0, 4], ['info-dezurni-card', 'Dežurni — rezervni model', 0, 0, 7], ['info-ulaz-card', 'Ulazna vrata — telegramska poruka', 1, 0, 8]]],
+  ['cfg-skupina-4', '04', 'RAG', 'Pozadina memorije.', [['info-rag-card', 'RAG Backend', 1, 0, 4]]],
+  ['cfg-skupina-5', '05', 'Sustav i verzija', 'Samo za čitanje.', [
+    ['info-system-card', 'System', 0, 0, 6], ['info-providers-card', 'AI Providers', 0, 0, 6], ['info-infra-card', 'Infrastructure', 0, 0, 2], ['info-databases-card', 'Databases', 0, 0, 2],
+    ['info-metrics-card', 'Metrics Summary', 0, 0, 5], ['info-modules-card', 'Modules', 0, 0, 5], ['info-components-card', 'Core Components', 1, 0, 9], ['info-skills-card', 'Skills & Workflows', 1, 0, 10], ['info-rules-card', 'Critical Rules (23)', 1, 0, 8]]]
+];
+function tijelo(vrsta) {
+  if (vrsta === 'klizac') return '<div class="lazno"><div class="red"><span>Vrijednost</span><input type="range" min="1" max="10" value="2" data-vrijednost><b>2</b><button type="button" data-spremi-vrijednost>Spremi</button></div><div>Promjena vrijedi odmah (daemon je čita najkasnije za 5 s).</div></div>';
+  if (vrsta === 'vrata') return '<div class="lazno">' + ['Autonomija (sesija) 85 %', 'Oprez — 1 agent 90 %', 'Blokada (sesija) 95 %', 'Tjedni strop 90 %'].map(function (t) { return '<div class="red"><span style="width:9rem">' + t + '</span><input type="range" value="85" data-vrijednost></div>'; }).join('') + '</div>';
+  if (vrsta === 'prekidac') return '<div class="lazno"><div class="red"><label><input type="checkbox" checked data-vrijednost> globalno</label><label><input type="checkbox" data-vrijednost> telegram</label><label><input type="checkbox" data-vrijednost> agenti</label></div><div>recall: 312 · retain: 88 · rok 5000 ms</div></div>';
+  var s = '<div class="lazno">'; for (var i = 0; i < vrsta; i++) s += '<div>' + ['redak podataka — ', 'model · provider · stanje — ', 'brojka i opis — '][i % 3] + (i + 1) + '</div>'; return s + '</div>';
+}
+var grid = document.getElementById('info-grid');
+SKUPINE.forEach(function (s) {
+  grid.insertAdjacentHTML('beforeend', '<div class="info-skupina" id="' + s[0] + '"><span class="info-skupina-broj">' + s[1] + '</span><h3>' + s[2] + '</h3><p>' + s[3] + '</p></div>');
+  s[4].forEach(function (k) {
+    grid.insertAdjacentHTML('beforeend', '<div class="info-card' + (k[2] ? ' info-full' : '') + (k[3] ? ' info-card-istaknuta' : '') + '" id="' + k[0] + '"><div class="info-card-title"><span class="icon">◆</span> <span>' + k[1] + '</span></div><div>' + tijelo(k[4]) + '</div></div>');
+  });
+});
+
+// ── „Poslužitelj": localStorage iza iste validacije (u pogonu: GET/PUT /api/config/raspored) ──
+var KLJUC = 'prototip.config.raspored';
+var posluzitelj = {
+  dohvati: function () { try { return JSON.parse(localStorage.getItem(KLJUC)); } catch (e) { return null; } },
+  spremi: function (tijelo) {
+    return new Promise(function (ok, ne) {
+      setTimeout(function () {
+        if (tijelo.zadano === true) { localStorage.removeItem(KLJUC); return ok({ raspored: null }); }
+        var v = CfgRasporedLogika.validiraj(tijelo.raspored);
+        if (!v.ok) return ne(new Error(v.error));
+        var s = CfgRasporedLogika.spoji(posluzitelj.dohvati(), v.value);
+        localStorage.setItem(KLJUC, JSON.stringify(s)); ok({ raspored: s });
+      }, 250);
+    });
+  }
+};
+</script>
+<script src="uredivac.js"></script>
+</body>
+</html>

@@ -1,3 +1,14 @@
+## 2026-10-03 — dizajn uređivača rasporeda Config stranice (TASK-5169)
+
+- `docs/DIZAJN-config-uredivac-rasporeda.md`: jedan gumb ✎ Uredi raspored ↔ 💾 Spremi raspored,
+  drag & drop unutar skupine, promjena veličine (mreža 4 stupca, visina 160–1200 px u koracima 40),
+  Esc/Odustani s „Vrati", ↺ Zadano, sažeti prikaz za mobitel; raspored je globalan, ključ
+  `config.raspored` u `settings` + audit u `settings_history`; vrijednosti postavki zaključane (inert)
+  i odvojene rutom i strogom validacijom. Ugradnja u TaskWebUI je sljedeći zadatak.
+- `docs/skice/config-raspored/`: Excalidraw skica (+PNG), radni prototip (Pointer Events, bez
+  biblioteka), E2E Chromium + Firefox, miš + dodir — 54 pass, 0 fail.
+- `tests/config-raspored-logika.test.ts`: 22 testa pravila (validacija, poredak, spajanje).
+
 ## 2026-10-02 — pragovi vrata autonomije su postavka, promjenjiva uživo
 
 - Modul `src/core/AutonomyThresholdSetting.ts` (ista datoteka kao u REGOČ pogonu): ključevi
