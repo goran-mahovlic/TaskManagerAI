@@ -1,7 +1,7 @@
 {
   "_meta": {
     "opis": "Katalog višeagentskih tijekova rada (workflow). Odgovara na tri pitanja pri otvaranju zadatka: ide li uopće po tijeku, po kojem, i tko su koraci.",
-    "verzija": "1.2.0",
+    "verzija": "1.3.0",
     "pravilo_odabira": [
       "1. Oznaka `bez-workflowa` gasi sve; korak lanca (oznaka korak:/tijek-korak/tijek-lanac:/lanac/parent:, blockedBy pri otvaranju, stvaratelj regoc-chain/workflow-materializer, ili naslov „<Izvršitelj>: …” uz isti assignee) ne dobiva vlastiti tijek (kod `u-lancu`, TASK-5155).",
       "2. Izričita oznaka `workflow:<id>` na zadatku ima prednost pred okidačima.",
@@ -47,7 +47,10 @@
         "ComprehensiveUISimTesting.md (faze 2 i 5 — simulacije i KiCad ploče)"
       ],
       "zapisnik": "W0B_INVENTAR_TIJEKOVA.md (repozitorij sustava, nije u paketu)"
-    }
+    },
+    "povijest": [
+      "1.3.0 (03.10.2026., TASK-5159): dodani `dorada-isporuke` (prioritet 95) i `izrada-dokumenta` (prioritet 85) iz prijedloga TASK-5158 (docs/DIZAJN-kontekst-zadatka-i-tijek.md §4), s ispravcima Q1/Q2 iz TASK-5168. Korak `agent: \"izvorni\"` i `mehanizam: \"report-back\"` razrješava POST /api/nalozi (Nalog.ts); materijalizator ih još ne zna, zato `materijalizacija` ostaje isključena."
+    ]
   },
   "workflows": {
     "istrazi-planiraj-izvedi": {
@@ -575,6 +578,133 @@
       ],
       "enabled": true,
       "izvor": "izvorno napisan za katalog (nema zatečenog predloška)"
+    },
+    "dorada-isporuke": {
+      "id": "dorada-isporuke",
+      "naziv": "Dorada već isporučenog",
+      "opis": "Primjedbe na nešto što je već predano (nova inačica, ispravak izgleda, „isto kao v3, ali…”). CLAUDE.md pravilo 25: dorada dobiva vlastiti zadatak prije rada. Radi je izvorni izvršitelj, ne ispočetka.",
+      "izvor": "izvorno napisan za katalog (TASK-5158; DIZAJN-karta-sustava-v2 §8.2)",
+      "najmanja_tezina": 0,
+      "trazi_u": "naslov",
+      "prioritet": 95,
+      "enabled": true,
+      "okidaci": [
+        "(dorad|ispravi|ispravak|promijeni|promjen|popravi|popravak|izmijeni|izmjen)\\S* .{0,40}(dokument|životopis|cv\\b|ponud|pdf|docx|pptx|dizajn|isporuk|verzij|inačic|prezentacij|letak|plakat|izvještaj|predložak)",
+        "(dokument|životopis|cv\\b|ponud|pdf|docx|pptx|letak|plakat|prezentacij|izvještaj)\\S* .{0,60}(dorad|ispravak|popravak|izmjen|promjen)",
+        "(nova|druga|sljedeća) (verzija|inačica)",
+        "^(dokument|životopis|cv\\b|ponuda|prezentacija|letak|plakat|izvještaj|brošura)\\S* v\\d",
+        "(identičn|isti|ista|isto|kao)\\S* .{0,15}\\bv\\d+\\b",
+        "uskla\\S* .{0,40}(s|sa) \\bv\\d+\\b",
+        "editabiln\\S* .{0,20}(docx|pptx|dokument|životopis|cv\\b)"
+      ],
+      "iskljucuje": [
+        "(ne radi|\\bpada\\b(?! (u|na) (drugi|novi|sljedeći|idući|drugu|novu|sljedeću|iduću) (red|stranic))|puca|kvar|\\bbug\\b|greška u|pogreška u)",
+        "(\\bQA\\b|provjer)",
+        "(daemon|\\bapi\\b|servis|skript|modul|klijent|poslužitelj|server|\\bbaz[aeiu]\\b|shem|aplikacij|ploč[aeiu]\\b|\\.ts\\b|\\bkod\\b)"
+      ],
+      "koraci": [
+        {
+          "agent": "izvorni",
+          "uloga": "dorada",
+          "opis": "Primijeni SAMO primjedbe na postojeću isporuku (izvorni zadatak je u oznaci `dorada-od:<ID>`); ne radi ispočetka — kopiraj i izmijeni (lekcija SportAI). Izlaz: nova inačica s oznakom verzije i popis što je promijenjeno.",
+          "treba": [
+            "alate",
+            "pisanje"
+          ],
+          "zamjena": "Ako izvorni izvršitelj nije dostupan: izvršitelj koji ima istu vještinu kao izvorni korak (polje `vjestina` izvornog zadatka)."
+        },
+        {
+          "agent": "potjeh",
+          "uloga": "qa",
+          "vjestina": "WebappTesting",
+          "opis": "Provjeri SAMO primjedbe i regresiju onoga što je u prošloj inačici bilo dobro; otvori isporuku u DRUGOM pregledniku/pregledniku PDF-a od onoga u kojem je izrađena (Chromium → Firefox/pdf.js). Izlaz: tablica primjedba | stanje | dokaz (snimka/putanja).",
+          "treba": [
+            "alate"
+          ],
+          "zamjena": "Bez preglednika: pdftotext + pdfinfo i usporedba s prošlom inačicom; to izrijekom reci u rezultatu."
+        },
+        {
+          "agent": "regoc",
+          "uloga": "isporuka",
+          "mehanizam": "report-back",
+          "opis": "Sustav (ReportBackTask, bez modela) šalje novu inačicu i TIJEK POSLA u isti chat (oznaka `chat:<id>`).",
+          "treba": []
+        }
+      ],
+      "_iskljucuje_napomena": "TASK-5168 (Potjeh): (1) tipografski „pada u drugi red / na drugu stranicu” je dorada, ne kvar; (2) softverski predmet (daemon, API, shema, modul…) isključuje doradu — inače „nova verzija”, „kao v4” i „uskladi s v2” granaju softver u dokumentni tijek s prioritetom 95. Proba: bun docs/prijedlozi/tijekovi-5158-qa-rubovi.ts"
+    },
+    "izrada-dokumenta": {
+      "id": "izrada-dokumenta",
+      "naziv": "Izrada dokumenta ili dizajna",
+      "opis": "Novi dokument ili dizajn (životopis, ponuda, izvještaj, letak, plakat, prezentacija, predložak): istraživanje → dizajn → izrada → QA u drugom pregledniku → isporuka. CLAUDE.md pravilo 25 (više struka = lanac).",
+      "izvor": "izvorno napisan za katalog (TASK-5158; DIZAJN-karta-sustava-v2 §8.1)",
+      "najmanja_tezina": 36,
+      "trazi_u": "naslov",
+      "prioritet": 85,
+      "enabled": true,
+      "okidaci": [
+        "(napravi|izradi|pripremi|složi|sastavi|generiraj)\\S* .{0,40}(dokument|životopis|cv\\b|ponud|izvještaj|letak|plakat|prezentacij|brošur|predložak|docx|pdf|pptx)",
+        "(dizajniraj|oblikuj|osmisli)\\S* .{0,30}(dokument|stranic|letak|plakat|vizual|logotip|predložak|prezentacij)",
+        "^(životopis|cv\\b|ponuda|letak|plakat|prezentacija|brošura)",
+        "(dokument|izvještaj|ponud|letak|plakat|brošur)\\S* .{0,60}\\b(pdf|docx|pptx|predložak|predlošk)"
+      ],
+      "iskljucuje": [
+        "(\\bQA\\b|provjer|ne radi|\\bpada\\b|puca|kvar)",
+        "(implementiraj|\\bimplement|daemon|\\bapi\\b|servis|skript|modul|klijent|poslužitelj|server|aplikacij|\\.ts\\b|\\bkod\\b)"
+      ],
+      "koraci": [
+        {
+          "agent": "manda",
+          "uloga": "research",
+          "vjestina": "Research",
+          "opis": "Skupi sadržaj i zahtjeve: izvorni podaci, predložak i brand (npr. Intergalaktik `#035EBD`), ciljna publika, jezik i format izlaza. Ništa ne izmišljaj; svaka tvrdnja ima izvor. Izlaz: sadržaj po odjeljcima + popis izvora.",
+          "treba": [
+            "web",
+            "rag"
+          ],
+          "zamjena": "Bez weba: samo priloženi materijal i RAG; ono što fali ide u „otvorena pitanja”, ne u tekst."
+        },
+        {
+          "agent": "grga",
+          "uloga": "design",
+          "vjestina": "FrontendDesign",
+          "opis": "Raspored, tipografija, boje i brand; izlaz je predložak (HTML/CSS ili DOCX predložak) koji izrada samo puni. Bez teksta preko grafova i bez prozirnosti u PDF-u (lekcije pdf.js).",
+          "treba": [
+            "alate",
+            "pisanje"
+          ],
+          "zamjena": "Bez FrontendDesign: postojeći brand predložak projekta i popis odstupanja."
+        },
+        {
+          "agent": "jelena",
+          "uloga": "izrada",
+          "vjestina": "Pdf",
+          "opis": "Složi konačnu datoteku po predlošku i izvezi SVE tražene formate (PDF/DOCX/PPTX; za DOCX vještina Docx, za PPTX Pptx). Alati iz kataloga: md2pdf.py, webapp_screenshot.py. Izlaz: putanje datoteka + naredba izvoza.",
+          "treba": [
+            "alate",
+            "pisanje"
+          ],
+          "zamjena": "Bez vještine formata: md2pdf.py iz Markdowna, uz napomenu u rezultatu."
+        },
+        {
+          "agent": "potjeh",
+          "uloga": "qa",
+          "vjestina": "WebappTesting",
+          "opis": "QA u DRUGOM pregledniku od onoga u kojem je dokument izrađen (izrada je Chromium → provjera u Firefoxu/Gecku i pdf.js; DOCX u LibreOfficeu): sadržaj prema zahtjevu, pravopis (RAG `hrvatski_pravopis`), preklapanje teksta, prijelom stranica, ispravnost poveznica. Izlaz: tablica nalaza sa snimkama.",
+          "treba": [
+            "alate"
+          ],
+          "zamjena": "Bez preglednika: pdftotext/pdffonts/pdfinfo i provjera pravopisa nad tekstom; reci da vizualna provjera nije rađena."
+        },
+        {
+          "agent": "regoc",
+          "uloga": "isporuka",
+          "mehanizam": "report-back",
+          "opis": "Sustav (ReportBackTask, bez modela) šalje datoteku i TIJEK POSLA u isti chat; na Nextcloud samo kad je traženo (zadani lokalni).",
+          "treba": []
+        }
+      ],
+      "_iskljucuje_napomena": "TASK-5159 (Jelena): softverski predmet isključuje izradu dokumenta (isti obrazac kao Q1 kod dorada-isporuke) — inače „Implementiraj izvoz izvještaja u PDF” (sonda W0) postaje dokumentni tijek s QA-om u pregledniku. Kontrola: tests/workflow-gate-e2e.test.ts i docs/prijedlozi/tijekovi-5158-replay.ts."
     }
   }
 }
