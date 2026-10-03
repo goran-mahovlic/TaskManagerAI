@@ -9,13 +9,15 @@ ODLUKA JE DETERMINISTIČKA. Ne pita se model: izbor tijeka je jeftina odluka koj
 pri svakom otvaranju zadatka, a LLM na tom mjestu je kod nas već jednom promašio 92 %
 prometa. Ovdje odlučuju oznaka, okidači iz kataloga i težina posla — sve provjerljivo.
 
-REDOSLIJED (prvi koji se poklopi) — W0/TASK-4620:
+REDOSLIJED (prvi koji se poklopi) — W0/TASK-4620, J6/TASK-5155:
     1. oznaka `bez-workflowa` → nikad tijek. PRVA, jer po nalogu §6.1 „uvijek pobjeđuje":
        i izričitu oznaku `workflow:<id>` i način `on`. Zaustavljanje je jeftinije od
        krivo pokrenutog tijeka.
-    2. izričita oznaka `workflow:<id>` na zadatku (preskače prag težine, ali NE i `enabled`),
-    3. okidač iz `agents/workflows.json` uz uvjet da je težina >= `najmanja_tezina`,
-    4. inače: bez tijeka, jedan izvršitelj.
+    2. korak lanca → kod `u-lancu`, bez tijeka (I1; znakovi u `je_korak_lanca`),
+    3. izričita oznaka `workflow:<id>` na zadatku (preskače prag težine, ali NE i `enabled`),
+    4. okidač iz `agents/workflows.json` po `prioritet` (I5), u naslovu ili i u opisu
+       (`trazi_u`, I2), osim ako ga poništi `iskljucuje` (I3); težina >= `najmanja_tezina`,
+    5. inače: bez tijeka, jedan izvršitelj.
 
 Tijek s `enabled: false` (razina 2 prekidača) ponaša se kao da ga u katalogu nema — ne bira
 ga ni okidač ni izričita oznaka. Globalni prekidač (`config/workflow-gate.json`, razina 3)
@@ -37,6 +39,7 @@ import argparse
 import json
 import re
 import sys
+import unicodedata
 from pathlib import Path
 
 KATALOG = Path(__file__).resolve().parent.parent / "agents" / "workflows.json"
@@ -56,6 +59,50 @@ def ukljucen(w: dict) -> bool:
     return w.get("enabled", True) is not False
 
 
+OZNAKE_LANCA_PREFIKS = ("korak:", "tijek-lanac:", "parent:")
+OZNAKE_LANCA_TOCNO = ("tijek-korak", "lanac")
+STVARATELJI_LANCA = ("regoc-chain", "workflow-materializer")
+
+
+def _bez_kvacica(s: str) -> str:
+    s = unicodedata.normalize("NFD", s)
+    return "".join(c for c in s if not unicodedata.combining(c)).replace("đ", "d").replace("Đ", "D")
+
+
+def je_korak_lanca(naslov: str = "", oznake: list[str] | None = None, created_by: str | None = None,
+                   blocked_by: list[str] | None = None, assignee: str | None = None) -> str | None:
+    """I1 — preslika `jeKorakLanca` iz WorkflowGate.ts. Vraća opis znaka ili None."""
+    for o in [str(x).strip().lower() for x in (oznake or []) if str(x).strip()]:
+        if o in OZNAKE_LANCA_TOCNO:
+            return f"oznaka `{o}`"
+        p = next((x for x in OZNAKE_LANCA_PREFIKS if o.startswith(x)), None)
+        if p:
+            return f"oznaka `{o}` ({p}*)"
+    bb = [str(x) for x in (blocked_by or []) if str(x).strip()]
+    if bb:
+        return f"blockedBy {', '.join(bb)} pri otvaranju"
+    stv = str(created_by or "").strip().lower()
+    if stv in STVARATELJI_LANCA:
+        return f"stvaratelj {stv}"
+    izv = _bez_kvacica(str(assignee or "").strip().lower())
+    m = re.match(r"^\s*([^\s:]{2,20})\s*:", naslov or "")
+    if izv and m and _bez_kvacica(m.group(1).lower()) == izv:
+        return f"naslov imenuje izvršitelja („{m.group(1)}:” = assignee {assignee})"
+    return None
+
+
+def po_prioritetu(workflows: dict) -> list:
+    """I5 — veći prioritet prvi; isti zadržava redoslijed u datoteci (sorted je stabilan)."""
+    return sorted(workflows.items(), key=lambda kv: -(int(kv[1].get("prioritet", 0) or 0)))
+
+
+def _pogodak(uzorak: str, tekst: str) -> bool:
+    try:
+        return re.search(uzorak, tekst, re.IGNORECASE) is not None
+    except re.error:
+        return False
+
+
 def procijeni_tezinu(tekst: str) -> int:
     """1–100, oprezno. Bez dokaza da je posao velik ostaje nisko."""
     t = tekst.strip()
@@ -73,7 +120,9 @@ def procijeni_tezinu(tekst: str) -> int:
 
 
 def odaberi(naslov: str, opis: str = "", tezina: int | None = None,
-            oznake: list[str] | None = None, katalog: dict | None = None) -> dict:
+            oznake: list[str] | None = None, katalog: dict | None = None,
+            created_by: str | None = None, blocked_by: list[str] | None = None,
+            assignee: str | None = None) -> dict:
     k = katalog or ucitaj()
     oznake = [str(o).strip().lower() for o in (oznake or [])]
     tekst = f"{naslov}\n{opis}".strip()
@@ -83,6 +132,15 @@ def odaberi(naslov: str, opis: str = "", tezina: int | None = None,
     if "bez-workflowa" in oznake:
         return {"workflow": None, "kod": "bez-workflowa",
                 "razlog": "oznaka `bez-workflowa` na zadatku", "tezina": t, "koraci": []}
+
+    if not k.get("workflows"):
+        return {"workflow": None, "kod": "nema-kataloga",
+                "razlog": "katalog tijekova nedostupan ili prazan", "tezina": t, "koraci": []}
+
+    znak = je_korak_lanca(naslov, oznake, created_by, blocked_by, assignee)
+    if znak:
+        return {"workflow": None, "kod": "u-lancu", "razlog": f"korak lanca — {znak}",
+                "tezina": t, "koraci": [], "razlaganje": "korak"}
 
     for o in oznake:
         if o.startswith("workflow:"):
@@ -103,10 +161,16 @@ def odaberi(naslov: str, opis: str = "", tezina: int | None = None,
     # Ugašen tijek se preskače kao da ga nema, ali se PAMTI — inače bi razlog „nijedan
     # okidač ne odgovara" sakrio to da je tijek zapravo ručno isključen.
     preskoceni: list[str] = []
-    for wid, w in k["workflows"].items():
+    iskljuceni: list[str] = []
+    for wid, w in po_prioritetu(k["workflows"]):
+        trazeni = tekst if w.get("trazi_u") == "naslov+opis" else naslov.strip()
         for uzorak in w.get("okidaci", []):
-            if not re.search(uzorak, tekst, re.IGNORECASE):
+            if not _pogodak(uzorak, trazeni):
                 continue
+            ponisti = next((x for x in w.get("iskljucuje", []) if _pogodak(x, trazeni)), None)
+            if ponisti:
+                iskljuceni.append(f"{wid} („{uzorak}” poništio „{ponisti}”)")
+                break
             if not ukljucen(w):
                 preskoceni.append(wid)
                 break
@@ -118,13 +182,14 @@ def odaberi(naslov: str, opis: str = "", tezina: int | None = None,
             return {"workflow": wid, "kod": "okidac", "razlog": f'okidač „{uzorak}"',
                     "tezina": t, "koraci": w["koraci"]}
 
+    dodatak = f" (isključeno: {'; '.join(iskljuceni)})" if iskljuceni else ""
     if preskoceni:
         return {"workflow": None, "kod": "ugasen",
                 "razlog": "okidač pogađa, ali je tijek ugašen (enabled=false): "
-                          + ", ".join(preskoceni),
+                          + ", ".join(preskoceni) + dodatak,
                 "tezina": t, "koraci": []}
     return {"workflow": None, "kod": "nema-okidaca",
-            "razlog": "nijedan okidač ne odgovara", "tezina": t, "koraci": []}
+            "razlog": "nijedan okidač ne odgovara" + dodatak, "tezina": t, "koraci": []}
 
 
 def main() -> int:
@@ -133,6 +198,9 @@ def main() -> int:
     ap.add_argument("--opis", default="")
     ap.add_argument("--tezina", type=int, default=None)
     ap.add_argument("--oznake", default="", help="zarezom odvojeno")
+    ap.add_argument("--created-by", default=None, help="stvaratelj (I1: regoc-chain = korak lanca)")
+    ap.add_argument("--blocked-by", default="", help="zarezom odvojeno (I1)")
+    ap.add_argument("--assignee", default=None, help="izvršitelj (I1: naslov „<Ime>: …”)")
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--popis", action="store_true")
     ap.add_argument("--katalog", default=None,
@@ -152,7 +220,12 @@ def main() -> int:
     if not a.naslov:
         ap.error("treba --naslov (ili --popis)")
     odluka = odaberi(a.naslov, a.opis, a.tezina,
-                     [o for o in a.oznake.split(",") if o.strip()], k)
+                     [o for o in a.oznake.split(",") if o.strip()], k,
+                     created_by=a.created_by,
+                     blocked_by=[o for o in a.blocked_by.split(",") if o.strip()],
+                     assignee=a.assignee)
+    # I7: razlagač razlaže izvorni nalog samo kad tijeka nema (isto pravilo kao WorkflowGate.ts).
+    odluka.setdefault("razlaganje", "korak" if odluka["workflow"] else "nalog")
     if a.json:
         print(json.dumps(odluka, ensure_ascii=False))
         return 0

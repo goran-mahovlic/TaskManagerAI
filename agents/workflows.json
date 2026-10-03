@@ -1,12 +1,13 @@
 {
   "_meta": {
     "opis": "Katalog višeagentskih tijekova rada (workflow). Odgovara na tri pitanja pri otvaranju zadatka: ide li uopće po tijeku, po kojem, i tko su koraci.",
-    "verzija": "1.1.0",
+    "verzija": "1.2.0",
     "pravilo_odabira": [
-      "1. Izričita oznaka `workflow:<id>` na zadatku ima prednost pred svime.",
-      "2. Bez oznake odlučuju okidači (`okidaci`) — prvi tijek čiji se uzorak nađe u naslovu ili opisu.",
-      "3. Ako ništa ne odgovara ILI je posao manji od `najmanja_tezina`, zadatak ide BEZ tijeka — jedan izvršitelj.",
-      "4. Neodlučeno je uvijek 'bez tijeka'. Tijek od četiri koraka za posao od deset minuta košta više nego što donosi."
+      "1. Oznaka `bez-workflowa` gasi sve; korak lanca (oznaka korak:/tijek-korak/tijek-lanac:/lanac/parent:, blockedBy pri otvaranju, stvaratelj regoc-chain/workflow-materializer, ili naslov „<Izvršitelj>: …” uz isti assignee) ne dobiva vlastiti tijek (kod `u-lancu`, TASK-5155).",
+      "2. Izričita oznaka `workflow:<id>` na zadatku ima prednost pred okidačima.",
+      "3. Bez oznake odlučuju okidači (`okidaci`) po polju `prioritet` (veći prvi; isti → redoslijed u datoteci). Traže se u naslovu, a u opisu samo kad tijek ima `trazi_u: \"naslov+opis\"`. Uzorak iz `iskljucuje` poništava pogodak tog tijeka.",
+      "4. Ako ništa ne odgovara ILI je posao manji od `najmanja_tezina`, zadatak ide BEZ tijeka — jedan izvršitelj.",
+      "5. Neodlučeno je uvijek 'bez tijeka'. Tijek od četiri koraka za posao od deset minuta košta više nego što donosi."
     ],
     "napomena_za_agente": "Vještinu i tijek treba IMENOVATI u opisu koraka. Mjereno u našem radu: agenti ih sami gotovo nikad ne biraju (od 11 poziva vještina u 124 sjednice svi su bili naručeni).",
     "prekidac": {
@@ -63,6 +64,8 @@
         "razlož[a-zćčšžđ]* .{0,40}na (zadatke|podzadatke)",
         "(razradi|razloži) (zahtjev|plan|specifikaciju) .{0,40}u zadatke"
       ],
+      "trazi_u": "naslov",
+      "prioritet": 70,
       "koraci": [
         {
           "agent": "manda",
@@ -119,6 +122,8 @@
         "napravi (modul|sučelje|ekran)",
         "prepravi arhitekturu"
       ],
+      "trazi_u": "naslov",
+      "prioritet": 40,
       "koraci": [
         {
           "agent": "kosjenka",
@@ -167,15 +172,19 @@
       "opis": "Dijagnoza uzroka → popravak s regresijskim testom → provjera.",
       "najmanja_tezina": 16,
       "okidaci": [
-        "ne radi",
+        "(servis|daemon|test|build|aplikacij|stranic|skript|api|ploč|prijav|sučelj|gumb|modul|poslužitelj|server|baz|izvoz|uvoz|ekran)\\S* .{0,30}(ne radi|pada|puca)",
         "puca",
-        "pada",
-        "greška",
-        "pogreška",
+        "\\bbug\\b",
         "kvar",
-        "bug",
         "regresij",
-        "zašto .* (ne radi|pada)"
+        "greška u",
+        "pogreška u",
+        "zašto .{0,40}(servis|daemon|test|build|aplikacij|stranic|skript|api|ploč|prijav|sučelj|gumb|modul|poslužitelj|server|baz|izvoz|uvoz|ekran)\\S* .{0,30}(ne radi|pada|puca)"
+      ],
+      "trazi_u": "naslov",
+      "prioritet": 20,
+      "iskljucuje": [
+        "(\\bQA\\b|provjer|testiraj|regresijsk[a-zčćšžđ]* test|ako .{0,30}(pada|ne radi))"
       ],
       "koraci": [
         {
@@ -223,6 +232,8 @@
         "prije (proglašenja|nego proglasimo) (gotovim|spremnim|produkcijskim)",
         "(audit|revizija) kvalitete"
       ],
+      "trazi_u": "naslov",
+      "prioritet": 60,
       "koraci": [
         {
           "agent": "malik",
@@ -317,6 +328,8 @@
         "(mapiraj|popiši) (infrastrukturu|poddomene|subdomen)",
         "whois|certificate transparency"
       ],
+      "trazi_u": "naslov",
+      "prioritet": 60,
       "koraci": [
         {
           "agent": "malik",
@@ -374,6 +387,11 @@
         "napravi pregled",
         "koji .* odabrati"
       ],
+      "trazi_u": "naslov",
+      "prioritet": 30,
+      "iskljucuje": [
+        "usporedi .{0,20}(s|sa) (v\\d|verzij|predlošk|izvornik)"
+      ],
       "koraci": [
         {
           "agent": "manda",
@@ -422,6 +440,8 @@
         "tajne? u kodu",
         "ovlasti"
       ],
+      "trazi_u": "naslov",
+      "prioritet": 50,
       "koraci": [
         {
           "agent": "malik",
@@ -464,6 +484,8 @@
         "novi projekt (za|na|:)",
         "zavedi projekt"
       ],
+      "trazi_u": "naslov",
+      "prioritet": 80,
       "koraci": [
         {
           "agent": "kosjenka",
@@ -511,6 +533,8 @@
         "proračun projekta",
         "eu prijav"
       ],
+      "trazi_u": "naslov+opis",
+      "prioritet": 90,
       "koraci": [
         {
           "agent": "manda",

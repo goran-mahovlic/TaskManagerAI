@@ -56,8 +56,12 @@ import { konfigPutanja, PAKET_DIR, stanjePutanja } from './paths'
  * 3 (W2/TASK-4616): `materijalizirano` više nije tvrdo `false` nego stvarni ishod, a uz
  * njega ide `lanac` — ID-evi koraka koji su nastali. Bez tog popisa se iz dnevnika ne bi
  * moglo provjeriti je li tijek dao posao ili samo oznaku.
+ * 4 (J6/TASK-5155): novi kod `u-lancu` (korak lanca se ne ocjenjuje), polja `createdBy` i
+ * `razlaganje` (I7). Retci inačice ≤ 3 doneseni su po starim pravilima (goli okidači u
+ * naslovu I opisu, prvi pogodak po redoslijedu) — `workflow-odluke-mjera.ts --ponovi` ih
+ * zato provlači kroz nova pravila umjesto da ih zbraja s novima.
  */
-export const ODLUKE_VERZIJA = 3
+export const ODLUKE_VERZIJA = 4
 
 /** Oznaka na zadatku koja gasi tijek bez obzira na sve ostalo (razina 1). */
 export const BEZ_WORKFLOWA_OZNAKA = 'bez-workflowa'
@@ -166,7 +170,19 @@ export interface Tijek {
   koraci?: Korak[]
   /** Razina 2 prekidača. Nedostaje → smatra se uključenim (katalog ga već nosi svugdje). */
   enabled?: boolean
+  /**
+   * I2/TASK-5155: gdje se traže okidači. Zadano `naslov`. Opis koraka nosi upute za
+   * provjeru („ako ne prolazi, navedi što pada”), pa riječ iz upute postane okidač —
+   * opis se zato pretražuje samo za tijek koji to izrijekom traži (`prijava-natjecaj`).
+   */
+  trazi_u?: TraziU
+  /** I3: uzorci koji poništavaju pogodak tog tijeka (traže se u istom tekstu kao okidači). */
+  iskljucuje?: string[]
+  /** I5: veći ide prvi. Nedostaje → 0. Isti prioritet → redoslijed u datoteci. */
+  prioritet?: number
 }
+
+export type TraziU = 'naslov' | 'naslov+opis'
 
 export interface Katalog {
   _meta?: Record<string, unknown>
@@ -237,6 +253,7 @@ export type IzvorOdluke = 'create' | 'ulaz' | 'replay' | 'cli'
 
 export type OdlukaKod =
   | 'bez-workflowa'      // razina 1: oznaka na zadatku
+  | 'u-lancu'            // I1: zadatak je korak lanca — tijek ima samo izvorni nalog
   | 'oznaka'             // izričita oznaka workflow:<id>
   | 'oznaka-nepoznat'    // oznaka traži tijek kojeg u katalogu nema
   | 'oznaka-ugasen'      // oznaka traži tijek s enabled=false
@@ -256,6 +273,10 @@ export interface OdlukaUlaz {
   oznake?: string[] | null
   projectId?: string | null
   assignee?: string | null
+  /** I1: stvaratelj (`created_by`). `regoc-chain`/`workflow-materializer` = korak lanca. */
+  createdBy?: string | null
+  /** I1: `blockedBy` pri otvaranju — zadatak koji čeka drugi zadatak je korak niza. */
+  blockedBy?: string[] | null
   /**
    * `create` = ploča (POST /api/tasks), `ulaz` = ulazni kanal (Telegram most, prije nego
    * zadatak uopće postoji), `replay` = ponovni prolaz kroz stari promet, `cli` = ručno.
@@ -273,7 +294,16 @@ export interface WorkflowOdluka {
   koraci: Korak[]
   /** Smije li se odluka stvarno izvesti. `true` samo u načinu `on` i uz odabran tijek. */
   materijalizirati: boolean
+  /**
+   * I7: što razlagač (`TaskDecomposer`) smije razložiti. `korak` = nalog ima tijek (ili je
+   * i sam korak lanca), pa se razlaže najviše pojedini korak koji je i sam E4/E5;
+   * `nalog` = tijeka nema, razlagač smije razložiti izvorni nalog. Bez ovog pravila isti
+   * nalog može dobiti dva lanca (tijek + razlaganje).
+   */
+  razlaganje: Razlaganje
 }
+
+export type Razlaganje = 'korak' | 'nalog'
 
 function oznakeNorm(oznake?: string[] | null): string[] {
   return (oznake || []).map(o => String(o).trim().toLowerCase()).filter(Boolean)
@@ -288,14 +318,82 @@ function tezinaZa(ulaz: OdlukaUlaz): { tezina: number; izvor: TezinaIzvor } {
   return { tezina: procijeniTezinu(`${ulaz.naslov || ''}\n${ulaz.opis || ''}`), izvor: 'procjena' }
 }
 
+// ─── I1: korak lanca ─────────────────────────────────────────────────────────
+
+/**
+ * Oznake kojima sustav obilježava korak lanca. Doslovne vrijednosti iz izvora, ovdje bez
+ * uvoza jer vrata ne smiju ovisiti o materijalizatoru (on ovisi o njima):
+ *   `korak:<n>`, `tijek-korak`  — WorkflowMaterializer (OZNAKA_KORAK, OZNAKA_LANAC);
+ *   `tijek-lanac:<id>`          — nadzadatak je već razložen u lanac (OZNAKA_NADZADATKA);
+ *   `lanac`                     — lanac-otvori.ts / WorkflowTemplate (CHAIN_TAG);
+ *   `parent:<ID>`               — sekvencijalni pomoćnik daemona (createSequentialHelpers).
+ */
+const OZNAKE_LANCA_PREFIKS = ['korak:', 'tijek-lanac:', 'parent:'] as const
+const OZNAKE_LANCA_TOCNO = ['tijek-korak', 'lanac'] as const
+
+/** Stvaratelji koji otvaraju ISKLJUČIVO korake lanca. */
+export const STVARATELJI_LANCA = ['regoc-chain', 'workflow-materializer'] as const
+
+function bezKvacica(s: string): string {
+  return s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D')
+}
+
+export interface ZnakLanca { da: boolean; znak: string | null }
+
+/**
+ * Je li zadatak korak lanca (I1). Pet znakova; svaki je stvarni trag nekog od putova koji
+ * slažu lance, a ne nagađanje:
+ *   1. oznaka lanca (v. gore) — materijalizator, lanac-otvori, daemonov pomoćnik;
+ *   2. `blockedBy` već pri otvaranju — zadatak čeka drugi zadatak, dakle je korak niza;
+ *   3. stvaratelj `regoc-chain`/`workflow-materializer`;
+ *   4. NASLOV IMENUJE IZVRŠITELJA („Agent: QA …” uz `assignee: agent`) — konvencija
+ *      orkestratora kad nalog razbija po strukama. Takvi koraci često nemaju nijedan drugi
+ *      znak. Ime mora biti BAŠ izvršitelj: „Drugi: …” uz `assignee: agent` ili „J6: …”
+ *      nije znak.
+ * Sam `assignee` NIJE znak: i vlasnikov nalog iz kanala ga ima.
+ */
+export function jeKorakLanca(ulaz: Pick<OdlukaUlaz, 'naslov' | 'oznake' | 'createdBy' | 'blockedBy' | 'assignee'>): ZnakLanca {
+  const oznake = oznakeNorm(ulaz.oznake)
+  for (const o of oznake) {
+    if ((OZNAKE_LANCA_TOCNO as readonly string[]).includes(o)) return { da: true, znak: `oznaka \`${o}\`` }
+    const p = OZNAKE_LANCA_PREFIKS.find(x => o.startsWith(x))
+    if (p) return { da: true, znak: `oznaka \`${o}\` (${p}*)` }
+  }
+  const bb = (ulaz.blockedBy || []).map(String).filter(x => x.trim())
+  if (bb.length > 0) return { da: true, znak: `blockedBy ${bb.join(', ')} pri otvaranju` }
+  const stv = String(ulaz.createdBy || '').trim().toLowerCase()
+  if ((STVARATELJI_LANCA as readonly string[]).includes(stv)) return { da: true, znak: `stvaratelj ${stv}` }
+  const izv = bezKvacica(String(ulaz.assignee || '').trim().toLowerCase())
+  const m = String(ulaz.naslov || '').match(/^\s*([^\s:]{2,20})\s*:/)
+  if (izv && m && bezKvacica(m[1].toLowerCase()) === izv) {
+    return { da: true, znak: `naslov imenuje izvršitelja („${m[1]}:” = assignee ${ulaz.assignee})` }
+  }
+  return { da: false, znak: null }
+}
+
+/** I5: tijekovi po prioritetu (veći prvi); isti prioritet zadržava redoslijed u datoteci. */
+export function tijekoviPoPrioritetu(tijekovi: Record<string, Tijek>): Array<[string, Tijek]> {
+  return Object.entries(tijekovi)
+    .map((e, i) => ({ e, i, p: Number(e[1]?.prioritet ?? 0) || 0 }))
+    .sort((a, b) => b.p - a.p || a.i - b.i)
+    .map(x => x.e)
+}
+
+function testiraj(uzorak: string, tekst: string): boolean | null {
+  try { return new RegExp(uzorak, 'i').test(tekst) } catch { return null }   // loš uzorak ne ruši vrata
+}
+
 /**
  * ČISTA funkcija: ide li zadatak po tijeku i po kojem. Ne čita konfiguraciju, ne piše ništa.
  * Način rada se primjenjuje iznad nje (`odluciZaZadatak`) — tako se ista odluka može
  * izračunati u sjeni, u pogonu i u ponovnom prolazu kroz stari promet.
+ *
+ * REDOSLIJED (J6/TASK-5155): `bez-workflowa` → nema kataloga → `u-lancu` (I1) → izričita
+ * oznaka → okidači po prioritetu (I5), u naslovu ili i u opisu (I2), uz isključenja (I3).
  */
 export function odaberiTijek(ulaz: OdlukaUlaz, katalog: Katalog): WorkflowOdluka {
   const { tezina, izvor: tezinaIzvor } = tezinaZa(ulaz)
-  const osnova = { tezina, tezinaIzvor, koraci: [] as Korak[], materijalizirati: false }
+  const osnova = { tezina, tezinaIzvor, koraci: [] as Korak[], materijalizirati: false, razlaganje: 'nalog' as Razlaganje }
   const oznake = oznakeNorm(ulaz.oznake)
   const tijekovi = katalog?.workflows || {}
 
@@ -308,6 +406,15 @@ export function odaberiTijek(ulaz: OdlukaUlaz, katalog: Katalog): WorkflowOdluka
 
   if (!katalog || Object.keys(tijekovi).length === 0) {
     return { ...osnova, workflow: null, kod: 'nema-kataloga', razlog: 'katalog tijekova nedostupan ili prazan' }
+  }
+
+  // I1 — korak lanca ne dobiva vlastiti tijek. Prije izričite oznake: korak materijalizatora
+  // nosi `workflow:<id>` + `korak:<n>`, a bez ovog bi ga kod `oznaka` granao u lanac iz lanca
+  // (materijalizator ima vlastitu bravu `jeKorakTijeka`; ovo je druga, na razini odluke).
+  // Odluka se ipak ZAPISUJE — sjena mora ostati mjerljiva (§7.3 I1).
+  const lanac = jeKorakLanca(ulaz)
+  if (lanac.da) {
+    return { ...osnova, workflow: null, kod: 'u-lancu', razlaganje: 'korak', razlog: `korak lanca — ${lanac.znak}` }
   }
 
   // Izričita oznaka `workflow:<id>` — preskače prag težine (čovjek je već odlučio), ali NE
@@ -323,20 +430,24 @@ export function odaberiTijek(ulaz: OdlukaUlaz, katalog: Katalog): WorkflowOdluka
       return { ...osnova, workflow: null, kod: 'oznaka-ugasen', razlog: `tijek „${wid}" je ugašen (enabled=false)` }
     }
     return {
-      ...osnova, workflow: wid, kod: 'oznaka',
+      ...osnova, workflow: wid, kod: 'oznaka', razlaganje: 'korak',
       razlog: 'izričita oznaka na zadatku', koraci: t.koraci || [],
     }
   }
 
   // Okidači iz kataloga. Ugašen tijek se preskače kao da ga nema, ali se PAMTI — inače bi
   // razlog „nijedan okidač ne odgovara" krio to da je tijek zapravo ručno isključen.
-  const tekst = `${ulaz.naslov || ''}\n${ulaz.opis || ''}`.trim()
+  // Isto vrijedi za isključenje (I3): pogodak koji je poništen ostaje vidljiv u razlogu.
+  const naslov = String(ulaz.naslov || '').trim()
+  const sOpisom = `${ulaz.naslov || ''}\n${ulaz.opis || ''}`.trim()
   const preskoceni: string[] = []
-  for (const [wid, t] of Object.entries(tijekovi)) {
+  const iskljuceni: string[] = []
+  for (const [wid, t] of tijekoviPoPrioritetu(tijekovi)) {
+    const tekst = t.trazi_u === 'naslov+opis' ? sOpisom : naslov
     for (const uzorak of t.okidaci || []) {
-      let pogodak = false
-      try { pogodak = new RegExp(uzorak, 'i').test(tekst) } catch { continue }  // loš uzorak ne ruši vrata
-      if (!pogodak) continue
+      if (testiraj(uzorak, tekst) !== true) continue
+      const ponisti = (t.iskljucuje || []).find(x => testiraj(x, tekst) === true)
+      if (ponisti) { iskljuceni.push(`${wid} („${uzorak}” poništio „${ponisti}”)`); break }
       if (!tijekUkljucen(t)) { preskoceni.push(wid); break }
       const prag = Number(t.najmanja_tezina ?? 0) || 0
       if (tezina < prag) {
@@ -345,17 +456,18 @@ export function odaberiTijek(ulaz: OdlukaUlaz, katalog: Katalog): WorkflowOdluka
           razlog: `okidač „${uzorak}" pogađa ${wid}, ali težina ${tezina} < ${prag}`,
         }
       }
-      return { ...osnova, workflow: wid, kod: 'okidac', razlog: `okidač „${uzorak}"`, koraci: t.koraci || [] }
+      return { ...osnova, workflow: wid, kod: 'okidac', razlaganje: 'korak', razlog: `okidač „${uzorak}"`, koraci: t.koraci || [] }
     }
   }
 
+  const dodatak = iskljuceni.length > 0 ? ` (isključeno: ${iskljuceni.join('; ')})` : ''
   if (preskoceni.length > 0) {
     return {
       ...osnova, workflow: null, kod: 'ugasen',
-      razlog: `okidač pogađa, ali je tijek ugašen (enabled=false): ${preskoceni.join(', ')}`,
+      razlog: `okidač pogađa, ali je tijek ugašen (enabled=false): ${preskoceni.join(', ')}${dodatak}`,
     }
   }
-  return { ...osnova, workflow: null, kod: 'nema-okidaca', razlog: 'nijedan okidač ne odgovara' }
+  return { ...osnova, workflow: null, kod: 'nema-okidaca', razlog: `nijedan okidač ne odgovara${dodatak}` }
 }
 
 // ─── Oznaka i razlog (W1 / TASK-4614) ────────────────────────────────────────
@@ -454,6 +566,8 @@ export interface OdlukaZapis {
   naslov: string
   projectId: string | null
   assignee: string | null
+  /** I1: stvaratelj zadatka — bez njega se `u-lancu` iz dnevnika ne bi dao provjeriti. */
+  createdBy: string | null
   oznake: string[]
   workflow: string | null
   kod: OdlukaKod
@@ -479,6 +593,8 @@ export interface OdlukaZapis {
   materijalizirano: boolean
   /** ID-evi koraka nastalih materijalizacijom (prazno kad je nije bilo). */
   lanac: string[]
+  /** I7: `korak` | `nalog` — v. `WorkflowOdluka.razlaganje`. */
+  razlaganje: Razlaganje
   izvor: IzvorOdluke
 }
 
@@ -598,6 +714,7 @@ export function mozdaZapisiOdluku(ulaz: OdlukaUlaz, o: VrataOpcije = {}): Odluka
       naslov: String(ulaz.naslov || '').replace(/\s+/g, ' ').trim().slice(0, ISJECAK_NASLOVA),
       projectId: ulaz.projectId ? String(ulaz.projectId) : null,
       assignee: ulaz.assignee ? String(ulaz.assignee) : null,
+      createdBy: ulaz.createdBy ? String(ulaz.createdBy) : null,
       oznake: oznakeNorm(ulaz.oznake),
       workflow: odluka.workflow,
       kod: odluka.kod,
@@ -611,6 +728,7 @@ export function mozdaZapisiOdluku(ulaz: OdlukaUlaz, o: VrataOpcije = {}): Odluka
       materijalizirati: odluka.materijalizirati,
       materijalizirano,          // W2/TASK-4616: stvarni ishod pozivatelja, ne pretpostavka
       lanac,
+      razlaganje: odluka.razlaganje,
       izvor: ulaz.izvor || 'create',
     }
     zapisiOdluku(zapis, o.logPath || WORKFLOW_ODLUKE_LOG_PATH)

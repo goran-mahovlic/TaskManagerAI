@@ -11290,6 +11290,11 @@ async function handleCreateTask(req: Request): Promise<Response> {
       oznake: validatedData.tags ?? null,
       projectId: projectGate.projectId ?? null,
       assignee: validatedData.assignee ?? null,
+      // J6/TASK-5155 (I1): stvaratelj i blockedBy su znakovi da je zadatak KORAK LANCA
+      // (`regoc-chain`, `workflow-materializer`, niz koji čeka prethodni korak) — takav ne
+      // dobiva vlastiti tijek; odluka se ipak zapisuje kao `u-lancu`.
+      createdBy,
+      blockedBy: Array.isArray(validatedData.blockedBy) ? validatedData.blockedBy : null,
       izvor: 'create',
     }, {
       log: (m) => console.warn(`[TaskWebUI] ${m}`),
