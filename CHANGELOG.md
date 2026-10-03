@@ -1,3 +1,19 @@
+## 2026-10-03 — ploča na mobitelu: promet i pouzdana živa veza (TASK-5184)
+
+- Kvar: na mobitelu ploča stoji na „Connecting…", TOTAL je „-". `GET /api/tasks` je slao sve
+  zadatke sa svim poljima (9,4 MB) bez kompresije — pri učitavanju tri puta, svakih 30 s i na svaki
+  WS događaj; WS `initial` je na svako spajanje slao još jednom isti popis; `primijeniJezik()` je
+  preko `data-i18n` prepisivao „Connected" natrag u „Connecting…".
+- `src/PlocaPromet.ts`: `GET /api/tasks?view=board` (polja kartice, otvoreni + zadnjih N zatvorenih,
+  brojači nad svim zadacima, `since=`, `offset`/`limit`), br/gzip za sve tekstualne odgovore,
+  dashboard bez specifikacija projekata (239 KB → 7 KB gzip). Bez `view` API je nepromijenjen.
+- Ploča: jedan dohvat u letu, inkrementalno osvježavanje, WS ponovno spajanje 1→30 s s
+  odbrojavanjem („Offline – pokušavam ponovo za N s…"), ping 25 s, odbacivanje mrtve veze,
+  odmah na `visibilitychange`/`online`; intervali stoje dok je stranica skrivena.
+- Mjereno (Playwright, Pixel 5, Slow 3G, 150 s, kopija baze s 2678 zadataka): prvi prikaz
+  106 s → 13 s; promet 6,5 MB/min → 0,12 MB/min.
+- Testovi: `tests/ploca-promet.test.ts` (20); alat `tests/e2e/mobilni_promet.py`.
+
 ## 2026-10-03 — dizajn uređivača rasporeda Config stranice (TASK-5169)
 
 - `docs/DIZAJN-config-uredivac-rasporeda.md`: jedan gumb ✎ Uredi raspored ↔ 💾 Spremi raspored,

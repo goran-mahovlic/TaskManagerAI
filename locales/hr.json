@@ -885,5 +885,8 @@
   "cfg_vr_potrosnja": "Potrošnja: sesija {s} · tjedan {t}",
   "cfg_vr_napomena": "Redoslijed je obvezan: autonomija < oprez < blokada. Promjena vrijedi odmah, bez ponovnog pokretanja. Kad mjerilo ne radi, vrata ostaju zatvorena bez obzira na pragove.",
   "cfg_vr_redoslijed": "Redoslijed mora biti: autonomija < oprez < blokada.",
-  "cfg_vr_greska_spremanje": "Greška pri spremanju pragova"
+  "cfg_vr_greska_spremanje": "Greška pri spremanju pragova",
+  "veza_spojeno": "Spojeno",
+  "veza_bez_mreze": "Offline – nema mreže, čekam vezu…",
+  "veza_offline_pokusavam": "Offline – pokušavam ponovo za {s} s…"
 }

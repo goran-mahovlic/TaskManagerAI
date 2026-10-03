@@ -78,6 +78,32 @@ Dva zaglavlja govore ploči tko zatvara:
 | `X-REGOC-Zatvara` | `covjek`, `orkestrator`, `agent` | izuzeće od „nema bloka `REGOC-IZLAZ`" vrijedi samo za `covjek`/`orkestrator`; `agent` ga poništava |
 | `X-REGOC-Force` | `1` | čovjek s ploče pregazi `spawnCloseGuard` (zapis ostaje u `spawn_close_guard.jsonl`) |
 
+### Prikaz ploče (`GET /api/tasks?view=board`)
+
+Bez parametra `view` `GET /api/tasks` vraća puni niz kao i prije. Ploča traži `view=board`
+(`src/PlocaPromet.ts`) i dobiva objekt umjesto niza:
+
+```json
+{ "tasks": [ … ], "counts": { "pending": 3, "completed": 2264, … }, "ukupno": 2678,
+  "serverTime": "2026-10-03T19:00:00.000Z", "inkrementalno": false, "offset": 0, "imaJos": false }
+```
+
+| Parametar | Značenje |
+|---|---|
+| `zatvorenih` | koliko zadnjih `completed`/`cancelled` (po aktivnosti) ide uz sve otvorene; zadano 150, najviše 2000 |
+| `since` | samo zadaci promijenjeni od tog trenutka (klijent šalje prošli `serverTime`; poslužitelj preklapa 5 s jer baza dio vremena piše do sekunde) |
+| `offset`, `limit` | straničenje nad poretkom najnovije prvo; `imaJos` kaže ima li još |
+| `projectId`, `status`, `assignee`, … | isti filtri kao bez `view` |
+
+`tasks[]` nosi samo polja kartice (`POLJA_PLOCE`: bez `description`, `resultSummary`,
+`progressNotes`, `blockedReason` — detalj ih dohvaća s `GET /api/tasks/:id`). `counts` i
+`ukupno` broje SVE zadatke (uz isti filtar), pa TOTAL/COMPLETED ostaju točni.
+
+Svi tekstualni odgovori (JSON, HTML) idu komprimirani kad ih klijent traži
+(`Accept-Encoding: br` ili `gzip`); bez tog zaglavlja (curl, urllib) odgovor je nepromijenjen.
+Ploča svakih 25 s šalje WebSocketom `ping` i dobiva `{"type":"pong"}`; poruka `initial` pri
+spajanju nosi samo `serverTime`.
+
 ### Rezultat zadatka (`resultParsed`)
 
 `GET /api/tasks/:id` uz `resultSummary` vraća i `resultParsed` — agentov izvještaj

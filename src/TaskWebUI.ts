@@ -38,6 +38,8 @@ import { saveModelConfig } from './core/models/ModelConfigWriter'
 import { getRAGBackendService } from './RAGBackendService'
 // TASK-4815: jedan parser agentova izlaza za ploču i kanale (GAP F5).
 import { parseAgentOutput, renderFull } from './core/AgentOutputParser'
+// TASK-5184: promet ploče — projekcija/since/straničenje za /api/tasks?view=board i br/gzip.
+import { izborZaPlocu, parsirajOpcijePloce, komprimirajOdgovor, saziProjekteDashboarda } from './PlocaPromet'
 import { najamAktivan } from './core/TaskCloser'
 import { isEnabled as jeUkljuceno } from './core/FeatureFlags'
 // Integracije (TASK-4800): četiri modula po istom obrascu + orkestrator + ulazni Telegram.
@@ -3133,47 +3135,161 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       return taskIdNumber(b.id) - taskIdNumber(a.id);
     }
 
+    // ─── TASK-5184: POUZDANA ŽIVA VEZA ────────────────────────────────────────
+    // Kvar (vlasnik, 03.10.2026., mobitel preko Tailscalea): zaglavlje vječno „Connecting…".
+    // Uzroci: (1) primijeniJezik() je preko data-i18n="connecting" PREPISIVAO „Connected" čim bi
+    // stigao rječnik — točkica zelena, tekst „Spajam se…"; (2) ponovno spajanje svake 3 s bez
+    // obzira na mrežu, bez reakcije na buđenje mobitela (visibilitychange) i promjenu mreže
+    // (online); (3) „mrtva" veza nakon promjene mreže nikad ne javi onclose.
+    // Sada: stanje veze crta SAMO renderStanjeVeze (bez data-i18n), odgoda 1→2→4→…→30 s uz
+    // odbrojavanje „Offline – pokušavam za N s…", rok spajanja 15 s, ping svakih 25 s i
+    // odbacivanje veze bez poruke 60 s, ponovno spajanje odmah na visible/online.
+    var wsStanje = 'spajam';      // spajam | spojeno | offline | bez_mreze
+    var wsPokusaj = 0, wsTimer = null, wsPingTimer = null, wsZadnjaPoruka = 0, wsSljedeciU = 0;
+
+    function renderStanjeVeze() {
+      const el = document.getElementById('status-text');
+      const dot = document.getElementById('connection-status');
+      if (!el) return;
+      el.removeAttribute('data-i18n');   // inače ga primijeniJezik() vrati na „Spajam se…"
+      let tekst;
+      if (wsStanje === 'spojeno') tekst = _T('veza_spojeno', 'Spojeno');
+      else if (wsStanje === 'spajam') tekst = _T('connecting', 'Spajam se…');
+      else if (wsStanje === 'bez_mreze') tekst = _T('veza_bez_mreze', 'Offline – nema mreže, čekam vezu…');
+      else tekst = _Tv('veza_offline_pokusavam', 'Offline – pokušavam ponovo za {s} s…',
+        { s: Math.max(0, Math.ceil((wsSljedeciU - Date.now()) / 1000)) });
+      el.textContent = tekst;
+      if (dot) dot.classList.toggle('disconnected', wsStanje !== 'spojeno');
+    }
+
+    function zaustaviPing() { if (wsPingTimer) { clearInterval(wsPingTimer); wsPingTimer = null; } }
+    function pokreniPing() {
+      zaustaviPing();
+      wsPingTimer = setInterval(function () {
+        if (!ws || ws.readyState !== WebSocket.OPEN) return;
+        if (Date.now() - wsZadnjaPoruka > 60000) { odbaciVezuISpojiOdmah(); return; }
+        try { ws.send('ping'); } catch (e) { /* onclose slijedi */ }
+      }, 25000);
+    }
+
+    // Mrtva veza (mobitel promijenio mrežu ili se probudio) često NE javi onclose dok TCP ne
+    // istekne (minute) — zato je odbacujemo sami i odmah otvaramo novu.
+    function odbaciVezuISpojiOdmah() {
+      const stara = ws;
+      ws = null;
+      zaustaviPing();
+      if (stara) {
+        stara.onopen = stara.onclose = stara.onmessage = stara.onerror = null;
+        try { stara.close(); } catch (e) {}
+      }
+      wsPokusaj = 0;
+      connect();
+    }
+
+    function zakaziPonovnoSpajanje() {
+      if (wsTimer) { clearTimeout(wsTimer); wsTimer = null; }
+      if (navigator.onLine === false) { wsStanje = 'bez_mreze'; renderStanjeVeze(); return; }  // čeka 'online'
+      const odgoda = Math.round(Math.min(30000, 1000 * Math.pow(2, wsPokusaj)) * (0.8 + Math.random() * 0.4));
+      wsPokusaj++;
+      wsSljedeciU = Date.now() + odgoda;
+      wsStanje = 'offline';
+      renderStanjeVeze();
+      wsTimer = setTimeout(function () { wsTimer = null; connect(); }, odgoda);
+    }
+
     function connect() {
+      if (wsTimer) { clearTimeout(wsTimer); wsTimer = null; }
+      if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
+      if (navigator.onLine === false) { wsStanje = 'bez_mreze'; renderStanjeVeze(); return; }
+      wsStanje = 'spajam';
+      renderStanjeVeze();
       // TASK-3053: shema se izvodi iz stranice. Tvrdo kodiran ws:// na HTTPS stranici je
       // mijesani sadrzaj — preglednik ga blokira tako da new WebSocket BACI iznimku.
       const wsScheme = location.protocol === 'https:' ? 'wss://' : 'ws://';
-      ws = new WebSocket(wsScheme + location.host + '/stream');
+      let sock;
+      try {
+        sock = new WebSocket(wsScheme + location.host + '/stream');
+      } catch (e) {
+        // TASK-3053: iznimka ne smije ubiti lanac ponovnog spajanja.
+        console.error('[WS] spajanje palo:', e);
+        zakaziPonovnoSpajanje();
+        return;
+      }
+      ws = sock;
+      const rokSpajanja = setTimeout(function () {
+        if (sock.readyState === WebSocket.CONNECTING) { try { sock.close(); } catch (e) {} }
+      }, 15000);
 
-      ws.onopen = () => {
-        document.getElementById('connection-status').classList.remove('disconnected');
-        document.getElementById('status-text').textContent = 'Connected';
-        fetchProjectsForFilter();
-        fetchTasks();
+      sock.onopen = () => {
+        clearTimeout(rokSpajanja);
+        if (ws !== sock) return;
+        wsPokusaj = 0;
+        wsZadnjaPoruka = Date.now();
+        wsStanje = 'spojeno';
+        renderStanjeVeze();
+        pokreniPing();
+        if (!projectsCache.length) fetchProjectsForFilter();
+        fetchTasks();   // nadoknadi propušteno dok veze nije bilo (inkrementalno)
       };
 
-      ws.onclose = () => {
-        document.getElementById('connection-status').classList.add('disconnected');
-        document.getElementById('status-text').textContent = 'Disconnected - Reconnecting...';
-        // TASK-3053: i ponovni pokusaj ide u try — inace iznimka iz new WebSocket ubije
-        // lanac ponovnog spajanja, pa traka zauvijek stoji na „Reconnecting...".
-        setTimeout(() => { try { connect() } catch (e) { console.error('[WS] ponovno spajanje palo:', e) } }, 3000);
+      sock.onclose = () => {
+        clearTimeout(rokSpajanja);
+        if (ws !== sock) return;   // veza koju smo sami zamijenili
+        ws = null;
+        zaustaviPing();
+        zakaziPonovnoSpajanje();
       };
 
-      ws.onmessage = (event) => {
-        const data = JSON.parse(event.data);
-        if (data.type === 'file_changed' || data.type === 'task_created' || data.type === 'task_updated') {
-          fetchTasks();
-        }
-        if (data.type && data.type.startsWith('console_')) {
-          handleKonzolaWSMessage(data);
-        }
-        // TASK-3047: kočnicu može pritisnuti drugi preglednik ili curl — svi ekrani
-        // moraju istog trena pokazivati isto stanje.
-        if (data.type === 'pause_changed') {
-          renderGlobalPause(data.pause);
-        }
-        // TASK-5013: nova uputa ili dostava — osvježi oznaku i otvorene detalje.
-        if (data.type === 'task_instructions') {
-          fetchTasks();
-          if (selectedTaskId === data.taskId) ucitajUpute(data.taskId);
-        }
+      sock.onerror = () => { /* onclose slijedi i zakazuje ponovno spajanje */ };
+
+      sock.onmessage = (event) => {
+          wsZadnjaPoruka = Date.now();
+          if (wsStanje !== 'spojeno') { wsStanje = 'spojeno'; renderStanjeVeze(); }
+          let data;
+          try { data = JSON.parse(event.data); } catch (e) { return; }
+          if (data.type === 'pong' || data.type === 'initial') return;
+          if (data.type === 'file_changed' || data.type === 'task_created' || data.type === 'task_updated') {
+            zakaziOsvjezavanjePloce();
+          }
+          if (data.type && data.type.startsWith('console_')) {
+            handleKonzolaWSMessage(data);
+          }
+          // TASK-3047: kočnicu može pritisnuti drugi preglednik ili curl — svi ekrani
+          // moraju istog trena pokazivati isto stanje.
+          if (data.type === 'pause_changed') {
+            renderGlobalPause(data.pause);
+          }
+          // TASK-5013: nova uputa ili dostava — osvježi oznaku i otvorene detalje.
+          if (data.type === 'task_instructions') {
+            zakaziOsvjezavanjePloce();
+            if (selectedTaskId === data.taskId) ucitajUpute(data.taskId);
+          }
       };
     }
+
+    function provjeriVezuSada() {
+      if (!ws || ws.readyState === WebSocket.CLOSED || ws.readyState === WebSocket.CLOSING) {
+        wsPokusaj = 0;
+        connect();
+      } else if (ws.readyState === WebSocket.OPEN) {
+        if (Date.now() - wsZadnjaPoruka > 30000) odbaciVezuISpojiOdmah();
+        else { try { ws.send('ping'); } catch (e) {} }
+      }
+    }
+
+    // Mobitel se probudio / kartica opet vidljiva: veza i ploča odmah, ne za 30 s.
+    document.addEventListener('visibilitychange', function () {
+      if (document.hidden) return;
+      provjeriVezuSada();
+      fetchTasks();
+    });
+    window.addEventListener('online', function () { wsPokusaj = 0; provjeriVezuSada(); fetchTasks(); });
+    window.addEventListener('offline', function () {
+      if (wsTimer) { clearTimeout(wsTimer); wsTimer = null; }
+      wsStanje = 'bez_mreze';
+      renderStanjeVeze();
+    });
+    setInterval(function () { if (wsStanje === 'offline') renderStanjeVeze(); }, 1000);  // odbrojavanje
 
     // Send WebSocket message
     function sendWSMessage(message) {
@@ -3182,23 +3298,84 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       }
     }
 
-    async function fetchTasks() {
+    // ─── TASK-5184: PLOČA BEZ 9,4 MB ─────────────────────────────────────────
+    // Bilo: puni /api/tasks (svi zadaci sa svim poljima, 9,4 MB) pri učitavanju tri puta,
+    // svakih 30 s i na SVAKI WS događaj — na mobilnoj mreži odgovor nije stizao do sljedećeg
+    // poziva, pa su se zahtjevi gomilali i TOTAL je ostajao „-".
+    // Sada: view=board (polja kartice, otvoreni + zadnjih ZATVORENIH_NA_PLOCI zatvorenih,
+    // brojači sa servera), zatim samo since= promjene; najviše JEDAN zahtjev u letu, WS
+    // događaji se skupljaju (1,5 s), puni dohvat svakih 5 min ili na promjenu projekta.
+    var ZATVORENIH_NA_PLOCI = 150;
+    var tasksCounts = null, tasksUkupno = null, tasksServerTime = null;
+    var tasksZadnjiPuni = 0, tasksZadnjiProjekt = null, tasksZadnjiVratar = 0;
+    var tasksUTijeku = false, tasksJosJednom = false, tasksTraziPuni = false, plocaOsvjeziTimer = null;
+
+    function zakaziOsvjezavanjePloce() {
+      if (plocaOsvjeziTimer) return;
+      plocaOsvjeziTimer = setTimeout(function () { plocaOsvjeziTimer = null; fetchTasks(); }, 1500);
+    }
+
+    async function fetchTasks(opcije) {
+      const puni = !!(opcije && opcije.puni);
+      if (tasksUTijeku) { tasksJosJednom = true; tasksTraziPuni = tasksTraziPuni || puni; return; }
+      tasksUTijeku = true;
+      const traziPuni = puni || tasksTraziPuni;
+      tasksTraziPuni = false;
       try {
-        let url = '/api/tasks';
-        if (currentProjectFilter) {
-          url += '?projectId=' + encodeURIComponent(currentProjectFilter);
+        await dohvatiZadatkePloce(traziPuni);
+      } finally {
+        tasksUTijeku = false;
+        if (tasksJosJednom) { tasksJosJednom = false; zakaziOsvjezavanjePloce(); }
+      }
+    }
+
+    function spojiPromjene(promjene) {
+      const poId = new Map(tasks.map(function (t) { return [t.id, t]; }));
+      promjene.forEach(function (t) { poId.set(t.id, t); });
+      const otvoreni = [], zatvoreni = [];
+      poId.forEach(function (t) { (zatvorenStatus(t.status) ? zatvoreni : otvoreni).push(t); });
+      zatvoreni.sort(byNewestFirst);
+      return otvoreni.concat(zatvoreni.slice(0, ZATVORENIH_NA_PLOCI));
+    }
+
+    async function dohvatiZadatkePloce(traziPuni) {
+      const projekt = currentProjectFilter || '';
+      const puni = traziPuni || !tasksServerTime || projekt !== tasksZadnjiProjekt
+        || (Date.now() - tasksZadnjiPuni) > 5 * 60 * 1000;
+      let url = '/api/tasks?view=board&zatvorenih=' + ZATVORENIH_NA_PLOCI;
+      if (projekt) url += '&projectId=' + encodeURIComponent(projekt);
+      if (!puni) url += '&since=' + encodeURIComponent(tasksServerTime);
+      const ctl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+      const rok = ctl ? setTimeout(function () { ctl.abort(); }, 60000) : null;
+      try {
+        const response = await fetch(url, ctl ? { signal: ctl.signal, cache: 'no-store' } : { cache: 'no-store' });
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        const d = await response.json();
+        if (puni) {
+          tasks = d.tasks || [];
+          tasksZadnjiPuni = Date.now();
+          tasksZadnjiProjekt = projekt;
+        } else if (d.tasks && d.tasks.length) {
+          tasks = spojiPromjene(d.tasks);
         }
-        const response = await fetch(url);
-        tasks = await response.json();
+        tasksCounts = d.counts || null;
+        tasksUkupno = (typeof d.ukupno === 'number') ? d.ukupno : null;
+        if (d.serverTime) tasksServerTime = d.serverTime;
         // Oznaka „NIJE PROVJERENO" mora stici PRIJE iscrtavanja, inace kartica prvo
         // pokaze zadatak bez oznake pa je doda — a upravo taj trenutak je laz na ploci.
-        await fetchUnverified();
+        // (120 KB — uz puni dohvat i najviše svake 2 min, ne uz svaku promjenu.)
+        if (puni || Date.now() - tasksZadnjiVratar > 120000) {
+          tasksZadnjiVratar = Date.now();
+          await fetchUnverified();
+        }
         await fetchUputeStanje();
         renderTasks();
         updateStats();
         updateAgentFilter();
       } catch (err) {
         console.error('Failed to fetch tasks:', err);
+      } finally {
+        if (rok) clearTimeout(rok);
       }
     }
 
@@ -3486,23 +3663,31 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       // REGOC_STATS_FIX (TASK-3091): zbroj kategorija MORA dati Total. Prije se prikazivalo
       // samo in_progress+pending+blocked+completed, a cancelled nigdje — pa je na ploci
       // nedostajala razlika (npr. 129 total, a 0+0+18+97=115). Sada se cancelled prikazuje.
-      document.getElementById('total-count').textContent = tasks.length;
-      const cancelledTasks = tasks.filter(t => t.status === 'cancelled');
+      // TASK-5184: ploča drži samo otvorene + zadnjih N zatvorenih, pa brojači dolaze sa
+      // servera (counts/ukupno nad SVIM zadacima); lokalno brojanje samo kao pričuva.
+      const brojac = function (s) {
+        return tasksCounts ? (tasksCounts[s] || 0) : tasks.filter(t => t.status === s).length;
+      };
+      const ukupnoZad = (typeof tasksUkupno === 'number') ? tasksUkupno : tasks.length;
+      document.getElementById('total-count').textContent = ukupnoZad;
       const cc = document.getElementById('cancelled-count');
-      if (cc) cc.textContent = cancelledTasks.length;
+      if (cc) cc.textContent = brojac('cancelled');
       const uc = document.getElementById('unverified-count');
       if (uc) uc.textContent = unverifiedCache.todayCount;
       document.getElementById('progress-count').textContent = tasks.filter(t => t.status === 'in_progress').length;
-      document.getElementById('pending-count').textContent = tasks.filter(t => t.status === 'pending').length;
-      document.getElementById('blocked-count').textContent = tasks.filter(t => t.status === 'blocked').length;
-      document.getElementById('completed-count').textContent = tasks.filter(t => t.status === 'completed').length;
+      document.getElementById('pending-count').textContent = brojac('pending');
+      document.getElementById('blocked-count').textContent = brojac('blocked');
+      document.getElementById('completed-count').textContent = brojac('completed');
 
       // REGOC_STATS_FIX (TASK-3091): postotak se racuna nad RELEVANTNIM poslom — otkazani
       // zadaci se ne broje ni u brojnik ni u nazivnik. Prije su ulazili kao 0 % i vukli
       // ukupni napredak dolje, iako otkazan zadatak nije nezavrsen posao nego posao kojeg
       // vise nema. Primjer: 97 gotovih / 129 ukupno = 75 %, a posteno je 97 / 115 = 84 %.
+      // TASK-5184: završeni koji nisu na ploči ulaze kao 100 % (brojač sa servera).
       const relevantTasks = tasks.filter(t => t.status !== 'cancelled');
-      if (relevantTasks.length === 0) {
+      const zavrseniLokalno = tasks.filter(t => t.status === 'completed').length;
+      const zavrseniIzvan = Math.max(0, brojac('completed') - zavrseniLokalno);
+      if (relevantTasks.length + zavrseniIzvan === 0) {
         document.getElementById('overall-progress').textContent = '0%';
       } else {
         const totalProgress = relevantTasks.reduce((sum, task) => {
@@ -3524,7 +3709,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
           }
           return sum; // pending and blocked tasks with no progressPercent = 0
         }, 0);
-        const overallProgress = Math.round(totalProgress / relevantTasks.length);
+        const overallProgress = Math.round((totalProgress + 100 * zavrseniIzvan) / (relevantTasks.length + zavrseniIzvan));
         document.getElementById('overall-progress').textContent = overallProgress + '%';
       }
     }
@@ -3557,15 +3742,21 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     // PROJECT FILTER FUNCTIONS
     // ============================================
 
+    // TASK-5184: jedan zahtjev u letu — pri učitavanju ga zovu i init i ws.onopen (275 KB).
+    var projektiUTijeku = null;
     async function fetchProjectsForFilter() {
-      try {
-        const response = await fetch('/api/projects');
-        projectsCache = await response.json();
-        updateProjectFilter();
-        updateNewTaskProjectDropdown();
-      } catch (err) {
-        console.error('Failed to fetch projects for filter:', err);
-      }
+      if (projektiUTijeku) return projektiUTijeku;
+      projektiUTijeku = (async function () {
+        try {
+          const response = await fetch('/api/projects');
+          projectsCache = await response.json();
+          updateProjectFilter();
+          updateNewTaskProjectDropdown();
+        } catch (err) {
+          console.error('Failed to fetch projects for filter:', err);
+        }
+      })();
+      try { await projektiUTijeku; } finally { projektiUTijeku = null; }
     }
 
     function updateProjectFilter() {
@@ -3776,6 +3967,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       const zovi = (f, arg) => { try { f(arg); } catch (e) { console.error('[jezik]', e); } };
       // tasks — popis, traka odluka, prekidac odlucitelja, rucna kocnica, otvoren detalj
       zovi(fetchTasks);
+      zovi(renderStanjeVeze);   // TASK-5184: tekst veze nije više data-i18n
       zovi(ucitajOdluke);
       zovi(ucitajOdlucitelja);
       zovi(renderGlobalPause);
@@ -4210,7 +4402,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
 
         if (response.ok) {
           sendWSMessage({ action: 'delete_task', taskId });
-          fetchTasks();
+          fetchTasks({ puni: true });   // TASK-5184: since ne javlja obrisane
         }
       } catch (err) {
         console.error('Failed to delete task:', err);
@@ -4221,7 +4413,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     // vidljivo prije nego korisnik bilo što klikne.
     document.getElementById('global-pause-btn').addEventListener('click', toggleGlobalPause);
     fetchGlobalPause();
-    setInterval(fetchGlobalPause, 15000);   // zaštita ako WS padne
+    setInterval(function () { if (!document.hidden) fetchGlobalPause(); }, 15000);   // zaštita ako WS padne
 
     // Modal for creating tasks
     const modal = document.getElementById('modal-overlay');
@@ -7707,7 +7899,11 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     function initStatus() {
       fetchStatusDashboard();
       if (statusRefreshInterval) clearInterval(statusRefreshInterval);
-      statusRefreshInterval = setInterval(fetchStatusDashboard, 30000);
+      // TASK-5184: samo dok je kartica Status otvorena i stranica vidljiva (bio je 239 KB svakih 30 s zauvijek).
+      statusRefreshInterval = setInterval(function () {
+        if (currentTab !== 'status' || document.hidden) return;
+        fetchStatusDashboard();
+      }, 30000);
       document.getElementById('status-refresh-btn').onclick = fetchStatusDashboard;
     }
 
@@ -9679,7 +9875,9 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
 
     fetchProjectsForFilter();
     fetchTasks();
-    setInterval(fetchTasks, 30000); // Refresh every 30s — radi i bez WebSocketa
+    // Radi i bez WebSocketa. TASK-5184: inkrementalno (since) i ne dok je stranica skrivena —
+    // visibilitychange odmah osvježi kad se mobitel probudi.
+    setInterval(function () { if (!document.hidden) fetchTasks(); }, 30000);
 
     // Zadatci koji čekaju odluku: uz isti ritam kao ploča. Prekidač „prikaži" pamti stanje
     // unutar sjednice, pa se otvoreni popis ne zatvara sam pri osvježavanju.
@@ -9690,8 +9888,8 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       this.textContent = odlukeOtvoreno ? _T('sakrij', 'sakrij') : _T('prikazi', 'prikaži');
     });
     ucitajOdluke();
-    setInterval(ucitajOdluke, 30000);
-    setInterval(ucitajOdlucitelja, 30000);
+    setInterval(function () { if (!document.hidden) ucitajOdluke(); }, 30000);
+    setInterval(function () { if (!document.hidden) ucitajOdlucitelja(); }, 30000);
 
     postaviIzbornikJezika();
 
@@ -10930,6 +11128,15 @@ function handleGetTasks(url: URL): Response {
   if (validatedFilter.search) filter.search = validatedFilter.search
 
   const tasks = taskManager.getTasks(filter)
+
+  // TASK-5184: ploča traži `view=board` — samo polja kartice, otvoreni + zadnjih N zatvorenih,
+  // `since` za inkrementalno osvježavanje. Bez tog parametra odgovor je isti puni niz kao prije.
+  const ploca = parsirajOpcijePloce(url)
+  if (ploca) {
+    return new Response(JSON.stringify(izborZaPlocu(tasks, ploca)), {
+      headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
+    })
+  }
 
   return new Response(JSON.stringify(tasks), {
     headers: { 'Content-Type': 'application/json' }
@@ -14624,7 +14831,8 @@ async function handleStatusDashboard(): Promise<Response> {
     services,
     tokens,
     tasks: taskStats,
-    projects: { stats: projectStats, active: activeProjects },
+    // TASK-5184: kartica Status crta id/ime/postotak — specifikacija i opis (≈200 KB) ne idu.
+    projects: { stats: projectStats, active: saziProjekteDashboarda(activeProjects) },
     scheduler,
     mode: modeData,
     wsClients: wsClients.size,
@@ -15262,6 +15470,42 @@ const server = Bun.serve({
   hostname: HOST,  // Bind to 0.0.0.0 for external access
 
   async fetch(req: Request) {
+    return komprimirajOdgovor(req, await obradiZahtjev(req))
+  },
+
+  websocket: {
+    open(ws) {
+      console.log('[WebSocket] Client connected')
+      wsClients.add(ws)
+
+      // TASK-5184: bio je cijeli popis zadataka (9,4 MB) na SVAKO spajanje, a ploča ga je
+      // ignorirala — na mobitelu je to svako ponovno spajanje pretvaralo u 9,4 MB. Podatke
+      // ploča vuče sama (/api/tasks?view=board); ovdje samo potvrda veze.
+      ws.send(JSON.stringify({ type: 'initial', serverTime: new Date().toISOString() }))
+    },
+
+    message(ws, message) {
+      // TASK-5184: ploča šalje 'ping' svakih 25 s da otkrije mrtvu vezu (mobitel promijenio
+      // mrežu) — odgovor bez upisa u dnevnik, inače bi ga zatrpao.
+      if (message === 'ping') { try { ws.send('{"type":"pong"}') } catch {} return }
+      console.log('[WebSocket] Message:', message)
+    },
+
+    close(ws) {
+      console.log('[WebSocket] Client disconnected')
+      wsClients.delete(ws)
+    },
+
+    error(ws, error) {
+      console.error('[WebSocket] Error:', error)
+      wsClients.delete(ws)
+    }
+  }
+})
+
+// TASK-5184: tijelo nekadašnjeg Bun.serve fetch-a. Izdvojeno da svaki odgovor prođe kroz
+// komprimirajOdgovor (br/gzip) — HTML ploče 460 KB, /api/projects 275 KB, /api/tasks.
+async function obradiZahtjev(req: Request): Promise<Response | undefined> {
     const url = new URL(req.url)
 
     // Host validation for security
@@ -15922,33 +16166,8 @@ const server = Bun.serve({
 
     // 404
     return new Response('Not Found', { status: 404 })
-  },
-
-  websocket: {
-    open(ws) {
-      console.log('[WebSocket] Client connected')
-      wsClients.add(ws)
-
-      // Send initial data
-      const tasks = taskManager.getTasks()
-      ws.send(JSON.stringify({ type: 'initial', tasks }))
-    },
-
-    message(ws, message) {
-      console.log('[WebSocket] Message:', message)
-    },
-
-    close(ws) {
-      console.log('[WebSocket] Client disconnected')
-      wsClients.delete(ws)
-    },
-
-    error(ws, error) {
-      console.error('[WebSocket] Error:', error)
-      wsClients.delete(ws)
-    }
-  }
-})
+  
+}
 
 console.log(`
 ╔═══════════════════════════════════════════════════════════════════════════╗

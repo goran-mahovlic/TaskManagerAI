@@ -885,5 +885,8 @@
   "cfg_vr_potrosnja": "Usage: session {s} · week {t}",
   "cfg_vr_napomena": "Order is mandatory: autonomy < caution < block. Changes take effect immediately, no restart. When the meter is down the gates stay closed regardless of thresholds.",
   "cfg_vr_redoslijed": "Order must be: autonomy < caution < block.",
-  "cfg_vr_greska_spremanje": "Error saving thresholds"
+  "cfg_vr_greska_spremanje": "Error saving thresholds",
+  "veza_spojeno": "Connected",
+  "veza_bez_mreze": "Offline – no network, waiting…",
+  "veza_offline_pokusavam": "Offline – retrying in {s} s…"
 }
