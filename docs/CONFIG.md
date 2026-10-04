@@ -74,8 +74,11 @@ Provjera: `bun test tests/config-raspored-logika.test.ts tests/config-raspored-p
 ## 3. Prekidači
 
 Svi prekidači paketa slijede isto pravilo: **isključeno → sjena → uživo**. U sjeni se sud
-donese i zapiše, ali ništa ne mijenja. Nedostajuća ili neispravna datoteka nikad ne znači tiho
-`on`. Datoteke se čitaju uživo (najviše 30 s kašnjenja), pa restart nije potreban.
+donese i zapiše, ali ništa ne mijenja. Za vratare i tijekove nedostajuća ili neispravna
+datoteka nikad ne znači tiho `on`. **Jedina iznimka je `ingest-gate`**: bez datoteke ulaz je
+`on`, jer iza njega u paketu stoji samo zapis zadatka na ploči, a ne pokretanje agenta. Ako to ne
+želiš, kopiraj primjer (`"*": "off"`). Datoteke se čitaju uživo (najviše 30 s kašnjenja), pa
+restart nije potreban.
 
 ### 3.1. U paketu
 
