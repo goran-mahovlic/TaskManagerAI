@@ -28,6 +28,8 @@ prešao s datoteka na SQL, jer su zadatke počeli otvarati i zatvarati programi,
 | **Parsiran rezultat** | agentov izvještaj razlaže poslužitelj: bedž suda, sklopive sekcije, „prikaži sirovo" — nikad kao HTML |
 | **Procjena energije** | struja, CO₂ i voda uz trošak projekta, uvijek kao procjena s rasponom; koeficijenti su konfiguracija |
 | **Dva RAG sustava** | ChromaDB, pgvector ili oba (za migraciju), upravljano s Config stranice; `pg` je opcijski |
+| **Tijekovi rada** | posao za više struka ide po tijeku iz kataloga (11 tijekova), odluka bez modela, sve kreće u sjeni |
+| **Config stranica** | pet skupina postavki, raspored kartica uređuješ jednim gumbom (✎ Uredi ↔ 💾 Spremi) |
 
 Sve radi bez ijedne vanjske usluge. RAG (semantičko pretraživanje) je neobavezan dodatak.
 
@@ -42,7 +44,10 @@ Jedna rečenica po značajki, uz dokument koji je objašnjava do kraja.
 - **Ručna kočnica — globalna i po zadatku.** `POST /api/pause` zaustavlja preuzimanje novog posla, a `POST /api/tasks/<ID>/pause` / `resume` zadržava jedan zadatak bez promjene stanja, pa se nastavlja točno ondje gdje je stao — [docs/API.md](docs/API.md) („Pauza”, „Globalna kočnica”), [docs/SUSTAV.md](docs/SUSTAV.md).
 - **Strop usporednih agenata.** Koliko agenata smije raditi istodobno (1–10, zadano 3) postavka je na Config stranici ili `PUT /api/config/concurrency`; vrijedi za najviše 5 s, bez restarta, a svaka promjena ostaje u `settings_history` — [docs/API.md](docs/API.md) („Usporedni agenti”).
 - **Uputa agentu u radu.** `POST /api/tasks/<ID>/uputa` (ili 📨 na kartici) dostavlja poruku u sesiju koja već radi, preko kuke, pa agent ne staje i ne gubi kontekst — [docs/UPUTE-AGENTU.md](docs/UPUTE-AGENTU.md).
-- **Odluka o pokretanju.** Zadatak s oznakom `needs-decision` čeka čovjeka ili model po izboru, iza determinističkog filtra rizika — [docs/ODLUCIVANJE.md](docs/ODLUCIVANJE.md).
+- **Vrata autonomije.** Pragovi potrošnje sesije (70/85/95 %) i tjedna (90 %) na kojima autonomija usporava ili staje postavka su s klizačima na Config stranici ili `PUT /api/config/autonomy`; vrijede uživo, uz povijest u `settings_history` — [docs/API.md](docs/API.md) („Vrata autonomije”).
+- **Odluka o pokretanju.** Zadatak s oznakom `needs-decision` čeka čovjeka ili model po izboru, iza determinističkog filtra rizika. Traka „Čeka odluku” dijeli ih u tri skupine (odlučuje model · čeka strojni okidač · čeka tebe) istim filtrom kojim radi odlučitelj — [docs/ODLUCIVANJE.md](docs/ODLUCIVANJE.md).
+- **Tijekovi rada.** Zadatak za više struka ide po tijeku iz `agents/workflows.json` (11 tijekova, među njima `dorada-isporuke` i `izrada-dokumenta`); odluka je deterministička, korak lanca ne dobiva vlastiti tijek, a prekidač `workflow-gate` ima tri razine i kreće u sjeni — [docs/AGENTI.md](docs/AGENTI.md) („Tijekovi rada”), [docs/CONFIG.md](docs/CONFIG.md) §3.
+- **Ulazna vrata.** `POST /api/ingest` boduje svaku poruku težinom i po pragovima 16/36/81 odlučuje otvara li zadatak, ide li u puni lanac i traži li potvrdu plana; položaj `off`/`shadow`/`on` po izvoru — [docs/API.md](docs/API.md) („Ulaz”), [docs/CONFIG.md](docs/CONFIG.md) §5.
 - **Zatvaranje kroz orkestrator.** `TaskCloser`, `SpawnFinalizer` i prekidač `spawnCloseGuard` (zadano isključen) ne daju agentu da sam zatvori zadatak dok njegov spawn drži najam; čovjek s ploče uvijek može pregaziti — [docs/INSTALL.md](docs/INSTALL.md) §5.2, [docs/API.md](docs/API.md).
 - **Straža jeke i pretinac.** `DispatchGuard` ne da da dojava raspoređivača ili obavijest o životnom ciklusu agenta postane novi zadatak, a zadatak bez projekta pada u projekt-pretinac umjesto u `NULL` — [CHANGELOG.md](CHANGELOG.md), [docs/SUSTAV.md](docs/SUSTAV.md).
 
@@ -59,6 +64,8 @@ Jedna rečenica po značajki, uz dokument koji je objašnjava do kraja.
 - **Procjena energije.** Struja, CO₂ i voda uz trošak projekta, uvijek kao procjena s rasponom; koeficijenti su u `config/energija.json` — [docs/INSTALL.md](docs/INSTALL.md) §5.2, [docs/DATABASE.md](docs/DATABASE.md).
 - **Postavke modela.** `models/model-config.json` se zapisuje atomno, s revizijskim tragom, a oznaka dugog konteksta `[1m]` je dopuštena — [docs/API.md](docs/API.md) („Modeli i davatelji”).
 - **Konzola.** Uživo tok događaja preko web utičnice i, po želji, pokretanje naredbe — [docs/TOOLS.md](docs/TOOLS.md).
+- **Config stranica i uređivač rasporeda.** Pet skupina (strop i vrata autonomije, agenti i modeli, integracije, RAG, sustav); kartice se premještaju unutar skupine i mijenjaju veličinu jednim gumbom ✎ Uredi raspored ↔ 💾 Spremi raspored, a vrijednosti postavki su za to vrijeme zaključane — [docs/CONFIG.md](docs/CONFIG.md), [docs/API.md](docs/API.md) („Raspored Config stranice”).
+- **Ploča na mobitelu.** `GET /api/tasks?view=board` šalje samo polja kartice i brojače sa poslužitelja, odgovori idu komprimirani, a živa veza se sama obnavlja — [docs/API.md](docs/API.md) („Prikaz ploče”).
 - **Provjerena prazna instalacija.** init → poslužitelj → ploča 200 → `POST`/`GET` zadatka → okidač prioriteta 1, zapisano u [docs/QA_SVJEZA_INSTALACIJA_2026-10-02.md](docs/QA_SVJEZA_INSTALACIJA_2026-10-02.md).
 - **Kako se oko nje gradi cijeli sustav agenata.** Agenti, znanje, ulazni kanal i nadzor, sloj po sloj — [docs/SUSTAV.md](docs/SUSTAV.md), [docs/AGENTI.md](docs/AGENTI.md), [docs/INTEGRACIJE.md](docs/INTEGRACIJE.md), [REGOC/README.md](REGOC/README.md).
 
@@ -87,7 +94,7 @@ Otvori `http://localhost:17781`. Ploča ima sedam kartica:
 | **Konzola** | živi tijek događaja, mjesto za poruku agentu i (neobavezno) pokretanje naredbe |
 | **Potrošnja** | trošak po zadatku i projektu, tjedni pregled, vrijednost upita naspram troška |
 | **Stanje** | stanje servisa, potrošnja žetona, red za izvršavanje, ručna kočnica |
-| **Postavke** | davatelji modela i prijava na njih, dežurni (rezervni) model, model za vratara odluke, jezik sučelja, način `PLAN`/`WORK` |
+| **Postavke** | pet skupina: strop usporednih agenata i vrata autonomije, agenti i modeli, integracije i ulazna vrata, RAG, sustav; raspored kartica uređuješ gumbom ✎ Uredi raspored ([docs/CONFIG.md](docs/CONFIG.md)) |
 
 Prvi zadatak preko API-ja:
 
@@ -186,6 +193,8 @@ Pojedinosti, davatelji i postavke: [docs/ODLUCIVANJE.md](docs/ODLUCIVANJE.md).
 | [docs/SUSTAV.md](docs/SUSTAV.md) | kako od ploče složiti sustav koji sam radi, sloj po sloj: agenti, RAG, vještine, ulaz, kočnice |
 | [docs/AGENTI.md](docs/AGENTI.md) | registar agenata, vještine i alati — što paket nosi, a što dohvaća |
 | [docs/INTEGRACIJE.md](docs/INTEGRACIJE.md) | integracije Nextcloud, e-pošta, GitLab i GitHub |
+| [docs/CONFIG.md](docs/CONFIG.md) | Config stranica: skupine i kartice, uređivač rasporeda, prekidači (workflow-gate, ingest-gate…), tijekovi, ulazna vrata, dojava pri završetku |
+| [docs/POGON_I_PAKET.md](docs/POGON_I_PAKET.md) | što je od novosti izvornog sustava ušlo u paket, a što nije — s naredbom za provjeru svake stavke |
 | [docs/adr/](docs/adr/) | arhitekturne odluke paketa |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | git kuke, pravila za commitove, pokretanje testova |
 | [REGOC/README.md](REGOC/README.md) | kako izgleda stvaran sustav agenata izgrađen oko ovoga — po temama (arhitektura, uloge, životni ciklus zadatka, pravila isporuke, vrata i kočnice, baze, trošak i energija, lekcije, složi svoj) |

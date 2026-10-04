@@ -1,3 +1,28 @@
+## 2026-10-04 — dokumentacija: Config stranica, prekidači, tijekovi i razlika prema izvornom sustavu (TASK-5172)
+
+- Novo: `docs/CONFIG.md` — Config stranica (pet skupina, 21 kartica, ruta svake kartice),
+  uređivač rasporeda (gumbi, miš, dodir, tipkovnica, tri pravila: vrijednosti zaključane, jedan
+  raspored za sustav, `409` za zastarjeli), prekidači paketa (`workflow-gate` s
+  `materijalizacija`, `ingest-gate`, vratari zatvaranja) i oni koji postoje samo u izvornom
+  sustavu (`popis-obnova`, memorija, `tijekPosla`, `zatvaranjeKrozDaemon`, `rad-bez-zadatka`,
+  `revizijaBlokiranih`), tijekovi, ulazna vrata i dojava pri završetku.
+- Novo: `docs/POGON_I_PAKET.md` — što je od novosti 02.–04.10. ušlo u paket (uređivač rasporeda,
+  pet skupina, pragovi autonomije, katalog tijekova 1.3.0, vrata tijeka I1–I7, ploča na
+  mobitelu, traka „Čeka odluku") i što nije (puni kontekst zadatka i `POST /api/nalozi`,
+  „🧭 Tijek posla" u dojavi, ulazna vrata v2, nesukladnosti B/C/D, obnova popisa, memorija,
+  revizija blokiranih) — svaka stavka s naredbom za provjeru u paketu.
+- Novo: `config/workflow-gate.example.json` (paket ga dosad nije imao; bez datoteke vrijedi
+  `shadow`). Napomena da `dorada-isporuke` i `izrada-dokumenta` imaju korake (`agent: "izvorni"`,
+  `mehanizam: "report-back"`) koje razrješava samo izvorni sustav, pa uz njih
+  `materijalizacija` ostaje `shadow`.
+- `docs/AGENTI.md`: tablica tijekova s 5 na 11 (s prioritetom i `trazi_u`), pravilo odabira s
+  korakom lanca (`u-lancu`) i `iskljucuje`, tri razine prekidača. Katalog 1.3.0 (`f9feb69`) i
+  vrata I1–I7 (`90744cb`) dosad nisu imali unos u ovom dnevniku.
+- `README.md`/`README.hr.md`: značajke (vrata autonomije, traka „Čeka odluku", tijekovi, ulazna
+  vrata, Config i uređivač rasporeda, ploča na mobitelu), opis kartice Config, tablica
+  dokumenata. `docs/INSTALL.md`: §5.2 dobiva `workflow-gate.json` i `ingest-gate.json`, novi
+  §5.4 Config stranica.
+
 ## 2026-10-04 — uređivač rasporeda Config stranice (TASK-5170, dizajn TASK-5169)
 
 - Config stranica ima JEDAN gumb **✎ Uredi raspored ↔ 💾 Spremi raspored**: kartice se premještaju

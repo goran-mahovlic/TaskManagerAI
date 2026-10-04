@@ -104,27 +104,41 @@ znanje (RAG), ulazni kanali, kočnice — u `docs/SUSTAV.md`.
 
 ## Tijekovi rada (workflow)
 
-Neki poslovi traže više od jednog izvršitelja. Katalog je u `agents/workflows.json`, a odluku
-donosi `tools/odaberi_workflow.py` — **pri otvaranju zadatka**, deterministički:
+Neki poslovi traže više od jednog izvršitelja. Katalog je u `agents/workflows.json` (inačica
+1.3.0, 11 tijekova), a odluku donosi `src/core/WorkflowGate.ts` na ploči (i, za ručnu provjeru,
+`tools/odaberi_workflow.py`) — **pri otvaranju zadatka**, deterministički:
 
 ```bash
 python3 tools/odaberi_workflow.py --popis
 python3 tools/odaberi_workflow.py --naslov "Ne radi prijava na stranicu" --tezina 40
 ```
 
-| Tijek | Od težine | Koraci |
-|---|---:|---|
-| `implement-feature` | 36 | Kosjenka [GrillWithDocs] → Jelena [TDD] → Potjeh → Malik |
-| `bug-fix` | 16 | Jelena [DiagnosingBugs] → Potjeh → Malik |
-| `research` | 36 | Manda [Research] → Dora [FirstPrinciples] → Kosjenka |
-| `security-audit` | 36 | Malik [RedTeam] → Potjeh → Kosjenka |
-| `prijava-natjecaj` | 61 | Manda → Kosjenka [GrillWithDocs] → Jelena → Dora |
+| Tijek | Od težine | Prioritet | Okidači se traže u | Koraci |
+|---|---:|---:|---|---|
+| `dorada-isporuke` | 0 | 95 | naslovu | izvorni → potjeh [WebappTesting] → regoc (`report-back`) |
+| `prijava-natjecaj` | 61 | 90 | naslovu i opisu | manda → kosjenka [GrillWithDocs] → jelena → dora |
+| `izrada-dokumenta` | 36 | 85 | naslovu | manda [Research] → grga [FrontendDesign] → jelena [Pdf] → potjeh [WebappTesting] → regoc |
+| `novi-projekt` | 0 | 80 | naslovu | kosjenka → regoc → kosjenka |
+| `istrazi-planiraj-izvedi` | 61 | 70 | naslovu | manda [Research] → kosjenka [GrillWithDocs] → regoc → jelena |
+| `pregled-popravak` | 36 | 60 | naslovu | malik [WebappTesting] → kosjenka → jelena [DiagnosingBugs] → potjeh |
+| `osint-lookup` | 36 | 60 | naslovu | malik [OSINT] → manda [OSINT] → dora [FirstPrinciples] → kosjenka |
+| `security-audit` | 36 | 50 | naslovu | malik [RedTeam] → potjeh → kosjenka |
+| `implement-feature` | 36 | 40 | naslovu | kosjenka [GrillWithDocs] → jelena [TDD] → potjeh → malik |
+| `research` | 36 | 30 | naslovu | manda [Research] → dora [FirstPrinciples] → kosjenka |
+| `bug-fix` | 16 | 20 | naslovu | jelena [DiagnosingBugs] → potjeh → malik |
 
 **Kako se odlučuje** (prvi uvjet koji se poklopi):
 
-1. izričita oznaka `workflow:<id>` na zadatku,
-2. oznaka `bez-workflowa` → nikad tijek,
-3. okidač iz kataloga **uz uvjet da je težina ≥ `najmanja_tezina`**,
+1. oznaka `bez-workflowa` → nikad tijek. **Korak lanca** ne dobiva vlastiti tijek (kod
+   `u-lancu`): to je zadatak s oznakom `korak:`, `tijek-korak`, `tijek-lanac:`, `lanac` ili
+   `parent:`, zadatak otvoren s `blockedBy`, zadatak koji je otvorio `regoc-chain` ili
+   `workflow-materializer`, te zadatak čiji naslov imenuje izvršitelja („Potjeh: …" uz
+   `assignee: potjeh`);
+2. izričita oznaka `workflow:<id>` na zadatku;
+3. okidač iz kataloga, po polju `prioritet` (veći prvi). Okidači se traže u naslovu, a u opisu
+   samo kad tijek ima `trazi_u: "naslov+opis"`; uzorak iz `iskljucuje` poništava pogodak
+   (npr. softverski predmet isključuje `izrada-dokumenta`). Vrijedi samo **uz uvjet da je
+   težina ≥ `najmanja_tezina`**;
 4. inače: bez tijeka, jedan izvršitelj.
 
 Zadnje je pravilo najvažnije: **neodlučeno je uvijek „bez tijeka”**. Tijek od četiri koraka za
@@ -134,6 +148,19 @@ Odluka je namjerno bez modela. Izbor se donosi pri svakom otvaranju zadatka, a k
 tako vrućem mjestu kod nas je već jednom promašio 92 % prometa; ovako je provjerljiv i
 besplatan. Svaki korak **imenuje vještinu** koju izvršitelj mora upotrijebiti — inače je neće
 ni dotaknuti.
+
+**Prekidač ima tri razine** (oznaka `bez-workflowa` na zadatku → `enabled` na tijeku →
+`nacin` u `config/workflow-gate.json`), a otvaranje lanca zadataka ima **vlastiti** prekidač
+`materijalizacija`. Zadano je sve u sjeni: odluka se zapiše u
+`$TM_HOME/data/workflow_odluke.jsonl` i ništa se ne mijenja. Primjer:
+`config/workflow-gate.example.json`; redoslijed uključivanja u [CONFIG.md](CONFIG.md) §3.
+
+**Dva tijeka iz 1.3.0 traže izvorni sustav.** `dorada-isporuke` ima korak `agent: "izvorni"`
+(izvršitelj izvornog zadatka), a oba nova tijeka završavaju korakom `mehanizam: "report-back"`
+(dojava s odjeljkom „Tijek posla"). Te korake razrješava `POST /api/nalozi`, koji ovaj paket
+nema. Odluka o tijeku radi i u paketu, ali dok koristiš `dorada-isporuke` ili
+`izrada-dokumenta`, `materijalizacija` neka ostane `shadow` — v.
+[POGON_I_PAKET.md](POGON_I_PAKET.md).
 
 ---
 

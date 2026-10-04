@@ -1,0 +1,17 @@
+{
+  "_opis": [
+    "Vrata tijeka rada (WorkflowGate + WorkflowMaterializer). Kopiraj u config/workflow-gate.json",
+    "ili postavi REGOC_WORKFLOW_GATE_CONFIG na vlastitu putanju. Katalog tijekova je agents/workflows.json.",
+    "Nedostajuća ili neispravna datoteka, ili nepoznata vrijednost => 'shadow' (nikad tiho 'on').",
+    "Čita se bez ponovnog pokretanja: keš pada čim se promijeni vrijeme izmjene ili veličina (najviše 30 s).",
+    "nacin: 'off' = ništa se ne računa; 'shadow' = odluka se zapiše u $TM_HOME/data/workflow_odluke.jsonl,",
+    "  ništa se ne mijenja; 'on' = odluka se upiše na zadatak kao oznaka workflow:<id> ili bez-workflowa.",
+    "materijalizacija: ZASEBAN prekidač za otvaranje lanca zadataka (koraci tijeka postaju zadatci).",
+    "  Vrijedi samo uz nacin 'on'. 'off'/'shadow' = lanac ne nastaje; 'on' = zadatci koraka nastaju",
+    "  i lanac se zapiše u $TM_HOME/data/tijek_lanci.jsonl.",
+    "  dorada-isporuke i izrada-dokumenta imaju korake (agent 'izvorni', mehanizam 'report-back') koje paket ne razrješava — uz njih ostavi 'shadow'.",
+    "Razine: oznaka bez-workflowa na zadatku > polje enabled na tijeku u workflows.json > nacin ovdje."
+  ],
+  "nacin": "shadow",
+  "materijalizacija": "shadow"
+}

@@ -135,6 +135,8 @@ Svaki se uključuje kopiranjem primjera i izmjenom jednog ključa; datoteke se �
 | `config/critic-gate.json` | `TM_CRITIC_CONFIG` | kritičar pokreće provjere nad onim što je agent ostavio na disku; `docMode` (L0/L1) za dokumente | `docMode: shadow`, `doc2Mode: off` |
 | `config/features.json` | `TM_FEATURES_FILE` | `criticGate`, `spawnCloseGuard` (agent ne smije sam zatvoriti zadatak dok radi njegov spawn), strop stvaranja zadataka | sve `false` |
 | `config/energija.json` | `TM_ENERGIJA_CONFIG` | koeficijenti procjene struje, CO₂ i vode (s izvorima u primjeru) | ugrađene vrijednosti |
+| `config/workflow-gate.json` | `REGOC_WORKFLOW_GATE_CONFIG` | vrata tijeka rada: `nacin` (bira li se tijek iz `agents/workflows.json`) i zasebno `materijalizacija` (smiju li nastati zadatci koraka) | oboje `shadow` |
+| `config/ingest-gate.json` | `TM_INGEST_GATE_CONFIG` | ulazna vrata za `POST /api/ingest`: položaj po izvoru i pragovi 16/36/81; mijenja se i s ploče (Config → Ulazna vrata) | bez datoteke `"*": "on"`; primjer stavlja `off` |
 
 **Redoslijed koji se pokazao sigurnim:** sjena → mjerenje u dnevniku (`BIH blokirala`,
 `$TM_HOME/data/critic_gate.jsonl`, `spawn_close_guard.jsonl`) → uživo tek kad je broj
@@ -148,6 +150,10 @@ agent radi i pušta ga prije vlastitog zapisa ishoda. Čovjek s ploče uvijek pr
 `doc2Mode` (L2 — sadržaj dokumenta sudi drugi model) traži modul suca koji **nije dio paketa**
 (vezan je uz registar imenovanih agenata). Bez njega L2 vraća „sudac nije instaliran" i
 provjera ostaje neprovjerena, ništa ne pada.
+
+Prekidači, njihove razine i redoslijed uključivanja tijekova opisani su u
+[CONFIG.md](CONFIG.md) §3. Ondje je i popis prekidača koji postoje samo u izvornom sustavu
+(obnova popisa, memorija, javljanje tijeka pri završetku), da ih ne tražiš u paketu.
 
 ## 5.3. RAG: ChromaDB, pgvector ili oba (neobavezno)
 
@@ -165,6 +171,15 @@ migracija ChromaDB → pgvector po zbirkama). Bez upisane adrese pgvector javlja
 `configured: false` i ploča ne radi nijedan mrežni poziv. Gumb „Test konekcije" prolazi iste
 provjere adrese kao integracije (`ProbeGuard`), a spremljenu lozinku šalje **samo** na
 spremljenu adresu. Instalacija izložena internetu neka postavi `dopustiPrivatneMreze: false`.
+
+## 5.4. Config stranica
+
+Većina postavki mijenja se s ploče, na kartici **Config**, bez uređivanja datoteka i bez
+restarta. Kartice su u pet skupina: strop i vrata autonomije, agenti i modeli, integracije
+(uključujući ulazna vrata), RAG, te sustav (samo za čitanje). Raspored kartica uređuješ gumbom
+**✎ Uredi raspored**, a spremaš istim gumbom (**💾 Spremi raspored**). Raspored je jedan za
+cijeli sustav i čuva se u bazi (`settings`, ključ `config.raspored`), pa ga nadogradnja i
+`bun run init` ne diraju. Opis svake kartice i uređivača: [CONFIG.md](CONFIG.md).
 
 ## 6. Sloj 1 — pokreni orkestrator (neobavezno)
 

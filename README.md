@@ -32,6 +32,8 @@ started opening and closing tasks.
 | **Parsed results** | the agent's report is parsed on the server: verdict badge, collapsible sections, "show raw" — never rendered as HTML |
 | **Energy estimate** | electricity, CO₂ and water next to project cost, always shown as an estimate with a range; coefficients are configuration |
 | **Two RAG backends** | ChromaDB, pgvector or both (for migration), managed from the Config page; `pg` is optional |
+| **Workflows** | work for several roles follows a workflow from the catalogue (11 workflows), chosen without a model, starting in shadow mode |
+| **Config page** | five groups of settings; the card layout is edited with a single button (✎ Edit ↔ 💾 Save) |
 
 Everything runs without a single external service. RAG (semantic search) is an optional extra.
 
@@ -46,7 +48,10 @@ One sentence per feature, with the document that explains it in full.
 - **Manual brake — global and per task.** `POST /api/pause` stops the system from taking on new work, and `POST /api/tasks/<ID>/pause` / `resume` holds a single task without changing its state, so it continues exactly where it stopped — [docs/API.md](docs/API.md) (“Pauza”, “Globalna kočnica”), [docs/SUSTAV.md](docs/SUSTAV.md).
 - **Concurrent-agent ceiling.** How many agents may work at once (1–10, default 3) is a setting on the Config page or `PUT /api/config/concurrency`; it applies within 5 s, without a restart, and every change is kept in `settings_history` — [docs/API.md](docs/API.md) (“Usporedni agenti”).
 - **Instruction to a running agent.** `POST /api/tasks/<ID>/uputa` (or 📨 on the card) delivers a message into the session that is already working, through a hook, so the agent neither stops nor loses context — [docs/UPUTE-AGENTU.md](docs/UPUTE-AGENTU.md).
-- **Decision gate.** A task tagged `needs-decision` waits for a person, or for a model you choose behind a deterministic risk filter — [docs/ODLUCIVANJE.md](docs/ODLUCIVANJE.md).
+- **Autonomy gate.** The session (70/85/95 %) and weekly (90 %) usage thresholds at which autonomy slows down or stops are a setting with sliders on the Config page or `PUT /api/config/autonomy`; they apply live, with history in `settings_history` — [docs/API.md](docs/API.md) (“Vrata autonomije”).
+- **Decision gate.** A task tagged `needs-decision` waits for a person, or for a model you choose behind a deterministic risk filter. The “Awaiting decision” bar splits them into three groups (decided by the model · waiting for a machine trigger · waiting for you) using the same filter the decider uses — [docs/ODLUCIVANJE.md](docs/ODLUCIVANJE.md).
+- **Workflows.** A task for several roles follows a workflow from `agents/workflows.json` (11 workflows, including `dorada-isporuke` and `izrada-dokumenta`); the choice is deterministic, a step of a chain never gets a workflow of its own, and the `workflow-gate` switch has three levels and starts in shadow mode — [docs/AGENTI.md](docs/AGENTI.md) (“Tijekovi rada”), [docs/CONFIG.md](docs/CONFIG.md) §3.
+- **Input gate.** `POST /api/ingest` scores every message by weight and, using thresholds 16/36/81, decides whether it opens a task, goes into a full chain or needs the plan confirmed; `off`/`shadow`/`on` per source — [docs/API.md](docs/API.md) (“Ulaz”), [docs/CONFIG.md](docs/CONFIG.md) §5.
 - **Closing through the orchestrator.** `TaskCloser`, `SpawnFinalizer` and the `spawnCloseGuard` switch (off by default) keep an agent from closing its own task while its run still holds the lease; a person on the board can always override — [docs/INSTALL.md](docs/INSTALL.md) §5.2, [docs/API.md](docs/API.md).
 - **Echo guard and inbox.** `DispatchGuard` keeps scheduler notices and agent life-cycle messages from becoming new tasks, and a task left without a project lands in the inbox project instead of `NULL` — [CHANGELOG.md](CHANGELOG.md), [docs/SUSTAV.md](docs/SUSTAV.md).
 
@@ -63,6 +68,8 @@ One sentence per feature, with the document that explains it in full.
 - **Energy estimate.** Electricity, CO₂ and water next to project cost, always as an estimate with a range; coefficients live in `config/energija.json` — [docs/INSTALL.md](docs/INSTALL.md) §5.2, [docs/DATABASE.md](docs/DATABASE.md).
 - **Model configuration.** `models/model-config.json` is written atomically with an audit trail, and the long-context `[1m]` label is accepted — [docs/API.md](docs/API.md) (“Modeli i davatelji”).
 - **Console.** Live event stream over a WebSocket and, optionally, running a command — [docs/TOOLS.md](docs/TOOLS.md).
+- **Config page and layout editor.** Five groups (ceiling and autonomy gate, agents and models, integrations, RAG, system); cards are moved within their group and resized with one button, ✎ Edit layout ↔ 💾 Save layout, while setting values stay locked — [docs/CONFIG.md](docs/CONFIG.md), [docs/API.md](docs/API.md) (“Raspored Config stranice”).
+- **Board on a phone.** `GET /api/tasks?view=board` sends only the card fields and server-side counts, responses are compressed, and the live connection recovers on its own — [docs/API.md](docs/API.md) (“Prikaz ploče”).
 - **A clean install, checked.** init → server → board 200 → `POST`/`GET` task → priority-1 trigger, recorded in [docs/QA_SVJEZA_INSTALACIJA_2026-10-02.md](docs/QA_SVJEZA_INSTALACIJA_2026-10-02.md).
 - **How a full agent system is built around it.** Agents, knowledge, input channel and supervision, layer by layer — [docs/SUSTAV.md](docs/SUSTAV.md), [docs/AGENTI.md](docs/AGENTI.md), [docs/INTEGRACIJE.md](docs/INTEGRACIJE.md), [REGOC/README.en.md](REGOC/README.en.md).
 
@@ -91,7 +98,7 @@ Open `http://localhost:17781`. The board has seven tabs:
 | **Console** | live stream of events, a place to message an agent, and (optional) run a command |
 | **Spending** | cost per task and project, weekly review, value of requests vs. cost |
 | **Status** | service health, token usage, the execution queue, the manual pause |
-| **Config** | model providers and how to log them in, the reserve/fallback model, the decision-gate model, interface language, `PLAN`/`WORK` mode |
+| **Config** | five groups: concurrent-agent ceiling and autonomy gate, agents and models, integrations and the input gate, RAG, system; the card layout is edited with ✎ Edit layout ([docs/CONFIG.md](docs/CONFIG.md)) |
 
 Your first task through the API:
 
@@ -190,6 +197,8 @@ Details, providers and settings: [docs/ODLUCIVANJE.md](docs/ODLUCIVANJE.md).
 | [docs/SUSTAV.md](docs/SUSTAV.md) | growing the board into a self-running system, layer by layer: agents, RAG, skills, input, brakes |
 | [docs/AGENTI.md](docs/AGENTI.md) | agent registry, skills and tools — what the package carries and what it fetches |
 | [docs/INTEGRACIJE.md](docs/INTEGRACIJE.md) | Nextcloud, e-mail, GitLab and GitHub integrations |
+| [docs/CONFIG.md](docs/CONFIG.md) | the Config page: groups and cards, the layout editor, switches (workflow-gate, ingest-gate…), workflows, input gate, completion report (Croatian) |
+| [docs/POGON_I_PAKET.md](docs/POGON_I_PAKET.md) | which features of the source system made it into the package and which did not — with a command to check each one (Croatian) |
 | [docs/adr/](docs/adr/) | architecture decisions of the package |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | git hooks, commit rules, running the tests |
 | [REGOC/README.en.md](REGOC/README.en.md) | what a real agent system built around this looks like — split into topics (architecture, roles, task life cycle, delivery rules, gates and brakes, databases, cost and energy, lessons, build your own) |
