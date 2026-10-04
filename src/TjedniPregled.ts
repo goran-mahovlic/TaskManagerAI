@@ -530,6 +530,16 @@ export async function resolveTjedniPregled(
   try {
     const ishod = await Promise.race([posao, cekanje])
     if (ishod === 'istek') {
+      // TASK-5230: stale-while-revalidate. Istekao keš je i dalje bolji od 202 — pod
+      // opterećenjem stroja python zna trajati minutama, a klijent odustaje nakon
+      // 12 × 1,5 s. Stara brojka ide odmah, nova stiže kad posao završi.
+      if (hit) {
+        return {
+          stanje: 'spremno', http: 200, izvor: 'kes',
+          staroMs: Math.max(0, deps.now() - hit.cachedAtMs),
+          poruka: 'Osvježava se u pozadini.', pregled: hit.payload,
+        }
+      }
       return {
         stanje: 'racuna', http: 202, izvor: null, staroMs: null,
         poruka: 'Pregled se računa; pokušajte ponovno za koji trenutak.', pregled: null,
@@ -558,7 +568,8 @@ export function createPregledDeps(state: PregledState): PregledDeps {
     now: () => Date.now(),
     state,
     runTool: async (dana: number, najskupljih: number, projekt: string | null = null) => {
-      const argv = ['python3', PREGLED_SCRIPT,
+      // TASK-5230: niži prioritet — teški poslovi agenata i ploča ne smiju gušiti jedno drugo.
+      const argv = ['nice', '-n', '10', 'python3', PREGLED_SCRIPT,
         '--dana', String(dana), '--najskupljih', String(najskupljih)]
       // Niz je već prošao `PROJEKT_UZORAK`; ipak ide kao zaseban argv element,
       // nikad kao dio ljuske — Bun.spawn ne pokreće shell.

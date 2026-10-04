@@ -185,6 +185,7 @@ import {
   resolveTjedniPregled, createPregledState, createPregledDeps, parseBroj, parseProjekt,
   DANA_MIN, DANA_MAX, ZADANO_DANA, NAJSKUPLJIH_MIN, NAJSKUPLJIH_MAX, ZADANO_NAJSKUPLJIH,
 } from './TjedniPregled'
+import { resolveVrijednost, createVrijednostState, createVrijednostDeps, nadjiAlat } from './VrijednostInputa'
 
 // ============================================
 // CONFIGURATION
@@ -5719,32 +5720,114 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       }
       h += '<div class="tel-muted" style="margin-top:0.4rem;font-size:0.75rem;">'
         + _T('vr_razred_opis', 'Razred se određuje iz zabilježenog rada po upitu (koraci, pozivi alata, vrsta alata), ne iz cijene modela.') + ' '
-        + _T('vr_cjenik', 'Cjenik:') + ' ' + razredi.map(function (r) { return r + ' ' + cj[r] + ' €'; }).join(' · ')
+        + _T('vr_cjenik', 'Cjenik (bez PDV-a):') + ' ' + razredi.map(function (r) { return r + ' ' + cj[r] + ' €'; }).join(' · ')
         + (d.razdoblje ? ' · ' + _T('vr_razdoblje', 'razdoblje') + ' ' + d.razdoblje[0] + ' → ' + d.razdoblje[1] : '') + '</div>';
       return h;
+    }
+
+    // TASK-5230: poslužitelj više ne drži zahtjev dok python računa (~68 s > idleTimeout 10 s).
+    // 200 = podatci (možda iz starog keša uz osvjezava), 202 = keša nema, računa se u pozadini.
+    // Klijent pita ponovno svakih VRIJEDNOST_POLL_MS do roka; „Računam…" nikad ne ostaje zauvijek,
+    // a jednom prikazana tablica se ne briše dok stiže nova.
+    var vrijednostZadnje = null;      // zadnji uspješni podatci — dijele ih kartica, chip i panel projekta
+    var vrijednostKljuc = '';
+    var vrijednostGen = 0;
+    var VRIJEDNOST_ROK_MS = 180000;
+    var VRIJEDNOST_POLL_MS = 4000;
+    function vrijednostSpavaj(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+
+    /** Zapamti podatke; popis projekata se precrtava samo kad su se brojke stvarno promijenile. */
+    function vrijednostPrimijeni(d) {
+      vrijednostZadnje = d;
+      var k = (d.upita || 0) + '|' + (d.ukupnoEur || 0) + '|' + JSON.stringify(d.razdoblje || null);
+      var promjena = k !== vrijednostKljuc || !popisVrijednost;
+      vrijednostKljuc = k;
+      if (d.poProjektu) popisVrijednost = d.poProjektu;
+      if (promjena && d.poProjektu && typeof renderProjects === 'function' && currentTab === 'projects') renderProjects();
+    }
+
+    function vrijednostInfo(d) {
+      return (d.izvor === 'kes' ? _T('iz_kesa', 'iz keša') : _T('svjez_izracun', 'svjež izračun'))
+        + (d.staroS ? ' · ' + _Tv('star_n_s', 'star {broj} s', { broj: d.staroS }) : '')
+        + ' · ' + _Tv('vr_n_upita', '{broj} upita', { broj: d.upita || 0 })
+        + (d.osvjezava ? ' · ' + _T('vr_osvjezavam', 'osvježavam…') : '');
     }
 
     async function ucitajVrijednost(force) {
       var box = document.getElementById('vrijednost-box');
       var info = document.getElementById('vrijednost-izvor');
       if (!box) return;
-      box.className = 'tel-box tel-muted';
-      box.innerHTML = _T('racunam', 'Računam…');
-      try {
-        var r = await fetch('/api/vrijednost-inputa' + (force ? '?force=1' : ''));
-        var d = await r.json();
-        if (!r.ok || d.error) {
-          box.innerHTML = '<span class="tel-muted">' + _T('vr_nedostupan', 'Izračun nije dostupan') + (d.error ? ': ' + telEsc(d.error) : '.') + '</span>';
+      var gen = ++vrijednostGen;
+      var pocetak = Date.now();
+      var prvi = true;
+      if (!vrijednostZadnje) {
+        box.className = 'tel-box tel-muted';
+        box.innerHTML = _T('racunam', 'Računam…');
+      } else if (info) {
+        info.textContent = _T('vr_osvjezavam', 'osvježavam…');
+      }
+      while (true) {
+        var r = null, d = null;
+        try {
+          r = await fetch('/api/vrijednost-inputa' + (force && prvi ? '?force=1' : ''));
+          d = await r.json();
+        } catch (e) { /* mreža/prekid — obrađuje se niže kao nedostupno */ }
+        prvi = false;
+        if (gen !== vrijednostGen) return;   // noviji poziv (Osvježi, WS) je preuzeo karticu
+        if (r && r.status === 200 && d && !d.error) {
+          vrijednostPrimijeni(d);
+          box.className = 'tel-box';
+          box.innerHTML = vrijednostHtml(d);
+          if (info) info.textContent = vrijednostInfo(d);
+          if (!d.osvjezava) return;
+        } else if (r && r.status === 202) {
+          if (!vrijednostZadnje) {
+            box.className = 'tel-box tel-muted';
+            box.innerHTML = _Tv('vr_racuna_n_s', 'Računam u pozadini… ({broj} s)', { broj: Math.round((Date.now() - pocetak) / 1000) });
+          }
+        } else {
+          var poruka = _T('vr_nedostupan', 'Izračun nije dostupan') + (d && d.error ? ': ' + telEsc(d.error) : '.');
+          if (!vrijednostZadnje) box.innerHTML = '<span class="tel-muted">' + poruka + '</span>';
+          else if (info) info.textContent = vrijednostInfo(vrijednostZadnje).replace(' · ' + _T('vr_osvjezavam', 'osvježavam…'), '')
+            + ' · ' + _T('vr_osvjezavanje_palo', 'osvježavanje nije uspjelo');
           return;
         }
-        box.className = 'tel-box';
-        box.innerHTML = vrijednostHtml(d);
-        if (info) info.textContent = (d.izvor === 'kes' ? _T('iz_kesa', 'iz keša') : _T('svjez_izracun', 'svjež izračun'))
-          + (d.staroS ? ' · ' + _Tv('star_n_s', 'star {broj} s', { broj: d.staroS }) : '')
-          + ' · ' + _Tv('vr_n_upita', '{broj} upita', { broj: d.upita || 0 });
-      } catch (e) {
-        box.innerHTML = '<span class="tel-muted">' + _T('vr_nedostupan', 'Izračun nije dostupan') + '.</span>';
+        if (Date.now() - pocetak > VRIJEDNOST_ROK_MS) {
+          if (!vrijednostZadnje) {
+            box.innerHTML = '<span class="tel-muted">' + _T('vr_traje_dugo', 'Izračun traje dulje od 3 min (stroj je opterećen). Rezultat će se pojaviti sam; pokušaj „Osvježi” kasnije.') + '</span>';
+          } else if (info) {
+            info.textContent = vrijednostInfo(vrijednostZadnje).replace(' · ' + _T('vr_osvjezavam', 'osvježavam…'), '')
+              + ' · ' + _T('vr_novi_jos_traje', 'novi izračun još traje');
+          }
+          return;
+        }
+        if (currentTab !== 'potrosnja') return;   // napuštena kartica ne pita poslužitelj
+        await vrijednostSpavaj(VRIJEDNOST_POLL_MS);
+        if (gen !== vrijednostGen) return;
       }
+    }
+
+    /** Vrijednost za popis projekata (chip ∑) — isti izvor, pita ponovno dok se računa. */
+    var vrijednostProjektiUTijeku = false;
+    async function dohvatiVrijednostZaProjekte() {
+      if (vrijednostProjektiUTijeku) return;
+      vrijednostProjektiUTijeku = true;
+      var pocetak = Date.now();
+      try {
+        while (Date.now() - pocetak < VRIJEDNOST_ROK_MS) {
+          var r = await fetch('/api/vrijednost-inputa');
+          if (r.status === 200) {
+            var d = await r.json();
+            if (d && !d.error) vrijednostPrimijeni(d);
+            if (!d || !d.osvjezava) return;
+          } else if (r.status !== 202) {
+            return;
+          }
+          if (currentTab !== 'projects' && currentTab !== 'potrosnja') return;
+          await vrijednostSpavaj(5000);
+        }
+      } catch (e) { /* vrijednost je dodatak; njezin izostanak ne ruši popis */ }
+      finally { vrijednostProjektiUTijeku = false; }
     }
 
     (function initVrijednost() {
@@ -5828,12 +5911,29 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     }
 
     /** Popuni odjeljak „Tko je radio" u panelu projekta (vrijednost po cjeniku S1–S6). */
-    async function projOsobe(projectId) {
+    async function projOsobe(projectId, pokusaj) {
       var el = document.getElementById('projekt-osobe');
       if (!el) return;
+      pokusaj = pokusaj || 0;
       try {
-        var r = await fetch('/api/vrijednost-inputa');
-        var d = await r.json();
+        var d = vrijednostZadnje;
+        if (!d) {
+          var r = await fetch('/api/vrijednost-inputa');
+          // TASK-5230: 202 = računa se u pozadini — reci to i pitaj ponovno, ne „nema upita".
+          if (r.status === 202 && pokusaj < 36) {
+            el.innerHTML = '<div class="tel-sec-title">' + _T('prj_tko_je_radio', 'Tko je radio') + '</div>'
+              + '<div class="tel-muted">' + _T('racunam', 'Računam…') + '</div>';
+            setTimeout(function () {
+              var sada = document.getElementById('projekt-osobe');
+              if (sada && sada.getAttribute('data-projekt') === projectId) projOsobe(projectId, pokusaj + 1);
+            }, 5000);
+            el.setAttribute('data-projekt', projectId);
+            return;
+          }
+          d = await r.json();
+          if (r.ok && d && !d.error) vrijednostPrimijeni(d);
+        }
+        el.setAttribute('data-projekt', projectId);
         var v = d && d.poProjektu && d.poProjektu[projectId];
         if (!v || !v.poKorisniku || !Object.keys(v.poKorisniku).length) {
           el.innerHTML = '<div class="tel-sec-title">' + _T('prj_tko_je_radio', 'Tko je radio') + '</div>'
@@ -5851,7 +5951,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
             + ' · ' + String(udio).replace('.', ',') + ' %');
         });
         html += '</div><div class="tel-muted" style="font-size:0.72rem;margin-top:0.3rem;">'
-          + _T('prj_vrijednost_opis', 'Vrijednost po cjeniku S1–S6 (procjena isporučenog rada), ne trošak modela.') + '</div>';
+          + _T('prj_vrijednost_opis', 'Vrijednost ljudskog rada po cjeniku S1–S6 (procjena isporučenog rada, bez PDV-a), ne trošak modela.') + '</div>';
         el.innerHTML = html;
       } catch (e) {
         el.innerHTML = '<div class="tel-sec-title">' + _T('prj_tko_je_radio', 'Tko je radio') + '</div>'
@@ -6126,6 +6226,9 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       if (popisTrosakUTijeku) return;
       if (!force && popisTrosak && (sad - popisTrosakTs) < POPIS_TROSAK_TTL_MS) return;
       popisTrosakUTijeku = true;
+      // TASK-5230: vrijednost ljudskog rada (chip ∑) ne smije ovisiti o tome je li cost_log dostupan —
+      // prije se dohvaćala tek nakon uspjeha troška, pa je pad troška gasio i ljudski rad.
+      dohvatiVrijednostZaProjekte();
       try {
         // TASK-3691: izvor je /api/projects/trosak (cost_log, UKUPNO po projektu), a ne
         // tjedni pregled u prozoru od 30 dana. Projekt na kojem se radilo prije prozora
@@ -6155,9 +6258,6 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         renderProjects();
         // Vrijednost po cjeniku S1–S6 dolazi iz drugog izvora (transkripti, ne cost_log),
         // pa se dohvaća zasebno i ne smije zadržati crtanje popisa ako izračun traje.
-        fetch('/api/vrijednost-inputa').then(function (r) { return r.json(); }).then(function (d) {
-          if (d && d.poProjektu) { popisVrijednost = d.poProjektu; renderProjects(); }
-        }).catch(function () { /* vrijednost je dodatak; njezin izostanak ne ruši popis */ });
         return;
       } catch (err) {
         // Brojka troška je dodatak; njezin izostanak ne smije srušiti popis projekata.
@@ -6170,7 +6270,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     function projectVrijednostChip(projectId) {
       // Vrijednost isporučenog rada po vlasnikovu cjeniku S1–S6 — NIJE trošak modela.
       // Dvije brojke stoje jedna uz drugu na kartici i namjerno se ne zbrajaju.
-      var naslov = _T('chip_vrijednost_naslov', 'vrijednost korisničkih upita po cjeniku S1–S6 (procjena isporučenog rada, ne trošak modela)');
+      var naslov = _T('chip_vrijednost_naslov', 'vrijednost ljudskog rada — korisnički upiti po cjeniku S1–S6 (procjena isporučenog rada, bez PDV-a, ne trošak modela)');
       if (!popisVrijednost) {
         return '<span class="project-count c-vrijednost is-racuna" title="' + _esc(naslov + ' — ' + _T('chip_racuna_se', 'računa se')) + '">&#8721; <b>&hellip;</b></span>';
       }
@@ -13645,38 +13745,18 @@ function getTrosakDb(): Database | null {
  * i namjerno se ne zbrajaju. Izračun radi `tools/vrijednost_inputa.py` nad transkriptima
  * (živi + arhiv); traje ~6 s, pa se drži u kešu 10 minuta i ploča ga ne čeka pri svakom crtanju.
  */
-const VRIJEDNOST_TTL_MS = 10 * 60_000
-let vrijednostKes: { u: number; podatci: any } | null = null
+// TASK-5230: izračun u pozadini (VrijednostInputa.ts) — nad većom arhivom python traje desetke
+// sekundi, a Bun idleTimeout je 10 s; sinkroni poziv je prekidao vezu i kartica je vječno
+// stajala na „Računam…". Alat se traži prvo UZ PAKET (samostalna instalacija na nodu), pa u
+// repozitoriju sustava (TM_SUSTAV_DIR) — isti redoslijed kao TjedniPregled.prviPostojeci.
+const vrijednostDeps = createVrijednostDeps(
+  nadjiAlat([join(import.meta.dir, '..', 'tools', 'vrijednost_inputa.py'), sustavPutanja('tools/vrijednost_inputa.py')]),
+  stanjePutanja('vrijednost_inputa_kes.json'))
+const vrijednostStanje = createVrijednostState(vrijednostDeps)
 
 async function handleVrijednostInputa(url: URL): Promise<Response> {
-  const force = url.searchParams.get('force') === '1'
-  if (!force && vrijednostKes && Date.now() - vrijednostKes.u < VRIJEDNOST_TTL_MS) {
-    return json({ ...vrijednostKes.podatci, izvor: 'kes',
-                  staroS: Math.round((Date.now() - vrijednostKes.u) / 1000) })
-  }
-  // Alat se traži prvo UZ PAKET (samostalna instalacija na nodu), pa u repozitoriju sustava
-  // (`TM_SUSTAV_DIR`) — isti redoslijed kao TjedniPregled.prviPostojeci. Bez toga je ruta na
-  // nodovima vraćala 503 jer ondje mapa repozitorija sustava ne postoji.
-  const kandidati = [
-    join(import.meta.dir, '..', 'tools', 'vrijednost_inputa.py'),
-    sustavPutanja('tools/vrijednost_inputa.py'),
-  ].filter((p): p is string => p !== null)
-  const alat = kandidati.find(p => existsSync(p))
-  if (!alat) return json({ error: 'alat nije pronađen', trazeno: kandidati }, 503)
-  try {
-    const proc = Bun.spawn(['python3', alat, '--json'], { stdout: 'pipe', stderr: 'pipe' })
-    const izlaz = await new Response(proc.stdout).text()
-    const kod = await proc.exited
-    if (kod !== 0) {
-      const greska = await new Response(proc.stderr).text()
-      return json({ error: 'izračun nije uspio', detalj: greska.slice(-400) }, 500)
-    }
-    const podatci = JSON.parse(izlaz)
-    vrijednostKes = { u: Date.now(), podatci }
-    return json({ ...podatci, izvor: 'izracun', staroS: 0 })
-  } catch (e) {
-    return json({ error: String(e) }, 500)
-  }
+  const o = await resolveVrijednost({ force: url.searchParams.get('force') === '1' }, vrijednostStanje, vrijednostDeps)
+  return json(o.body, o.http)
 }
 
 /**

@@ -255,7 +255,7 @@
   "chip_trosak_naslov": "ukupna potrošnja projekta (cost_log: agentski spawnovi + uvezeni telegramski zahtjevi)",
   "chip_u_radu": "u radu",
   "chip_ucitava_se": "učitava se",
-  "chip_vrijednost_naslov": "vrijednost korisničkih upita po cjeniku S1–S6 (procjena isporučenog rada, ne trošak modela)",
+  "chip_vrijednost_naslov": "vrijednost ljudskog rada — korisnički upiti po cjeniku S1–S6 (procjena isporučenog rada, bez PDV-a, ne trošak modela)",
   "chip_zadnje_izvodjenje": "zadnje izvođenje {kada}",
   "chip_zadnjih_30": "zadnjih 30 dana {iznos} € iz {broj} izvođenja",
   "close": "Zatvori",
@@ -551,7 +551,7 @@
   "prj_status_on_hold": "Na čekanju",
   "prj_tko_je_radio": "Tko je radio",
   "prj_trenutno": "Trenutno:",
-  "prj_vrijednost_opis": "Vrijednost po cjeniku S1–S6 (procjena isporučenog rada), ne trošak modela.",
+  "prj_vrijednost_opis": "Vrijednost ljudskog rada po cjeniku S1–S6 (procjena isporučenog rada, bez PDV-a), ne trošak modela.",
   "prj_zadnji_rad": "Zadnji rad:",
   "probaj_bez_upisa": "Probaj (bez upisa)",
   "processed": "Obrađeno:",
@@ -741,7 +741,7 @@
   "unassigned": "Bez izvršitelja",
   "upravo_sad": "upravo sad",
   "uptime": "U pogonu:",
-  "vr_cjenik": "Cjenik:",
+  "vr_cjenik": "Cjenik (bez PDV-a):",
   "vr_n_upita": "{broj} upita",
   "vr_nedostupan": "Izračun nije dostupan",
   "vr_razdoblje": "razdoblje",
@@ -931,5 +931,10 @@
   "cfg_raspored_zadano_spremljen": "Vraćen zadani raspored.",
   "cfg_raspored_spremljen": "Raspored spremljen ({izmjena}).",
   "cfg_raspored_ponisteno": "Poništeno: {izmjena}.",
-  "cfg_raspored_vrati": "Vrati"
+  "cfg_raspored_vrati": "Vrati",
+  "vr_osvjezavam": "osvježavam…",
+  "vr_racuna_n_s": "Računam u pozadini… ({broj} s)",
+  "vr_osvjezavanje_palo": "osvježavanje nije uspjelo",
+  "vr_traje_dugo": "Izračun traje dulje od 3 min (stroj je opterećen). Rezultat će se pojaviti sam; pokušaj „Osvježi” kasnije.",
+  "vr_novi_jos_traje": "novi izračun još traje"
 }

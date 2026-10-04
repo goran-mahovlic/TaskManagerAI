@@ -255,7 +255,7 @@
   "chip_trosak_naslov": "total project spending (cost_log: agent spawns + imported Telegram requests)",
   "chip_u_radu": "in progress",
   "chip_ucitava_se": "loading",
-  "chip_vrijednost_naslov": "value of user queries by the S1–S6 price list (an estimate of delivered work, not the cost of the model)",
+  "chip_vrijednost_naslov": "value of human work — user queries by the S1–S6 price list (an estimate of delivered work, excl. VAT, not the cost of the model)",
   "chip_zadnje_izvodjenje": "last run {kada}",
   "chip_zadnjih_30": "last 30 days {iznos} € from {broj} runs",
   "close": "Close",
@@ -551,7 +551,7 @@
   "prj_status_on_hold": "On hold",
   "prj_tko_je_radio": "Who worked on it",
   "prj_trenutno": "Currently:",
-  "prj_vrijednost_opis": "Value by the S1–S6 price list (an estimate of delivered work), not the cost of the model.",
+  "prj_vrijednost_opis": "Value of human work by the S1–S6 price list (an estimate of delivered work, excl. VAT), not the cost of the model.",
   "prj_zadnji_rad": "Last work:",
   "probaj_bez_upisa": "Dry run",
   "processed": "Processed:",
@@ -741,7 +741,7 @@
   "unassigned": "Unassigned",
   "upravo_sad": "just now",
   "uptime": "Uptime:",
-  "vr_cjenik": "Price list:",
+  "vr_cjenik": "Price list (excl. VAT):",
   "vr_n_upita": "{broj} queries",
   "vr_nedostupan": "The computation is unavailable",
   "vr_razdoblje": "period",
@@ -931,5 +931,10 @@
   "cfg_raspored_zadano_spremljen": "Default layout restored.",
   "cfg_raspored_spremljen": "Layout saved ({izmjena}).",
   "cfg_raspored_ponisteno": "Discarded: {izmjena}.",
-  "cfg_raspored_vrati": "Undo"
+  "cfg_raspored_vrati": "Undo",
+  "vr_osvjezavam": "refreshing…",
+  "vr_racuna_n_s": "Computing in the background… ({broj} s)",
+  "vr_osvjezavanje_palo": "refresh failed",
+  "vr_traje_dugo": "The computation is taking longer than 3 min (the machine is busy). The result will appear by itself; try \"Refresh\" later.",
+  "vr_novi_jos_traje": "a new computation is still running"
 }
