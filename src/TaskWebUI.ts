@@ -10191,14 +10191,17 @@ function ollamaTierGuess(name: string): string {
  *  poslužitelj je prekidao zahtjev prije nego bi fetch odustao, pa je ploča dobivala PRAZAN
  *  odgovor umjesto 200 s `dostupno=false` (TASK-5233, nalaz QA TASK-5219 — nod bez izlaza
  *  prema openrouter.ai, curl 000 nakon 11–15 s). */
-// Isti rok vrijedi i za Ollamin `/api/tags` ispod.
-const KATALOG_ROK_MS = 4000
+// 3 s, ne 4: na nodu bez izlaza (node-A) prvi poziv s rokom 4 s trajao je 4,6 s na toplom i
+// 5,8 s na tek podignutom procesu — premalo zalihe do 10 s i do prihvata od 5 s.
+const KATALOG_ROK_MS = 3000
+/** Ollama je lokalna i bez keša: zadržava svoj dosadašnji rok (i on je ispod 10 s). */
+const OLLAMA_ROK_MS = 4000
 
 // Živi dohvat lokalnih Ollama modela s konfiguriranog servera (kao RAG).
 async function fetchOllamaModels(baseUrl: string, apiKey?: string): Promise<string[]> {
   const url = baseUrl.replace(/\/+$/, '') + '/api/tags'
   const ctrl = new AbortController()
-  const t = setTimeout(() => ctrl.abort(), KATALOG_ROK_MS)
+  const t = setTimeout(() => ctrl.abort(), OLLAMA_ROK_MS)
   try {
     const headers: Record<string, string> = {}
     if (apiKey) headers['Authorization'] = 'Bearer ' + apiKey

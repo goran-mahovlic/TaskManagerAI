@@ -55,7 +55,7 @@ describe('vanjski katalog modela ima rok kraći od idleTimeouta ploče', () => {
   test('odlučitelj: spori katalog → 200 s dostupno=false prije 10 s', async () => {
     const { status, ms, tijelo } = await izmjeri('/api/odlucitelj/config')
     expect(status).toBe(200)
-    expect(ms).toBeLessThan(6_000)
+    expect(ms).toBeLessThan(5_000)
     expect(tijelo.dostupno).toBe(false)
     expect(String(tijelo.greska)).toContain('OpenRouter')
     // Odabrani model ostaje u popisu i kad katalog šuti.
@@ -74,7 +74,7 @@ describe('vanjski katalog modela ima rok kraći od idleTimeouta ploče', () => {
   test('dežurni s OpenRouterom: isti rok, odgovor 200', async () => {
     const { status, ms, tijelo } = await izmjeri('/api/dezurni/config')
     expect(status).toBe(200)
-    expect(ms).toBeLessThan(6_000)
+    expect(ms).toBeLessThan(5_000)
     expect(tijelo.dostupno).toBe(false)
   }, 15_000)
 })

@@ -3,7 +3,7 @@
 - Ispravak: na nodu bez izlaza prema openrouter.ai `GET /api/odlucitelj/config` (i
   `/api/dezurni/config` s davateljem `openrouter`) vraćao je PRAZAN odgovor nakon 11–15 s —
   dohvat kataloga čekao je 15 s, a Bun.serve prekida zahtjev nakon 10 s (`idleTimeout`). Rok
-  vanjskog kataloga je sada `KATALOG_ROK_MS` = 4 s (isti rok i za Ollamin `/api/tags`), a
+  vanjskog kataloga je sada `KATALOG_ROK_MS` = 3 s (Ollamin `/api/tags` zadržava 4 s), a
   katalog se pamti: uspješan 10 min, nedostupan 5 min. Odgovor je 200 s `dostupno: false` i
   greškom, kao na nodu s izlazom.
 - Novo: `TM_OPENROUTER_KATALOG_URL` — adresa kataloga modela (zadano
@@ -11,7 +11,7 @@
 - `/api/gita/health` dobio isti rok (prije bez roka).
 - Ploča kao autora upisa (`by`) šalje neutralno `vlasnik`, ne ime — to se ime upisivalo u
   audit postavki na tuđem nodu. Brana `bez-nasih-vrijednosti` dobila pravilo koje to hvata.
-- Test: `tests/vanjski-katalog-rok.test.ts` (katalog koji šuti 15 s → 200 prije 6 s, drugi
+- Test: `tests/vanjski-katalog-rok.test.ts` (katalog koji šuti 15 s → 200 prije 5 s, drugi
   poziv iz keša ispod 1 s, dežurni isto).
 
 ## 2026-10-04 — nadogradnja instalacije sa bazom izvan zadane putanje (TASK-5218)
