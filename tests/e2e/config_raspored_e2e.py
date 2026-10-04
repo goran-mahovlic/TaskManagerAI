@@ -7,9 +7,13 @@ touch-move, pa se na mobilnom prikazu (390 px, has_touch) u Geckou vuče povjerl
 gumbi se diraju povjerljivim dodirom (touchscreen.tap).
 
 Ploča se diže u PRIVREMENOJ instalaciji (nikad 17781): paket — TM_HOME + scripts/init-db.ts;
-pogon — podmetnut HOME sa shemom prepisanom iz žive baze otvorene samo za čitanje.
+pogon — podmetnut HOME sa shemom prepisanom iz žive baze otvorene samo za čitanje. Raspored mapa
+pogona NIJE u paketu (ADR-0001 O1.4): `--raspored` (ili TM_POGON_RASPORED) je mapa s `data/` i
+`config/` RELATIVNO prema HOME, `--ziva-baza` (ili TM_POGON_BAZA) puna putanja žive baze.
 
-  TMPDIR=~/.tmp python3 tests/e2e/config_raspored_e2e.py --nacin paket|pogon [--korijen DIR] [--snimke DIR]
+  TMPDIR=~/.tmp python3 tests/e2e/config_raspored_e2e.py --nacin paket [--korijen DIR] [--snimke DIR]
+  TMPDIR=~/.tmp python3 tests/e2e/config_raspored_e2e.py --nacin pogon --korijen DIR \
+      --raspored <mapa pod HOME> --ziva-baza <baza pogona> [--snimke DIR]
 (TMPDIR mora biti na disku — /tmp je tmpfs od 100 MB i renderer pada, nalaz TASK-5169 §11.)"""
 import asyncio, json, os, random, shutil, sqlite3, subprocess, sys, tempfile, time, urllib.request
 from playwright.async_api import async_playwright
@@ -20,6 +24,8 @@ def arg(ime, zadano=None):
 NACIN = arg('--nacin', 'paket')
 KORIJEN = os.path.abspath(arg('--korijen', os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..')))
 SNIMKE = arg('--snimke')
+RASPORED = arg('--raspored', os.environ.get('TM_POGON_RASPORED'))
+ZIVA_BAZA = arg('--ziva-baza', os.environ.get('TM_POGON_BAZA'))
 rez = []
 
 def provjeri(preg, ime, uvjet, info=''):
@@ -38,12 +44,14 @@ def podigni():
         env.update(TM_PORT=str(port), REGOC_TASKWEBUI_PORT=str(port))
         baza = os.path.join(dom, 'data', 'tasks.db')
     else:
-        for d in ('.tmp', '.claude/regoc/data', '.claude/regoc/config'):
+        if not (RASPORED and ZIVA_BAZA):
+            raise SystemExit('--nacin pogon traži --raspored i --ziva-baza (ili TM_POGON_RASPORED / TM_POGON_BAZA)')
+        for d in ('.tmp', os.path.join(RASPORED, 'data'), os.path.join(RASPORED, 'config')):
             os.makedirs(os.path.join(dom, d), exist_ok=True)
-        ziva = sqlite3.connect('file:' + os.path.expanduser('~/.claude/regoc/data/regoc.db') + '?mode=ro', uri=True)
+        ziva = sqlite3.connect('file:' + os.path.expanduser(ZIVA_BAZA) + '?mode=ro', uri=True)
         shema = [r[0] for r in ziva.execute("SELECT sql FROM sqlite_master WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%' ORDER BY CASE type WHEN 'table' THEN 0 ELSE 1 END")]
         ziva.close()
-        baza = os.path.join(dom, '.claude/regoc/data/regoc.db')
+        baza = os.path.join(dom, RASPORED, 'data', os.path.basename(ZIVA_BAZA))
         t = sqlite3.connect(baza)
         for s in shema:
             try: t.execute(s)

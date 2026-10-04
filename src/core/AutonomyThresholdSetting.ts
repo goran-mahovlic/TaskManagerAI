@@ -1,5 +1,5 @@
 // ─── AutonomyThresholdSetting ────────────────────────────────────────────────
-// TASK-5028 (Goran, 24.09.2026.). Pragovi vrata autonomije (sesija 70/85/95 %, tjedan 90 %)
+// TASK-5028 (vlasnik, 24.09.2026.). Pragovi vrata autonomije (sesija 70/85/95 %, tjedan 90 %)
 // su POSTAVKA TaskManagera, ne konstante u kodu: mijenjaju se uživo s Config stranice
 // (`PUT /api/config/autonomy`), preživljavaju restart i dolaze s paketom (TaskManagerAI).
 // Isti obrazac kao strop usporednih agenata (ConcurrencySetting.ts, TASK-5015): tablica
@@ -8,7 +8,7 @@
 // ŠTO SE OVDJE MIJENJA, A ŠTO NE:
 //   • mijenjaju se samo BROJEVI na kojima vrata mijenjaju razinu;
 //   • semantika vrata ostaje u `WorkStateJournal.ts` i NE dira se: stara/nepostojeća snimka
-//     i dalje zatvara vrata (fail-CLOSED), 429/`rejected` i dalje tvrdi stop, Goranov nalog
+//     i dalje zatvara vrata (fail-CLOSED), 429/`rejected` i dalje tvrdi stop, vlasnikov nalog
 //     (`spawnOnRequest`) i dalje prolazi na tjednom stropu.
 //
 // VALIDACIJA: cijeli postoci 10–100, sesijski strogo rastući (autonomija < oprez < blokada);
@@ -30,7 +30,7 @@ export interface AutonomyThresholds {
   sessionCaution: number
   /** Iznad ovoga: samo odgovaranje, ništa se ne izvršava. */
   sessionBlock: number
-  /** Tjedni strop: gasi SAMO autonomiju; Goranov nalog i dalje prolazi. */
+  /** Tjedni strop: gasi SAMO autonomiju; vlasnikov nalog i dalje prolazi. */
   weeklyBlock: number
 }
 

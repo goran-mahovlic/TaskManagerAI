@@ -10,7 +10,7 @@ pogon 17781), provjerava se gumb Odustani (ne samo Esc), cijela tablica settings
 redci settings_history, drugi otvoreni prozor (WS) i završno stanje = početno (Zadano).
 
   TMPDIR=~/.tmp python3 tests/e2e/qa_5171_config_raspored.py --url http://127.0.0.1:17781 \
-      --baza ~/.claude/regoc/data/regoc.db --oznaka pogon --snimke DIR
+      --baza <baza pogona> --oznaka pogon --snimke DIR
   TMPDIR=~/.tmp python3 tests/e2e/qa_5171_config_raspored.py --paket KORIJEN --oznaka paket --snimke DIR
 """
 import asyncio, json, os, random, shutil, sqlite3, subprocess, sys, tempfile, time, urllib.request

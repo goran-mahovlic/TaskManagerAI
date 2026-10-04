@@ -606,7 +606,7 @@
         {
           "agent": "izvorni",
           "uloga": "dorada",
-          "opis": "Primijeni SAMO primjedbe na postojeću isporuku (izvorni zadatak je u oznaci `dorada-od:<ID>`); ne radi ispočetka — kopiraj i izmijeni (lekcija SportAI). Izlaz: nova inačica s oznakom verzije i popis što je promijenjeno.",
+          "opis": "Primijeni SAMO primjedbe na postojeću isporuku (izvorni zadatak je u oznaci `dorada-od:<ID>`); ne radi ispočetka — kopiraj i izmijeni. Izlaz: nova inačica s oznakom verzije i popis što je promijenjeno.",
           "treba": [
             "alate",
             "pisanje"
