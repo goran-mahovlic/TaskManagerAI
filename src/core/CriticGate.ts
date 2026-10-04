@@ -40,6 +40,10 @@ import { isTestRuntime } from './LiveDbGuard'
 import { konfigPutanja, stanjePutanja, PAKET_DIR } from './paths'
 // W3/TASK-4615: unakrsna provjera tvrdnji gleda POLJE `datoteke` kad ga ima (v. crossCheckClaims).
 import { ocijeniIzlazKoraka } from './StepSchema'
+import {
+  citajAtribuciju, nadjiTranskripte, razlogIzvanOpsega, jeZateceniPad, citajSveZapise, relativnoNaHome,
+  type OpsegMode, type RazlogIzvan, type LedgerZapis,
+} from './KriticarOpseg'
 
 const HOME = process.env.HOME || homedir()
 
@@ -153,6 +157,17 @@ export interface CriticConfig {
   doc2TimeoutMs: number
   /** Osigurač po dokumentu → `--max-budget-usd`. MEK je: probio granicu 1,7× (§3.5 H). */
   doc2BudgetUsd: number
+  /**
+   * OPSEG provjera (TASK-5235): kritičar pokreće propisanu provjeru + raščlambu/test SAMO
+   * za datoteke koje je OVAJ spawn dirao (transkript), bez snimki koda u docs/, a pad koji
+   * je postojao i prije starta je napomena. `off` = staro (sve po mtimeu), `shadow` = stari
+   * sud odlučuje, novi se računa i bilježi uz njega, `on` = novi sud odlučuje.
+   * KREĆE U `shadow` (nalog vlasnika: „sjena prvo"). Izmjereno 04.10.2026.: 4 lažna
+   * CRITIC_FAILED u jednom danu (TASK-5210/5215/5217/5220). Dizajn: docs/KRITICAR-opseg-provjera.md.
+   */
+  opsegMode: OpsegMode
+  /** Koliko daleko unatrag zapis traga smije dokazivati zatečeni pad. */
+  opsegLookbackDays: number
 }
 
 export const DEFAULT_CRITIC_CONFIG: CriticConfig = {
@@ -189,6 +204,8 @@ export const DEFAULT_CRITIC_CONFIG: CriticConfig = {
   doc2Agent: 'kriticar',
   doc2TimeoutMs: 240_000,
   doc2BudgetUsd: 0.25,
+  opsegMode: 'shadow',
+  opsegLookbackDays: 14,
 }
 
 /** Dopuštene vrijednosti `docMode` — sve ostalo je tipfeler, a tipfeler ne smije ugasiti vrata. */
@@ -231,6 +248,8 @@ export function loadCriticConfig(path = CRITIC_CONFIG_PATH, force = false): Crit
   // Isto pravilo za L2, ali s obrnutim predznakom sigurnosti: nepoznata vrijednost pada na
   // `off`, jer bi tipfeler koji upali L2 počeo trošiti novac bez ijedne odluke.
   if (!(DOC_MODES as readonly string[]).includes(cfg.doc2Mode)) cfg.doc2Mode = DEFAULT_CRITIC_CONFIG.doc2Mode
+  // Opseg (TASK-5235): tipfeler pada na `shadow` — ni tiho gašenje sjene ni tiho uključivanje.
+  if (!(DOC_MODES as readonly string[]).includes(cfg.opsegMode)) cfg.opsegMode = DEFAULT_CRITIC_CONFIG.opsegMode
   _cfgCache = cfg
   _cfgLoadedAt = now
   _cfgFrom = path
@@ -281,6 +300,11 @@ export interface ScanRoot {
    * kakvo je agent zatekao, sve poslije je njegov rad.
    */
   sinceMs?: number
+  /**
+   * Korijen u kojem piše SAMO ovaj spawn (A1 worktree). Sve izmijenjeno u njemu pripada
+   * spawnu i bez transkripta (TASK-5235); dijeljeno stablo projekta to NIJE.
+   */
+  vlastiti?: boolean
 }
 
 export type ExtraRoot = string | ScanRoot
@@ -1233,6 +1257,11 @@ export interface CheckResult extends PlannedCheck {
   errorLine: string
   /** Izmjereno iz izlaza `bun test`, kad postoji. */
   measured?: { pass: number; fail: number }
+  /**
+   * Pad koji je postojao i PRIJE starta spawna (TASK-5235) — napomena, ne kvar zadatka.
+   * Postavlja ga samo opseg; `judge` ga ne broji u `failed`.
+   */
+  zatecen?: string
 }
 
 const TEST_TALLY_RE = /(\d+)\s+pass\b[\s\S]{0,200}?(\d+)\s+fail\b/i
@@ -1493,7 +1522,8 @@ export function judge(
   const docShadow = cfg.docMode === 'shadow'
   const doc2Shadow = cfg.doc2Mode === 'shadow'
   const docSjena = (c: CheckResult) => (docShadow && c.kind === 'doc') || (doc2Shadow && c.kind === 'doc2')
-  const failed = checks.filter((c) => !c.ok && !c.skipped && !notRun(c) && !docSjena(c))
+  const failed = checks.filter((c) => !c.ok && !c.skipped && !notRun(c) && !docSjena(c) && !c.zatecen)
+  const zateceni = checks.filter((c) => !c.ok && c.zatecen)
   const skipped = checks.filter((c) => c.skipped)
   const ms = checks.reduce((a, c) => a + c.ms, 0)
 
@@ -1583,7 +1613,8 @@ export function judge(
     ...base,
     status: 'pass',
     blocking: false,
-    reason: `Sve provjere prošle (${checks.length}, ${ms} ms) — pokrenuo ih je kritičar, ne izvođač.${docRep}`,
+    reason: `Sve provjere prošle (${checks.length}, ${ms} ms) — pokrenuo ih je kritičar, ne izvođač.${docRep}`
+      + (zateceni.length ? ` Zatečeni padovi (${zateceni.length}) postojali su i prije starta — nisu kvar ovog zadatka: ${zateceni.slice(0, 3).map((c) => basename(c.target)).join(', ')}.` : ''),
   }
 }
 
@@ -1747,6 +1778,29 @@ export interface LedgerRound {
    */
   razina?: 'L0' | 'L1' | 'L2'
   docChecked?: string[]
+  /**
+   * TASK-5235: `<vrsta>:<relativni put>` provjera koda koje su PROŠLE i broj palih testova
+   * po potpisu. Bez njih zatečeni pad ne bi razlikovao „pada od prije" od „pao pa popravljen".
+   */
+  prosle?: string[]
+  failCounts?: Record<string, number>
+  /** TASK-5235: sud opsega uz stari (u sjeni oba, uživo samo novi). */
+  opseg?: OpsegIshod
+}
+
+/** Ishod opsega provjera (TASK-5235) — ide u trag, u log i u `CritiqueOutcome`. */
+export interface OpsegIshod {
+  nacin: OpsegMode
+  /** Sud po starom pravilu (sve po mtimeu); u načinu `on` se ne računa. */
+  staro?: CriticStatus
+  /** Sud po novom pravilu. */
+  novo: CriticStatus
+  /** Izmijenjene datoteke koje NE ulaze u provjere, s razlogom. */
+  izbaceno: Array<{ path: string; razlog: RazlogIzvan }>
+  /** Padovi koji su postojali i prije starta spawna. */
+  zateceni: Array<{ sig: string; izvor: string }>
+  /** `transkript(n)` ili `nedostupna` (tada vrijedi staro pravilo po mtimeu). */
+  atribucija: string
 }
 
 export type NextAction =
@@ -1875,6 +1929,13 @@ export interface CritiqueInput {
    * naredba pokrenuta u nepoznatom stablu ne dokazuje ništa.
    */
   rootDir?: string
+  /**
+   * TASK-5235: session-id spawna (`claude --session-id`). Iz njega se čita transkript i
+   * zna što je OVAJ spawn dirao. Bez njega (i bez `transcripts`) atribucija je nedostupna.
+   */
+  spawnSessionId?: string
+  /** Izravni putovi transkripata (testovi/CLI); imaju prednost pred `spawnSessionId`. */
+  transcripts?: string[]
 }
 
 export interface CritiqueOutcome {
@@ -1890,6 +1951,8 @@ export interface CritiqueOutcome {
    * kad sud NIJE ništa provjerio (`unverifiable`/`partial`); ulaz u dojavu korisniku.
    */
   reasons: string[]
+  /** TASK-5235: sud opsega (nema ga kad je `opsegMode=off`). */
+  opseg?: OpsegIshod
 }
 
 /** Prefiksi razloga — strojno čitljivi, u duhu NEEDS_CONTEXT:/BLOCKED: iz CompletionGuarda. */
@@ -1931,13 +1994,26 @@ export async function critiqueSpawnAsync(
   return finalizeCritique(input, cfg, prep, checks)
 }
 
-interface ScanPrep { scan: ScanResult; plan: PlannedCheck[]; notes: string[]; declaredIssues: DeclaredIssue[] }
+interface OpsegPrep {
+  nacin: OpsegMode
+  atribucija: string
+  izbaceno: Array<{ path: string; razlog: RazlogIzvan }>
+  /** Ključevi provjera koje ulaze u NOVI sud (u sjeni se po njima filtrira). */
+  kljucevi: Set<string>
+}
+interface ScanPrep { scan: ScanResult; plan: PlannedCheck[]; notes: string[]; declaredIssues: DeclaredIssue[]; opseg?: OpsegPrep }
+
+/** Identitet provjere: ista vrsta, cilj i naredba = ista provjera. */
+function kljucProvjere(c: PlannedCheck): string {
+  return `${c.kind}|${c.target}|${c.cmd.join(' ')}`
+}
 
 function prepareScan(input: CritiqueInput, cfg: CriticConfig): ScanPrep {
   const notes: string[] = []
   const declaredIssues: DeclaredIssue[] = []
   let scan: ScanResult = { files: [], truncated: 0, missingRoots: [] }
   let plan: PlannedCheck[] = []
+  let opseg: OpsegPrep | undefined
   try {
     const extraRoots = input.extraRoots ?? []
     scan = scanChangedFiles(input.sinceMs, cfg, extraRoots)
@@ -1967,11 +2043,41 @@ function prepareScan(input: CritiqueInput, cfg: CriticConfig): ScanPrep {
       if (declaredIssues.length) notes.push(`propisana provjera se NE MOŽE izvesti: ${declaredIssues.map((i) => `„${i.raw}" — ${i.reason}`).join('; ')}`)
     }
 
-    plan = planChecks(scan.files, cfg, existsSync, declaredResolved, {
+    const docCtx = {
       sections: declared?.sections || [],
       docTargets: declared?.docTargets || [],
       ...(input.taskDescription ? { taskDescription: input.taskDescription } : {}),
-    })
+    }
+    plan = planChecks(scan.files, cfg, existsSync, declaredResolved, docCtx)
+
+    // TASK-5235: opseg. Propisane provjere su uvijek u opsegu (planChecks ih stavlja prve,
+    // neovisno o datotekama); izbacuju se samo datoteke koje ovaj spawn nije dirao i snimke.
+    if (cfg.opsegMode !== 'off') {
+      const transkripti = input.transcripts ?? (input.spawnSessionId ? nadjiTranskripte(input.spawnSessionId) : [])
+      const atrib = citajAtribuciju(transkripti)
+      const vlastiti = extraRoots.filter((r): r is ScanRoot => typeof r !== 'string' && !!r?.vlastiti).map((r) => r.path)
+      const izbaceno: OpsegPrep['izbaceno'] = []
+      const uOpsegu = scan.files.filter((f) => {
+        const razlog = razlogIzvanOpsega(f.path, atrib, vlastiti)
+        if (razlog) izbaceno.push({ path: f.path, razlog })
+        return !razlog
+      })
+      const planNovi = planChecks(uOpsegu, cfg, existsSync, declaredResolved, docCtx)
+      opseg = {
+        nacin: cfg.opsegMode,
+        atribucija: atrib ? `transkript(${atrib.izvori.length})` : 'nedostupna',
+        izbaceno,
+        kljucevi: new Set(planNovi.map(kljucProvjere)),
+      }
+      if (cfg.opsegMode === 'on') {
+        plan = planNovi
+        if (izbaceno.length) {
+          const po = (r: RazlogIzvan) => izbaceno.filter((i) => i.razlog === r).length
+          notes.push(`izvan opsega (${izbaceno.length}; snimka-koda ${po('snimka-koda')}, nije-dirao ${po('nije-dirao')}) — ne pokreće se: ${izbaceno.slice(0, 5).map((i) => basename(i.path)).join(', ')}`)
+        }
+        if (!atrib) notes.push('atribucija nedostupna (nema transkripta spawna) — tuđe izmjene se ne mogu odvojiti, vrijedi pravilo po mtimeu')
+      }
+    }
     const docPlanned = plan.filter((p) => p.kind === 'doc')
     if (docPlanned.length) {
       notes.push(`doc-provjera (${cfg.docMode}) nad ${docPlanned.length} dokumentom/a${(declared?.sections || []).length ? `, traženi odsjeci: ${declared!.sections.join(', ')}` : ''}`)
@@ -1979,10 +2085,11 @@ function prepareScan(input: CritiqueInput, cfg: CriticConfig): ScanPrep {
   } catch (e: any) {
     notes.push(`kritičar je pao na vlastitoj grešci: ${String(e?.message || e).slice(0, 200)}`)
   }
-  return { scan, plan, notes, declaredIssues }
+  return { scan, plan, notes, declaredIssues, ...(opseg ? { opseg } : {}) }
 }
 
-function finalizeCritique(input: CritiqueInput, cfg: CriticConfig, prep: ScanPrep, checks: CheckResult[]): CritiqueOutcome {
+function finalizeCritique(input: CritiqueInput, cfg: CriticConfig, prep: ScanPrep, checksIn: CheckResult[]): CritiqueOutcome {
+  let checks = checksIn
   const taskId = input.taskId || 'bez-zadatka'
   const { scan, notes } = prep
   const claims = crossCheckClaims(input.resultText || '', scan.files)
@@ -2004,7 +2111,43 @@ function finalizeCritique(input: CritiqueInput, cfg: CriticConfig, prep: ScanPre
     notes.push(`u istom stablu radi još ${concurrent} spawn(ova) — atribucija po mtimeu nije čista, sud NE obvezuje (rješenje: A1 worktreeIsolationLive)`)
   }
 
-  const verdict = judge(checks, scan, notes, prep.declaredIssues, cfg)
+  // TASK-5235: zatečeni padovi i sud opsega. U sjeni stari sud odlučuje, novi se računa nad
+  // ISTIM rezultatima (bez ijednog dodatnog pokretanja) i bilježi uz njega.
+  let opsegIshod: OpsegIshod | undefined
+  let verdict: CriticVerdict
+  if (prep.opseg) {
+    const op = prep.opseg
+    const zapisi = citajSveZapise(criticLedgerPath())
+    const zateceni: OpsegIshod['zateceni'] = []
+    const oznaci = (c: CheckResult): CheckResult => {
+      if (c.ok || c.skipped || c.timedOut || c.exitCode === null) return c
+      if (c.kind !== 'parse' && c.kind !== 'test' && c.kind !== 'json') return c
+      const sig = failureSignature(c)
+      const z = jeZateceniPad({
+        signature: sig, kind: c.kind, relTarget: relativnoNaHome(c.target, HOME), failCount: c.measured?.fail,
+        sinceMs: input.sinceMs, taskId: input.taskId, rows: zapisi, lookbackMs: cfg.opsegLookbackDays * 86_400_000,
+      })
+      if (!z.zatecen) return c
+      zateceni.push({ sig, izvor: z.izvor || '' })
+      return { ...c, zatecen: z.izvor || 'trag' }
+    }
+    const novi = checks.filter((c) => op.kljucevi.has(kljucProvjere(c))).map(oznaci)
+    if (op.nacin === 'on') {
+      if (zateceni.length) notes.push(`zatečen pad (${zateceni.length}) — postojao i prije starta, NE obara zadatak: ${zateceni.slice(0, 3).map((z) => `${z.sig.slice(0, 120)} [${z.izvor}]`).join(' | ')}`)
+      checks = novi
+      verdict = judge(checks, scan, notes, prep.declaredIssues, cfg)
+      opsegIshod = { nacin: 'on', novo: verdict.status, izbaceno: op.izbaceno, zateceni, atribucija: op.atribucija }
+    } else {
+      verdict = judge(checks, scan, notes, prep.declaredIssues, cfg)
+      const sudNovi = judge(novi, scan, [...notes], prep.declaredIssues, cfg)
+      opsegIshod = { nacin: 'shadow', staro: verdict.status, novo: sudNovi.status, izbaceno: op.izbaceno, zateceni, atribucija: op.atribucija }
+      if (verdict.status !== sudNovi.status) {
+        notes.push(`opseg-sjena: novi sud bi bio ${sudNovi.status.toUpperCase()} (izvan opsega ${op.izbaceno.length}, zatečeno ${zateceni.length}, atribucija ${op.atribucija}) — NE odlučuje (opsegMode=shadow)`)
+      }
+    }
+  } else {
+    verdict = judge(checks, scan, notes, prep.declaredIssues, cfg)
+  }
   if (!attributionClean) verdict.blocking = false
   // Povijest se čita SAMO kad zadatak postoji. Bez toga bi svi spawnovi bez zadatka
   // dijelili jednu pretinac-povijest („bez-zadatka") i tuđi ponovljeni kvar bi eskalirao
@@ -2025,6 +2168,16 @@ function finalizeCritique(input: CritiqueInput, cfg: CriticConfig, prep: ScanPre
     : []
 
   const declaredRun = verdict.checks.filter((c) => c.kind === 'task').map((c) => c.cmd.join(' '))
+  // TASK-5235: što je PROŠLO i koliko je palo — ulaz za zatečeni pad sljedećih zadataka.
+  // Bilježe se SVI rezultati koji su stvarno pokrenuti (i u sjeni izvan opsega): stanje
+  // provjere je činjenica o disku, ne o ovom zadatku.
+  const prosle = checksIn
+    .filter((c) => c.ok && (c.kind === 'parse' || c.kind === 'test' || c.kind === 'json'))
+    .map((c) => `${c.kind}:${relativnoNaHome(c.target, HOME)}`).slice(0, 60)
+  const failCounts: Record<string, number> = {}
+  for (const c of checksIn) {
+    if (!c.ok && !c.skipped && c.measured && (c.kind === 'test')) failCounts[failureSignature(c)] = c.measured.fail
+  }
   appendLedger({
     ts: new Date().toISOString(),
     taskId,
@@ -2040,9 +2193,12 @@ function finalizeCritique(input: CritiqueInput, cfg: CriticConfig, prep: ScanPre
     // („koliko je L0 oborio, koliko lažno") ne mora ništa rekonstruirati iz teksta.
     ...(verdict.razina ? { razina: verdict.razina } : {}),
     ...(verdict.docChecked.length ? { docChecked: verdict.docChecked } : {}),
+    ...(prosle.length ? { prosle } : {}),
+    ...(Object.keys(failCounts).length ? { failCounts } : {}),
+    ...(opsegIshod ? { opseg: { ...opsegIshod, izbaceno: opsegIshod.izbaceno.slice(0, 20) } } : {}),
   })
 
-  return { verdict, loop, claims, enforce, blockedReason, reasons }
+  return { verdict, loop, claims, enforce, blockedReason, reasons, ...(opsegIshod ? { opseg: opsegIshod } : {}) }
 }
 
 /** Jedan redak za daemon-log. Način rada (LIVE/PROMATRANJE) je uvijek vidljiv. */
@@ -2055,7 +2211,10 @@ export function formatCritiqueLog(taskId: string | null, o: CritiqueOutcome, liv
   // Razina se ISPISUJE: bez nje se „pass nad dokumentom" ne razlikuje od „pass nad kodom".
   const docs = v.checks.filter((c) => c.kind === 'doc')
   const doc = docs.length ? ` doc=[${docs.map((c) => `${c.ok ? '✓' : c.skipped ? '…' : '✗'} ${basename(c.target)}`).join(' | ')}]${v.razina ? ` razina=${v.razina}` : ''}` : ''
-  return `critic-gate: ${v.status.toUpperCase()} task=${taskId || 'N/A'} checks=${v.checks.length} failed=${v.failed.length} ${v.ms}ms akcija=${o.loop.action}${propisano}${doc} ${live ? (o.enforce ? 'BLOKIRAM' : 'live') : 'PROMATRANJE'}`
+  // TASK-5235: sud opsega uvijek u istom retku — po njemu se mjeri sjena (staro vs novo).
+  const op = o.opseg
+  const opseg = op ? ` opseg[${op.nacin}${op.staro ? ` staro=${op.staro.toUpperCase()}` : ''} novo=${op.novo.toUpperCase()} izvan=${op.izbaceno.length} zateceno=${op.zateceni.length} atrib=${op.atribucija}]` : ''
+  return `critic-gate: ${v.status.toUpperCase()} task=${taskId || 'N/A'} checks=${v.checks.length} failed=${v.failed.length} ${v.ms}ms akcija=${o.loop.action}${propisano}${doc}${opseg} ${live ? (o.enforce ? 'BLOKIRAM' : 'live') : 'PROMATRANJE'}`
 }
 
 /** Izvještaj koji se vraća izvođaču: kvar + točna naredba kojom se reproducira. */

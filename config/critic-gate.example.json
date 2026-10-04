@@ -10,11 +10,28 @@
   "maxFiles": 40,
   "perCheckTimeoutMs": 20000,
   "totalBudgetMs": 90000,
-  "declaredAllowlist": ["python3", "bun", "node", "pytest", "npm", "make"],
-  "docExtensions": [".md", ".txt", ".adoc"],
+  "declaredAllowlist": [
+    "python3",
+    "bun",
+    "node",
+    "pytest",
+    "npm",
+    "make"
+  ],
+  "docExtensions": [
+    ".md",
+    ".txt",
+    ".adoc"
+  ],
   "docMinChars": 800,
   "docMinLines": 12,
   "docMode": "shadow",
-  "docIgnore": ["CHECKPOINT_", "/templates/"],
-  "doc2Mode": "off"
+  "docIgnore": [
+    "CHECKPOINT_",
+    "/templates/"
+  ],
+  "doc2Mode": "off",
+  "_zasto_opseg": "TASK-5235 (vlasnik, 04.10.2026.): kriticar pokrece (a) propisanu [PROVJERA] cmd i (b) parse/test SAMO za datoteke koje je OVAJ spawn dirao (transkript claude --session-id: Write/Edit + spomen u Bash naredbi; A1 worktree = sve). Snimke koda (docs/kod/**, docs/prijedlozi/**, mape snimka*/snapshot*, kod pod docs/ s nerazrijesenim relativnim importom) se ne pokrecu. Pad koji je zadnji tudji zapis traga prije prvog traga zadatka imao s istim potpisom = zatecen (napomena). Bez transkripta: staro pravilo po mtimeu. 'shadow' = stari sud odlucuje, novi se biljezi (critic-gate redak 'opseg[...]' + polje opseg u tragu); 'on' = novi sud odlucuje. Dizajn: docs sustava domaćina, KRITICAR-opseg-provjera.md",
+  "opsegMode": "shadow",
+  "opsegLookbackDays": 14
 }

@@ -153,6 +153,11 @@ export interface FinalizacijaUlaz {
   resultText: string
   /** Trenutak starta spawna — granica „što je ovaj agent dirao". */
   sinceMs: number
+  /**
+   * TASK-5235: session-id spawna (`claude --session-id`). Kritičar iz transkripta zna što je
+   * OVAJ spawn dirao i ne pokreće tuđe testove ni snimke koda u docs/. Neobavezno.
+   */
+  spawnSessionId?: string
   log?: Zapisivac
   fetchFn?: typeof fetch
   /** Ubrizgavanje suda kritičara (test / drukčiji izvor). */
@@ -217,6 +222,7 @@ export async function finalizirajSpawn(u: FinalizacijaUlaz): Promise<Finalizacij
       const ulaz: CritiqueInput = {
         taskId: u.taskId, agentId: u.agentId, sinceMs: u.sinceMs,
         resultText, live: isEnabled('criticGateLive'),
+        ...(u.spawnSessionId ? { spawnSessionId: u.spawnSessionId } : {}),
       }
       kritika = u.kritikaFn
         ? await u.kritikaFn(ulaz)
