@@ -888,6 +888,7 @@
   "cfg_vr_greska_spremanje": "Greška pri spremanju pragova",
   "veza_spojeno": "Spojeno",
   "veza_bez_mreze": "Offline – nema mreže, čekam vezu…",
+  "veza_ploca_stara": "Spojeno – ploča stara {min} min",
   "veza_offline_pokusavam": "Offline – pokušavam ponovo za {s} s…",
   "odl_naslov_skupine": "Čeka odluku",
   "odl_sk_model_n": "{broj} odlučuje model",

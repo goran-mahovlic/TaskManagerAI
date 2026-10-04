@@ -3197,6 +3197,48 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     let unverifiedCache = { day: '', todayCount: 0, tasks: {} };
     let uputeCache = {};   // TASK-5013: {TASK-x: {total, undelivered}}
 
+    // ─── TASK-5198: SVAKI GET IMA ROK ─────────────────────────────────────────
+    // Kvar (QA TASK-5185, crna rupa 90 s): nakon tihog pada mreže stare keep-alive utičnice
+    // ostanu mrtve bez FIN/RST. Chrome po hostu drži najviše 6 HTTP/1.1 utičnica; dohvati
+    // BEZ roka sjede na mrtvima zauvijek, pa je svaki /api/tasks čekao u redu do svog roka
+    // od 60 s — ploča stara ≥ 3,5 min uz zeleno „Spojeno" (WS ima zaseban bazen).
+    // Sada: GET bez signala dobiva zadani rok; kad se WS ponovo spoji, dohvati u letu
+    // stariji od praga se prekidaju (prekid zatvara mrtvu utičnicu i oslobađa mjesto).
+    function napraviFetchSRokom(izvorni, rokMs) {
+      const uLetu = new Set();
+      function f(url, init) {
+        init = init || {};
+        const metoda = String(init.method || 'GET').toUpperCase();
+        const ctl = new AbortController();
+        const vlastiti = init.signal;
+        if (vlastiti) {
+          if (vlastiti.aborted) ctl.abort();
+          else vlastiti.addEventListener('abort', function () { ctl.abort(); }, { once: true });
+        }
+        // Rok traje i dok se čita tijelo: zaglavlja mogu stići, a tijelo zapeti na mrtvoj vezi.
+        const rok = (!vlastiti && metoda === 'GET') ? setTimeout(function () { ctl.abort(); }, rokMs) : null;
+        const zapis = { ctl: ctl, pocetak: Date.now() };
+        uLetu.add(zapis);
+        return izvorni(url, Object.assign({}, init, { signal: ctl.signal })).then(
+          function (r) { uLetu.delete(zapis); return r; },
+          function (e) { uLetu.delete(zapis); if (rok) clearTimeout(rok); throw e; });
+      }
+      function prekiniStare(starijiOdMs) {
+        const sada = Date.now();
+        let n = 0;
+        uLetu.forEach(function (z) {
+          if (sada - z.pocetak >= starijiOdMs) { uLetu.delete(z); z.ctl.abort(); n++; }
+        });
+        return n;
+      }
+      return { fetch: f, prekiniStare: prekiniStare, uLetu: function () { return uLetu.size; } };
+    }
+    const fetchSRokom = napraviFetchSRokom(window.fetch.bind(window), 20000);
+    window.fetch = fetchSRokom.fetch;
+    function rokSignal(ms) {
+      return (typeof AbortSignal !== 'undefined' && AbortSignal.timeout) ? AbortSignal.timeout(ms) : undefined;
+    }
+
     // TASK-3516: NAJNOVIJE NA VRHU — isto pravilo kao na poslužitelju (ChronoOrder.ts).
     // Popisi i padajuće liste na ploči već stižu poredani iz /api/tasks i
     // /api/projects; ove dvije pomoćne funkcije služe mjestima koja skup
@@ -3232,6 +3274,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     // odbrojavanje „Offline – pokušavam za N s…", rok spajanja 15 s, ping svakih 25 s i
     // odbacivanje veze bez poruke 60 s, ponovno spajanje odmah na visible/online.
     var wsStanje = 'spajam';      // spajam | spojeno | offline | bez_mreze
+    var wsBiloSpojeno = false;   // TASK-5198: onopen poslije pada, ne prvo spajanje
     var wsPokusaj = 0, wsTimer = null, wsPingTimer = null, wsZadnjaPoruka = 0, wsSljedeciU = 0;
 
     function renderStanjeVeze() {
@@ -3240,13 +3283,17 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       if (!el) return;
       el.removeAttribute('data-i18n');   // inače ga primijeniJezik() vrati na „Spajam se…"
       let tekst;
-      if (wsStanje === 'spojeno') tekst = _T('veza_spojeno', 'Spojeno');
+      // TASK-5198: „Spojeno" govori o WS-u; ako ploča dugo nije dobila podatke, reci to.
+      const staraMin = (wsStanje === 'spojeno' && tasksZadnjiUspjeh && Date.now() - tasksZadnjiUspjeh > 120000)
+        ? Math.floor((Date.now() - tasksZadnjiUspjeh) / 60000) : 0;
+      if (staraMin) tekst = _Tv('veza_ploca_stara', 'Spojeno – ploča stara {min} min', { min: staraMin });
+      else if (wsStanje === 'spojeno') tekst = _T('veza_spojeno', 'Spojeno');
       else if (wsStanje === 'spajam') tekst = _T('connecting', 'Spajam se…');
       else if (wsStanje === 'bez_mreze') tekst = _T('veza_bez_mreze', 'Offline – nema mreže, čekam vezu…');
       else tekst = _Tv('veza_offline_pokusavam', 'Offline – pokušavam ponovo za {s} s…',
         { s: Math.max(0, Math.ceil((wsSljedeciU - Date.now()) / 1000)) });
       el.textContent = tekst;
-      if (dot) dot.classList.toggle('disconnected', wsStanje !== 'spojeno');
+      if (dot) dot.classList.toggle('disconnected', wsStanje !== 'spojeno' || !!staraMin);
     }
 
     function zaustaviPing() { if (wsPingTimer) { clearInterval(wsPingTimer); wsPingTimer = null; } }
@@ -3310,11 +3357,16 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       sock.onopen = () => {
         clearTimeout(rokSpajanja);
         if (ws !== sock) return;
+        const posliPada = wsBiloSpojeno;
+        wsBiloSpojeno = true;
         wsPokusaj = 0;
         wsZadnjaPoruka = Date.now();
         wsStanje = 'spojeno';
         renderStanjeVeze();
         pokreniPing();
+        // TASK-5198: nova veza radi, a dohvati iz vremena pada sjede na mrtvim utičnicama i
+        // drže bazen (6 po hostu) — prekini ih da ploča odmah dobije svježu vezu.
+        if (posliPada && fetchSRokom.prekiniStare(5000) > 0) tasksJosJednom = true;
         if (!projectsCache.length) fetchProjectsForFilter();
         fetchTasks();   // nadoknadi propušteno dok veze nije bilo (inkrementalno)
       };
@@ -3378,7 +3430,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       wsStanje = 'bez_mreze';
       renderStanjeVeze();
     });
-    setInterval(function () { if (wsStanje === 'offline') renderStanjeVeze(); }, 1000);  // odbrojavanje
+    setInterval(function () { if (wsStanje === 'offline' || wsStanje === 'spojeno') renderStanjeVeze(); }, 1000);  // odbrojavanje, stara ploča
 
     // Send WebSocket message
     function sendWSMessage(message) {
@@ -3398,6 +3450,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     var tasksCounts = null, tasksUkupno = null, tasksServerTime = null;
     var tasksZadnjiPuni = 0, tasksZadnjiProjekt = null, tasksZadnjiVratar = 0;
     var tasksUTijeku = false, tasksJosJednom = false, tasksTraziPuni = false, plocaOsvjeziTimer = null;
+    var tasksZadnjiUspjeh = 0;   // TASK-5198: zadnji uspješan dohvat ploče (zaglavlje)
 
     function zakaziOsvjezavanjePloce() {
       if (plocaOsvjeziTimer) return;
@@ -3435,7 +3488,8 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       if (projekt) url += '&projectId=' + encodeURIComponent(projekt);
       if (!puni) url += '&since=' + encodeURIComponent(tasksServerTime);
       const ctl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
-      const rok = ctl ? setTimeout(function () { ctl.abort(); }, 60000) : null;
+      // TASK-5198: bilo 60 s — na mrtvoj utičnici to je minuta stare ploče po pokušaju.
+      const rok = ctl ? setTimeout(function () { ctl.abort(); }, 20000) : null;
       try {
         const response = await fetch(url, ctl ? { signal: ctl.signal, cache: 'no-store' } : { cache: 'no-store' });
         if (!response.ok) throw new Error('HTTP ' + response.status);
@@ -3450,6 +3504,8 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         tasksCounts = d.counts || null;
         tasksUkupno = (typeof d.ukupno === 'number') ? d.ukupno : null;
         if (d.serverTime) tasksServerTime = d.serverTime;
+        tasksZadnjiUspjeh = Date.now();   // TASK-5198: podaci su svježi, vratar/upute su dodatak
+        renderStanjeVeze();
         // Oznaka „NIJE PROVJERENO" mora stici PRIJE iscrtavanja, inace kartica prvo
         // pokaze zadatak bez oznake pa je doda — a upravo taj trenutak je laz na ploci.
         // (120 KB — uz puni dohvat i najviše svake 2 min, ne uz svaku promjenu.)
@@ -3463,6 +3519,9 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         updateAgentFilter();
       } catch (err) {
         console.error('Failed to fetch tasks:', err);
+        // TASK-5198: istekao rok (mrtva utičnica je sad zatvorena) — ne čekaj 30 s do
+        // sljedećeg kruga, pokušaj odmah novom vezom dok je WS živ.
+        if (err && err.name === 'AbortError' && wsStanje === 'spojeno') tasksJosJednom = true;
       } finally {
         if (rok) clearTimeout(rok);
       }
@@ -3479,7 +3538,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     // TASK-5013: brojači uputa za cijelu ploču (jedan upit). Kvar ne smije isprazniti ploču.
     async function fetchUputeStanje() {
       try {
-        const r = await fetch('/api/upute/stanje');
+        const r = await fetch('/api/upute/stanje', { signal: rokSignal(15000) });
         if (r.ok) uputeCache = await r.json();
       } catch (err) { console.error('Failed to fetch upute:', err); }
     }
@@ -3529,7 +3588,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
 
     async function fetchUnverified() {
       try {
-        const r = await fetch('/api/critic/unverified');
+        const r = await fetch('/api/critic/unverified', { signal: rokSignal(15000) });
         if (!r.ok) return;
         const d = await r.json();
         if (d && d.tasks) unverifiedCache = d;

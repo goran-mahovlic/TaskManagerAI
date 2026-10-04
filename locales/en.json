@@ -888,6 +888,7 @@
   "cfg_vr_greska_spremanje": "Error saving thresholds",
   "veza_spojeno": "Connected",
   "veza_bez_mreze": "Offline – no network, waiting…",
+  "veza_ploca_stara": "Connected – board {min} min old",
   "veza_offline_pokusavam": "Offline – retrying in {s} s…",
   "odl_naslov_skupine": "Awaiting decision",
   "odl_sk_model_n": "{broj} decided by the model",

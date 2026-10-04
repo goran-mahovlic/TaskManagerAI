@@ -64,6 +64,22 @@
   `odl_rok_*`, `odl_u_prolazu`, `odl_prolaz_prazno`, `odl_prolaz_pao` u oba rječnika.
 - Testovi: `tests/odluke-razvrstaj.test.ts` (17), `tests/odlucitelj-isti-filtar.test.ts` (4).
 
+## 2026-10-03 — ploča nakon tihog pada mreže: svaki GET ima rok (TASK-5198)
+
+- Kvar (QA TASK-5185, `--nacin crna_rupa`): nakon pada mreže bez FIN/RST svaki `/api/tasks` je
+  60 s visio i padao (`ERR_ABORTED`) do kraja mjerenja, a zaglavlje je bilo zeleno „Spojeno".
+  Uzrok: dohvati bez roka (`fetchUnverified`, `fetchUputeStanje`, ostali GET-ovi) sjede na mrtvim
+  keep-alive utičnicama zauvijek i zauzmu Chromeov bazen (6 HTTP/1.1 veza po hostu); novi zahtjev
+  čeka slobodno mjesto do svog roka. WebSocket ima zaseban bazen, pa se on spoji, a ploča ne.
+- Ploča: `window.fetch` je omotan (`napraviFetchSRokom`) — GET bez vlastitog signala dobiva rok
+  20 s (poslužitelj ionako prekida nakon 10 s mirovanja); kad se WS ponovo spoji nakon pada,
+  dohvati u letu stariji od 5 s se prekidaju i ploča se odmah traži ponovo; rok dohvata ploče
+  60 → 20 s, nakon isteka novi pokušaj za 1,5 s (ne 30 s); `fetchUnverified`/`fetchUputeStanje`
+  imaju rok 15 s; zaglavlje „Spojeno – ploča stara N min" kad ploča > 2 min nije dobila podatke.
+- Mjereno (Playwright, Pixel 5, Slow 3G, crna rupa 90 s od 120. s): prije — nijedan uspješan
+  `/api/tasks` u 210 s nakon povratka mreže; poslije — prvi `ok` 13,7 s nakon povratka.
+- Testovi: `tests/ploca-fetch-rok.test.ts` (10).
+
 ## 2026-10-03 — ploča na mobitelu: promet i pouzdana živa veza (TASK-5184)
 
 - Kvar: na mobitelu ploča stoji na „Connecting…", TOTAL je „-". `GET /api/tasks` je slao sve
