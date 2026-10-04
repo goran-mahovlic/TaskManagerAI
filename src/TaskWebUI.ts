@@ -4492,7 +4492,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       try {
         const r = await fetch('/api/tasks/' + id + '/odluka', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ odluka: odluka, by: 'goran' }),
+          body: JSON.stringify({ odluka: odluka, by: 'vlasnik' }),
         });
         const d = await r.json();
         if (!r.ok) throw new Error(d.error || ('HTTP ' + r.status));
@@ -4519,7 +4519,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         const res = await fetch(\`/api/tasks/\${taskId}/\${paused ? 'pause' : 'resume'}\`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ by: 'goran' })
+          body: JSON.stringify({ by: 'vlasnik' })
         });
         if (!res.ok) { console.error('[Pause] HTTP', res.status); return; }
         fetchTasks();
@@ -4565,7 +4565,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         const res = await fetch('/api/pause', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ paused: next, by: 'goran', reason })
+          body: JSON.stringify({ paused: next, by: 'vlasnik', reason })
         });
         if (res.ok) renderGlobalPause(await res.json());
       } catch (err) {
@@ -9091,7 +9091,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     }
 
     async function spremiAutonomiju(btn) {
-      var tijelo = { by: 'goran' };
+      var tijelo = { by: 'vlasnik' };
       VRATA_POLJA.forEach(function(f) {
         var el = document.getElementById('vr-' + f.k);
         if (el) tijelo[f.k] = Number(el.value);
@@ -10187,11 +10187,18 @@ function ollamaTierGuess(name: string): string {
   return 'basic'
 }
 
+/** Rok dohvata vanjskog kataloga. MORA biti kraći od `idleTimeout` Bun.serve (10 s): s 15 s
+ *  poslužitelj je prekidao zahtjev prije nego bi fetch odustao, pa je ploča dobivala PRAZAN
+ *  odgovor umjesto 200 s `dostupno=false` (TASK-5233, nalaz QA TASK-5219 — nod bez izlaza
+ *  prema openrouter.ai, curl 000 nakon 11–15 s). */
+// Isti rok vrijedi i za Ollamin `/api/tags` ispod.
+const KATALOG_ROK_MS = 4000
+
 // Živi dohvat lokalnih Ollama modela s konfiguriranog servera (kao RAG).
 async function fetchOllamaModels(baseUrl: string, apiKey?: string): Promise<string[]> {
   const url = baseUrl.replace(/\/+$/, '') + '/api/tags'
   const ctrl = new AbortController()
-  const t = setTimeout(() => ctrl.abort(), 4000)
+  const t = setTimeout(() => ctrl.abort(), KATALOG_ROK_MS)
   try {
     const headers: Record<string, string> = {}
     if (apiKey) headers['Authorization'] = 'Bearer ' + apiKey
@@ -12837,12 +12844,28 @@ const POZNATI_MODELI: Record<string, string[]> = {
   deepseek: ['deepseek-chat', 'deepseek-reasoner'],
 }
 
+/** Uspješan katalog se pamti 10 min, nedostupan 5 min — da svako otvaranje Configa na nodu
+ *  bez izlaza ne čeka iznova punih KATALOG_ROK_MS. */
+const KATALOG_KES_OK_MS = 10 * 60_000
+const KATALOG_KES_GRESKA_MS = 5 * 60_000
+let katalogOpenroutera: { modeli: string[]; do: number } | null = null
+
 /** Katalog OpenRoutera je javan i ima 400+ modela; besplatni idu naprijed jer odluka o
- *  zadatku ne smije koštati više od samog zadatka. */
+ *  zadatku ne smije koštati više od samog zadatka. Prazan popis = katalog nije dostupan. */
 async function openrouterModeli(): Promise<string[]> {
+  if (katalogOpenroutera && katalogOpenroutera.do > Date.now()) return [...katalogOpenroutera.modeli]
+  const modeli = await dohvatiOpenrouterKatalog()
+  katalogOpenroutera = {
+    modeli, do: Date.now() + (modeli.length ? KATALOG_KES_OK_MS : KATALOG_KES_GRESKA_MS),
+  }
+  return [...modeli]
+}
+
+async function dohvatiOpenrouterKatalog(): Promise<string[]> {
   try {
-    const r = await fetch('https://openrouter.ai/api/v1/models',
-                          { signal: AbortSignal.timeout(15000) })
+    // Rok obuhvaća i čitanje tijela (signal vrijedi do kraja `r.json()`).
+    const r = await fetch(process.env.TM_OPENROUTER_KATALOG_URL || 'https://openrouter.ai/api/v1/models',
+                          { signal: AbortSignal.timeout(KATALOG_ROK_MS) })
     if (!r.ok) return []
     const d = await r.json() as any
     const svi = (d.data || []) as any[]
@@ -13244,7 +13267,7 @@ function handleTaskPitanje(taskId: string, req: Request): Promise<Response> {
 function handleTaskOdluka(taskId: string, req: Request): Promise<Response> {
   return (async () => {
     let odluka = ''
-    let by = 'goran'
+    let by = 'vlasnik'
     // Činjenica koju poslužitelj sam provjeri — jedini ključ za zadatak sa strojnim okidačem.
     let cinjenica = ''
     try {
@@ -15852,7 +15875,7 @@ async function obradiZahtjev(req: Request): Promise<Response | undefined> {
 
     if (url.pathname === '/api/gita/health' && req.method === 'GET') {
       try {
-        const gitaResponse = await fetch('http://localhost:8889/health')
+        const gitaResponse = await fetch('http://localhost:8889/health', { signal: AbortSignal.timeout(KATALOG_ROK_MS) })
         return new Response(await gitaResponse.text(), {
           status: gitaResponse.status,
           headers: { 'Content-Type': 'application/json', ...headers }

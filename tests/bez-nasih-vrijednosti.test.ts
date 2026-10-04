@@ -110,6 +110,18 @@ const PRAVILA: Pravilo[] = [
     osnovicaDatoteka: [],
   },
   {
+    ime: 'ime vlasnika kao autor upisa (`by`)',
+    // TASK-5233 (nalaz QA TASK-5219): ploča je slala doslovno `by: '<ime>'`, pa se to ime
+    // upisivalo u audit postavki na TUĐEM nodu. Pravilo iznad ga nije vidjelo (malo slovo).
+    // Slaže se iz dijelova iz istog razloga kao tailnet gore.
+    uzorak: ['\\bby\\s*[:=]\\s*[\'"`]', '[Gg]or', 'an[\'"`]'].join(''),
+    objasnjenje: 'autor upisa s ploče je neutralan „vlasnik" (kao u AutonomyThresholdSetting.ts); '
+      + 'stvarno ime je podatak instalacije, ne kod',
+    // TASK-5233: 5/1 → 0.
+    osnovicaPojava: 0,
+    osnovicaDatoteka: [],
+  },
+  {
     ime: 'nazivi naših internih projekata i RAG kolekcija',
     // `ULX5M` samo kao literal u navodnicima (ID projekta): kao ključna riječ teme uz
     // ULX3S/ECP5 u tools/rag_izdvoji.py to je javni naziv pločice, ne naš podatak.
