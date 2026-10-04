@@ -888,5 +888,16 @@
   "cfg_vr_greska_spremanje": "Error saving thresholds",
   "veza_spojeno": "Connected",
   "veza_bez_mreze": "Offline – no network, waiting…",
-  "veza_offline_pokusavam": "Offline – retrying in {s} s…"
+  "veza_offline_pokusavam": "Offline – retrying in {s} s…",
+  "odl_naslov_skupine": "Awaiting decision",
+  "odl_sk_model_n": "{broj} decided by the model",
+  "odl_sk_strojni_n": "{broj} waiting for a machine trigger",
+  "odl_sk_covjek_n": "{broj} waiting for you",
+  "odl_sk_strojni": "waiting for a machine trigger",
+  "odl_sk_covjek": "waiting for you",
+  "odl_rok_do": "until {rok}",
+  "odl_rok_prosao": "deadline from the description ({rok}) has passed - check the trigger",
+  "odl_u_prolazu": "in the next pass: {broj}",
+  "odl_prolaz_prazno": "decider: no tasks awaiting a decision",
+  "odl_prolaz_pao": "decider failed: {greska}"
 }

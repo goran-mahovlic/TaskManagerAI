@@ -345,11 +345,21 @@ def cekaju(p: dict | None = None) -> list[dict]:
         odgode = {k: v for k, v in odgode.items() if k in ziv}
         _zapisi_odgode(odgode)
     strojni_prolaze = bool(p.get("pusta_strojni_okidac", False))
+
+    def u_redu(z: dict) -> bool:
+        # TASK-5173 (03.10.2026.): JEDAN filtar. Ploča je brojila 3 zadatka „u redu
+        # odlučitelja", a ovaj alat je pregledao 0 — svatko je filtrirao po svome. Sad filtar
+        # računa poslužitelj (OdlukeRazvrstaj.ts: ovisnost, ljudske oznake, okidac-strojni uz
+        # istu sklopku `pusta_strojni_okidac`, odgoda) i šalje ga kao `zaOdlucitelja`; alat
+        # ga samo čita. Stari filtar ostaje SAMO za stariju ploču koja polje ne šalje.
+        if "zaOdlucitelja" in z:
+            return bool(z["zaOdlucitelja"])
+        return not z.get("cekaNa") and (strojni_prolaze or not z.get("okidacStrojni"))
+
     # Odgođen zadatak se NE pita ponovno svakih 5 min — inače bi model svaki put trošio poziv
     # na istu odluku, a odgoda ne bi značila ništa.
     return [z for z in svi
-            if not z.get("cekaNa")
-            and (strojni_prolaze or not z.get("okidacStrojni"))
+            if u_redu(z)
             and not _jos_odgodjen(str(z.get("id")), odgode)]
 
 

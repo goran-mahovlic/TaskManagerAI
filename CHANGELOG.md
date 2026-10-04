@@ -1,3 +1,27 @@
+## 2026-10-04 — traka „Čeka odluku": tri skupine, isti filtar kao odlučitelj, jezik (TASK-5173)
+
+- Kvar: traka je pisala „3 zadataka u redu odlučitelja — odlučuje model, ne čekaju tebe", a
+  odlučitelj u istom trenutku „nema zadataka koji čekaju odluku" (pregledano 0). Ploča je
+  brojila sve zadatke s ljudskom oznakom, a `tools/odlucitelj.py` (`cekaju()`) je preskakao
+  strojne okidače i ovisnosti — dva filtra. Jedan od tri zadatka (`waiting-for-human`, reboot
+  traži sudo) stvarno je čekao vlasnika, pa je „ne čeka tebe" bilo netočno.
+- `src/core/OdlukeRazvrstaj.ts`: JEDAN filtar. `GET /api/odluke` svakom zadatku dodaje
+  `skupina` (`model` | `strojni` | `covjek`), `cekaSto` (što ga drži, iz `blockedReason` bez
+  vratareva prefiksa), `doKada` (prvi budući nadnevak iz razloga/opisa; prošli uz
+  `prosao: true`) i `zaOdlucitelja`; odgovor dobiva `skupine` i `zaOdlucitelja` (broj).
+  `odlucitelj.py` više ne filtrira sam nego čita `zaOdlucitelja` (stari filtar samo za ploču
+  koja polje ne šalje). Ljudske oznake (`waiting-for-human`, `interactive`, `no-autonomy`)
+  pobjeđuju `okidac-strojni` i više ne ulaze u red modela; sklopka `pusta_strojni_okidac`
+  čita se iz iste `odlucitelj.json`.
+- Traka: naslov „Čeka odluku: N odlučuje model · N čeka strojni okidač · N čeka tebe" i po
+  redak za svaki zadatak koji čeka okidač ili tebe (što i do kada; istekao rok iz opisa se
+  ističe). Statični „stroj ih namjerno ne dira dok ne odlučiš" uklonjen — nije bio istinit.
+- Jezik: ključevi `odl_naslov_model_*`/`odl_naslov_covjek_*` nisu postojali ni u `hr.json`
+  ni u `en.json` (ključ biran ternarom, `_Tv(n === 1 ? 'a' : 'b', …)`), pa je u engleskom
+  sučelju naslov ostajao hrvatski usred engleskih natpisa. Novi ključevi `odl_sk_*`,
+  `odl_rok_*`, `odl_u_prolazu`, `odl_prolaz_prazno`, `odl_prolaz_pao` u oba rječnika.
+- Testovi: `tests/odluke-razvrstaj.test.ts` (17), `tests/odlucitelj-isti-filtar.test.ts` (4).
+
 ## 2026-10-03 — ploča na mobitelu: promet i pouzdana živa veza (TASK-5184)
 
 - Kvar: na mobitelu ploča stoji na „Connecting…", TOTAL je „-". `GET /api/tasks` je slao sve

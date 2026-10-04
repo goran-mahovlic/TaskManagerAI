@@ -176,6 +176,8 @@ import { resolveDaemonLiveness, type LivenessDeps } from './DaemonLiveness'
 // TASK-3568 (T4): „Potrošnja zadatka" na kartici — poziva agent_telemetry.py (T2/T3).
 import { resolveTaskTelemetry, createTelemetryState, createTelemetryDeps } from './TaskTelemetry'
 import { paketVerzija } from './Verzija'  // TASK-5025: jedan izvor verzije (package.json)
+// TASK-5173: JEDAN filtar za traku „Čeka odluku" i odlučitelja (odlucitelj.py čita `zaOdlucitelja`).
+import { razvrstajOdluku, zaOdlucitelja, zbrojiSkupine } from './core/OdlukeRazvrstaj'
 // TASK-3569 (T5): kartica „Potrošnja" — tjedni pregled po projektu i agentu (mjera 6).
 // TASK-3572 (T8): „Potrošnja projekta" — isti pregled, filtriran na jedan projekt.
 import {
@@ -2181,6 +2183,11 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       border-radius:4px; padding:3px 12px; cursor:pointer; font-size:12px; }
     .odluke-toggle:hover { background:#4d421f; }
     /* Zadnji prolaz odlucitelja — jedini dokaz da ukljuceni prekidac doista nesto radi. */
+    /* TASK-5173: tri skupine — tko ili što zadatak doista drži. */
+    .odluke-skupine { margin-top:7px; display:flex; flex-direction:column; gap:3px; font-size:12px; color:#c8b880; }
+    .odluke-skupina b { color:#e8c65a; font-weight:600; }
+    .odluke-skupina.covjek b { color:#f0a060; }
+    .odluke-skupina .rok-prosao { color:#d98c6a; }
     .odluke-prolaz { margin-top:7px; font-size:11.5px; color:#9a8c60; }
     .odluke-prolaz.greska { color:#d98c6a; }
     .odluka-model-kaze { margin-top:7px; font-size:11.5px; color:#8fa8c0; background:#151b22;
@@ -2298,10 +2305,10 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         <div class="odluke-glava">
           <span class="odluke-znak" data-i18n="ceka">ČEKA</span>
           <strong id="odluke-naslov" data-i18n="ceka_tvoju_odluku">Čeka tvoju odluku</strong>
-          <span class="odluke-opis" data-i18n="stroj_ih_namjerno_ne_dira_dok_ne_odlucis">stroj ih namjerno ne dira dok ne odlučiš</span>
           <span id="odluke-tko" class="odluke-tko"></span>
           <button id="odluke-toggle" class="odluke-toggle" data-i18n="prikazi">prikaži</button>
         </div>
+        <div id="odluke-skupine" class="odluke-skupine"></div>
         <div id="odluke-prolaz" class="odluke-prolaz" style="display:none"></div>
         <div id="odluke-odlucitelj" class="odluke-odlucitelj">
           <label class="odluc-prekidac">
@@ -4141,24 +4148,49 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         if (!traka) return;
         if (!d.ukupno) { traka.style.display = 'none'; return; }
         traka.style.display = 'block';
-        const sprem = d.spremni != null ? d.spremni : d.ukupno;
-        const blok = d.blokirani || 0;
-        // Naslov govori o onome što odluka doista pušta u rad; blokirani se navode odvojeno,
-        // jer njih ni odluka ne pokreće dok se ne dovrši zadatak koji ih drži.
-        // Vlasnik, 05.09.2026.: „nista ne treba cekati mene ako sam odabrao da model odlucuje
-        // za mene." Dok prekidač radi, naslov ne smije tvrditi da zadatci čekaju njega.
-        const dodatakBlok = blok
-          ? '  ·  ' + _Tv('blokirano_drugim_n', '{broj} blokirano drugim zadatkom', { broj: blok })
-          : '';
-        document.getElementById('odluke-naslov').textContent = (d.modelOdlucuje
-          ? _Tv(sprem === 1 ? 'odl_naslov_model_1' : 'odl_naslov_model_n',
-                sprem === 1
-                  ? '{broj} zadatak u redu odlučitelja — odlučuje model, ne čeka tebe'
-                  : '{broj} zadataka u redu odlučitelja — odlučuje model, ne čekaju tebe',
-                { broj: sprem })
-          : _Tv(sprem === 1 ? 'odl_naslov_covjek_1' : 'odl_naslov_covjek_n',
-                sprem === 1 ? '{broj} zadatak čeka tvoju odluku' : '{broj} zadataka čeka tvoju odluku',
-                { broj: sprem })) + dodatakBlok;
+        // TASK-5173: naslov je zbroj TRIJU skupina koje računa poslužitelj istom funkcijom
+        // kojom bira i odlučitelj. Do 03.10.2026. naslov je pisao „N u redu odlučitelja —
+        // odlučuje model, ne čekaju tebe" i za zadatke koje odlučitelj preskače (strojni
+        // okidač) i za one koji stvarno čekaju čovjeka (TASK-4717, reboot traži sudo).
+        const sk = d.skupine || { model: 0, strojni: 0, covjek: d.ukupno };
+        const dijelovi = [];
+        if (d.modelOdlucuje) dijelovi.push(_Tv('odl_sk_model_n', '{broj} odlučuje model', { broj: sk.model }));
+        if (sk.strojni) dijelovi.push(_Tv('odl_sk_strojni_n', '{broj} čeka strojni okidač', { broj: sk.strojni }));
+        if (sk.covjek || !d.modelOdlucuje) dijelovi.push(_Tv('odl_sk_covjek_n', '{broj} čeka tebe', { broj: sk.covjek }));
+        document.getElementById('odluke-naslov').textContent =
+          _T('odl_naslov_skupine', 'Čeka odluku') + ': ' + dijelovi.join(' · ');
+        // Po jedan redak za svaku nepraznu skupinu: KOJI zadatci, ŠTO ih drži i DO KADA.
+        const skupineEl = document.getElementById('odluke-skupine');
+        if (skupineEl) {
+          const fmtRok = function (t) {
+            if (!t.doKada) return '';
+            return t.doKada.prosao
+              ? ' · <span class="rok-prosao">' + _Tv('odl_rok_prosao', 'rok iz opisa ({rok}) je prošao — provjeri okidač',
+                  { rok: esc(t.doKada.tekst) }) + '</span>'
+              : ' · ' + _Tv('odl_rok_do', 'do {rok}', { rok: esc(t.doKada.tekst) });
+          };
+          const stavka = function (t) {
+            return '<span title="' + _esc(t.title) + '">' + esc(t.id) + '</span>'
+              + (t.cekaSto ? ' — ' + esc(t.cekaSto) : '') + fmtRok(t);
+          };
+          const po = function (k) { return (d.zadatci || []).filter(function (t) { return t.skupina === k; }); };
+          const redci = [];
+          const mdl = po('model');
+          if (d.modelOdlucuje && mdl.length) {
+            redci.push('<div class="odluke-skupina">🤖 <b>' + _T('odlucuje_model', 'odlučuje model') + ':</b> '
+              + mdl.map(function (t) { return esc(t.id); }).join(', ')
+              + ' · ' + _Tv('odl_u_prolazu', 'u sljedećem prolazu: {broj}', { broj: d.zaOdlucitelja || 0 }) + '</div>');
+          }
+          po('strojni').forEach(function (t) {
+            redci.push('<div class="odluke-skupina">⚙️ <b>' + _T('odl_sk_strojni', 'čeka strojni okidač') + ':</b> '
+              + stavka(t) + '</div>');
+          });
+          po('covjek').forEach(function (t) {
+            redci.push('<div class="odluke-skupina covjek">👤 <b>' + _T('odl_sk_covjek', 'čeka tebe') + ':</b> '
+              + stavka(t) + '</div>');
+          });
+          skupineEl.innerHTML = redci.join('');
+        }
         // „Ne vidim da se nesto desava" (vlasnik, 05.09.2026.) — zato se zadnji prolaz vidi
         // UVIJEK, i kad je popis zatvoren, i kad model nije odlucio nista.
         const prolaz = document.getElementById('odluke-prolaz');
@@ -4168,7 +4200,12 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
             const min = Math.max(0, Math.round((Date.now() - new Date(zp.ts).getTime()) / 60000));
             prolaz.style.display = 'block';
             prolaz.className = 'odluke-prolaz' + (zp.greska ? ' greska' : '');
-            prolaz.textContent = '🤖 ' + zp.opis + ' · '
+            // TASK-5173: dva najčešća stanja idu kroz rječnik — inače je u engleskom sučelju
+            // baš taj redak ostajao hrvatski. Sažetak prolaza s brojkama ostaje podatak.
+            const opisProlaza = zp.greska
+              ? _Tv('odl_prolaz_pao', 'odlučitelj je pao: {greska}', { greska: zp.greska })
+              : (!zp.pregledano ? _T('odl_prolaz_prazno', 'odlučitelj: nema zadataka koji čekaju odluku') : zp.opis);
+            prolaz.textContent = '🤖 ' + opisProlaza + ' · '
               + _Tv('prije_n_min', 'prije {broj} min', { broj: min < 1 ? '<1' : min });
           } else {
             prolaz.style.display = 'none';
@@ -12931,7 +12968,10 @@ function handleGetOdluke(): Response {
   // Odgode i stanje prekidača: kad model odlučuje, zadatak koji „stoji" najčešće ne čeka
   // čovjeka nego istek odgode — a to se s ploče nije vidjelo.
   const odgode = citajOdgode()
-  const modelOdlucuje = odluciteljConfig().ukljucen
+  const cfgOdl = odluciteljConfig()
+  const modelOdlucuje = cfgOdl.ukljucen
+  // TASK-5173: ista sklopka koju čita odlucitelj.py (`pusta_strojni_okidac`, zadano false).
+  const opcijeRazvrstaja = { modelOdlucuje, pustaStrojni: cfgOdl.pusta_strojni_okidac === true }
   const cekaju = svi
     .filter(t => ['pending', 'blocked'].includes(String(t.status)))
     .filter(t => (t.tags || []).some((g: string) => OZNAKE_ODLUKE.includes(String(g).toLowerCase())))
@@ -12970,6 +13010,15 @@ function handleGetOdluke(): Response {
         odgoda: odgode[String(t.id)] ?? null,
       }
     })
+    // TASK-5173: skupina trake (model / strojni okidač / čeka tebe) i filtar odlučitelja
+    // računaju se ISTOM funkcijom — traka više ne može brojati ono što odlučitelj preskače.
+    .map(z => {
+      const ulaz = { ...z, tags: (po.get(String(z.id))?.tags || []),
+        blockedReason: String(po.get(String(z.id))?.blockedReason || '') }
+      const r = razvrstajOdluku(ulaz, opcijeRazvrstaja)
+      return { ...z, skupina: r.skupina, cekaSto: r.sto, doKada: r.doKada,
+        zaOdlucitelja: zaOdlucitelja(ulaz, opcijeRazvrstaja) }
+    })
     // Prvo ono što odluka doista pušta u rad, pa unutar toga ono što otključava najviše
     // posla — to je „onaj jedan koji drži cijeli niz".
     .sort((a, b) => (a.cekaNa.length - b.cekaNa.length)
@@ -12980,6 +13029,9 @@ function handleGetOdluke(): Response {
   return new Response(JSON.stringify({
     ukupno: cekaju.length, spremni, blokirani: cekaju.length - spremni, zadatci: cekaju,
     modelOdlucuje,
+    // TASK-5173: tri skupine trake + koliko ih odlučitelj doista uzima u sljedeći prolaz.
+    skupine: zbrojiSkupine(cekaju),
+    zaOdlucitelja: cekaju.filter(z => z.zaOdlucitelja).length,
     odluciteljZadnji: zadnjiProlaz
       ? { ts: zadnjiProlaz.ts, opis: opisiProlaz(zadnjiProlaz), upisano: zadnjiProlaz.upisano,
           pregledano: zadnjiProlaz.pregledano, greska: zadnjiProlaz.greska ?? null }

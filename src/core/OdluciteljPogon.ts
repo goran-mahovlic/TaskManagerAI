@@ -85,6 +85,8 @@ export interface OdluciteljConfig {
   model: string
   najvise_po_prolazu: number
   smije_kreni: boolean
+  /** Ista sklopka kao u odlucitelj.py (zadano false) — čita je i /api/odluke (TASK-5173). */
+  pusta_strojni_okidac?: boolean
 }
 
 const ZADANE: OdluciteljConfig = {
