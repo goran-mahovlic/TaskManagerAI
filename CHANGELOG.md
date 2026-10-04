@@ -1,3 +1,12 @@
+## 2026-10-04 — nadogradnja instalacije sa bazom izvan zadane putanje (TASK-5218)
+
+- `docs/INSTALL.md` §10: instalacija čija baza nije na `$HOME/.taskmanager/data/tasks.db` mora
+  prije restarta upisati `TM_DB` u `config/postavke.env` — od TASK-5011 ploča staru putanju ne
+  pogađa i nad praznom bazom pada (`no such table: tasks`). `messages.db` ide uz `TM_DB`
+  (poveznica ako leži drugdje), varijable za registar agenata, modele, module i tajne, zašto
+  `TM_HOME` mijenja ponašanje, i provjera otvorene baze kroz `/proc/<pid>/fd`. Nalaz s prve
+  nadogradnje dviju postojećih instalacija na ovaj HEAD.
+
 ## 2026-10-04 — dokumentacija: Config stranica, prekidači, tijekovi i razlika prema izvornom sustavu (TASK-5172)
 
 - Novo: `docs/CONFIG.md` — Config stranica (pet skupina, 21 kartica, ruta svake kartice),

@@ -302,6 +302,28 @@ sudo systemctl restart taskmanager
 Korak s `init` je bezopasan i na nepromijenjenoj shemi — ako nema ničega novog, ništa se ne
 dogodi.
 
+**Instalacija čija baza nije na zadanoj putanji.** Ploča ne pogađa staru putanju (od TASK-5011):
+bez `TM_HOME`/`TM_DB` otvara `$HOME/.taskmanager/data/tasks.db`, a nad praznom bazom pada uz
+`SQLiteError: no such table: tasks`. Prije restarta zato upiši putanju u `config/postavke.env`
+(datoteka je izvan gita, pa je `git pull` ne dira):
+
+```bash
+TM_DB=/putanja/do/postojece/baze.db
+```
+
+Red poruka (`messages.db`) ide u **istu mapu** kao `TM_DB`. Leži li kod tebe drugdje, stavi
+poveznicu (`ln -s /stara/mapa/messages.db "$(dirname "$TM_DB")/messages.db"`) — SQLite prati
+poveznicu, pa `-wal` ostaje uz pravu datoteku. Registar agenata, postavke modela i modula te
+datoteka s tajnama imaju svoje varijable (`TM_AGENTS_REGISTRY`, `TM_MODEL_CONFIG`,
+`TM_MODULE_CONFIG`, `TM_CREDENTIALS`). `TM_HOME` postavi samo ako želiš da se **i** vratari i
+ulazna vrata čitaju iz `$TM_HOME/config/` — to mijenja ponašanje, ne samo putanju baze.
+
+Je li ploča otvorila pravu bazu, provjeri nakon restarta:
+
+```bash
+ls -l /proc/$(systemctl show taskmanager -p MainPID --value)/fd | grep '\.db$'
+```
+
 ## 11. Kad nešto ne radi
 
 | Znak | Uzrok i rješenje |
