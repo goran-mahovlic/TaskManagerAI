@@ -194,6 +194,39 @@ curl -X PUT http://localhost:17781/api/config/autonomy \
   obzirom na pragove — za prikaz na klizaču.
 - Nevaljan zapis u bazi znači zadnji dobar skup, pa zadane vrijednosti — nikad „bez praga”.
 
+### Raspored Config stranice
+
+Redoslijed kartica Config stranice, širina (stupci 1–4 u mreži od 4) i visina (`null` = prirodna,
+inače 160–1200 px u koracima od 40). **Postavka TaskManagera** (tablica `settings`, ključ
+`config.raspored`, JSON), jedna za cijeli sustav. Raspored **nikad ne nosi vrijednosti postavki** —
+one se mijenjaju samo svojim rutama iznad. Na ploči: gumb **✎ Uredi raspored ↔ 💾 Spremi raspored**.
+
+```bash
+curl http://localhost:17781/api/config/raspored
+# {"raspored":null,"osnova":null,"updatedBy":null,"invalid":null,"povijest":[]}
+
+curl -X PUT http://localhost:17781/api/config/raspored \
+  -H "Content-Type: application/json" \
+  -d '{"raspored":{"v":1,"redoslijed":["info-autonomija-card","info-concurrency-card"],
+       "kartice":{"info-concurrency-card":{"w":1,"h":240}}},"osnova":null,"by":"ana"}'
+
+curl -X PUT http://localhost:17781/api/config/raspored \
+  -H "Content-Type: application/json" -d '{"zadano":true,"by":"ana"}'   # natrag na zadani raspored
+```
+
+- Validacija je stroga, sve ili ništa: tijelo smije imati samo `raspored|zadano|osnova|by|source`,
+  raspored samo `v|redoslijed|kartice`, mjere samo `w|h`; ID kartice `^info-[a-z0-9-]{1,60}-card$`,
+  najviše 64 kartice, raspored ≤ 8192 B, tijelo ≤ 16 KiB (inače `413`). Sve ostalo je `400`.
+- `osnova` je `updated_at` viđen pri ulasku u uređivanje. Ako je raspored u međuvremenu spremljen
+  drugdje, odgovor je `409` i ništa se ne zapisuje. Bez polja `osnova` (npr. curl) nema provjere.
+- Spremanje čuva kartice koje ova stranica ne poznaje (druga inačica ploče nad istom bazom).
+  Isti raspored ponovo = bez upisa i bez retka povijesti.
+- Svaka promjena dobiva redak u `settings_history` (`source` `config-raspored`, `zadano` kao nova
+  vrijednost pri vraćanju) u istoj transakciji; ostale ploče dobiju WS `raspored_changed`.
+- Zaglavlje `x-regoc-proba: 1`: sve provjere se izvrše, odgovor kaže što **bi** se zapisalo
+  (`{"proba":true,"promjena":…,"raspored":…}`), a baza, povijest i WS ostaju netaknuti.
+- `/config-raspored.js` poslužuje logiku (ista kao na poslužitelju) i uređivač.
+
 ### Odluka o pokretanju (`needs-decision`)
 
 Zadatak s oznakom `needs-decision` (ili `no-autonomy`, `waiting-for-human`, `interactive`) čeka

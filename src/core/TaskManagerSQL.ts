@@ -16,6 +16,7 @@ import Database, { type Statement } from "bun:sqlite";
 import { TaskIdAllocator } from "./TaskIdAllocator";
 import { seedConcurrency, getConcurrency, setConcurrency, concurrencyHistory, CONCURRENCY_KEY, CONCURRENCY_ENV } from "./ConcurrencySetting";
 import { getAutonomyThresholds, setAutonomyThresholds, autonomyThresholdsHistory, type AutonomyThresholds } from "./AutonomyThresholdSetting";
+import { getRaspored, setRaspored, pripremiRaspored, rasporedPovijest, type RasporedZahtjev } from "./ConfigRaspored";
 import { assertNotLiveDbInTest } from "./LiveDbGuard";
 import { TM_DB, osigurajMapu } from "./paths";
 // TASK-3516: jedno pravilo poretka za cijeli TaskManager — najnovije na vrhu.
@@ -583,6 +584,12 @@ export class TaskManagerSQL {
   getAutonomySetting() { return getAutonomyThresholds(this.db); }
   setAutonomySetting(input: Partial<AutonomyThresholds>, by: string, source = 'api') { return setAutonomyThresholds(this.db, input, by, source); }
   getAutonomyHistory(limit = 20) { return autonomyThresholdsHistory(this.db, limit); }
+
+  // TASK-5170: raspored Config stranice (settings: config.raspored, audit u settings_history).
+  getRasporedSetting() { return getRaspored(this.db); }
+  setRasporedSetting(z: RasporedZahtjev) { return setRaspored(this.db, z); }
+  probaRasporedSetting(z: RasporedZahtjev) { return pripremiRaspored(this.db, z); }
+  getRasporedHistory(limit = 10) { return rasporedPovijest(this.db, limit); }
 
   /**
    * Pauziraj/nastavi zadatak. Status se NE dira — pauza je ortogonalna dimenzija

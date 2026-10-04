@@ -70,6 +70,7 @@ import { readPauseState, writePauseState, describePause } from './core/PauseCont
 import { parseInstructionInput } from './core/TaskInstructions'
 import { parseConcurrencyInput, formatConcurrencyChange, CONCURRENCY_ENV, CONCURRENCY_MIN, CONCURRENCY_MAX, CONCURRENCY_DEFAULT } from './core/ConcurrencySetting'
 import { parseAutonomyInput, formatAutonomyChanges, usageZone, AUTONOMY_DEFAULTS, AUTONOMY_MIN, AUTONOMY_MAX, AUTONOMY_KEYS, AUTONOMY_CACHE_MS } from './core/AutonomyThresholdSetting'
+import { parsirajZahtjev as parsirajRasporedZahtjev, klijentskaLogikaJS as rasporedKlijentskaLogikaJS } from './core/ConfigRaspored'
 // TASK-3461: stanje MJERILA potrošnje (razlikuje „čekam kvotu" od „mjerilo ne radi").
 import { readWaitingQueue } from './core/AutonomyQueue'
 import { formatLocalTime } from './core/QuotaWakeup'
@@ -562,6 +563,9 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
          (Bez obrnutih navodnika: ovaj je stil unutar predloška koji oni zatvaraju.) */
       --border-color: #334155;
       --card-bg: #1e293b;
+      /* TASK-5170: uređivanje rasporeda ima VLASTITU boju (jantar); plava ostaje boja vrijednosti. */
+      --cr-jantar: #f59e0b;
+      --cr-jantar-slabo: rgba(245,158,11,0.14);
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -2101,6 +2105,69 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     .cfg-skok button { font-size: 0.75rem; padding: 0.3rem 0.75rem; border-radius: 999px; background: var(--bg-secondary); color: var(--text-secondary); border: 1px solid var(--border-color); cursor: pointer; }
     .cfg-skok button:hover { color: var(--text-primary); border-color: var(--accent-blue); }
     .cfg-skok button .info-skupina-broj { margin-right: 0.35rem; }
+    /* ── TASK-5170: uređivač rasporeda (dizajn TASK-5169). Mreža ima 4 stupca; kartica zauzima
+       --cr-w (zadano 2, info-full 4), pa zadani izgled ostaje kao 2×1fr. Jantar = boja rasporeda,
+       plava ostaje boja vrijednosti. Sve je ograničeno na #tab-info. ── */
+    #info-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    #info-grid > .info-card { --cr-w: 2; --cr-h: auto; grid-column: span var(--cr-w); height: var(--cr-h); position: relative; }
+    #info-grid > .info-card.info-full { --cr-w: 4; }
+    #info-grid > .info-card[data-cr-h] { overflow: auto; }
+    #info-grid.cr-ceka { visibility: hidden; }
+    @media (max-width: 1199px) { #info-grid > .info-card[data-cr-w="1"] { grid-column: span 2; } }
+    @media (max-width: 900px) { #info-grid { grid-template-columns: minmax(0, 1fr); } #info-grid > .info-card, #info-grid > .info-card.info-full { grid-column: 1 / -1; } }
+    #tab-info .cr-gumbi { display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+    #tab-info .cr-gumbi button, .cr-poruka button { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+    #tab-info .cr-uredi { position: relative; border-color: var(--cr-jantar); color: var(--cr-jantar); min-height: 32px; }
+    #tab-info .cr-uredi:hover { background: var(--cr-jantar-slabo); }
+    body.cr-uredivanje #tab-info .cr-uredi { background: var(--cr-jantar); border-color: var(--cr-jantar); color: #1a1205; }
+    #tab-info .cr-uredi[aria-busy="true"] { opacity: 0.7; cursor: progress; }
+    #tab-info .cr-uredi .cr-broj { display: none; position: absolute; top: -7px; right: -7px; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 9px; background: var(--accent-red); color: #fff; font-size: 10px; line-height: 18px; }
+    #tab-info .cr-uredi[data-izmjena]:not([data-izmjena="0"]) .cr-broj { display: block; }
+    #tab-info .cr-sporedni { display: none; border-color: var(--border-color); color: var(--text-secondary); }
+    body.cr-uredivanje #tab-info .cr-sporedni { display: inline-block; }
+    body.cr-uredivanje #info-refresh-btn { display: none; }
+    body.cr-uredivanje #tab-info .status-header-bar { position: sticky; top: 0; z-index: 30; flex-wrap: wrap; gap: 0.5rem; margin: 0 -1rem 0.75rem; padding: 0.55rem 1rem 0.5rem; background: var(--bg-primary);
+      border-bottom: 6px solid transparent; border-image: repeating-linear-gradient(-45deg, var(--cr-jantar) 0 10px, #111827 10px 20px) 6; box-shadow: 0 8px 20px rgba(0,0,0,0.45); }
+    #tab-info .cr-traka { display: none; flex-basis: 100%; gap: 0.35rem 1rem; flex-wrap: wrap; font-size: 0.72rem; color: var(--text-secondary); }
+    #tab-info .cr-traka-glavno { color: var(--cr-jantar); font-weight: 700; letter-spacing: 0.06em; }
+    #tab-info .cr-traka kbd { border: 1px solid var(--border-color); border-radius: 3px; padding: 0 0.3rem; font-family: monospace; color: var(--text-primary); }
+    body.cr-uredivanje #tab-info .cr-traka { display: flex; }
+    body.cr-uredivanje #tab-info .cfg-skok { position: static; }
+    @media (max-width: 900px) {
+      #tab-info .cr-traka-sire, body.cr-uredivanje #tab-info .cr-naslov, #tab-info .cr-tekst { display: none; }
+      body.cr-uredivanje #tab-info .cr-gumbi { flex-wrap: nowrap; width: 100%; }
+      body.cr-uredivanje #tab-info .cr-gumbi .cr-sporedni { min-width: 44px; min-height: 44px; font-size: 1rem; }
+      body.cr-uredivanje #tab-info .cr-uredi { flex: 1; min-height: 44px; }
+    }
+    body.cr-uredivanje #info-grid { position: relative; user-select: none; -webkit-user-select: none; }
+    body.cr-uredivanje #info-grid::before { content: ""; position: absolute; inset: -0.5rem 0; pointer-events: none; z-index: 0; border-radius: 6px;
+      background-image: radial-gradient(circle, rgba(245,158,11,0.22) 1px, transparent 1.4px); background-size: 20px 20px; }
+    body.cr-uredivanje #info-grid > .info-card { outline: 1.5px dashed rgba(245,158,11,0.55); outline-offset: 3px; cursor: default; transition: outline-color 0.15s, transform 0.15s; }
+    body.cr-uredivanje #info-grid > .info-card:hover, body.cr-uredivanje #info-grid > .info-card:focus-visible { outline-color: var(--cr-jantar); outline-style: solid; }
+    body.cr-uredivanje #info-grid > .info-card > :not(.info-card-title):not(.cr-kut) { opacity: 0.55; pointer-events: none; }
+    #info-grid .cr-hvat, #info-grid .cr-kut, #info-grid .cr-mjera { display: none; }
+    body.cr-uredivanje #info-grid .cr-hvat { display: inline-grid; background: none; border: 0; padding: 0; font-family: inherit; place-items: center; width: 44px; height: 44px; margin: -12px 0 -12px -10px; border-radius: 6px; color: var(--cr-jantar); font-size: 1.25rem; cursor: grab; touch-action: none; flex: none; }
+    body.cr-uredivanje #info-grid .cr-hvat:hover { background: var(--cr-jantar-slabo); color: var(--cr-jantar); }
+    body.cr-uredivanje #info-grid .cr-kut { display: block; position: absolute; right: 0; bottom: 0; width: 44px; height: 44px; cursor: nwse-resize; touch-action: none; z-index: 2;
+      background: linear-gradient(135deg, transparent 0 55%, var(--cr-jantar) 55% 60%, transparent 60% 68%, var(--cr-jantar) 68% 73%, transparent 73% 81%, var(--cr-jantar) 81% 86%, transparent 86%); }
+    @media (max-width: 900px) { body.cr-uredivanje #info-grid .cr-kut { cursor: ns-resize; } }
+    body.cr-uredivanje #info-grid .cr-mjera { display: inline-block; margin-left: auto; font: 600 0.68rem monospace; color: var(--cr-jantar); background: var(--cr-jantar-slabo); border: 1px solid rgba(245,158,11,0.4); border-radius: 999px; padding: 0.1rem 0.5rem; text-transform: none; letter-spacing: 0; white-space: nowrap; }
+    #info-grid > .info-card.cr-promijenjena .cr-mjera { background: var(--cr-jantar); color: #1a1205; }
+    body.cr-uredivanje.cr-sazeto #info-grid > .info-card { height: auto !important; overflow: hidden; }
+    body.cr-uredivanje.cr-sazeto #info-grid > .info-card > :not(.info-card-title):not(.cr-kut) { display: none; }
+    body.cr-uredivanje.cr-sazeto #info-grid .info-card-title { margin-bottom: 0; }
+    #info-grid > .cr-mjesto { --cr-w: 2; border: 2px dashed var(--cr-jantar); border-radius: 8px; background: var(--cr-jantar-slabo); grid-column: span var(--cr-w); min-height: 56px; }
+    @media (max-width: 900px) { #info-grid > .cr-mjesto { grid-column: 1 / -1; } }
+    #info-grid > .info-card.cr-vucem { position: fixed !important; z-index: 50; pointer-events: none; margin: 0; opacity: 0.92; box-shadow: 0 18px 40px rgba(0,0,0,0.55); transform: rotate(0.6deg); outline: 2px solid var(--cr-jantar) !important; }
+    body.cr-vuce, body.cr-vuce * { cursor: grabbing !important; }
+    #info-grid > .info-card.cr-mijenjam { outline: 2px solid var(--cr-jantar) !important; }
+    .cr-poruka { position: fixed; left: 50%; bottom: 1.25rem; transform: translateX(-50%); z-index: 60; background: var(--bg-secondary); border: 1px solid var(--border-color); border-left: 4px solid var(--accent-green);
+      padding: 0.6rem 0.9rem; border-radius: 6px; font-size: 0.82rem; display: none; gap: 0.75rem; align-items: center; box-shadow: 0 10px 30px rgba(0,0,0,0.5); max-width: calc(100vw - 2rem); color: var(--text-primary); }
+    .cr-poruka.vidljiva { display: flex; }
+    .cr-poruka.greska { border-left-color: var(--accent-red); }
+    .cr-poruka button { background: none; border: 1px solid var(--cr-jantar); color: var(--cr-jantar); border-radius: 4px; padding: 0.2rem 0.6rem; cursor: pointer; font-size: 0.78rem; }
+    .cr-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+    @media (prefers-reduced-motion: reduce) { body.cr-uredivanje #info-grid > .info-card { transition: none; } #info-grid > .info-card.cr-vucem { transform: none; } }
     /* Jedan izgled kontrola za sve kartice. :where() nosi nultu specifičnost, pa klasa ili
        inline stil pojedine kartice i dalje imaju prednost — mijenja se samo nativni bijeli izgled. */
     :where(#tab-info .info-card) button { font-size: 0.75rem; padding: 0.3rem 0.75rem; border-radius: 4px; background: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border-color); cursor: pointer; line-height: 1.3; }
@@ -2575,9 +2642,22 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     <!-- INFO TAB -->
     <div id="tab-info" class="tab-content">
       <div class="status-header-bar">
-        <h2 style="margin:0;font-size:1.1rem;" data-i18n="rego_config">REGO&#268; Config</h2>
-        <button id="info-refresh-btn" class="konzola-mode-btn plan-mode" style="border-color:var(--accent-blue);color:var(--accent-blue);" data-i18n="refresh">Refresh</button>
+        <h2 class="cr-naslov" style="margin:0;font-size:1.1rem;" data-i18n="rego_config">REGO&#268; Config</h2>
+        <!-- TASK-5170: JEDAN gumb uređivača rasporeda (✎ Uredi ↔ 💾 Spremi). Sporedni gumbi postoje samo u uređivanju i nikad ne spremaju. -->
+        <div class="cr-gumbi">
+          <button type="button" class="konzola-mode-btn cr-sporedni" id="cr-sazmi" aria-pressed="false" aria-label="Sažmi kartice na naslove">&#9636; <span class="cr-tekst" data-i18n="cfg_raspored_sazmi">Sažmi</span></button>
+          <button type="button" class="konzola-mode-btn cr-sporedni" id="cr-zadano" aria-label="Vrati zadani raspored">&#8634; <span class="cr-tekst" data-i18n="cfg_raspored_zadano">Zadano</span></button>
+          <button type="button" class="konzola-mode-btn cr-sporedni" id="cr-odustani" aria-label="Odustani od izmjena rasporeda">&#10005; <span class="cr-tekst" data-i18n="cfg_raspored_odustani">Odustani</span></button>
+          <button type="button" class="konzola-mode-btn cr-uredi" id="cr-uredi" aria-pressed="false" data-izmjena="0"><span class="cr-oznaka">&#9998; Uredi raspored</span><span class="cr-broj" aria-hidden="true"></span></button>
+          <button id="info-refresh-btn" class="konzola-mode-btn plan-mode" style="border-color:var(--accent-blue);color:var(--accent-blue);" data-i18n="refresh">Refresh</button>
+        </div>
+        <div class="cr-traka" id="cr-traka" role="status">
+          <span class="cr-traka-glavno" data-i18n="cfg_raspored_traka">&#9998; UREĐIVANJE RASPOREDA</span>
+          <span class="cr-traka-sire" data-i18n="cfg_raspored_traka_upute">&#10303; povuci za premještanje · &#9698; kut za veličinu (dvoklik = prirodna visina) · strelice / Shift+strelice · Esc odustaje</span>
+          <span data-i18n="cfg_raspored_traka_zakljucano">vrijednosti su zaključane</span>
+        </div>
       </div>
+      <div class="cr-sr" id="cr-najava" aria-live="assertive"></div>
       <!-- TASK-5025: skok na skupinu. Traka je ljepljiva, pa je put do svake skupine jedan klik. -->
       <div class="cfg-skok" id="cfg-skok" role="navigation">
         <button type="button" data-cfg-skok="cfg-skupina-1"><span class="info-skupina-broj">01</span><span data-i18n="cfg_skok_strop">Strop i vrata</span></button>
@@ -3263,6 +3343,8 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
           }
           // TASK-3047: kočnicu može pritisnuti drugi preglednik ili curl — svi ekrani
           // moraju istog trena pokazivati isto stanje.
+          // TASK-5170: raspored Config stranice spremljen na drugom uređaju (ne usred uređivanja).
+          if (data.type === 'raspored_changed' && window.CfgRaspored) window.CfgRaspored.izvana(data);
           if (data.type === 'pause_changed') {
             renderGlobalPause(data.pause);
           }
@@ -3994,6 +4076,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       // config
       zovi(osvjeziDezurniJezik);
       if (document.getElementById('info-grid')) zovi(fetchInfoData);
+      if (window.CfgRaspored) zovi(window.CfgRaspored.jezik);   // TASK-5170: natpisi uređivača rasporeda
     }
 
     async function postaviIzbornikJezika() {
@@ -9958,6 +10041,9 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       document.getElementById('connection-status')?.classList.add('disconnected');
     }
   </script>
+  <!-- TASK-5170: poruka uređivača rasporeda + logika i uređivač (zasebna datoteka: predložak ne jede backslash). -->
+  <div class="cr-poruka" id="cr-poruka" role="alert"><span id="cr-poruka-tekst"></span><button type="button" id="cr-poruka-gumb" hidden data-i18n="cfg_raspored_vrati">Vrati</button></div>
+  <script src="/config-raspored.js" defer></script>
 </body>
 </html>`
 
@@ -13322,6 +13408,63 @@ async function handleAutonomyPut(req: Request): Promise<Response> {
   return new Response(JSON.stringify({ ...(await autonomyPayload()), change: ch }), { headers: { 'Content-Type': 'application/json' } })
 }
 
+// ─── Raspored Config stranice (TASK-5170, dizajn TASK-5169) ─────────────────
+// Izvor istine: `settings` ključ `config.raspored` (core/ConfigRaspored.ts), audit u
+// `settings_history` (source `config-raspored`) u istoj transakciji. Ruta piše SAMO taj ključ —
+// vrijednosti postavki i dalje idu isključivo kroz svoje rute (dizajn §6, sloj 1).
+const RASPORED_MAX_TIJELO = 16384
+const RASPORED_UREDIVAC = join(import.meta.dir, 'ConfigRasporedUredivac.js')
+let rasporedJsKes: string | null = null
+
+function rasporedPayload() {
+  const s = taskManager.getRasporedSetting()
+  return { raspored: s.raspored, osnova: s.osnova, updatedBy: s.updatedBy, invalid: s.invalid ?? null, povijest: taskManager.getRasporedHistory(10) }
+}
+
+function handleRasporedGet(): Response {
+  try {
+    return new Response(JSON.stringify(rasporedPayload()), { headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } })
+  } catch (error) {
+    return new Response(JSON.stringify({ error: String(error) }), { status: 500, headers: { 'Content-Type': 'application/json' } })
+  }
+}
+
+async function handleRasporedPut(req: Request): Promise<Response> {
+  const json = (o: unknown, status = 200) => new Response(JSON.stringify(o), { status, headers: { 'Content-Type': 'application/json' } })
+  const tekst = await req.text()
+  if (tekst.length > RASPORED_MAX_TIJELO) return json({ error: `tijelo je veće od ${RASPORED_MAX_TIJELO} B` }, 413)
+  let body: any
+  try { body = JSON.parse(tekst) } catch { return json({ error: 'Neispravno JSON tijelo' }, 400) }
+  const z = parsirajRasporedZahtjev(body)
+  if (!z.ok) return json({ error: z.error }, 400)
+  // `x-regoc-proba: 1` = provjera, ne posao (kao POST /api/tasks): sve provjere, nula upisa, nula WS-a.
+  if (req.headers.get('x-regoc-proba') === '1') {
+    const pr = taskManager.probaRasporedSetting(z.value)
+    if (!pr.ok) return json({ error: pr.error, proba: true }, pr.status)
+    return json({ proba: true, promjena: pr.promjena, zadano: pr.zadano, raspored: pr.novo })
+  }
+  let ishod
+  try { ishod = taskManager.setRasporedSetting(z.value) } catch (e) {
+    return json({ error: e instanceof Error ? e.message : String(e) }, 500)
+  }
+  if (!ishod.ok) return json({ error: ishod.error, ...rasporedPayload() }, ishod.status)
+  if (ishod.promjena) {
+    console.log(`[API] 🧩 raspored Config stranice ${ishod.zadano ? '→ zadano' : `spremljen (${ishod.novo?.redoslijed.length ?? 0} kartica)`} (${z.value.by}, ${z.value.source})`)
+    const s = taskManager.getRasporedSetting()
+    const message = JSON.stringify({ type: 'raspored_changed', raspored: s.raspored, osnova: s.osnova, by: z.value.by })
+    wsClients.forEach(client => { try { client.send(message) } catch { wsClients.delete(client) } })
+  }
+  return json({ ...rasporedPayload(), promjena: ishod.promjena })
+}
+
+/** Logika (iz core/ConfigRaspored.ts) + uređivač — zasebna datoteka, pa je predložak HTML-a ne jede. */
+function handleRasporedJs(): Response {
+  if (rasporedJsKes === null || process.env.NODE_ENV === 'development') {
+    rasporedJsKes = rasporedKlijentskaLogikaJS() + '\n' + readFileSync(RASPORED_UREDIVAC, 'utf-8')
+  }
+  return new Response(rasporedJsKes, { headers: { 'Content-Type': 'application/javascript; charset=utf-8', 'Cache-Control': 'no-cache' } })
+}
+
 async function handleSetPause(req: Request): Promise<Response> {
   try {
     const body = await req.json() as any
@@ -15754,6 +15897,9 @@ async function obradiZahtjev(req: Request): Promise<Response | undefined> {
     if (url.pathname === '/api/config/concurrency' && req.method === 'PUT') return handleConcurrencyPut(req)
     if (url.pathname === '/api/config/autonomy' && req.method === 'GET') return handleAutonomyGet()
     if (url.pathname === '/api/config/autonomy' && req.method === 'PUT') return handleAutonomyPut(req)
+    if (url.pathname === '/api/config/raspored' && req.method === 'GET') return handleRasporedGet()
+    if (url.pathname === '/api/config/raspored' && req.method === 'PUT') return handleRasporedPut(req)
+    if (url.pathname === '/config-raspored.js' && req.method === 'GET') return handleRasporedJs()
     if (url.pathname === '/api/pause' && req.method === 'POST') return handleSetPause(req)
     if (url.pathname.match(/^\/api\/tasks\/[^\/]+\/pause$/) && req.method === 'POST') {
       return handleTaskPause(url.pathname.split('/')[3], true, req)

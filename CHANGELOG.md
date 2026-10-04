@@ -1,3 +1,20 @@
+## 2026-10-04 — uređivač rasporeda Config stranice (TASK-5170, dizajn TASK-5169)
+
+- Config stranica ima JEDAN gumb **✎ Uredi raspored ↔ 💾 Spremi raspored**: kartice se premještaju
+  povlačenjem ručke ⠿ (samo unutar svoje skupine), mijenjaju veličinu kutom ◢ (širina 1–4 stupca,
+  visina 160–1200 px po 40), tipkovnicom (strelice, Shift+strelice, A), uz ✕ Odustani (Esc, s
+  „Vrati"), ↺ Zadano i ▤ Sažmi (na mobitelu uključeno samo). Vrijednosti postavki su za vrijeme
+  uređivanja `inert` — raspored ne može promijeniti postavku.
+- `src/core/ConfigRaspored.ts`: validacija, poredak, spajanje i brojanje izmjena (logika iz
+  prototipa); `GET/PUT /api/config/raspored` — ključ `config.raspored` u `settings`, audit u
+  `settings_history` u istoj transakciji, `409` za zastarjelu `osnova`, `{zadano:true}`, stroga
+  validacija (400/413), `x-regoc-proba: 1` bez upisa; WS `raspored_changed`. Pregledniku ide ISTI kod
+  logike kroz `/config-raspored.js` (uz `src/ConfigRasporedUredivac.js`), izvan predloška HTML-a.
+- Testovi: `tests/config-raspored-logika.test.ts` (22), `tests/config-raspored-postavka.test.ts` (17),
+  `tests/config-raspored-api.test.ts` (2, prava ploča: nepromjenjivost ruta vrijednosti, proba ne
+  puni ploču); e2e `tests/e2e/config_raspored_e2e.py` — Chromium + Firefox, desktop + mobitel, samo
+  povjerljivi događaji (CDP dodir u Chromiumu), 56/0.
+
 ## 2026-10-04 — traka „Čeka odluku": tri skupine, isti filtar kao odlučitelj, jezik (TASK-5173)
 
 - Kvar: traka je pisala „3 zadataka u redu odlučitelja — odlučuje model, ne čekaju tebe", a

@@ -8,6 +8,11 @@ uređivati config; kad napravim izmjene, stisnem isti gumb i to je spremanje."
 **Status:** dizajn i radni prototip su gotovi i testirani. Ugradnja u TaskWebUI (pogon i paket) **nije** dio ovog
 zadatka. To je sljedeći zadatak u lancu (Jelena → Potjeh, pravilo 25), opisan u §9.
 
+**Ugrađeno (TASK-5170, 04.10.2026.):** pogon i paket — `src/core/ConfigRaspored.ts`, `src/ConfigRasporedUredivac.js`,
+`GET/PUT /api/config/raspored`, e2e `tests/e2e/config_raspored_e2e.py`. Odstupanja od prototipa: kut ◢ je PRVO
+dijete kartice (zadnje bi srušilo postojeći `overflow-x` sadržaja, izmjereno 683 px na 390); novi `pointerdown` i `blur`
+otkazuju zaglavljeno vučenje; klijent validira prije slanja.
+
 ---
 
 ## 0. Odluke na jednom mjestu

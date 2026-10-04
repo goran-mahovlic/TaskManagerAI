@@ -1,12 +1,12 @@
 /**
  * Uređivač rasporeda Config stranice (TASK-5169, Grga): pravila koja dizajn propisuje
- * poslužitelju i pregledniku. Logika živi u `docs/skice/config-raspored/raspored-logika.js`
- * dok je Jelena ne preseli u `src/core/ConfigRaspored.ts` — tada se mijenja samo import.
+ * poslužitelju i pregledniku. Logika je iz prototipa (`docs/skice/config-raspored/raspored-logika.js`)
+ * preseljena u `src/core/ConfigRaspored.ts` (TASK-5170) — promijenjen je samo import.
  * Dizajn: `docs/DIZAJN-config-uredivac-rasporeda.md`.
  */
 import { describe, expect, test } from 'bun:test'
-// @ts-ignore — UMD modul bez tipova
-import L from '../docs/skice/config-raspored/raspored-logika.js'
+import * as L0 from '../src/core/ConfigRaspored'
+const L = L0 as any
 
 const valjan = () => ({
   v: 1,
