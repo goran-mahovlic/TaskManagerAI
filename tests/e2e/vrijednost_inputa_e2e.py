@@ -14,6 +14,10 @@ Svi klikovi su povjerljivi (Playwright: CDP Input.* / Juggler), bez dispatchEven
 Ploča se diže u PRIVREMENOJ instalaciji (nikad 17781).
 
   TMPDIR=~/.tmp python3 tests/e2e/vrijednost_inputa_e2e.py --nacin pogon|paket [--korijen DIR]
+      [--pogon-raspored REL]
+
+Način `pogon` oponaša živu instalaciju domaćina: `--pogon-raspored` (ili `TM_POGON_RASPORED`) je
+mapa te instalacije relativno prema $HOME — paket je ne zna i nema zadanu vrijednost (ADR-0001 O1.4).
 """
 import asyncio, json, os, random, sqlite3, subprocess, sys, tempfile, time, urllib.request
 from playwright.async_api import async_playwright
@@ -23,6 +27,7 @@ def arg(ime, zadano=None):
 
 NACIN = arg('--nacin', 'pogon')
 KORIJEN = os.path.abspath(arg('--korijen', os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..')))
+POGON_RASPORED = arg('--pogon-raspored', os.environ.get('TM_POGON_RASPORED', '')).strip('/')
 SPORO_S = 12
 rez = []
 
@@ -58,18 +63,21 @@ def pripremi():
         subprocess.run(['bun', 'scripts/init-db.ts'], cwd=KORIJEN, env=env, check=True, capture_output=True)
         kes = os.path.join(dom, 'data', 'vrijednost_inputa_kes.json')
     else:
-        for d in ('.tmp', '.claude/regoc/data', '.claude/regoc/config'):
+        if not POGON_RASPORED:
+            sys.exit('--nacin pogon traži --pogon-raspored REL (mapa žive instalacije relativno prema $HOME)')
+        podaci = os.path.join(POGON_RASPORED, 'data')
+        for d in ('.tmp', podaci, os.path.join(POGON_RASPORED, 'config')):
             os.makedirs(os.path.join(dom, d), exist_ok=True)
-        ziva = sqlite3.connect('file:' + os.path.expanduser('~/.claude/regoc/data/regoc.db') + '?mode=ro', uri=True)
+        ziva = sqlite3.connect('file:' + os.path.join(os.path.expanduser('~'), podaci, 'regoc.db') + '?mode=ro', uri=True)
         shema = [r[0] for r in ziva.execute("SELECT sql FROM sqlite_master WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%' ORDER BY CASE type WHEN 'table' THEN 0 ELSE 1 END")]
         ziva.close()
-        t = sqlite3.connect(os.path.join(dom, '.claude/regoc/data/regoc.db'))
+        t = sqlite3.connect(os.path.join(dom, podaci, 'regoc.db'))
         for s in shema:
             try: t.execute(s)
             except Exception: pass
         t.commit(); t.close()
         env.update(HOME=dom)
-        kes = os.path.join(dom, '.claude/regoc/data/vrijednost_inputa_kes.json')
+        kes = os.path.join(dom, podaci, 'vrijednost_inputa_kes.json')
     return dom, env, kes
 
 def podigni(dom, env):

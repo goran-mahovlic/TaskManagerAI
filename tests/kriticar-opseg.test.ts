@@ -13,6 +13,7 @@
 import { describe, test, expect, beforeAll, afterAll, beforeEach } from 'bun:test'
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, existsSync } from 'fs'
 import { join } from 'path'
+import { homedir } from 'os'
 import {
   jeSnimkaKoda,
   citajAtribuciju,
@@ -34,7 +35,7 @@ import {
   type CheckResult,
 } from '../src/core/CriticGate'
 
-const HOME = process.env.HOME || '/home/klaudio'
+const HOME = process.env.HOME || homedir()
 let TMP = ''
 let LEDGER = ''
 const stariLedger = process.env.REGOC_CRITIC_LEDGER
@@ -277,7 +278,7 @@ describe('critiqueSpawn s opsegom', () => {
       { name: 'Bash', input: { command: `mkdir -p docs/kod/TASK-5215 && cp Tjedni.ts docs/kod/TASK-5215/ && cp x docs/prijedlozi/qa/snimka-5210/isjecak.ts` } },
     ])
     const cfg = cfgZa(root, { opsegMode: 'shadow' } as any)
-    const o = critiqueSpawn({ taskId: 'TASK-T5215', agentId: 'jelena', sinceMs, live: true, transcripts: [t] }, cfg, runnerPada('docs/'))
+    const o = critiqueSpawn({ taskId: 'TASK-T5215', agentId: 'agent-a', sinceMs, live: true, transcripts: [t] }, cfg, runnerPada('docs/'))
     expect(o.verdict.status).toBe('fail')           // sjena: stari sud i dalje odlučuje
     expect(o.opseg?.novo).toBe('pass')
     expect(o.opseg?.izbaceno.some((i) => i.razlog === 'snimka-koda')).toBe(true)
@@ -294,7 +295,7 @@ describe('critiqueSpawn s opsegom', () => {
     const t = transkript(join(root, '..', 'tr-5217', 's.jsonl'), root, [{ name: 'Edit', input: { file_path: join(root, 'MojModul.ts') } }])
     const pokrenuto: string[] = []
     const r = (c: PlannedCheck, x: number) => { pokrenuto.push(c.target); return runnerPada('tjedni-pregled')(c, x) }
-    const o = critiqueSpawn({ taskId: 'TASK-T5217', agentId: 'jelena', sinceMs, live: true, transcripts: [t] }, cfgZa(root, { opsegMode: 'on' } as any), r)
+    const o = critiqueSpawn({ taskId: 'TASK-T5217', agentId: 'agent-a', sinceMs, live: true, transcripts: [t] }, cfgZa(root, { opsegMode: 'on' } as any), r)
     expect(o.verdict.status).toBe('pass')
     expect(o.enforce).toBe(false)
     expect(pokrenuto.some((p) => p.includes('tjedni-pregled'))).toBe(false)
@@ -309,9 +310,9 @@ describe('critiqueSpawn s opsegom', () => {
     const testPut = join(root, 'tests', 'ploca-jezik.test.ts')
     // Prije starta je isti test kod DRUGOG zadatka pao s istim potpisom.
     const pao: CheckResult = { kind: 'test', target: testPut, cmd: ['bun', 'test', testPut], cwd: root, ok: false, exitCode: 1, ms: 1, timedOut: false, skipped: false, errorLine: 'error: Could not resolve: "./Nesto"' }
-    writeFileSync(LEDGER, JSON.stringify({ ts: new Date(sinceMs - 3600_000).toISOString(), taskId: 'TASK-5211', agentId: 'jelena', round: 1, status: 'fail', signatures: [failureSignature(pao)], enforced: true }) + '\n')
+    writeFileSync(LEDGER, JSON.stringify({ ts: new Date(sinceMs - 3600_000).toISOString(), taskId: 'TASK-5211', agentId: 'agent-a', round: 1, status: 'fail', signatures: [failureSignature(pao)], enforced: true }) + '\n')
     const t = transkript(join(root, '..', 'tr-5220', 's.jsonl'), root, [{ name: 'Write', input: { file_path: join(root, 'PlocaJezik.ts') } }])
-    const o = critiqueSpawn({ taskId: 'TASK-T5220', agentId: 'stribor', sinceMs, live: true, transcripts: [t] }, cfgZa(root, { opsegMode: 'on' } as any), runnerPada('ploca-jezik.test'))
+    const o = critiqueSpawn({ taskId: 'TASK-T5220', agentId: 'agent-b', sinceMs, live: true, transcripts: [t] }, cfgZa(root, { opsegMode: 'on' } as any), runnerPada('ploca-jezik.test'))
     expect(o.verdict.status).toBe('pass')
     expect(o.enforce).toBe(false)
     expect(o.verdict.notes.join(' ')).toContain('zatečen')
@@ -322,7 +323,7 @@ describe('critiqueSpawn s opsegom', () => {
     const { root, sinceMs } = pripremi('slucaj-pravi')
     writeFileSync(join(root, 'Pokvaren.ts'), 'const = ;\n')
     const t = transkript(join(root, '..', 'tr-pravi', 's.jsonl'), root, [{ name: 'Write', input: { file_path: join(root, 'Pokvaren.ts') } }])
-    const o = critiqueSpawn({ taskId: 'TASK-TPRAVI', agentId: 'jelena', sinceMs, live: true, transcripts: [t] }, cfgZa(root, { opsegMode: 'on' } as any), runnerPada('Pokvaren'))
+    const o = critiqueSpawn({ taskId: 'TASK-TPRAVI', agentId: 'agent-a', sinceMs, live: true, transcripts: [t] }, cfgZa(root, { opsegMode: 'on' } as any), runnerPada('Pokvaren'))
     expect(o.verdict.status).toBe('fail')
     expect(o.enforce).toBe(true)
   })
@@ -332,7 +333,7 @@ describe('critiqueSpawn s opsegom', () => {
     writeFileSync(join(root, 'tests', 'kriticar.test.ts'), 'x\n')
     const t = transkript(join(root, '..', 'tr-prop', 's.jsonl'), root, [])
     const declared = { present: true, checks: [{ raw: 'bun test tests/kriticar.test.ts', cmd: ['bun', 'test', 'tests/kriticar.test.ts'], cwdRel: '' }], issues: [], sections: [], docTargets: [] } as any
-    const o = critiqueSpawn({ taskId: 'TASK-TPROP', agentId: 'jelena', sinceMs, live: true, transcripts: [t], declared, rootDir: root }, cfgZa(root, { opsegMode: 'on' } as any), runnerPada('kriticar.test'))
+    const o = critiqueSpawn({ taskId: 'TASK-TPROP', agentId: 'agent-a', sinceMs, live: true, transcripts: [t], declared, rootDir: root }, cfgZa(root, { opsegMode: 'on' } as any), runnerPada('kriticar.test'))
     expect(o.verdict.status).toBe('fail')
     expect(o.verdict.failed.some((f) => f.kind === 'task')).toBe(true)
   })
@@ -342,7 +343,7 @@ describe('critiqueSpawn s opsegom', () => {
     mkdirSync(join(root, 'docs', 'kod'), { recursive: true })
     writeFileSync(join(root, 'docs', 'kod', 'S.ts'), 'x\n')
     writeFileSync(join(root, 'Tudji.ts'), 'x\n')
-    const o = critiqueSpawn({ taskId: 'TASK-TBEZ', agentId: 'jelena', sinceMs, live: true }, cfgZa(root, { opsegMode: 'on' } as any), runnerPada('Tudji', 'docs/kod'))
+    const o = critiqueSpawn({ taskId: 'TASK-TBEZ', agentId: 'agent-a', sinceMs, live: true }, cfgZa(root, { opsegMode: 'on' } as any), runnerPada('Tudji', 'docs/kod'))
     expect(o.verdict.status).toBe('fail')
     expect(o.verdict.failed.map((f) => f.target).some((p) => p.includes('docs/kod'))).toBe(false)
     expect(o.verdict.notes.join(' ')).toContain('atribucija nedostupna')
@@ -351,7 +352,7 @@ describe('critiqueSpawn s opsegom', () => {
   test('opsegMode off = staro ponašanje bez polja opseg; trag bilježi prosle', () => {
     const { root, sinceMs } = pripremi('slucaj-off')
     writeFileSync(join(root, 'A.ts'), 'x\n')
-    const o = critiqueSpawn({ taskId: 'TASK-TOFF', agentId: 'jelena', sinceMs, live: true }, cfgZa(root, { opsegMode: 'off' } as any), runnerPada('nista'))
+    const o = critiqueSpawn({ taskId: 'TASK-TOFF', agentId: 'agent-a', sinceMs, live: true }, cfgZa(root, { opsegMode: 'off' } as any), runnerPada('nista'))
     expect(o.verdict.status).toBe('pass')
     expect(o.opseg).toBeUndefined()
     const red = JSON.parse(readFileSync(LEDGER, 'utf-8').trim().split('\n').pop()!)
