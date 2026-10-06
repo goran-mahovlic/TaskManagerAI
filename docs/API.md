@@ -249,7 +249,7 @@ bota), pa razgovaraju preko LAN-a. Ruta postoji samo uz `razgovor.botKanal.uklju
 ```bash
 curl -X POST http://<ploča>:17781/api/razgovor/od-bota \
   -H "Authorization: Bearer $TM_BOT_KANAL_TOKEN" -H "Content-Type: application/json" \
-  -d '{"izvor":"klaudio","chatId":"-100…","tekst":"…","telegramPorukaId":123,"lanacId":"uuid","skok":1,"izvornik":{"id":"…","ime":"…"},"ts":"…"}'
+  -d '{"izvor":"drugi-bot","chatId":"-100…","tekst":"…","telegramPorukaId":123,"lanacId":"uuid","skok":1,"izvornik":{"id":"…","ime":"…"},"ts":"…"}'
 ```
 
 | Odgovor | Značenje |
