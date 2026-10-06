@@ -132,7 +132,7 @@ export function sklopiRazgovor(o: SklapanjeOpcije): RazgovorSloj {
     botKanal: () => ({ jeZaustavljen: c => botKanal.jeZaustavljen(c), prenesi: u => botKanal.prenesi(u), ovlasti: () => bkPostavke().ovlasti }),
   })
   const put = posiljateljiPut(o.dataDir)
-  ulaz = { razgovor: jezgra, postavke, zabiljezi: p => zabiljeziPosiljatelja(put, p), botKanal }
+  ulaz = { razgovor: jezgra, postavke, zabiljezi: p => zabiljeziPosiljatelja(put, p), konzola: o.konzola, botKanal }
   return { ulaz, jezgra, botKanal }
 }
 

@@ -93,7 +93,7 @@ describe('J5 — nalog iznad praga', () => {
     api.updates = [poruka({ text: '@cvor_bot napravi zadatak: sredi backup', entities: [{ type: 'mention', offset: 0, length: 9 }] })]
     const { r, primljeno } = razgovor()
     await jedanProlaz(cfg(), { ...ZADANO_STANJE }, api, r)
-    expect(api.poslane).toEqual(['📋 Otvoren zadatak TASK-7'])
+    expect(api.poslane).toEqual(['⏳ radim TASK-7'])
     expect(primljeno.length).toBe(0)
   })
 
@@ -103,7 +103,7 @@ describe('J5 — nalog iznad praga', () => {
     api.updates = [poruka({ text: '@cvor_bot neka Ana sredi backup', entities: [{ type: 'mention', offset: 0, length: 9 }] })]
     const { r } = razgovor()
     await jedanProlaz(cfg(), { ...ZADANO_STANJE }, api, r)
-    expect(api.poslane).toEqual(['📋 Otvoren zadatak TASK-8 → ana'])
+    expect(api.poslane).toEqual(['⏳ radim TASK-8 (ana)'])
   })
 
   test('ispod praga uz razgovor → ingest pa razgovor', async () => {

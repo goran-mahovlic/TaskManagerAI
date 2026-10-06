@@ -601,10 +601,40 @@ mape NE učitava sama — vodič za stroj mora doći kroz identitet.
    tim nositeljem (`nositeljIzPoruke`, samo dopušteni nositelji); potvrda u chatu nosi `→ <id>`.
    Pitanje („koji agenti postoje…") je ispod praga i ide razgovoru, koji zna agente iz identiteta.
 
-## 18. Nastavak: kanal bot↔bot (ADR-0003, TASK-5289)
+## 19. Nastavak: kanal bot↔bot (ADR-0003, TASK-5289)
 
 Pravilo §5.1 („pošiljatelj je bot → nikad") i §15 („sadrži @klaudioAI_bot → tišina") imaju
 jednu iznimku: poruku koja stiže LAN rutom `/api/razgovor/od-bota` s valjanom tajnom. Ta
 poruka uvijek ide na razinu ≤ `razgovor.botKanal.ovlasti` (zadano `citanje`) i nikad ne ide u
 ingest. Stop-fraza „Prekini komunikaciju" provjerava se prije cijelog Filtra. Detalji su u
 `docs/adr/ADR-0003-kanal-bot-bot-preko-lan-a.md`.
+
+## 18. Dopunska odluka (TASK-5285, 06.10.2026.): nalog s izvršiteljem, kratki stil, razgovor koji se vidi
+
+Izmjereno na čvoru: zadaci iz chata otvarali su se bez izvršitelja (`no-assignee`, nitko ih ne
+pokreće), rezultati su išli u konzolu daemona umjesto u grupu, izravno obraćanje u vokativu
+(„Šabane, …") padalo je na popis `preskociAkoSadrzi`, a Konzola nije prikazivala razgovor.
+
+1. **Izvršitelj.** Zadatak iz ulaza uvijek dobiva nositelja (`Ingest.odaberiIzvrsitelja`):
+   izričit iz zahtjeva → ruting po ključnim riječima iz `config/agents.json` (bez `*`) → prvi
+   prijedlog klasifikatora koji postoji u instalaciji (bez „nitko posebno", tj. orkestratora)
+   → `ulaz.zadaniIzvrsitelj` (Config → Telegram) → catch-all → prvi dopušteni. Imena dolaze iz
+   konfiguracije, ne iz koda.
+2. **Na nalog.** Poruka DOPUŠTENOG korisnika (popis ulaza ili razgovora; prazni popisi nikoga
+   ne čine dopuštenim) nosi oznaku `nalog` — orkestrator je pušta putem `spawnOnRequest`, ne
+   kroz vrata autonomije (sesija ≥ 70 %). Tjedni strop i ručna kočnica i dalje vrijede.
+   Nalog ne gradi lanac pomoćnika, a ni E1–E2 posao (jedan izvršitelj).
+3. **Razgovor za jednostavno.** Uz uključen razgovor posao ispod praga B (jedan izvršitelj)
+   ide u razgovor, ne na ploču — osim kad poruka izrijekom traži zadatak (`zadatak: …`,
+   `/zadatak`, „otvori zadatak"). Potvrda u chat: `⏳ radim TASK-x — naslov (izvršitelj)`.
+4. **Stil izlaza** (`telegram.stil`, zadano `kratko`): prvi redak ishod (✅/⚠️/❌ + rečenica),
+   najviše 5 točaka, bez uvoda i sažetka, poveznica za detalje (`src/Stil.ts`). Vrijedi za
+   obavijesti ploče, poruke orkestratora korisniku (`src/IzlazniKanal.ts`, isti token i chat
+   kao ploča) i sistemski prompt razgovora. Obavijest ide samo na PRIJELAZ u completed/failed.
+5. **Obraćanje.** Ime bota na početku u padežu (≤ 3 slova nastavka, „Šabane") jest obraćanje
+   i pobjeđuje `preskociAkoSadrzi` — mijenja raniju odluku iz §5 („vokativ nije cilj").
+6. **Vidljivost.** „tipka…" se ponavlja svakih 4 s dok model radi; prompt nosi
+   `[OD: ime (uid:N)]`; Konzola dobiva ulaz (tko, tekst, odluka i razlog — npr. „pročitano —
+   sadrži „<riječ s popisa>"") i izlaz (trajanje, 🧠/🧠🚫, trošak), tajne zatamnjene. Uz `rad` sesija smije
+   ČITATI zapise razgovora, `posiljatelji.json` i `ingest.jsonl` (ne `sesije.json`, ne `radni/`
+   drugih chatova, ne konfiguraciju bota i tajne).

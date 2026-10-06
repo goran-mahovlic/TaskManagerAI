@@ -31,10 +31,13 @@ import { appendFileSync, existsSync, mkdirSync } from 'fs'
 import { dirname, join } from 'path'
 
 import { TM_DATA } from './paths'
-import { getModeClassifier, type EffortTier } from './ModeClassifier'
+import { KLASIFIKATOR_ZADANI, getModeClassifier, type EffortTier } from './ModeClassifier'
 import { countFiles, routeByWeight, scoreWeight, weightTag, type Postupak } from './WeightScore'
 import { CHAIN_TAG, TEXT_ONLY_TAG, isTextOnly } from './WorkflowTemplate'
 import { naslovIzPoruke, renderirajOpis } from './IngestTemplate'
+import { allAgents } from '../types/task-types'
+import { KonfiguracijskiRegistar } from './orchestrator/AgentRegistry'
+import type { AgentDirectory } from './orchestrator/Ports'
 import {
   loadIngestConfig, nacinZaIzvor, projektZaIzvor,
   type IngestPostavke, type Nacin,
@@ -67,9 +70,16 @@ export interface IngestZahtjev {
   projectId?: string
   /** Izričit nositelj; provjerava ga tek `handleCreateTask` (popis `$TM_AGENTS`). */
   assignee?: string
+  /** Izvršitelj kad ga ni ruting ni vrsta posla ne odrede (npr. `ulaz.zadaniIzvrsitelj`). */
+  zadaniIzvrsitelj?: string
   tags?: string[]
   /** Vrijeme prijema (ISO); zadano „sada". */
   receivedAt?: string
+  /**
+   * Pozivatelj ima razgovorni sloj koji će odgovoriti (TASK-5285). Tada jednostavan posao
+   * (ispod praga B, tj. jedan izvršitelj) ide u razgovor, osim kad poruka izrijekom traži zadatak.
+   */
+  razgovor?: boolean
 }
 
 export interface ProvjeraZahtjeva {
@@ -118,8 +128,10 @@ export function validirajZahtjev(tijelo: unknown): ProvjeraZahtjeva {
       senderName: niz(t.senderName, 120).trim() || undefined,
       projectId: niz(t.projectId, 40).trim() || undefined,
       assignee: niz(t.assignee, 64).trim() || undefined,
+      zadaniIzvrsitelj: niz(t.zadaniIzvrsitelj, 64).trim() || undefined,
       tags: Array.isArray(t.tags) ? t.tags.map(x => String(x).trim()).filter(Boolean).slice(0, 20) : undefined,
       receivedAt: niz(t.receivedAt, 40).trim() || undefined,
+      razgovor: t.razgovor === true ? true : undefined,
     },
   }
 }
@@ -181,7 +193,64 @@ export const RAZLOG = {
   SJENA: 'izvor je u položaju shadow — ocjena se zapisuje, zadatak se ne otvara',
   ISPOD_PRAGA: 'ispod praga A — odgovor, ploča se ne dira',
   PITANJE: 'obično pitanje — odgovor, ploča se ne dira',
+  RAZGOVOR: 'jednostavan posao uz uključen razgovor — odgovara razgovor, ploča se ne dira',
 } as const
+
+// ─── Izričito traženje zadatka (TASK-5285) ───────────────────────────────────
+
+/**
+ * Traži li poruka IZRIJEKOM zadatak na ploči: `zadatak:` ili `/zadatak` na početku, ili
+ * „otvori/napravi/stvori/kreiraj zadatak" bilo gdje. Uz uključen razgovor to je jedini način
+ * da jednostavan posao (E1–E2) postane zadatak; spomen riječi („kako napreduje zadatak 5?") nije.
+ */
+export function trazeZadatak(tekst: string): boolean {
+  const t = String(tekst || '').trim().toLowerCase()
+  if (/^\/zadatak\b/.test(t) || /^zadatak\s*[:\-–—]/.test(t)) return true
+  return /\b(otvori|napravi|stvori|kreiraj|otvorite|napravite)\s+(novi\s+)?zadatak\b/.test(t)
+}
+
+// ─── Izvršitelj (TASK-5285) ──────────────────────────────────────────────────
+
+export interface OdabirIzvrsitelja {
+  /** Izričit nositelj iz zahtjeva — pobjeđuje sve. */
+  izricit?: string
+  /** Tekst za ruting po ključnim riječima (`config/agents.json`). */
+  tekst?: string
+  /** Prijedlozi klasifikatora po vrsti posla, redom. */
+  prijedlozi?: string[]
+  /** Zadani izvršitelj kanala (npr. `ulaz.zadaniIzvrsitelj`). */
+  zadani?: string
+  /** Popis dopuštenih nositelja (prazno = popis nije zatvoren). */
+  dopusteni?: string[]
+  registar?: AgentDirectory
+}
+
+/**
+ * Tko radi zadatak iz ulaza. Bez izvršitelja zadatak ostaje na ploči i nitko ga ne pokrene
+ * (izmjereno na čvoru 06.10.: pet zadataka iz chata `no-assignee`). Redom:
+ *   1. izričit nositelj iz zahtjeva;
+ *   2. ruting po ključnim riječima iz `config/agents.json` (najdulja riječ, bez `*`);
+ *   3. prvi prijedlog klasifikatora koji postoji u ovoj instalaciji — osim „nitko posebno";
+ *   4. zadani izvršitelj kanala;
+ *   5. catch-all (`*`) iz registra, pa prvi dopušteni nositelj.
+ * Imena dolaze iz konfiguracije instalacije, ne iz koda.
+ */
+export function odaberiIzvrsitelja(o: OdabirIzvrsitelja = {}): string | undefined {
+  const x = String(o.izricit || '').trim().toLowerCase()
+  if (x) return x
+  const popis = (o.dopusteni ?? allAgents()).map(a => a.toLowerCase())
+  const postoji = (a: string) => !popis.length || popis.includes(a)
+  const registar = o.registar ?? KonfiguracijskiRegistar.izDatoteke()
+  const ruta = o.tekst ? registar.route(o.tekst) : null
+  if (ruta && !ruta.razlog.startsWith('catch-all')) return ruta.agentId.toLowerCase()
+  const izPrijedloga = (o.prijedlozi || []).map(a => a.toLowerCase())
+    .find(a => a !== KLASIFIKATOR_ZADANI && postoji(a))
+  if (izPrijedloga) return izPrijedloga
+  const zadani = String(o.zadani || '').trim().toLowerCase()
+  if (zadani) return zadani
+  if (ruta) return ruta.agentId.toLowerCase()
+  return popis.find(a => a !== KLASIFIKATOR_ZADANI)
+}
 
 export interface IngestZapis {
   ts: string
@@ -261,6 +330,8 @@ export function procijeniIngest(z: IngestZahtjev, cfg: IngestPostavke = loadInge
   else if (nacin === 'shadow') { akcija = 'sjena'; razlog = RAZLOG.SJENA }
   else if (put.postupak === 'odgovor') { akcija = 'odgovor'; razlog = RAZLOG.ISPOD_PRAGA }
   else if (jeObicnoPitanje(cisto.slice(0, ISJECAK_ZNAKOVA))) { akcija = 'odgovor'; razlog = RAZLOG.PITANJE }
+  // Nalog koji imenuje nositelja (TASK-5293) je zadatak i uz razgovor.
+  else if (z.razgovor && !z.assignee && put.postupak === 'jedan-izvrsitelj' && !trazeZadatak(cisto)) { akcija = 'odgovor'; razlog = RAZLOG.RAZGOVOR }
   else { akcija = 'zadatak'; razlog = put.reason }
 
   const zapis: IngestZapis = {
@@ -324,8 +395,11 @@ export function procijeniIngest(z: IngestZahtjev, cfg: IngestPostavke = loadInge
     projectId,
     tags: [...new Set(oznake)],
     createdBy: `ingest:${z.source}`,
-    ...(z.assignee ? { assignee: z.assignee } : {}),
   }
+  const tko = odaberiIzvrsitelja({
+    izricit: z.assignee, tekst: cisto, prijedlozi: razred.suggestedAgents || [], zadani: z.zadaniIzvrsitelj,
+  })
+  if (tko) odluka.zadatak.assignee = tko
   return odluka
 }
 

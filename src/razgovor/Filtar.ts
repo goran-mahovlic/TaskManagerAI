@@ -13,13 +13,20 @@ export function normaliziraj(t: string): string {
   return t.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D').toLowerCase()
 }
 
-/** Počinje li poruka imenom bota kao zasebnom riječi (`^ime\b`, bez obzira na veličinu slova i dijakritiku). */
+/**
+ * Počinje li poruka imenom bota (bez obzira na veličinu slova i dijakritiku), i u padežu:
+ * „Šabane, …" (vokativ) i „Šabanu …" su obraćanje kao i „Šaban, …" — najviše 3 slova
+ * nastavka, kao kod `sadrziRijec`. Bez toga je „Šabane da li vidiš korisnika Bubi" prošla
+ * kao poruka za drugoga (sadrži „Bubi") i bot je šutio (TASK-5285).
+ */
 export function pocinjeImenom(tekst: string, ime: string): boolean {
   const i = normaliziraj(ime.trim())
   if (!i) return false
   const t = normaliziraj(tekst.trimStart())
   if (!t.startsWith(i)) return false
-  const iza = t.charAt(i.length)
+  const nastavak = t.slice(i.length).match(/^\p{L}*/u)![0]
+  if (nastavak.length > MAX_NASTAVAK) return false
+  const iza = t.charAt(i.length + nastavak.length)
   return iza === '' || !/[\p{L}\p{N}_]/u.test(iza)
 }
 
@@ -69,18 +76,24 @@ export function sadrziRijec(tekst: string, rijec: string): boolean {
  * Vrijedi i za ulaz: poruka za drugoga ne otvara zadatak.
  */
 export function jeZaDrugog(p: UlaznaPoruka, s: Pick<RazgovorPostavke, 'preskociAkoSadrzi' | 'tisinaKadDrugom'>): boolean {
-  if (p.privatno || p.obracanjeBotu || p.izvor === 'bot') return false
+  return razlogZaDrugog(p, s) !== null
+}
+
+/** Zašto je poruka za drugoga (za zapis i Konzolu, TASK-5285) — `null` kad nije. */
+export function razlogZaDrugog(p: UlaznaPoruka, s: Pick<RazgovorPostavke, 'preskociAkoSadrzi' | 'tisinaKadDrugom'>): string | null {
+  if (p.privatno || p.obracanjeBotu || p.izvor === 'bot') return null
   const spomeni = p.spomeni || []
   const o = p.odgovorNa && p.odgovorNa.id !== p.posiljateljId ? p.odgovorNa : undefined
   for (const unos of s.preskociAkoSadrzi || []) {
     const e = bezEt(unos)
     if (!e) continue
-    if (sadrziRijec(p.tekst, unos)) return true
-    if (unos.trim().startsWith('@') && spomeni.includes(e)) return true
-    if (o && (o.korisnickoIme === e || (!!o.ime && normaliziraj(o.ime.trim()) === normaliziraj(e)))) return true
+    if (sadrziRijec(p.tekst, unos)) return `sadrži „${unos.trim()}"`
+    if (unos.trim().startsWith('@') && spomeni.includes(e)) return `spominje ${unos.trim()}`
+    if (o && (o.korisnickoIme === e || (!!o.ime && normaliziraj(o.ime.trim()) === normaliziraj(e)))) return `odgovor na poruku „${unos.trim()}"`
   }
-  if (s.tisinaKadDrugom && (spomeni.length > 0 || !!o)) return true
-  return false
+  if (s.tisinaKadDrugom && spomeni.length > 0) return `tuđi spomen @${spomeni[0]}`
+  if (s.tisinaKadDrugom && o) return `odgovor na tuđu poruku (${o.korisnickoIme || o.ime || o.id})`
+  return null
 }
 
 export function trebaOdgovoriti(p: UlaznaPoruka, s: RazgovorPostavke): boolean {
