@@ -14,6 +14,7 @@ import {
 } from './RazgovorPostavke'
 import { stvoriRazgovor, type RazgovorJezgra, type RazgovorOvisnosti } from './Razgovor'
 import { izvrsiteljRazgovora } from './Izvrsitelj'
+import { ucitajAgente, ucitajUpute } from './Identitet'
 import { procitajPosiljatelje, zabiljeziPosiljatelja, type Posiljatelj } from './Posiljatelji'
 import type { RazgovorUlaza } from '../TelegramPoller'
 
@@ -81,10 +82,12 @@ export function modelIzKonfiguracije(putanja: string): string | undefined {
   } catch { return undefined }
 }
 
-export interface SklapanjeOpcije extends Omit<RazgovorOvisnosti, 'postavke' | 'izvrsitelj' | 'korijen'> {
+export interface SklapanjeOpcije extends Omit<RazgovorOvisnosti, 'postavke' | 'izvrsitelj' | 'korijen' | 'agenti' | 'upute'> {
   dbPath: string
   dataDir: string
   modelConfigPath: string
+  /** Registar agenata (`TM_AGENTS_REGISTRY`) — čita se pri svakoj novoj sesiji (TASK-5293). */
+  agentiPut?: string
 }
 
 /** Jedan razgovorni sloj po procesu ploče; poller ga dobiva kroz `RazgovorUlaza`. */
@@ -97,6 +100,8 @@ export function sklopiRazgovor(o: SklapanjeOpcije): { ulaz: RazgovorUlaza; jezgr
     izvrsitelj: izvrsiteljRazgovora(),
     korijen: join(o.dataDir, 'razgovor'),
     modelZadano: () => modelIzKonfiguracije(o.modelConfigPath),
+    agenti: () => ucitajAgente(o.agentiPut),
+    upute: () => ucitajUpute(o.uputePut),
   })
   const put = posiljateljiPut(o.dataDir)
   return { ulaz: { razgovor: jezgra, postavke, zabiljezi: p => zabiljeziPosiljatelja(put, p) }, jezgra }

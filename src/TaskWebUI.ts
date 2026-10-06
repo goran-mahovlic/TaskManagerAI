@@ -10798,6 +10798,9 @@ function razgovorSloj(): { ulaz: RazgovorUlaza; jezgra: RazgovorJezgra } {
     instalacija: process.env.TM_NAZIV || osHostname(),
     env: process.env,
     dokumentiMape: [join(TM_DATA, 'izvjestaji')],
+    // TASK-5293: identitet upravitelja — agenti iz registra, vodič vlasnika samo iz okoline stroja.
+    agentiPut: AGENTS_REGISTRY_FILE,
+    uputePut: process.env.TM_RAZGOVOR_UPUTE || undefined,
     log: (r: string) => console.log(r),
   })
   return _razgovor
