@@ -243,26 +243,42 @@ primjeri s ploče su u [ODLUCIVANJE.md](ODLUCIVANJE.md); ovdje su samo krajevi:
 
 Dva bota u istoj Telegram grupi ne vide jedan drugoga (Telegram botu ne isporučuje poruke drugog
 bota), pa razgovaraju preko LAN-a. Ruta postoji samo uz `razgovor.botKanal.ukljucen=true`
-(zadano isključeno) i traži tajnu `TM_BOT_KANAL_TOKEN` iz okoline stroja (ista na oba kraja)
-**i** adresu s popisa `razgovor.botKanal.adrese`.
+(zadano isključeno). Svaki zahtjev nosi **HMAC-SHA256 potpis** u zaglavlju (TASK-5299). Tajna
+nikad ne ide na žicu. Uz potpis se traži adresa s popisa `razgovor.botKanal.adrese`.
+
+Tajne su dvije, po jedna za svaki smjer, i drže se samo u okolini stroja:
+`TM_BOT_KANAL_TAJNA_SLANJE` potpisuje odlazne zahtjeve, a `TM_BOT_KANAL_TAJNA_PRIMANJE` provjerava
+dolazne. Tajna slanja jednog kraja je tajna primanja drugog. Svaka ima barem 32 znaka, a dvije
+tajne istog kraja moraju biti različite.
+
+```
+X-Bot-Kanal-Potpis: t=<unix sekunde>,v1=<hex HMAC-SHA256(tajna, "<t>\n<METODA>\n<put>\n<sirovo tijelo>")>
+```
+
+`put` je put rute (`/api/razgovor/od-bota`, `…/stop`, `…/nastavi`, `…/stanje`). Za `GET` je
+tijelo prazno. Primatelj potpis provjerava nad **sirovim** bajtovima tijela i čita samo njih.
+`t` smije odstupati od sata primatelja najviše ±60 s. Isti `(izvor, lanacId, skok)` ponovljen
+unutar 10 min dobiva `409 ponovljeno`.
 
 ```bash
-curl -X POST http://<ploča>:17781/api/razgovor/od-bota \
-  -H "Authorization: Bearer $TM_BOT_KANAL_TOKEN" -H "Content-Type: application/json" \
-  -d '{"izvor":"drugi-bot","chatId":"-100…","tekst":"…","telegramPorukaId":123,"lanacId":"uuid","skok":1,"izvornik":{"id":"…","ime":"…"},"ts":"…"}'
+T=$(date +%s); B='{"izvor":"drugi-bot","chatId":"-100…","tekst":"…","telegramPorukaId":123,"lanacId":"uuid","skok":1,"izvornik":{"id":"…","ime":"…"},"ts":"…"}'
+S=$(printf '%s\nPOST\n/api/razgovor/od-bota\n%s' "$T" "$B" | openssl dgst -sha256 -hmac "$TM_BOT_KANAL_TAJNA_SLANJE" -r | cut -d' ' -f1)
+curl -X POST http://<ploča>:17781/api/razgovor/od-bota -H "X-Bot-Kanal-Potpis: t=$T,v1=$S" \
+  -H "Content-Type: application/json" --data-raw "$B"
 ```
 
 | Odgovor | Značenje |
 |---|---|
 | `202` | primljeno; razgovor odgovara u grupu (kao reply na `telegramPorukaId`). Bot-poruka **nikad** ne ide u `/api/ingest` |
-| `401` | tajna nedostaje ili je pogrešna |
-| `403` | kanal isključen, tajna nije postavljena na stroju, adresa / chat / izvor nije na popisu |
-| `409` | `razlog`: `zaustavljeno` (stop-fraza ili gumb), `strop`, `skok` (> strop), `vlastita` (odjek) |
-| `400` / `413` | nepoznato polje ili neispravna vrijednost / tekst dulji od 4000 znakova |
+| `401` | potpisa nema, potpis je neispravan ili je `t` izvan ±60 s |
+| `403` | kanal isključen, tajna primanja nije postavljena (ili je ista kao tajna slanja), adresa / chat / izvor nije na popisu |
+| `409` | `razlog`: `zaustavljeno` (stop-fraza ili gumb), `strop`, `skok` (> strop), `vlastita` (odjek), `ponovljeno` |
+| `400` / `413` | nije JSON, nepoznato polje ili neispravna vrijednost / tekst dulji od 4000 znakova |
 | `503` | razgovor ili Telegram petlja na tom stroju ne radi |
 
-Uz istu tajnu: `POST …/od-bota/stop` i `…/od-bota/nastavi` (`{chatId, by, razlog?}`) — drugi
-kraj javlja promjenu zastavice; `GET …/od-bota/stanje` — zastavice po chatu (bez tajne).
+Uz potpis vrijede i ove rute: `POST …/od-bota/stop` i `…/od-bota/nastavi` (`{chatId, by, razlog?}`)
+kojima drugi kraj javlja promjenu zastavice. Nastavak se ne prenosi (TASK-5291, N2).
+`GET …/od-bota/stanje` vraća zastavice po chatu, bez tajne.
 
 Postavke (kartica Config → Razgovor → Bot↔bot): `GET|PUT /api/config/razgovor/bot-kanal`
 (`ukljucen`, `drugi[{ime,korisnickoIme,url}]`, `chatovi`, `adrese`, `ovlasti` `citanje|rad`,

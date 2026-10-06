@@ -4,14 +4,14 @@
 // Zastavica po chatu (`razgovor.botKanal.stanje`) upisuje sustav (stop-fraza, strop, gumb);
 // brojilo stropa i vlastite poslane poruke žive u procesu (restart ih hvata `skok ≤ strop`).
 //
-// Tajna (`TM_BOT_KANAL_TOKEN`) NIJE postavka — samo okolina stroja (ADR-0003 §3).
+// Tajne (`TM_BOT_KANAL_TAJNA_SLANJE` / `_PRIMANJE`, TASK-5299) NISU postavka — samo okolina stroja (ADR-0003 §3).
 //
 // Autorica: Jelena (Engineer), TASK-5290.
 
 import { Database } from 'bun:sqlite'
 import { ensureSettingsSchema } from '../core/ConcurrencySetting'
 import {
-  BOT_KANAL_ZADANO, praznoStanje, type BotKanalPostavke, type BotKanalStanje, type DrugiBot, type Spremiste,
+  BOT_KANAL_ZADANO, praznoStanje, smijeTajnuNa, type BotKanalPostavke, type BotKanalStanje, type DrugiBot, type Spremiste,
   type ZastavicaChata,
 } from './BotKanal'
 
@@ -117,6 +117,11 @@ export function getBotKanalPostavke(db: Database): { postavke: BotKanalPostavke;
     const p = provjeri(polje, v)
     if (p.ok) postavke[polje] = p.value
     else upozorenja.push(`${kljuc}: nečitljiva vrijednost u bazi — vrijedi zadano`)
+  }
+  for (const x of postavke.drugi as DrugiBot[]) {
+    if (!smijeTajnuNa(x.url, postavke.adrese as string[])) {
+      upozorenja.push(`${x.ime}: host adrese ploče (${x.url}) nije u popisu adresa — tajna mu ne ide, prijenos ne radi`)
+    }
   }
   return { postavke: postavke as unknown as BotKanalPostavke, upozorenja }
 }

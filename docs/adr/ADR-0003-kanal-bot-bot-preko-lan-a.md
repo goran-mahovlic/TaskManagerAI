@@ -45,7 +45,8 @@ stop-fraza, tvrdi strop i ručni gumb, a pali je samo ručni nastavak.**
 
 ## 3. Ugovor kanala (isti na oba kraja)
 
-`POST /api/razgovor/od-bota`, zaglavlje `Authorization: Bearer <TM_BOT_KANAL_TOKEN>`.
+`POST /api/razgovor/od-bota`, zaglavlje `Authorization: Bearer <TM_BOT_KANAL_TOKEN>`. Od TASK-5299 to zaglavlje
+zamjenjuje HMAC potpis `X-Bot-Kanal-Potpis` s po jednom tajnom za svaki smjer (§14).
 
 ```jsonc
 {
@@ -323,3 +324,70 @@ kroz `restart_kad_mirno.sh`, a provjerava `StaleCodeCheck`.
 - Brojilo stropa i vlastite poruke žive u procesu ploče; zastavica u `settings`.
 - Testovi: `tests/bot-kanal.test.ts` (B1, B4, B5, B7, B8, B9, B11), `tests/razgovor-bot-kanal.test.ts`
   (B2, B3, B4 iz poteza, B5 kroz poller, B6, prekid stvarnog procesa).
+- Tajna u paketu dolazi iz okoline usluge (`config/postavke.env` na čvoru, `EnvironmentFile`), na glavnom
+  stroju iz datoteke tajni u `~/.claude/tools/Telegram/config/`. Oboje 0600, ista vrijednost.
+- Uživo na node-A (06.10.2026., 22:10–22:12 UTC): bez tajne 401; s tajnom `/stanje` 200; poruka „od
+  Klaudija" 202 → Šaban odgovorio u grupi (lanac u zapisu razgovora); ručni stop → sljedeća poruka 409
+  `zaustavljeno`, redak `bot-kanal:rucno` u povijesti; nastavak gumbom.
+
+## 13. Sigurnosni pregled prije uključivanja (TASK-5291, Malik)
+
+Kanal je do Goranove odluke **isključen na oba kraja** (07.10.2026.: `razgovor.botKanal.ukljucen=false`
+na čvoru, `botKanal.ukljucen=false` u `grupe.json`). Uključuje vlasnik nakon isporuke popravaka.
+
+Popravljeno (testovi u `tests/bot-kanal.test.ts` i `tests/razgovor-bot-kanal.test.ts`, „TASK-5291";
+svi padaju na kodu iz TASK-5290):
+
+| # | Nalaz | Popravak |
+|---|-------|----------|
+| N1 | **Visoko.** Jedna sesija po chatu: bot-potez (na `citanje`) piše u istu sesiju koju sljedeći ljudski potez nastavlja na `puno` — tekst koji je donio drugi bot (a oblikovao ga je bilo koji član grupe) postaje kontekst poteza s punom ljuskom. | Bot-potez nastavlja sesiju samo kao račvu (`--fork-session`) i njegova sesija se NE sprema kao sesija chata. |
+| N1b | API ploče nema prijavu: s adrese drugog bota (gdje radi model s ljuskom i tajnom) jedan `PUT …/bot-kanal` ili `POST …/rucno {nastavi}` poništava „Prekini komunikaciju". | PUT postavki i `nastavi` s adrese iz popisa `adrese` → 403; `zaustavi` prolazi. |
+| N2 | `/od-bota/nastavi` s valjanom tajnom skidao je zastavicu — stop je bio jak koliko slabiji kraj. | Nastavak se ne prenosi: drugi kraj smije zaustaviti, ne i nastaviti. Fraza „Nastavi komunikaciju" i dalje radi (oba kraja je vide sama); gumb nastavlja samo svoj kraj. |
+| N3 | `drugi.url` mijenja bilo tko s mreže → `Authorization: Bearer <tajna>` (prijenos, stop i kartica Config) ide na bilo koju adresu. | Tajna ide samo hostu koji je u `adrese`; kartica upozorava na nesklad. |
+| N4 | Uz `botKanal.ovlasti=rad` bot-potez dobiva `rad` bez obzira tko je pokrenuo lanac — pranje naloga kroz drugog bota. | `rad` samo kad je `izvornik.id` (brojčani) među dopuštenima ovog bota; inače `citanje`. Preporuka: ostati na `citanje`. |
+| N5 | Bilo koja ljudska poruka (i treći član grupe) nulirala je strop. | Strop nulira samo poruka stop-korisnika. |
+
+Odgovori na §8: (a) **Da, HMAC treba prije uključivanja smjera čvor → glavni stroj**: glavna ploča
+radi u kontejneru i SVE klijente iz LAN-a vidi kao `172.24.0.1` (docker-proxy, izmjereno u
+`/proc/net/tcp`), pa allowlista adresa ondje ne može raditi — zato sada vraća 403 i Šabanove
+poruke ne stižu. `172.24.0.1` se NE SMIJE upisati u `adrese` (propustio bi svaki host u LAN-u).
+Uz to tajna putuje u čistom HTTP-u i nema zaštite od ponavljanja. Prijedlog iz §8(a) stoji:
+HMAC-SHA256 (`ts`, metoda, put, tijelo) u zaglavlju, `ts` ±60 s, odbijanje ponovljenog
+`(izvor, lanacId, skok)` 10 min, tajna nikad na žici; uz to po jedna tajna po smjeru.
+(b) Klaudijev ograničeni potez je prihvatljiv: `--tools Read,Glob,Grep`, bez postavki i MCP-a,
+okolina bijelom listom, odgovor se zatamnjuje. (c) `rad` smije postojati samo uz N4.
+
+Ostaje (svjesno, nije zatvoreno kodom): model na `puno` (čvor) i Klaudijev ljudski potez imaju
+punu ljusku — mogu pročitati tajnu (`/proc/<pid>/environ`, `postavke.env`) i promijeniti bazu
+ili postavke svog kraja, pa i poništiti stop na SVOM kraju. N2 drži stop na drugom kraju.
+Ostali hostovi u LAN-u i dalje mogu mijenjati postavke ploče (ploča nema prijavu — zaseban posao).
+Glasovna „prekini komunikaciju" se ne prepoznaje (provjera je samo nad tekstom); uređena poruka
+također ne (`allowed_updates=["message"]`).
+
+## 14. HMAC potpis i isporuka na čvor (TASK-5299, Jelena)
+
+Ovo provodi §13 (a). Ugovor je opisan u `docs/API.md` → „Kanal bot↔bot".
+- **Potpis umjesto tajne na žici.** Zaglavlje je `X-Bot-Kanal-Potpis: t=<unix s>,v1=<hex>`, a
+  vrijednost je HMAC-SHA256 nad `"<t>\n<METODA>\n<put>\n<sirovo tijelo>"`. Primatelj računa
+  potpis nad metodom i putem **rute koja obrađuje zahtjev**, a ne nad onim što tvrdi klijent.
+  Jezgra parsira samo potpisane bajtove (`Zahtjev.tijelo`), pa ruta ne može pročitati jedno tijelo
+  dok potpis jamči drugo. `Authorization: Bearer` se više ne prima i ne šalje.
+- **Vrijeme i ponavljanje.** `t` smije odstupati ±60 s, inače `401`. Potpis se provjerava prije
+  vremena, pa i zastarjeli lažni potpis dobiva odgovor „neispravan". Ponovljeni
+  `(izvor, lanacId, skok)` unutar 10 min dobiva `409 ponovljeno`. Pamćenje živi u procesu ploče;
+  nakon restarta ponavljanje i dalje drži ±60 s. Ponavljanje stopa ništa ne mijenja jer je stop
+  idempotentan. Ponavljanje nastavka također ne, jer se nastavak ne prenosi (N2).
+- **Po jedna tajna po smjeru.** Paket čita `TM_BOT_KANAL_TAJNA_SLANJE` i
+  `TM_BOT_KANAL_TAJNA_PRIMANJE` iz `config/postavke.env`. Klaudio ih čita iz
+  `~/.claude/tools/Telegram/config/.env`. Obje datoteke imaju prava 0600. Tajna slanja čvora je
+  tajna primanja glavnog stroja, i obratno. Tajna kraća od 32 znaka ne vrijedi. Ako su tajne
+  slanja i primanja na istom kraju jednake, odgovor je `403`, jer bi tada snimljena poruka mogla
+  biti odbijena natrag. `TM_BOT_KANAL_TOKEN` više ne postoji.
+- **Adresa iza docker-proxyja.** Uvedena je postavka jezgre `provjeraAdrese`, zadano `true`. Paket
+  je ne izlaže kroz API: čvor vidi pravu adresu, pa brava ostaje. Glavna ploča u kontejneru sve
+  klijente vidi kao `172.24.0.1`, zato `grupe.json` → `botKanal.provjeraAdrese: false`, a tamo
+  vrata drži potpis. `172.24.0.1` se **ne** upisuje u `adrese`. `adrese` i dalje određuju kojem
+  hostu smije ići potpisana poruka (N3).
+- **Isporuka na čvor.** Čvor je na grani `zadatak/TASK-194` s vlastitim commitovima. Ova grana
+  se na nju **spaja** (`git merge`), bez `checkout -f`. Kanal na oba kraja ostaje isključen dok
+  ga vlasnik ne uključi.

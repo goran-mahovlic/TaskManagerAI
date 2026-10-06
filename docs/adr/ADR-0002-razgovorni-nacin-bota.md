@@ -353,6 +353,18 @@ od `naredbePloce`, inače izlaz 2. Proba nakon: `ps aux`, `id` odbijeni („Bash
 `ukljucen=true`, `ovlasti=citanje` ili `rad` (`rad` uz brojčane id-eve), `odgovaraNa` bilo koji
 osim `sve`, bez `TM_RAZGOVOR_PUNO`. Konačno uključenje i dalje traži Goranovo odobrenje.
 
+### 7.4 E2E nakon pregleda (Potjeh, TASK-5288, 06.10.2026.)
+
+Na node-A, nad isporučenim `db161f77` (`IZOLACIJA` u pogonu), na odobrenoj konfiguraciji (`citanje`, `spomen`, mapa po
+chatu, bez `TM_RAZGOVOR_PUNO`) prolazi **5/5**. (1) `system/init`: 0 od 45 vještina operatora i 0 MCP poslužitelja; kontrola
+bez izolacije ima 61 vještinu i serena/claude.ai. (2) Podmetnuti `CLAUDE.md` ne djeluje; kontrola „BANANA". (3) Točni
+`curl ?status=blocked` vraća 15, isto kao ploča. (4) Kanarinac okoline i datoteka izvan radne mape nisu iznijeti, ni kad je
+identitet zamijenjen napadačem: BashStraza i dopuštenja odbijaju `echo $X`, `head`, `Read` i `curl | head`. (5) SEND_DOC
+šalje iz radne mape i `data/izvjestaji`. Izvan njih, symlink prema van, radna mapa drugog chata i `config/telegram.json` daju
+„dokument nije poslan: izvan dopuštene mape". Detalji su u `docs/QA_RAZGOVOR_E2E_NODEA_TASK-5288.md`.
+**Presuda (Potjeh):** E2E potvrđen za `citanje` (i `rad` uz brojčane id-eve). U pogonu na node-A je `ovlasti=puno` uz
+`TM_RAZGOVOR_PUNO=1` (vlasnik, 17:17 UTC). Taj režim §7.1 (c) za node-A ne odobrava i ovaj E2E ga ne pokriva.
+
 ## 8. Zapis razgovora po chatu
 
 `$TM_HOME/data/razgovor/<kanal>/<chatId>/<YYYY-MM-DD>.jsonl`, jedan redak po potezu:

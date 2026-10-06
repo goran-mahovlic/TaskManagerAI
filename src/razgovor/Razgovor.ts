@@ -354,7 +354,14 @@ export function stvoriRazgovor(d: RazgovorOvisnosti): RazgovorJezgra {
     const bk = d.botKanal?.() || null
     const botPotez = stavke.some(x => x.p.izvor === 'bot')
     const botOvlasti = botPotez ? (bk?.ovlasti() ?? 'citanje') : null
-    const smije = (x: { p: UlaznaPoruka }) => x.p.izvor === 'bot' ? botOvlasti === 'rad' : jeDopusten(x.p, s.dopusteniKorisnici)
+    // `rad` za bot-poruku samo kad je lanac pokrenuo dopušteni čovjek OVOG bota, po brojčanom
+    // id-u (ime piše pošiljatelj) — inače bi drugi bot prao naloge onih koje ovaj bot ne sluša
+    // (sigurnosni pregled TASK-5291, N4).
+    const izvornikDopusten = (x: UlaznaPoruka) => {
+      const id = x.lanac?.izvornik?.id || ''
+      return /^\d+$/.test(id) && s.dopusteniKorisnici.some(dd => dd.trim() === id)
+    }
+    const smije = (x: { p: UlaznaPoruka }) => x.p.izvor === 'bot' ? botOvlasti === 'rad' && izvornikDopusten(x.p) : jeDopusten(x.p, s.dopusteniKorisnici)
     let ovlasti: RazgovorPostavke['ovlasti'] = s.ovlasti !== 'citanje' && stavke.every(smije) && procitano.every(smije) ? s.ovlasti : 'citanje'
     if (botOvlasti && ovlasti !== 'citanje') ovlasti = botOvlasti
     const lanac = botPotez ? [...stavke].reverse().find(x => x.p.izvor === 'bot')!.p.lanac || null : null
@@ -375,10 +382,15 @@ export function stvoriRazgovor(d: RazgovorOvisnosti): RazgovorJezgra {
       timeoutMs: s.rokSek * 1000,
       extra: {
         ...(resume ? { resume } : {}),
-        args: argumentiOvlasti(ovlasti, {
-          port: d.port, radniDir, tmHome: d.tmHome, home: d.home, zasticene: d.uputePut ? [d.uputePut] : [],
-          korijen: d.korijen, ingestLog: d.ingestLog, kanal: p.kanal, chatId: p.chatId,
-        }),
+        args: [
+          ...argumentiOvlasti(ovlasti, {
+            port: d.port, radniDir, tmHome: d.tmHome, home: d.home, zasticene: d.uputePut ? [d.uputePut] : [],
+            korijen: d.korijen, ingestLog: d.ingestLog, kanal: p.kanal, chatId: p.chatId,
+          }),
+          // Bot-potez čita sesiju chata, ali ne piše u nju (TASK-5291, N1): inače tekst koji je
+          // drugi bot donio ostaje u sesiji i sljedeći ljudski potez (na `puno`) ga nosi kao svoj.
+          ...(botPotez && resume ? ['--fork-session'] : []),
+        ],
         env: okolinaRazgovora(d.env, oznaka),
         ...(kontrola ? { signal: kontrola.signal } : {}),
       },
@@ -440,7 +452,8 @@ export function stvoriRazgovor(d: RazgovorOvisnosti): RazgovorJezgra {
     }
 
     const sessionId = res.sessionId || ses?.sessionId
-    if (sessionId) {
+    // Bot-potez (vlastita, odvojena sesija) ne postaje sesija chata — v. `--fork-session` gore.
+    if (sessionId && !botPotez) {
       sesije[c.kljuc] = {
         sessionId,
         zadnjiMs: sat(),
