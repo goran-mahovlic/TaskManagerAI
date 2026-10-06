@@ -97,6 +97,15 @@ describe('J5 — nalog iznad praga', () => {
     expect(primljeno.length).toBe(0)
   })
 
+  test('TASK-5293: potvrda nosi nositelja kad ga je nalog imenovao', async () => {
+    const api = new LazniApi()
+    api.odgovorIngest = { status: 201, tijelo: { ok: true, created: true, taskId: 'TASK-8', assignee: 'ana' } }
+    api.updates = [poruka({ text: '@cvor_bot neka Ana sredi backup', entities: [{ type: 'mention', offset: 0, length: 9 }] })]
+    const { r } = razgovor()
+    await jedanProlaz(cfg(), { ...ZADANO_STANJE }, api, r)
+    expect(api.poslane).toEqual(['📋 Otvoren zadatak TASK-8 → ana'])
+  })
+
   test('ispod praga uz razgovor → ingest pa razgovor', async () => {
     const api = new LazniApi()
     api.updates = [poruka({ text: '@cvor_bot koliko?', entities: [{ type: 'mention', offset: 0, length: 9 }] })]

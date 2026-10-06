@@ -596,3 +596,7 @@ mape NE učitava sama — vodič za stroj mora doći kroz identitet.
    razinama; na `citanje`/`rad` ljuska ionako ide kroz stražu (samo čitanje ploče).
 4. `radniDir` jednak HOME-u se i dalje odbija (§14, TASK-5279) — na nižoj razini dao bi čitanje
    cijelog HOME-a. Vodič zato ne mora biti u radnoj mapi.
+5. Nalog iznad praga uzima ulaz (`/api/ingest`), ne razgovor — bot ga ne vidi. Zato ulaz sam
+   prepoznaje izričito imenovanog agenta („neka Ana napravi…", `@ana`, „Ana, …") i otvara zadatak s
+   tim nositeljem (`nositeljIzPoruke`, samo dopušteni nositelji); potvrda u chatu nosi `→ <id>`.
+   Pitanje („koji agenti postoje…") je ispod praga i ide razgovoru, koji zna agente iz identiteta.

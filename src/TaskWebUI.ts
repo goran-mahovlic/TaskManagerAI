@@ -62,6 +62,8 @@ import {
 import { probajUlaz, stanjeUlaza, pokreniTelegramPoller, uskladiTelegramPoller, type RazgovorUlaza } from './TelegramPoller'
 import { razgovorGet, razgovorPut, razgovorPovijestGet, sklopiRazgovor, zadnjiPosiljatelji } from './razgovor/RazgovorPloca'
 import type { RazgovorJezgra } from './razgovor/Razgovor'
+import { ucitajAgente } from './razgovor/Identitet'
+import { jeDopustenAgent } from './core/AgentIds'
 import {
   loadOrchestratorConfig, validateOrchestratorPatch, saveOrchestratorConfig, stanjeOrkestratora,
   orchestratorConfigPath,
@@ -169,7 +171,7 @@ import { prigusenje } from './core/ProbeGuard'
 // U6/TASK-4266: generički ulaz `POST /api/ingest` — source/externalId/replyTo/text/senderName.
 // Ništa u njemu ne zna za Telegram; most, pretinac e-pošte i konzola su obični pozivatelji.
 import {
-  procijeniIngest, validirajZahtjev, zapisiUlaz, INGEST_LOG_PATH,
+  procijeniIngest, validirajZahtjev, zapisiUlaz, INGEST_LOG_PATH, nositeljIzPoruke,
 } from './core/Ingest'
 import { renderirajOpis } from './core/IngestTemplate'
 import {
@@ -11222,6 +11224,14 @@ async function handleIngest(req: Request): Promise<Response> {
     return json({ ok: false, error: provjera.greske.join('; '), greske: provjera.greske }, 400)
   }
   const zahtjev = provjera.zahtjev!
+  // TASK-5293: nalog koji izričito imenuje agenta („neka Ana napravi…") ide tom agentu.
+  // Samo dopušteni nositelji — inače bi `POST /api/tasks` odbio cijeli zadatak.
+  if (!zahtjev.assignee) {
+    try {
+      const n = nositeljIzPoruke(zahtjev.text, ucitajAgente(AGENTS_REGISTRY_FILE))
+      if (n && jeDopustenAgent(n)) zahtjev.assignee = n
+    } catch { /* bez nositelja — bira orkestrator */ }
+  }
 
   let odluka
   try {
@@ -11300,6 +11310,7 @@ async function handleIngest(req: Request): Promise<Response> {
     + `${taskId} (${odluka.effort}/${odluka.tezina}, projekt ${odluka.projectId})`)
   return json({
     ok: true, created: true, taskId,
+    assignee: odluka.zadatak!.assignee ?? null,
     title: odluka.zadatak!.title,
     tags: odluka.zadatak!.tags,
     ...sazetak,

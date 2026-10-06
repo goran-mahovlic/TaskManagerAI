@@ -291,6 +291,13 @@ Zadatak nastaje kroz `POST /api/tasks`, isti ulaz kojim ide i web forma — ulaz
 nijedan vratar. Otvoreni zadatak nosi oznake `ulaz`, `izvor:<source>`, `tezina:NN` i, iznad
 praga B, `lanac`; opis mu je predložak koraka (v. niže).
 
+**Nositelj iz naloga** (TASK-5293): poruka koja izričito imenuje agenta iz registra — `@id`,
+„neka / dodijeli / zaduži / zadaj / proslijedi / predaj <ime>" (ime u bilo kojem padežu, bez
+obzira na dijakritiku) ili obraćanje na početku („Ana, napravi…") — otvara zadatak s tim
+`assignee`, a odgovor ga vraća u polju `assignee` (Telegram potvrda: `📋 Otvoren zadatak TASK-7 → ana`).
+Ime bez naloga („Anin kod je spor") i dva različita agenta ne određuju nositelja — tada ga bira
+orkestrator. Nositelj poslan u tijelu zahtjeva ima prednost.
+
 ### Postavke: `config/ingest-gate.json`
 
 ```bash

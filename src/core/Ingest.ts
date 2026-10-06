@@ -343,3 +343,41 @@ export function zapisiUlaz(zapis: IngestZapis, logPath: string = INGEST_LOG_PATH
     appendFileSync(logPath, JSON.stringify(zapis) + '\n', 'utf-8')
   } catch { /* dnevnik je trag, ne uvjet */ }
 }
+
+// ─── Nositelj iz naloga (TASK-5293) ──────────────────────────────────────────
+
+const normIme = (t: string) => t.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D').toLowerCase()
+/** Riječi kojima se posao daje nekome: „neka Ana…", „dodijeli Ani…", „zaduži Anu…". */
+const NALOG = /(?:^|[^\p{L}])(?:neka|dodijeli|zaduzi|zadaj|proslijedi|predaj)\s+(\p{L}+)(?:\s+(\p{L}+))?/gu
+const MAX_NASTAVAK_IMENA = 3
+
+/** Pogađa li riječ ime agenta: id točno, ili korijen imena (bez završnog samoglasnika) uz ≤3 slova padeža. */
+function jeIme(rijec: string, a: { id: string; ime: string }): boolean {
+  if (rijec === normIme(a.id)) return true
+  const ime = normIme(a.ime)
+  const korijen = ime.length >= 3 && /[aeiou]$/.test(ime) ? ime.slice(0, -1) : ime
+  return rijec.startsWith(korijen) && rijec.length - korijen.length <= MAX_NASTAVAK_IMENA
+}
+
+/**
+ * Nositelj kojeg nalog IZRIČITO imenuje: `@id`, „neka/dodijeli/zaduži… <ime>" (ime može biti
+ * i druga riječ: „neka to Ana…") ili obraćanje na početku („Ana, napravi…"). Ime bez naloga
+ * („Anin kod je spor") ne određuje nositelja; dva različita agenta = dvosmisleno → `undefined`,
+ * pa nositelja i dalje bira orkestrator.
+ */
+export function nositeljIzPoruke(tekst: string, agenti: Array<{ id: string; ime: string }>): string | undefined {
+  if (!agenti.length) return undefined
+  const t = normIme(tekst)
+  const nadjeni = new Set<string>()
+  const provjeri = (rijec: string | undefined) => {
+    if (!rijec) return
+    for (const a of agenti) if (jeIme(rijec, a)) nadjeni.add(a.id)
+  }
+  for (const m of t.matchAll(NALOG)) { provjeri(m[1]); provjeri(m[2]) }
+  for (const m of t.matchAll(/(?:^|[^\p{L}\p{N}_@])@([\p{L}\p{N}_-]+)/gu)) {
+    for (const a of agenti) if (m[1] === normIme(a.id)) nadjeni.add(a.id)
+  }
+  const obracanje = t.match(/^\s*(\p{L}+)\s*,/u)
+  if (obracanje) provjeri(obracanje[1])
+  return nadjeni.size === 1 ? [...nadjeni][0] : undefined
+}

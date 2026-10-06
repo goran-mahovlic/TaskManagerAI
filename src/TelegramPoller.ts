@@ -297,7 +297,7 @@ export async function jedanProlaz(
         stanje.obradeno++
         ishod.poslano++
         if (u.potvrdaUChat) {
-          const poslano = await api.odgovori(m.chat.id, `📋 Otvoren zadatak ${odgovor.taskId}`, m.message_id)
+          const poslano = await api.odgovori(m.chat.id, `📋 Otvoren zadatak ${odgovor.taskId}${odgovor.assignee ? ` → ${odgovor.assignee}` : ''}`, m.message_id)
           if (poslano) ishod.potvrde++
         }
       } else if (status === 200) {
