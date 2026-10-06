@@ -20,7 +20,7 @@ import type { RazgovorPostavke } from './RazgovorPostavke'
 import { jeDopusten, razlogZaDrugog, trebaOdgovoriti } from './Filtar'
 import { argumentiOvlasti, okolinaRazgovora, radniDirRazgovora } from './Ovlasti'
 import { neutralizirajIme, neutralizirajTekst, zatamniTajne } from './Ciscenje'
-import { sastaviIdentitet, type OpisAgenta } from './Identitet'
+import { autoMemorijaCC, sastaviIdentitet, type OpisAgenta } from './Identitet'
 import { dohvatiMemoriju, oznakaMemorije, type MemorijaRezultat } from './Memorija'
 import { izvuciDokumente, provjeriDokument } from './SendDoc'
 import { ocistiStareZapise, zapisiPotez } from './Zapis'
@@ -46,6 +46,8 @@ export interface RazgovorOvisnosti {
   /** Vodič vlasnika (`TM_RAZGOVOR_UPUTE`) — za identitet; `uputePut` sesija ne smije pisati. */
   upute?: () => string | null
   uputePut?: string
+  /** `rag.enabled` iz memory-config (TASK-5300) — za odjeljak „Tvoja memorija"; nema = ne spominje se. */
+  ragUkljucen?: () => boolean | null
   /** Dodatne mape iz kojih SEND_DOC smije slati (uz radniDir). */
   dokumentiMape?: string[]
   sat?: () => number
@@ -334,6 +336,10 @@ export function stvoriRazgovor(d: RazgovorOvisnosti): RazgovorJezgra {
         dokumenti: s.dokumenti, radniDir, stil: d.stil?.(),
         zapisi: { korijen: d.korijen, ingestLog: d.ingestLog },
         agenti: d.agenti?.() || [], upute: d.upute?.() || null,
+        memorija: {
+          nacin: s.memorijaRazgovor, banka: s.memorijaBanka, url: s.memorijaUrl || d.env.TM_HINDSIGHT_URL || '',
+          rag: d.ragUkljucen?.() ?? null, autoMemorija: autoMemorijaCC(d.home, radniDir),
+        },
       }),
       cwd: radniDir,
       timeoutMs: s.rokSek * 1000,

@@ -15,6 +15,7 @@ import {
 import { stvoriRazgovor, type RazgovorJezgra, type RazgovorOvisnosti } from './Razgovor'
 import { izvrsiteljRazgovora } from './Izvrsitelj'
 import { ucitajAgente, ucitajUpute } from './Identitet'
+import { loadMemoryConfig } from '../rag/memory-config'
 import { procitajPosiljatelje, zabiljeziPosiljatelja, type Posiljatelj } from './Posiljatelji'
 import type { RazgovorUlaza } from '../TelegramPoller'
 
@@ -82,7 +83,7 @@ export function modelIzKonfiguracije(putanja: string): string | undefined {
   } catch { return undefined }
 }
 
-export interface SklapanjeOpcije extends Omit<RazgovorOvisnosti, 'postavke' | 'izvrsitelj' | 'korijen' | 'agenti' | 'upute'> {
+export interface SklapanjeOpcije extends Omit<RazgovorOvisnosti, 'postavke' | 'izvrsitelj' | 'korijen' | 'agenti' | 'upute' | 'ragUkljucen'> {
   dbPath: string
   dataDir: string
   modelConfigPath: string
@@ -102,6 +103,7 @@ export function sklopiRazgovor(o: SklapanjeOpcije): { ulaz: RazgovorUlaza; jezgr
     modelZadano: () => modelIzKonfiguracije(o.modelConfigPath),
     agenti: () => ucitajAgente(o.agentiPut),
     upute: () => ucitajUpute(o.uputePut),
+    ragUkljucen: () => { try { return loadMemoryConfig().rag.enabled } catch { return null } },
   })
   const put = posiljateljiPut(o.dataDir)
   return { ulaz: { razgovor: jezgra, postavke, zabiljezi: p => zabiljeziPosiljatelja(put, p), konzola: o.konzola }, jezgra }

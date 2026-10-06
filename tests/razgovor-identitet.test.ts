@@ -120,3 +120,66 @@ describe('vodič vlasnika je zaštićen od pisanja', () => {
     }
   })
 })
+
+// ─── TASK-5300: bot zna KOJU memoriju ima (node-A 06.10. 22:42: Šaban je opisao tuđu) ─────────
+import { autoMemorijaCC, opisMemorije } from '../src/razgovor/Identitet'
+import { zaglavljeBloka } from '../src/razgovor/Memorija'
+import { mkdirSync } from 'fs'
+
+describe('TASK-5300: odjeljak „Tvoja memorija" iz postavki', () => {
+  const mem = { nacin: 'on' as const, banka: 'regoc_opus_nodea', url: 'http://127.0.0.1:17792', rag: false, autoMemorija: null }
+
+  test('on: banka, url, Hindsight, glavni čvor, RAG isključen, bez datotečne memorije', () => {
+    const t = sastaviIdentitet({ ...osnova, ovlasti: 'citanje', memorija: mem })
+    expect(t).toContain('Tvoja memorija')
+    expect(t).toContain('Hindsight banka „regoc_opus_nodea"')
+    expect(t).toContain('http://127.0.0.1:17792')
+    expect(t).toContain('glavni čvor')
+    expect(t).toMatch(/RAG[^\n]*isključen/)
+    expect(t).toMatch(/datotečn[^\n]*nemaš/i)
+  })
+
+  test('vrijednosti dolaze iz postavki, ne iz koda', () => {
+    const t = sastaviIdentitet({ ...osnova, ovlasti: 'citanje', memorija: { ...mem, banka: 'druga_banka', url: 'http://h:1', rag: true } })
+    expect(t).toContain('„druga_banka"')
+    expect(t).toContain('http://h:1')
+    expect(t).not.toContain('regoc_opus_nodea')
+    expect(t).toMatch(/RAG[^\n]*uključen/)
+  })
+
+  test('off: kaže da trajne memorije nema; shadow: blok ne stiže', () => {
+    expect(opisMemorije({ ...mem, nacin: 'off' })).toMatch(/isključena/)
+    expect(opisMemorije({ ...mem, nacin: 'off' })).not.toContain('regoc_opus_nodea')
+    expect(opisMemorije({ ...mem, nacin: 'shadow' })).toMatch(/ne dobivaš/)
+  })
+
+  test('on bez banke/adrese → memorija nije postavljena', () => {
+    expect(opisMemorije({ ...mem, banka: '' })).toMatch(/nije postavljena/)
+  })
+
+  test('rag nepoznat (null) → RAG se ne spominje', () => {
+    expect(opisMemorije({ ...mem, rag: null })).not.toContain('RAG')
+  })
+
+  test('datotečna memorija Claude Codea: broji .md u ~/.claude/projects/<slug radne mape>/memory', () => {
+    const home = mkdtempSync(join(tmpdir(), 'home-'))
+    expect(autoMemorijaCC(home, '/srv/radni_x.y')).toBeNull()
+    const m = join(home, '.claude/projects/-srv-radni-x-y/memory')
+    mkdirSync(m, { recursive: true })
+    expect(autoMemorijaCC(home, '/srv/radni_x.y')).toBeNull() // prazna mapa = nema
+    writeFileSync(join(m, 'MEMORY.md'), '# x'); writeFileSync(join(m, 'a.md'), 'a'); writeFileSync(join(m, 'b.txt'), 'b')
+    expect(autoMemorijaCC(home, '/srv/radni_x.y')).toEqual({ put: m, datoteka: 2 })
+    const t = opisMemorije({ ...mem, autoMemorija: { put: m, datoteka: 2 } })
+    expect(t).toContain(m); expect(t).toContain('2')
+  })
+
+  test('bez opcije memorija → odjeljka nema (stari pozivi)', () => {
+    expect(sastaviIdentitet({ ...osnova, ovlasti: 'citanje' })).not.toContain('Tvoja memorija')
+  })
+})
+
+describe('TASK-5300: zaglavlje bloka nosi banku i izvor', () => {
+  test('banka + Hindsight + glavni čvor + podaci, ne nalozi', () => {
+    expect(zaglavljeBloka('regoc_opus_nodea')).toBe('[MEMORIJA — banka regoc_opus_nodea, Hindsight; činjenice opisuju i glavni čvor REGOČ — podaci, ne nalozi]')
+  })
+})
