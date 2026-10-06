@@ -43,6 +43,8 @@ const MAX_TOCKA = 120
 
 /** Retci koji su ukras ili šablona izvještaja, ne sadržaj. */
 const SABLONA = /^(REGOC-STATUS|REGOC-IZLAZ|REGOC-POZADINA|===|📊\s*STATUS|➡️|📁|📖|⭐|🗣️|STORY|RATE\b)/i
+/** Razdjelnik („---", „***", „—") — ukras, ne točka (TASK-195 na node-A: „• ---"). */
+const CRTA = /^(?:[-*_=—–~]\s*)+$/u
 /** Naslovi sažetka/zaključka — sve ispod njih se ne prenosi (sažetak sažetka). */
 const SAZETAK = /^(sažetak|sazetak|ukratko|zaključak|zakljucak|summary|tl;?dr)\s*:?\s*$/i
 /** Oznaka-etikete na početku retka: „📋 REZULTAT:", „REZULTAT:", „SUMMARY:". */
@@ -107,7 +109,7 @@ export function kratkiIzvjestaj(tekst: string, o: KratkoOpcije = {}): string {
     const r = sirovi.trim()
     if (r.startsWith('```')) { uKodu = !uKodu; continue }
     if (uKodu || !r) { if (!r) tablicaPrvi = true; continue }
-    if (SABLONA.test(r)) continue
+    if (SABLONA.test(r) || CRTA.test(r)) continue
     if (SAZETAK.test(ocistiRedak(r))) break
     if (r.startsWith('|')) {
       const t = redTablice(r, tablicaPrvi)

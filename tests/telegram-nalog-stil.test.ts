@@ -95,6 +95,12 @@ describe('Stil kratko', () => {
     expect(k).toContain('TaskManager (localhost:17781): ✅ UP')
   })
 
+  // Izmjereno na node-A (TASK-195): razdjelnik „---" iz izvještaja agenta postao je točka „• ---".
+  test.each(['---', '***', '___', '- - -', '—', '=====', '* * *'])('crta %p nije točka', (crta) => {
+    const k = kratkiIzvjestaj(`Ana završio zadatak: dojava stvorena.\n\n${crta}\nfree -h na node-A:\n- Mem: 15Gi`)
+    expect(k.split('\n').filter(r => r.startsWith('• '))).toEqual(['• free -h na node-A:', '• Mem: 15Gi'])
+  })
+
   test('detalji idu u zadnji redak kao poveznica', () => {
     const k = kratkiIzvjestaj(DUGI, { detalji: 'http://127.0.0.1:17781/#TASK-9' })
     expect(k.split('\n').pop()).toBe('↪ detalji: http://127.0.0.1:17781/#TASK-9')
