@@ -17,7 +17,7 @@ import { izvrsiteljRazgovora } from './Izvrsitelj'
 import { ucitajAgente, ucitajUpute } from './Identitet'
 import { procitajPosiljatelje, zabiljeziPosiljatelja, type Posiljatelj } from './Posiljatelji'
 import type { RazgovorUlaza } from '../TelegramPoller'
-import { stvoriBotKanal, type BotKanal, type Zahtjev } from './BotKanal'
+import { cistaAdresa, stvoriBotKanal, type BotKanal, type Zahtjev } from './BotKanal'
 import {
   botKanalPovijest, createBotKanalReader, getBotKanalPostavke, parseBotKanalPatch, setBotKanalPostavke, spremisteUBazi,
 } from './BotKanalPostavke'
@@ -177,7 +177,19 @@ export function botKanalGet(dbPath: string, sloj: RazgovorSloj | null, env: Reco
   })
 }
 
-export function botKanalPut(dbPath: string, tijelo: unknown): ApiOdgovor {
+/**
+ * Zahtjev s adrese DRUGOG bota (popis `adrese`) ne smije mijenjati postavke kanala ni nastaviti
+ * razmjenu (TASK-5291, N1b): ondje radi model s ljuskom i tajnom, pa bi „Prekini komunikaciju"
+ * poništio jednim curl-om. API ploče nema prijavu — ovo zatvara samo put s drugog bota.
+ */
+function sDrugogKraja(dbPath: string, ip: string | null | undefined): boolean {
+  const a = cistaAdresa(ip)
+  if (!a) return false
+  try { return sDb(dbPath, db => getBotKanalPostavke(db).postavke.adrese.includes(a)) } catch { return false }
+}
+
+export function botKanalPut(dbPath: string, tijelo: unknown, ip?: string | null): ApiOdgovor {
+  if (sDrugogKraja(dbPath, ip)) return { status: 403, tijelo: { error: 'postavke kanala bot↔bot ne mijenja drugi kraj' } }
   const p = parseBotKanalPatch(tijelo)
   if (!p.ok) return { status: 400, tijelo: { error: p.greske.join('; '), greske: p.greske, dopustena: p.dopustena } }
   const t = (tijelo || {}) as Record<string, unknown>
@@ -191,11 +203,12 @@ export function botKanalPut(dbPath: string, tijelo: unknown): ApiOdgovor {
 }
 
 /** Gumb na kartici: „Nastavi bot↔bot" / „Zaustavi" — šalje se i drugom kraju. */
-export async function botKanalRucno(sloj: RazgovorSloj, raw: unknown): Promise<ApiOdgovor> {
+export async function botKanalRucno(sloj: RazgovorSloj, raw: unknown, ip?: string | null, dbPath?: string): Promise<ApiOdgovor> {
   const t = (raw || {}) as Record<string, unknown>
   const chatId = typeof t.chatId === 'number' ? String(t.chatId) : t.chatId
   if (typeof chatId !== 'string' || !/^-?\d{1,20}$/.test(chatId)) return { status: 400, tijelo: { error: 'chatId je obavezan' } }
   const by = typeof t.by === 'string' && t.by.trim() ? t.by.trim().slice(0, 64) : 'config'
+  if (t.radnja === 'nastavi' && dbPath && sDrugogKraja(dbPath, ip)) return { status: 403, tijelo: { error: 'nastavak bot↔bot ne smije doći s drugog kraja' } }
   if (t.radnja === 'nastavi') await sloj.botKanal.nastavi(chatId, by)
   else if (t.radnja === 'zaustavi') await sloj.botKanal.zaustavi(chatId, by, 'rucno')
   else return { status: 400, tijelo: { error: 'radnja: nastavi ili zaustavi' } }

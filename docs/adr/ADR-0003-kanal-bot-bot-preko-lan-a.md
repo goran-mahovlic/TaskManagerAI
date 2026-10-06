@@ -328,3 +328,37 @@ kroz `restart_kad_mirno.sh`, a provjerava `StaleCodeCheck`.
 - Uživo na node-A (06.10.2026., 22:10–22:12 UTC): bez tajne 401; s tajnom `/stanje` 200; poruka „od
   Klaudija" 202 → Šaban odgovorio u grupi (lanac u zapisu razgovora); ručni stop → sljedeća poruka 409
   `zaustavljeno`, redak `bot-kanal:rucno` u povijesti; nastavak gumbom.
+
+## 13. Sigurnosni pregled prije uključivanja (TASK-5291, Malik)
+
+Kanal je do Goranove odluke **isključen na oba kraja** (07.10.2026.: `razgovor.botKanal.ukljucen=false`
+na čvoru, `botKanal.ukljucen=false` u `grupe.json`). Uključuje vlasnik nakon isporuke popravaka.
+
+Popravljeno (testovi u `tests/bot-kanal.test.ts` i `tests/razgovor-bot-kanal.test.ts`, „TASK-5291";
+svi padaju na kodu iz TASK-5290):
+
+| # | Nalaz | Popravak |
+|---|-------|----------|
+| N1 | **Visoko.** Jedna sesija po chatu: bot-potez (na `citanje`) piše u istu sesiju koju sljedeći ljudski potez nastavlja na `puno` — tekst koji je donio drugi bot (a oblikovao ga je bilo koji član grupe) postaje kontekst poteza s punom ljuskom. | Bot-potez nastavlja sesiju samo kao račvu (`--fork-session`) i njegova sesija se NE sprema kao sesija chata. |
+| N1b | API ploče nema prijavu: s adrese drugog bota (gdje radi model s ljuskom i tajnom) jedan `PUT …/bot-kanal` ili `POST …/rucno {nastavi}` poništava „Prekini komunikaciju". | PUT postavki i `nastavi` s adrese iz popisa `adrese` → 403; `zaustavi` prolazi. |
+| N2 | `/od-bota/nastavi` s valjanom tajnom skidao je zastavicu — stop je bio jak koliko slabiji kraj. | Nastavak se ne prenosi: drugi kraj smije zaustaviti, ne i nastaviti. Fraza „Nastavi komunikaciju" i dalje radi (oba kraja je vide sama); gumb nastavlja samo svoj kraj. |
+| N3 | `drugi.url` mijenja bilo tko s mreže → `Authorization: Bearer <tajna>` (prijenos, stop i kartica Config) ide na bilo koju adresu. | Tajna ide samo hostu koji je u `adrese`; kartica upozorava na nesklad. |
+| N4 | Uz `botKanal.ovlasti=rad` bot-potez dobiva `rad` bez obzira tko je pokrenuo lanac — pranje naloga kroz drugog bota. | `rad` samo kad je `izvornik.id` (brojčani) među dopuštenima ovog bota; inače `citanje`. Preporuka: ostati na `citanje`. |
+| N5 | Bilo koja ljudska poruka (i treći član grupe) nulirala je strop. | Strop nulira samo poruka stop-korisnika. |
+
+Odgovori na §8: (a) **Da, HMAC treba prije uključivanja smjera čvor → glavni stroj**: glavna ploča
+radi u kontejneru i SVE klijente iz LAN-a vidi kao `172.24.0.1` (docker-proxy, izmjereno u
+`/proc/net/tcp`), pa allowlista adresa ondje ne može raditi — zato sada vraća 403 i Šabanove
+poruke ne stižu. `172.24.0.1` se NE SMIJE upisati u `adrese` (propustio bi svaki host u LAN-u).
+Uz to tajna putuje u čistom HTTP-u i nema zaštite od ponavljanja. Prijedlog iz §8(a) stoji:
+HMAC-SHA256 (`ts`, metoda, put, tijelo) u zaglavlju, `ts` ±60 s, odbijanje ponovljenog
+`(izvor, lanacId, skok)` 10 min, tajna nikad na žici; uz to po jedna tajna po smjeru.
+(b) Klaudijev ograničeni potez je prihvatljiv: `--tools Read,Glob,Grep`, bez postavki i MCP-a,
+okolina bijelom listom, odgovor se zatamnjuje. (c) `rad` smije postojati samo uz N4.
+
+Ostaje (svjesno, nije zatvoreno kodom): model na `puno` (čvor) i Klaudijev ljudski potez imaju
+punu ljusku — mogu pročitati tajnu (`/proc/<pid>/environ`, `postavke.env`) i promijeniti bazu
+ili postavke svog kraja, pa i poništiti stop na SVOM kraju. N2 drži stop na drugom kraju.
+Ostali hostovi u LAN-u i dalje mogu mijenjati postavke ploče (ploča nema prijavu — zaseban posao).
+Glasovna „prekini komunikaciju" se ne prepoznaje (provjera je samo nad tekstom); uređena poruka
+također ne (`allowed_updates=["message"]`).

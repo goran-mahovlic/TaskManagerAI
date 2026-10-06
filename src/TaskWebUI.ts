@@ -65,6 +65,7 @@ import {
   zadnjiPosiljatelji, type RazgovorSloj,
 } from './razgovor/RazgovorPloca'
 import { ucitajAgente } from './razgovor/Identitet'
+import { smijeTajnuNa } from './razgovor/BotKanal'
 import { jeDopustenAgent } from './core/AgentIds'
 import {
   loadOrchestratorConfig, validateOrchestratorPatch, saveOrchestratorConfig, stanjeOrkestratora,
@@ -11043,6 +11044,8 @@ async function handleBotKanalConfigGet(): Promise<Response> {
     const token = process.env.TM_BOT_KANAL_TOKEN
     tijelo.drugiKraj = await Promise.all((tijelo.postavke?.drugi || []).map(async (d: any) => {
       if (!token || !tijelo.postavke.ukljucen) return { ime: d.ime, greska: 'kanal isključen ili tajna nedostaje' }
+      // TASK-5291 (N3): tajna samo hostu s popisa adresa — `drugi.url` može promijeniti bilo tko s mreže.
+      if (!smijeTajnuNa(d.url, tijelo.postavke.adrese || [])) return { ime: d.ime, greska: 'host adrese ploče nije u popisu adresa — tajna ne ide' }
       try {
         const o = await fetch(`${d.url}/api/razgovor/od-bota/stanje`, {
           headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(3000),
@@ -11060,7 +11063,7 @@ async function handleBotKanalConfigGet(): Promise<Response> {
 async function handleBotKanalConfigPut(req: Request): Promise<Response> {
   let tijelo: unknown
   try { tijelo = await req.json() } catch { return razgovorOdgovor({ status: 400, tijelo: { error: 'Neispravan JSON' } }) }
-  const r = botKanalPut(TM_DB, tijelo)
+  const r = botKanalPut(TM_DB, tijelo, zahtjevBota(req).ip)
   if (r.status === 200) {
     const promjene = ((r.tijelo as any).promjene || []).filter((c: any) => c.changed).map((c: any) => c.kljuc)
     console.log(`[bot-kanal] postavke promijenjene: ${promjene.join(', ') || '(bez promjene)'}`)
@@ -11071,7 +11074,7 @@ async function handleBotKanalConfigPut(req: Request): Promise<Response> {
 async function handleBotKanalRucno(req: Request): Promise<Response> {
   let tijelo: unknown
   try { tijelo = await req.json() } catch { return razgovorOdgovor({ status: 400, tijelo: { error: 'Neispravan JSON' } }) }
-  const r = await botKanalRucno(razgovorSloj(), tijelo)
+  const r = await botKanalRucno(razgovorSloj(), tijelo, zahtjevBota(req).ip, TM_DB)
   if (r.status === 200) console.log(`[bot-kanal] ručno: ${(tijelo as any)?.radnja} ${(tijelo as any)?.chatId}`)
   return razgovorOdgovor(r)
 }

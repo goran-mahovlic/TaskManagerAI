@@ -8,8 +8,9 @@
 //
 // Brave (svaka je dovoljna sama, §4):
 //   1. zastavica po chatu `zaustavljen` — pale je stop-fraza, strop i ručni gumb; spušta je SAMO
-//      ručni nastavak (gumb ili „nastavi komunikaciju" od stop-korisnika), nema isteka;
-//   2. tvrdi strop: `strop` prijenosa u `prozorMin` bez ljudske poruke, uz `skok ≤ strop`;
+//      ručni nastavak NA OVOM kraju (gumb ili „nastavi komunikaciju" od stop-korisnika), nema
+//      isteka; drugi kraj smije zaustaviti, ali ne i nastaviti (TASK-5291, N2);
+//   2. tvrdi strop: `strop` prijenosa u `prozorMin` bez poruke stop-korisnika, uz `skok ≤ strop`;
 //   3. nikad odgovor na vlastitu poruku (`izvor` = ja, ili vlastiti `telegramPorukaId`).
 //
 // Autorica: Jelena (Engineer), TASK-5290 — po dizajnu Kosjenke (ADR-0003, TASK-5289).
@@ -132,6 +133,20 @@ export function jednakaTajna(a: string, b: string): boolean {
 export function bearer(authorization: string | null | undefined): string {
   const m = /^Bearer\s+(.+)$/i.exec((authorization || '').trim())
   return m ? m[1]!.trim() : ''
+}
+
+/** Host iz adrese ploče (`http://10.0.0.2:17781` → `10.0.0.2`); nečitljivo = ''. */
+export function hostUrla(url: string): string {
+  try { return new URL(url).hostname.replace(/^\[|\]$/g, '') } catch { return '' }
+}
+
+/**
+ * Tajna ide SAMO ploči čiji je host na popisu `adrese` (TASK-5291, N3): bez toga promjena
+ * `drugi.url` (API ploče nema prijavu) šalje `Authorization: Bearer <tajna>` bilo kome.
+ */
+export function smijeTajnuNa(url: string, adrese: string[]): boolean {
+  const h = hostUrla(url)
+  return !!h && adrese.includes(h)
 }
 
 /** `::ffff:10.0.0.2` → `10.0.0.2`. */
@@ -272,6 +287,7 @@ export function stvoriBotKanal(d: BotKanalOvisnosti): BotKanal {
     if (!token || !p.drugi.length) return false
     let ok = true
     for (const drugi of p.drugi) {
+      if (!smijeTajnuNa(drugi.url, p.adrese)) { log(`[bot-kanal] ${drugi.ime}: host adrese ploče nije u popisu adresa — tajna ne ide`); ok = false; continue }
       const r = await posalji(`${drugi.url.replace(/\/+$/, '')}/api/razgovor/od-bota${put}`, tijelo, token)
       ok = ok && r
     }
@@ -392,8 +408,12 @@ export function stvoriBotKanal(d: BotKanalOvisnosti): BotKanal {
       if (!t) return vrata(z) || { status: 400, tijelo: { error: 'chatId je obavezan' } }
       const prije = vrata(z, t.chatId)
       if (prije) return prije
-      void nastavi(t.chatId, t.by, false)
-      return { status: 200, tijelo: { ok: true, zaustavljen: false } }
+      // Nastavak s drugog kraja NE skida zastavicu (TASK-5291, N2): stop bi inače bio jak koliko
+      // i slabiji kraj — tko ima tajnu ili ljusku na drugom stroju poništio bi stop vlasnika. Oba
+      // kraja „Nastavi komunikaciju" vide sami iz grupe; gumb nastavlja samo svoj kraj.
+      const zaustavljen = st().zastavice[t.chatId]?.zaustavljen === true
+      if (zaustavljen) log(`[bot-kanal] ${t.chatId}: nastavak s drugog kraja (${t.by}) zanemaren — nastavlja se samo ovdje`)
+      return { status: 200, tijelo: { ok: true, zaustavljen, napomena: 'nastavak se ne prenosi — samo na ovom kraju' } }
     },
 
     stanjeZaDrugog(z) {
@@ -418,9 +438,10 @@ export function stvoriBotKanal(d: BotKanalOvisnosti): BotKanal {
         await javi(m.chatId, `▶ Komunikacija bot↔bot nastavljena (${m.posiljateljIme}).`)
         return 'nastavak'
       }
-      // Ljudska poruka nulira brojilo stropa (§4.3).
+      // Poruka STOP-KORISNIKA nulira brojilo stropa (§4.3). Treći član grupe nije nadzor: inače
+      // bi porukom svakih nekoliko prijenosa držao razmjenu ispod stropa (TASK-5291, N5).
       const s = st()
-      if (s.brojilo[m.chatId]?.length) {
+      if (smije && s.brojilo[m.chatId]?.length) {
         delete s.brojilo[m.chatId]
         d.spremiste.pisi(s)
       }
@@ -447,7 +468,9 @@ export function stvoriBotKanal(d: BotKanalOvisnosti): BotKanal {
       zabiljeziPrijenos(u.chatId, u.telegramPorukaId)
       let ok = true
       for (const x of drugi) {
-        const r = await posalji(`${x.url.replace(/\/+$/, '')}/api/razgovor/od-bota`, tijelo, d.token()!)
+        const smijeTajnu = smijeTajnuNa(x.url, p.adrese)
+        if (!smijeTajnu) log(`[bot-kanal] ${x.ime}: host adrese ploče nije u popisu adresa — tajna ne ide`)
+        const r = smijeTajnu && await posalji(`${x.url.replace(/\/+$/, '')}/api/razgovor/od-bota`, tijelo, d.token()!)
         ok = ok && r
         if (!r) {
           const t = sat()
