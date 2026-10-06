@@ -101,7 +101,7 @@ describe('J5 — nalog iznad praga', () => {
     const api = new LazniApi()
     api.updates = [poruka({ text: '@cvor_bot koliko?', entities: [{ type: 'mention', offset: 0, length: 9 }] })]
     const { r, primljeno } = razgovor()
-    await jedanProlaz(cfg(), { ...ZADANO_STANJE }, api, r)
+    await jedanProlaz(cfg({ dopusteniChatovi: ['-100555'] }), { ...ZADANO_STANJE }, api, r)
     expect(api.ingesti.length).toBe(1)
     expect(primljeno.length).toBe(1)
     expect(primljeno[0]!.obracanjeBotu).toBe(true)
@@ -124,8 +124,26 @@ describe('ulaz off + razgovor on', () => {
     const api = new LazniApi()
     api.updates = [poruka()]
     const { r, primljeno } = razgovor()
-    await jedanProlaz(cfg({ ukljucen: false }), { ...ZADANO_STANJE }, api, r)
+    await jedanProlaz(cfg({ ukljucen: false, dopusteniChatovi: ['-100555'] }), { ...ZADANO_STANJE }, api, r)
     expect(api.ingesti.length).toBe(0)
+    expect(primljeno.length).toBe(1)
+  })
+
+  // TASK-5279: korisničko ime bota je javno, privatni chat je uvijek „obraćanje" — bez popisa
+  // dopuštenih chatova razgovor sluša samo dopuštene korisnike.
+  test('bez popisa dopuštenih chatova: stranac u privatnom chatu → razgovor se ne zove', async () => {
+    const api = new LazniApi()
+    api.updates = [poruka({ chat: { id: 7, type: 'private' }, from: { id: 7, first_name: 'Stranac' } })]
+    const { r, primljeno } = razgovor({ dopusteniKorisnici: ['42'] })
+    await jedanProlaz(cfg({ ukljucen: false }), { ...ZADANO_STANJE }, api, r)
+    expect(primljeno.length).toBe(0)
+  })
+
+  test('bez popisa dopuštenih chatova: dopušteni korisnik → razgovor se zove', async () => {
+    const api = new LazniApi()
+    api.updates = [poruka({ chat: { id: 42, type: 'private' } })]
+    const { r, primljeno } = razgovor({ dopusteniKorisnici: ['42'] })
+    await jedanProlaz(cfg({ ukljucen: false }), { ...ZADANO_STANJE }, api, r)
     expect(primljeno.length).toBe(1)
   })
 

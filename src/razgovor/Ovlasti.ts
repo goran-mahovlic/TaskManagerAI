@@ -6,8 +6,9 @@
 //
 // ⚠ Pregled sigurnosti prije uključivanja razgovora (ADR §7).
 //
-// Autorica: Jelena (Engineer), TASK-5277.
+// Autorica: Jelena (Engineer), TASK-5277; izolacija sesije i straža ljuske Malik, TASK-5279.
 
+import { join, resolve, sep } from 'path'
 import type { Ovlasti } from './RazgovorPostavke'
 
 export interface OvlastiOpcije {
@@ -15,7 +16,12 @@ export interface OvlastiOpcije {
   radniDir: string
   tmHome: string
   home: string
+  /** Izvršna datoteka za stražu ljuske (zadano: bun koji vrti ovaj proces). */
+  bun?: string
 }
+
+/** Skripta PreToolUse straže (v. BashStraza.ts). */
+export const BASH_STRAZA = join(import.meta.dir, 'BashStraza.ts')
 
 /**
  * Pravila `permissions.deny` — vrijede za SVE razine, i za `puno`. Apsolutna putanja u
@@ -28,9 +34,23 @@ export function zabrane(o: Pick<OvlastiOpcije, 'tmHome' | 'home'>): string[] {
     `/${o.tmHome}/config/signal.json`,
     `/${o.home}/.claude/.credentials.json`,
     `/${o.home}/.ssh/**`,
+    `/${o.home}/.gnupg/**`,
+    `/${o.home}/.config/gh/**`,
+    `/${o.home}/.git-credentials`,
+    `/${o.home}/.netrc`,
+    `/${o.home}/.docker/config.json`,
     '**/*.env',
   ]
   return ['Read', 'Edit', 'Write'].flatMap(alat => putanje.map(p => `${alat}(${p})`))
+}
+
+/**
+ * Datoteke kojima bi model s pravom pisanja u radnoj mapi sam sebi dao veća prava ili trajni
+ * nalog u sljedećoj sesiji (projektne postavke, MCP, CLAUDE.md) — zabranjeno na svim razinama.
+ */
+export function zabranePisanja(radniDir: string): string[] {
+  const putanje = [`/${radniDir}/.claude/**`, `/${radniDir}/.mcp.json`, `/${radniDir}/CLAUDE.md`, `/${radniDir}/CLAUDE.local.md`]
+  return ['Edit', 'Write'].flatMap(alat => putanje.map(p => `${alat}(${p})`))
 }
 
 /** Statusi za koje model smije pročitati popis zadataka s ploče. */
@@ -46,6 +66,12 @@ export function naredbePloce(port: number): string[] {
   return [baza, ...STATUSI_PLOCE.map(st => `${baza}?status=${st}`)]
 }
 
+/** Ugrađeni alati po razini; sve ostalo (WebFetch, Agent, Skill, SendMessage, MCP…) sesija ne vidi. */
+export const ALATI_RAZINE: Record<Exclude<Ovlasti, 'puno'>, string[]> = {
+  citanje: ['Read', 'Glob', 'Grep', 'Bash'],
+  rad: ['Read', 'Glob', 'Grep', 'Bash', 'Edit', 'Write'],
+}
+
 /**
  * Za SVE razine: samo postavke iz `--settings`, bez MCP poslužitelja. Inače sesija učita
  * `~/.claude` korisnika usluge (hookovi i njihov kontekst, allow liste koje bi proširile
@@ -55,12 +81,54 @@ export function naredbePloce(port: number): string[] {
 const IZOLACIJA = ['--setting-sources', '', '--strict-mcp-config']
 
 export function argumentiOvlasti(razina: Ovlasti, o: OvlastiOpcije): string[] {
-  const settings = JSON.stringify({ permissions: { deny: zabrane(o) } })
-  if (razina === 'puno') return [...IZOLACIJA, '--dangerously-skip-permissions', '--settings', settings]
+  const deny = [...zabrane(o), ...zabranePisanja(o.radniDir)]
+  if (razina === 'puno') {
+    return [...IZOLACIJA, '--dangerously-skip-permissions', '--settings', JSON.stringify({ permissions: { deny } })]
+  }
+  // Izmjereno 06.10.2026. (TASK-5279): bez `--tools` sesija na razini `citanje` vidi i bez
+  // pitanja koristi ListAgents/SendMessage (poruka drugoj lokalnoj Claude sesiji punih prava),
+  // Skill i Agent — `--tools` ih uklanja. A `--allowedTools` nije bijela lista za Bash: CLI sam
+  // propušta „read-only" naredbe (`ps aux`, `id`), pa Bash ide kroz stražu (BashStraza.ts).
+  const straza = `'${o.bun || process.execPath}' '${BASH_STRAZA}' ${o.port}`
+  const settings = JSON.stringify({
+    permissions: { deny },
+    hooks: { PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: straza, timeout: 15 }] }] },
+  })
   // Pravilo `Read(...)` vrijedi i za Glob i Grep — čitanje samo unutar radne mape.
   const alati = [`Read(/${o.radniDir}/**)`, ...naredbePloce(o.port).map(n => `Bash(${n})`)]
   if (razina === 'rad') alati.push(`Edit(/${o.radniDir}/**)`, `Write(/${o.radniDir}/**)`)
-  return [...IZOLACIJA, '--permission-mode', 'default', '--allowedTools', alati.join(' '), '--settings', settings]
+  return [
+    ...IZOLACIJA,
+    '--permission-mode', 'default',
+    '--tools', ALATI_RAZINE[razina].join(','),
+    '--allowedTools', alati.join(' '),
+    '--settings', settings,
+  ]
+}
+
+const sigurnoIme = (x: string) => String(x).replace(/[^\w.-]/g, '_').replace(/^\.+/, '_').slice(0, 80) || '_'
+
+/**
+ * Radna mapa razgovora. Prazna postavka → zasebna mapa PO CHATU (`<korijen>/radni/<kanal>_<chat>`),
+ * da datoteke jednog chata ne čita drugi. Postavka koja bi otvorila tajne ili tuđe zapise
+ * (`/`, mapa iznad HOME, TM_HOME ili korijena razgovora, ~/.ssh, ~/.claude, ~/.config,
+ * $TM_HOME/config) se ne poštuje — vrijedi mapa po chatu. API ploče nema prijavu, pa
+ * `radniDir` može upisati bilo tko s mreže (TASK-5279).
+ */
+export function radniDirRazgovora(
+  postavka: string, o: { korijen: string; home: string; tmHome: string; kanal: string; chatId: string },
+): { dir: string; upozorenje: string | null } {
+  const poChatu = join(o.korijen, 'radni', `${sigurnoIme(o.kanal)}_${sigurnoIme(o.chatId)}`)
+  if (!postavka) return { dir: poChatu, upozorenje: null }
+  const d = resolve(postavka)
+  const unutar = (a: string, b: string) => a === b || a.startsWith(b.endsWith(sep) ? b : b + sep)
+  const iznad = [o.home, o.tmHome, o.korijen].filter(Boolean).some(x => unutar(resolve(x), d))
+  const osjetljivo = ['.ssh', '.claude', '.config', '.gnupg'].map(x => join(o.home, x)).concat(join(o.tmHome, 'config'))
+    .some(x => unutar(d, resolve(x)))
+  if (iznad || osjetljivo) {
+    return { dir: poChatu, upozorenje: `radniDir ${postavka} otvara tajne ili tuđe zapise — vrijedi ${poChatu}` }
+  }
+  return { dir: d, upozorenje: null }
 }
 
 const DOPUSTENE_VARIJABLE = ['PATH', 'HOME', 'USER', 'LOGNAME', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TZ', 'TERM', 'TMPDIR', 'SHELL']

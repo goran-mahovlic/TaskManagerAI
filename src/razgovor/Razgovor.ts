@@ -18,7 +18,8 @@ import type { ExecRequest, ExecResult, Executor } from '../core/orchestrator/Por
 import type { Kanal, Razgovor, UlaznaPoruka } from './Kanal'
 import type { RazgovorPostavke } from './RazgovorPostavke'
 import { jeDopusten, jeZaDrugog, trebaOdgovoriti } from './Filtar'
-import { argumentiOvlasti, okolinaRazgovora } from './Ovlasti'
+import { argumentiOvlasti, okolinaRazgovora, radniDirRazgovora } from './Ovlasti'
+import { neutralizirajIme, neutralizirajTekst, zatamniTajne } from './Ciscenje'
 import { sastaviIdentitet } from './Identitet'
 import { dohvatiMemoriju, type MemorijaRezultat } from './Memorija'
 import { izvuciDokumente, provjeriDokument } from './SendDoc'
@@ -216,8 +217,10 @@ export function stvoriRazgovor(d: RazgovorOvisnosti): RazgovorJezgra {
 
   function spoji(stavke: Stavka[]): string {
     const isti = stavke.every(s => s.p.posiljateljId === stavke[0]!.p.posiljateljId)
-    if (isti) return `[OD: ${stavke[0]!.p.posiljateljIme}]\n${stavke.map(s => s.p.tekst).join('\n')}`
-    return stavke.map(s => `[OD: ${s.p.posiljateljIme}] ${s.p.tekst}`).join('\n')
+    // Ime i tekst piše pošiljatelj — ne smiju glumiti oznaku ni drugog pošiljatelja (TASK-5279).
+    const ime = (x: Stavka) => neutralizirajIme(x.p.posiljateljIme)
+    if (isti) return `[OD: ${ime(stavke[0]!)}]\n${stavke.map(s => neutralizirajTekst(s.p.tekst)).join('\n')}`
+    return stavke.map(s => `[OD: ${ime(s)}] ${neutralizirajTekst(s.p.tekst)}`).join('\n')
   }
 
   async function potez(c: StanjeChata, stavke: Stavka[]): Promise<void> {
@@ -226,7 +229,9 @@ export function stvoriRazgovor(d: RazgovorOvisnosti): RazgovorJezgra {
     const { p, k } = zadnja
     const t0 = sat()
     const sada = new Date(t0).toISOString()
-    const radniDir = s.radniDir || join(d.korijen, 'radni')
+    const rd = radniDirRazgovora(s.radniDir, { korijen: d.korijen, home: d.home, tmHome: d.tmHome, kanal: p.kanal, chatId: p.chatId })
+    if (rd.upozorenje) log(`[razgovor] ${c.kljuc}: ${rd.upozorenje}`)
+    const radniDir = rd.dir
     const tekst = spoji(stavke)
     const cistiTekst = stavke.map(x => x.p.tekst).join(' ').replace(/\s+/g, ' ').trim()
 
@@ -265,8 +270,8 @@ export function stvoriRazgovor(d: RazgovorOvisnosti): RazgovorJezgra {
     // Što je bot u međuvremenu samo pročitao (poruke za drugoga), ako je iz ove sesije.
     const procitano = c.procitano.splice(0).filter(x => t0 - x.ms <= s.sesijaNeaktivnostMin * 60_000)
     const prompt = [
-      procitano.length ? `[PROČITANO U CHATU — nije bilo upućeno tebi, ne odgovaraj na to izravno]\n${procitano.map(x => `[OD: ${x.ime}] ${x.tekst}`).join('\n')}\n[/PROČITANO]` : '',
-      prethodne.length ? `[PRETHODNI KONTEKST: teme prethodnog razgovora u ovom chatu]\n${prethodne.map(t => `• ${t}`).join('\n')}\n[/PRETHODNI KONTEKST]` : '',
+      procitano.length ? `[PROČITANO U CHATU — nije bilo upućeno tebi, ne odgovaraj na to izravno]\n${procitano.map(x => `[OD: ${neutralizirajIme(x.ime)}] ${neutralizirajTekst(x.tekst)}`).join('\n')}\n[/PROČITANO]` : '',
+      prethodne.length ? `[PRETHODNI KONTEKST: teme prethodnog razgovora u ovom chatu]\n${prethodne.map(t => `• ${neutralizirajTekst(t)}`).join('\n')}\n[/PRETHODNI KONTEKST]` : '',
       mem?.blok || '',
       tekst,
     ].filter(Boolean).join('\n\n')
@@ -350,6 +355,9 @@ export function stvoriRazgovor(d: RazgovorOvisnosti): RazgovorJezgra {
       }
     }
 
+    const zt = zatamniTajne(odgovor)
+    if (zt.zatamnjeno) log(`[razgovor] ${c.kljuc}: zatamnjeno ${zt.zatamnjeno} tajni u odgovoru`)
+    odgovor = zt.tekst
     const dijelovi = podijeli(odgovor, k.maxDuljinaPoruke)
     for (let i = 0; i < dijelovi.length; i++) {
       await k.posaljiTekst(p.chatId, dijelovi[i]!, i === 0 ? p.porukaId : undefined)

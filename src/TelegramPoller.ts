@@ -29,7 +29,7 @@ import {
 } from './TelegramConfig'
 import type { Kanal, Razgovor, UlaznaPoruka } from './razgovor/Kanal'
 import type { RazgovorPostavke } from './razgovor/RazgovorPostavke'
-import { jeZaDrugog, pocinjeImenom } from './razgovor/Filtar'
+import { jeDopusten, jeZaDrugog, pocinjeImenom } from './razgovor/Filtar'
 
 export const STANJE_PUTANJA = stanjePutanja('telegram-poller.json')
 export const BRAVA_PUTANJA = stanjePutanja('telegram-poller.lock')
@@ -187,10 +187,14 @@ export async function jedanProlaz(
   const ulazna = (m: NonNullable<Update['message']>, tekst: string) =>
     ulaznaPorukaIzTelegrama(m, tekst, ja, rp?.ime || ja?.firstName || '')
   /** ADR-0002: poruka koja NIJE postala zadatak ide razgovornom sloju — bez `await`. */
-  const uRazgovor = (m: NonNullable<Update['message']>, tekst: string, u?: UlaznaPoruka) => {
+  const uRazgovor = (m: NonNullable<Update['message']>, tekst: string, gotova?: UlaznaPoruka) => {
     if (!razgovorUkljucen) return
     try {
-      razg!.razgovor.primi(u || ulazna(m, tekst), razg!.kanal!)
+      const p = gotova || ulazna(m, tekst)
+      // Bez popisa dopuštenih chatova bota može dohvatiti svatko (korisničko ime bota je javno,
+      // privatni chat je uvijek „obraćanje") — razgovor tada sluša samo dopuštene korisnike (TASK-5279).
+      if (!u.dopusteniChatovi.length && !jeDopusten(p, rp!.dopusteniKorisnici)) return
+      razg!.razgovor.primi(p, razg!.kanal!)
     } catch (e: any) {
       ishod.greske.push(`razgovor: ${String(e?.message || e)}`)
     }
