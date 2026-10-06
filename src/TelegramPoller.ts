@@ -31,6 +31,10 @@ import type { Kanal, Razgovor, UlaznaPoruka } from './razgovor/Kanal'
 import type { RazgovorPostavke } from './razgovor/RazgovorPostavke'
 import { jeDopusten, jeZaDrugog, pocinjeImenom, trebaOdgovoriti } from './razgovor/Filtar'
 import { zaKonzolu } from './razgovor/Razgovor'
+import {
+  ZADANI_PRIVITCI, arhivirajPoslano, dopustenoPreuzeti, imaPrivitak, neutralizirajOznakuPrivitka, odaberiPrivitak, spremiPrivitak, telegramPreuzmi,
+  type PorukaSPrivitkom, type Preuzeto, type TelegramPrivitci,
+} from './TelegramPrivitci'
 
 export const STANJE_PUTANJA = stanjePutanja('telegram-poller.json')
 export const BRAVA_PUTANJA = stanjePutanja('telegram-poller.lock')
@@ -128,7 +132,7 @@ export interface Update {
     /** Forum (teme): svaka poruka teme ima `reply_to_message` = početna poruka teme. */
     is_topic_message?: boolean
     message_thread_id?: number
-  }
+  } & Omit<PorukaSPrivitkom, 'message_id' | 'date'>
 }
 
 /** Ovaj bot (`getMe`) — za vlastiti spomen i odgovor na njegovu poruku (ADR-0002 §5). */
@@ -162,6 +166,8 @@ export interface Api {
   odgovori(chatId: string | number, tekst: string, replyTo?: number): Promise<boolean>
   /** `getMe` — tko je ovaj bot (za razgovor; nije obavezno). */
   getMe?(): Promise<JaBot | null>
+  /** `getFile` + preuzimanje privitka (TASK-5282). Bez njega se privitci ne spremaju. */
+  preuzmi?(fileId: string, maxBajta: number): Promise<Preuzeto>
 }
 
 export interface Ishod {
@@ -206,6 +212,7 @@ export async function jedanProlaz(
     dohvaceno: 0, poslano: 0, preskoceno: 0, potvrde: 0,
     greske: [], zaustavljen: stanje.zaustavljen, cekajMs: 0,
   }
+  const priv = { ...ZADANI_PRIVITCI, ...(cfg.privitci || {}) }
   if (stanje.zaustavljen) {
     ishod.greske.push(stanje.zaustavljenRazlog || 'petlja je zaustavljena')
     return ishod
@@ -251,15 +258,26 @@ export async function jedanProlaz(
     if (!m) { ishod.preskoceno++; continue }
 
     const tekstSirovi = m.text ?? m.caption ?? ''
-    if (!tekstSirovi.trim()) { ishod.preskoceno++; continue }
+    // TASK-5282: uz uključene privitke poruka SAMO sa slikom/dokumentom/glasom nije prazna.
+    const sPrivitkom = imaPrivitak(m, priv)
+    if (!tekstSirovi.trim() && !sPrivitkom) { ishod.preskoceno++; continue }
 
-    const tekst = tekstSirovi.length > u.maxDuljina ? tekstSirovi.slice(0, u.maxDuljina) : tekstSirovi
+    let tekst = tekstSirovi.length > u.maxDuljina ? tekstSirovi.slice(0, u.maxDuljina) : tekstSirovi
+    if (priv.ukljucen) tekst = neutralizirajOznakuPrivitka(tekst)
 
     // Dopušteni chatovi vrijede za OBA sloja; ostali filtri ulaza (okidač, spomen,
     // korisnici) odlučuju samo o ingestu — razgovor ima vlastiti filtar (ADR-0002 §5).
     if (u.dopusteniChatovi.length && !u.dopusteniChatovi.includes(String(m.chat.id))) {
       ishod.preskoceno++; stanje.preskoceno++; continue
     }
+    // Privitak se sprema samo od dopuštenih (v. `dopustenoPreuzeti`); putanja (ili razlog
+    // zašto nije spremljen) ide dalje u tekstu — ulaz i razgovor je vide jednako.
+    if (sPrivitkom && api.preuzmi && dopustenoPreuzeti(m, u, rp)) {
+      const r = await spremiPrivitak(m, odaberiPrivitak(m, priv.vrste)!, priv, api.preuzmi.bind(api), telegramBotToken(cfg))
+      const oznaka = r.ok ? `[PRIVITAK: ${r.putanja}]` : `[PRIVITAK nije spremljen: ${r.razlog}]`
+      tekst = tekst.trim() ? `${tekst}\n${oznaka}` : oznaka
+    }
+    if (!tekst.trim()) { ishod.preskoceno++; stanje.preskoceno++; continue }
     const ul = razg ? ulazna(m, tekst) : undefined
     if (ul && razg?.zabiljezi) { try { razg.zabiljezi(ul) } catch { /* samo pomoć vlasniku */ } }
     // TASK-5283: poruka upućena drugome (drugi bot s popisa ili, uz tisinaKadDrugom, čovjek)
@@ -464,6 +482,7 @@ export function telegramApi(botToken: string, plocaBase: string): Api {
       try { parsed = t ? JSON.parse(t) : null } catch { parsed = { raw: t } }
       return { status: r.status, tijelo: parsed }
     },
+    preuzmi: telegramPreuzmi(botToken),
     async getMe() {
       try {
         const r = await fetch(`${base}/getMe`)
@@ -497,8 +516,13 @@ export function telegramApi(botToken: string, plocaBase: string): Api {
 /**
  * Telegram kao `Kanal` razgovornog sloja. Token ostaje ovdje — razgovorna jezgra i model
  * ga nikad ne vide.
+ *
+ * `privitci` (TASK-5282, uputa #187): uz uključene privitke poslani dokument se kopira u mapu
+ * chata i evidentira kao `poslano` — oba smjera na jednom mjestu.
  */
-export function telegramKanal(botToken: string): Kanal {
+export function telegramKanal(
+  botToken: string, privitci?: () => TelegramPrivitci, ja?: () => JaBot | null,
+): Kanal {
   const base = `https://api.telegram.org/bot${botToken}`
   const posalji = async (metoda: string, tijelo: Record<string, unknown>) => {
     try {
@@ -528,6 +552,15 @@ export function telegramKanal(botToken: string): Kanal {
         const f = Bun.file(putanja)
         fd.append('document', f, putanja.split('/').pop() || 'dokument')
         const r = await fetch(`${base}/sendDocument`, { method: 'POST', body: fd })
+        if (r.ok && privitci) {
+          try {
+            const p = privitci()
+            if (p.ukljucen) {
+              const j: any = await r.json().catch(() => ({}))
+              arhivirajPoslano(p, String(chatId), putanja, Number(j?.result?.message_id) || 0, ja?.() || null)
+            }
+          } catch { /* arhiv nije vrijedan neuspjeha slanja */ }
+        }
         return r.ok
       } catch { return false }
     },
@@ -599,7 +632,12 @@ export function pokreniTelegramPoller(opcije: PokretanjeOpcije = {}): Pokretanje
   let uzastopnihKvarova = 0
   // Razgovor: tko je ovaj bot (`getMe`, jednom po petlji) i kanal za odgovore.
   const razg: RazgovorUlaza | undefined = opcije.razgovor
-    ? { ...opcije.razgovor, kanal: opcije.razgovor.kanal || telegramKanal(token) }
+    ? {
+      ...opcije.razgovor,
+      kanal: opcije.razgovor.kanal || telegramKanal(token,
+        () => ({ ...ZADANI_PRIVITCI, ...(loadTelegramConfig(opcije.configPath).privitci || {}) }),
+        () => razg?.ja || null),
+    }
     : undefined
   let jaDohvacen = !!razg?.ja
 

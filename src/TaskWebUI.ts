@@ -62,6 +62,8 @@ import {
 import { probajUlaz, stanjeUlaza, pokreniTelegramPoller, uskladiTelegramPoller, type RazgovorUlaza } from './TelegramPoller'
 import { razgovorGet, razgovorPut, razgovorPovijestGet, sklopiRazgovor, zadnjiPosiljatelji } from './razgovor/RazgovorPloca'
 import type { RazgovorJezgra } from './razgovor/Razgovor'
+import { ucitajAgente } from './razgovor/Identitet'
+import { jeDopustenAgent } from './core/AgentIds'
 import {
   loadOrchestratorConfig, validateOrchestratorPatch, saveOrchestratorConfig, stanjeOrkestratora,
   orchestratorConfigPath,
@@ -162,14 +164,14 @@ import {
 import {
   TELEGRAM_CONFIG_PATH,
   loadTelegramConfig, saveTelegramConfig, validateTelegramPatch, telegramBotToken,
-  posaljiTelegramPoruku, obavijestiZadatak, odgovorTelegramPloci, trebaObavijest,
+  posaljiTelegramPoruku, obavijestiZadatak, oznakaMemorijeIzZadatka, odgovorTelegramPloci, trebaObavijest,
 } from './TelegramConfig'
 // Prigusenje proba (DIZAJN-integracije §1.4 t.3) — jedno mjesto za svih pet kartica.
 import { prigusenje } from './core/ProbeGuard'
 // U6/TASK-4266: generički ulaz `POST /api/ingest` — source/externalId/replyTo/text/senderName.
 // Ništa u njemu ne zna za Telegram; most, pretinac e-pošte i konzola su obični pozivatelji.
 import {
-  procijeniIngest, validirajZahtjev, zapisiUlaz, INGEST_LOG_PATH,
+  procijeniIngest, validirajZahtjev, zapisiUlaz, INGEST_LOG_PATH, nositeljIzPoruke,
 } from './core/Ingest'
 import { renderirajOpis } from './core/IngestTemplate'
 import {
@@ -8627,7 +8629,55 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         _T('tel_provjera_opis', 'Pošalje testnu poruku na postavljeni chat ID.'));
       h += '</tbody></table>';
       h += renderTelegramUlaz(d);
+      h += renderTelegramPrivitci(d);
       return h;
+    }
+
+    // ── Telegram PRIVITCI (TASK-5282) — slika, dokument, glas… spremaju se lokalno ──────
+    // Putanja ide dalje u tekstu poruke ([PRIVITAK: …]); preuzima se samo od dopuštenih
+    // chatova/korisnika iz Ulaza i Razgovora. Zadano isključeno.
+    var _TEL_VRSTE = ['photo', 'document', 'voice', 'audio', 'video'];
+    function renderTelegramPrivitci(d) {
+      var p = (d.postavke && d.postavke.privitci) || {};
+      var vrste = p.vrste || [];
+      var znacka = p.ukljucen
+        ? '<span class="info-badge enabled">' + _T('tel_aktivno', 'aktivno') + '</span>'
+        : '<span class="info-badge disabled">' + _T('tel_iskljuceno', 'isključeno') + '</span>';
+      var h = '<div style="margin-top:0.8rem;padding-top:0.5rem;border-top:1px solid var(--border-color)">';
+      h += '<div style="font-size:0.74rem;font-weight:600;margin-bottom:0.3rem">' +
+        _T('tel_priv_naslov', 'Privitci — slike, dokumenti i glas spremaju se lokalno') + ' ' + znacka + '</div>';
+      h += '<div style="font-size:0.7rem;color:var(--text-secondary);margin-bottom:0.4rem">' +
+        _esc(_T('tel_priv_uvod',
+          'Privitak se preuzima (fotografija u najvećoj rezoluciji) i sprema kao <datum>_<poruka>_<ime>; ' +
+          'ulaz i razgovor dobivaju putanju u tekstu: [PRIVITAK: /putanja]. Samo od dopuštenih chatova i ' +
+          'korisnika iz Ulaza i Razgovora; datoteka se nikad ne pokreće. Dokumenti koje bot pošalje (SEND_DOC) kopiraju se u istu mapu; ' +
+          'oba smjera bilježe se u evidencija.jsonl (tko, kad, putanja).')) + '</div>';
+      h += '<table class="info-table"><tbody>';
+      h += _red(_T('tel_priv_ukljucen', 'Spremaj privitke'),
+        '<input type="checkbox"' + (p.ukljucen ? ' checked' : '') +
+        ' onchange="spremiTelegram({privitci:{ukljucen:this.checked}}, this)">',
+        _T('tel_priv_ukljucen_opis', 'Isključeno: poruka samo s privitkom se preskače kao i prije.'));
+      h += _red(_T('tel_priv_mapa', 'Mapa'),
+        '<input id="tel-priv-mapa" value="' + _esc(p.mapa || '') + '" style="' + _stil() + ';min-width:260px" placeholder="$TM_HOME/privitci">' +
+        ' <button class="cfg-btn" onclick="spremiTelegram({privitci:{mapa:document.getElementById(\\'tel-priv-mapa\\').value}}, this)">' + _T('tel_spremi', 'Spremi') + '</button>',
+        _esc(_T('tel_priv_mapa_opis', 'Apsolutna putanja; prazno = $TM_HOME/privitci. Ispod se slaže mapa po chatu (<chatId>/).')));
+      h += _red(_T('tel_priv_max', 'Najveća veličina (MB)'),
+        '<input id="tel-priv-max" type="number" min="1" max="20" value="' + (p.maxMB || 20) + '" style="' + _stil() + ';width:80px">' +
+        ' <button class="cfg-btn" onclick="spremiTelegram({privitci:{maxMB:Number(document.getElementById(\\'tel-priv-max\\').value)}}, this)">' + _T('tel_spremi', 'Spremi') + '</button>',
+        _T('tel_priv_max_opis', '1–20 (Bot API ne daje preuzeti više od 20 MB).'));
+      var kv = _TEL_VRSTE.map(function (v) {
+        return '<label style="margin-right:.6rem;font-size:.72rem"><input type="checkbox" class="tel-priv-vrsta" value="' + v + '"' +
+          (vrste.indexOf(v) >= 0 ? ' checked' : '') + ' onchange="spremiTelegramVrste(this)"> ' + _T('tel_priv_v_' + v, v) + '</label>';
+      }).join('');
+      h += _red(_T('tel_priv_vrste', 'Vrste'), kv, _T('tel_priv_vrste_opis', 'Koje se vrste privitaka spremaju.'));
+      h += '</tbody></table></div>';
+      return h;
+    }
+
+    function spremiTelegramVrste(el) {
+      var vrste = Array.prototype.slice.call(document.querySelectorAll('.tel-priv-vrsta'))
+        .filter(function (x) { return x.checked; }).map(function (x) { return x.value; });
+      return spremiTelegram({ privitci: { vrste: vrste } }, el);
     }
 
     // ── Telegram ULAZ (TASK-4800) — poruka → POST /api/ingest ──────────────────────────
@@ -10807,6 +10857,9 @@ function razgovorSloj(): { ulaz: RazgovorUlaza; jezgra: RazgovorJezgra } {
     instalacija: process.env.TM_NAZIV || osHostname(),
     env: process.env,
     dokumentiMape: [join(TM_DATA, 'izvjestaji')],
+    // TASK-5293: identitet upravitelja — agenti iz registra, vodič vlasnika samo iz okoline stroja.
+    agentiPut: AGENTS_REGISTRY_FILE,
+    uputePut: process.env.TM_RAZGOVOR_UPUTE || undefined,
     log: (r: string) => console.log(r),
     // TASK-5285: razgovor se vidi u Konzoli (ulaz, odluka, izlaz), oblik odgovora iz
     // `telegram.stil`, a uz `rad` sesija smije čitati dnevnik ulaza.
@@ -11196,6 +11249,14 @@ async function handleIngest(req: Request): Promise<Response> {
     return json({ ok: false, error: provjera.greske.join('; '), greske: provjera.greske }, 400)
   }
   const zahtjev = provjera.zahtjev!
+  // TASK-5293: nalog koji izričito imenuje agenta („neka Ana napravi…") ide tom agentu.
+  // Samo dopušteni nositelji — inače bi `POST /api/tasks` odbio cijeli zadatak.
+  if (!zahtjev.assignee) {
+    try {
+      const n = nositeljIzPoruke(zahtjev.text, ucitajAgente(AGENTS_REGISTRY_FILE))
+      if (n && jeDopustenAgent(n)) zahtjev.assignee = n
+    } catch { /* bez nositelja — bira orkestrator */ }
+  }
 
   let odluka
   try {
@@ -11274,6 +11335,7 @@ async function handleIngest(req: Request): Promise<Response> {
     + `${taskId} (${odluka.effort}/${odluka.tezina}, projekt ${odluka.projectId})`)
   return json({
     ok: true, created: true, taskId,
+    assignee: odluka.zadatak!.assignee ?? null,
     title: odluka.zadatak!.title,
     assignee: stvoreno?.assignee ?? odluka.zadatak!.assignee ?? null,
     tags: odluka.zadatak!.tags,
@@ -13036,9 +13098,11 @@ async function handleUpdateTask(taskId: string, req: Request): Promise<Response>
     // u stilu `kratko` s točkama iz rezultata i poveznicom na ploču.
     if (trebaObavijest(statusPrijePut, task.status)) {
       try {
+        // TASK-5292: rad BEZ memorije (🧠🚫 u izvještaju/bilješci) vidi se i u obavijesti.
         const tgRez = await obavijestiZadatak(taskId, String(task.title || ''), task.status, undefined, {
           rezultat: String((task as any).resultSummary || ''),
           detalji: `${plocaJavnaAdresa()}/#${taskId}`,
+          oznakaMemorije: oznakaMemorijeIzZadatka(task as any),
         })
         if (tgRez.ok) {
           console.log(`[TELEGRAM] obavijest poslana: ${taskId} → ${task.status}`)

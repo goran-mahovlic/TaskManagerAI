@@ -390,3 +390,23 @@ describe('jezgra: SEND_DOC, memorija, zapis, kanal', () => {
     expect(JSON.stringify(redovi)).not.toContain('1:A')
   })
 })
+
+// ─── TASK-5293: upravitelj ───────────────────────────────────────────────────
+
+describe('TASK-5293 — identitet upravitelja iz ovisnosti', () => {
+  test('agenti i vodič vlasnika idu u identitet nove sesije; vodič je zaštićen od pisanja', async () => {
+    const o = okolina({}, {
+      agenti: () => [{ id: 'ana', ime: 'Ana', uloga: 'Engineer', vjestine: ['TDD'] }],
+      upute: () => 'Servisi: regoc-x',
+      uputePut: '/h/CLAUDE.md',
+    })
+    o.r.primi(por({ tekst: 'koji agenti postoje' }), o.kanal)
+    await o.r.mirno()
+    const z = o.izv.zahtjevi[0]!
+    expect(z.systemPrompt).toContain('ana — Ana, Engineer (TDD)')
+    expect(z.systemPrompt).toContain('Servisi: regoc-x')
+    const args = (z.extra as any).args as string[]
+    const s = JSON.parse(args[args.indexOf('--settings') + 1]!)
+    expect(s.permissions.deny).toContain('Write(//h/CLAUDE.md)')
+  })
+})

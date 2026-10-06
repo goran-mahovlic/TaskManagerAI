@@ -20,7 +20,7 @@ import type { RazgovorPostavke } from './RazgovorPostavke'
 import { jeDopusten, razlogZaDrugog, trebaOdgovoriti } from './Filtar'
 import { argumentiOvlasti, okolinaRazgovora, radniDirRazgovora } from './Ovlasti'
 import { neutralizirajIme, neutralizirajTekst, zatamniTajne } from './Ciscenje'
-import { sastaviIdentitet } from './Identitet'
+import { sastaviIdentitet, type OpisAgenta } from './Identitet'
 import { dohvatiMemoriju, oznakaMemorije, type MemorijaRezultat } from './Memorija'
 import { izvuciDokumente, provjeriDokument } from './SendDoc'
 import { ocistiStareZapise, zapisiPotez } from './Zapis'
@@ -41,6 +41,11 @@ export interface RazgovorOvisnosti {
   env: Record<string, string | undefined>
   /** Model kad `razgovor.model` nije postavljen (model-config `agentOverrides.razgovor`). */
   modelZadano?: () => string | undefined
+  /** Agenti iz registra instalacije — za identitet (TASK-5293). */
+  agenti?: () => OpisAgenta[]
+  /** Vodič vlasnika (`TM_RAZGOVOR_UPUTE`) — za identitet; `uputePut` sesija ne smije pisati. */
+  upute?: () => string | null
+  uputePut?: string
   /** Dodatne mape iz kojih SEND_DOC smije slati (uz radniDir). */
   dokumentiMape?: string[]
   sat?: () => number
@@ -328,12 +333,16 @@ export function stvoriRazgovor(d: RazgovorOvisnosti): RazgovorJezgra {
         ime: s.ime, instalacija: d.instalacija, ovlasti, plocaUrl: d.plocaUrl, port: d.port,
         dokumenti: s.dokumenti, radniDir, stil: d.stil?.(),
         zapisi: { korijen: d.korijen, ingestLog: d.ingestLog },
+        agenti: d.agenti?.() || [], upute: d.upute?.() || null,
       }),
       cwd: radniDir,
       timeoutMs: s.rokSek * 1000,
       extra: {
         ...(resume ? { resume } : {}),
-        args: argumentiOvlasti(ovlasti, { port: d.port, radniDir, tmHome: d.tmHome, home: d.home, korijen: d.korijen, ingestLog: d.ingestLog, kanal: p.kanal, chatId: p.chatId }),
+        args: argumentiOvlasti(ovlasti, {
+          port: d.port, radniDir, tmHome: d.tmHome, home: d.home, zasticene: d.uputePut ? [d.uputePut] : [],
+          korijen: d.korijen, ingestLog: d.ingestLog, kanal: p.kanal, chatId: p.chatId,
+        }),
         env: okolinaRazgovora(d.env, oznaka),
       },
     })

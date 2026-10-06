@@ -575,7 +575,32 @@ Vlasnik (grupa node-A, 06.10. 18:43): „Hindsight nedostupan → odgovor bez me
 - `shadow` i `off` ne nose oznaku: ondje memorija modelu ionako ne ide, po odluci.
 - `memorija.oznakaUspjeha=true` → uspješan dohvat počinje s `🧠`.
 
-## 17. Dopunska odluka (TASK-5285, 06.10.2026.): nalog s izvršiteljem, kratki stil, razgovor koji se vidi
+## 17. Dopunska odluka (TASK-5293, 06.10.2026.): bot kao upravitelj instalacije
+
+**Kontekst.** Na razini `puno` bot radi na stroju sve što i vlasnik, pa mora znati agente instalacije
+i kako im daje posao. Sesija je izolirana (`--setting-sources ''`, §7.3), pa `CLAUDE.md` iz radne
+mape NE učitava sama — vodič za stroj mora doći kroz identitet.
+
+**Odluka.**
+1. Identitet nosi popis agenata iz registra (`TM_AGENTS_REGISTRY`: id — ime, uloga (vještine)) na
+   svakoj razini; čita se pri svakoj novoj sesiji, pa novi agent ne traži restart.
+2. Samo uz `puno` identitet nosi upute upravitelja: višestručan ili dulji posao ide agentima kroz
+   `POST /api/tasks` (`assignee`, `projectId`), redoslijed kroz `blockedBy` + `blocks` roditelja,
+   uputa kroz `/api/tasks/<ID>/uputa`, kočnica `/api/pause`; status zadatka ne postavlja, servise
+   ne restarta iz vlastitog poteza, sklopke vlasnika (sudo, paketi, internet) ne zaobilazi.
+   `citanje`/`rad` nemaju POST na ploču, pa te upute ne dobivaju.
+3. **Vodič vlasnika** = datoteka iz `TM_RAZGOVOR_UPUTE` (okolina ploče, kao `TM_RAZGOVOR_PUNO`),
+   najviše 16 000 znakova, ide u identitet u bloku `[VODIČ VLASNIKA]`. Putanju NE zadaje API ploče:
+   API nema prijavu, a tekst u identitetu je nalog — postavka s ploče bi svakome s mreže dala
+   upis trajnog naloga sesiji punih prava. Ta datoteka je u `permissions.deny` (Edit/Write) na svim
+   razinama; na `citanje`/`rad` ljuska ionako ide kroz stražu (samo čitanje ploče).
+4. `radniDir` jednak HOME-u se i dalje odbija (§14, TASK-5279) — na nižoj razini dao bi čitanje
+   cijelog HOME-a. Vodič zato ne mora biti u radnoj mapi.
+5. Nalog iznad praga uzima ulaz (`/api/ingest`), ne razgovor — bot ga ne vidi. Zato ulaz sam
+   prepoznaje izričito imenovanog agenta („neka Ana napravi…", `@ana`, „Ana, …") i otvara zadatak s
+   tim nositeljem (`nositeljIzPoruke`, samo dopušteni nositelji); potvrda u chatu nosi `→ <id>`.
+   Pitanje („koji agenti postoje…") je ispod praga i ide razgovoru, koji zna agente iz identiteta.
+## 18. Dopunska odluka (TASK-5285, 06.10.2026.): nalog s izvršiteljem, kratki stil, razgovor koji se vidi
 
 Izmjereno na čvoru: zadaci iz chata otvarali su se bez izvršitelja (`no-assignee`, nitko ih ne
 pokreće), rezultati su išli u konzolu daemona umjesto u grupu, izravno obraćanje u vokativu

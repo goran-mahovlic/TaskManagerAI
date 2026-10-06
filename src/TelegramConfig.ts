@@ -21,6 +21,7 @@ import { existsSync } from 'fs'
 import { konfigPutanja, konfigPutanjaZaPisanje, osigurajMapu } from './core/paths'
 import { procitajTajnu, zapisiTajnu } from './core/ConfigModul'
 import { ZADANI_STIL, jeStil, kratkiIzvjestaj, type Stil, STILOVI } from './Stil'
+import { GRANICE_PRIVITAKA, ZADANI_PRIVITCI, validirajPrivitke, type TelegramPrivitci } from './TelegramPrivitci'
 
 /**
  * ADR-0001 O1.4: postavke se traže obrascem `TM_TELEGRAM_CONFIG` → `$TM_HOME/config/`
@@ -70,6 +71,8 @@ export interface TelegramPostavke {
   stil: Stil
   /** ULAZNI smjer (poller). Zaseban prekidač — v. `ulaz.ukljucen`. */
   ulaz: TelegramUlaz
+  /** Privitci (slika, dokument, glas…) se spremaju lokalno — TASK-5282, v. `TelegramPrivitci`. */
+  privitci: TelegramPrivitci
 }
 
 /**
@@ -126,6 +129,7 @@ export const ZADANE_POSTAVKE: TelegramPostavke = {
   prefix: '📋',
   stil: ZADANI_STIL,
   ulaz: ZADANI_ULAZ,
+  privitci: ZADANI_PRIVITCI,
 }
 
 /** Ime varijable okoline, ne sama tajna — isti uzorak kao u ostale četiri integracije. */
@@ -140,6 +144,7 @@ export const GRANICE = {
   okidac: { maxDuljina: 40 },
   maxDuljina: { min: 100, max: 20000 },
   popis: { maxStavki: 50 },
+  privitci: GRANICE_PRIVITAKA,
 } as const
 
 /** Uvijek svjež pročitaj s diska. Nepoznata polja se ČUVAJU. */
@@ -156,6 +161,10 @@ export function loadTelegramConfig(
       ...ZADANE_POSTAVKE,
       ...sirovo,
       ulaz: { ...ZADANI_ULAZ, ...(sirovo.ulaz && typeof sirovo.ulaz === 'object' ? sirovo.ulaz : {}) },
+      privitci: {
+        ...ZADANI_PRIVITCI,
+        ...(sirovo.privitci && typeof sirovo.privitci === 'object' && !Array.isArray(sirovo.privitci) ? sirovo.privitci : {}),
+      },
     }
   } catch {
     return { ...ZADANE_POSTAVKE }
@@ -290,6 +299,12 @@ export function validateTelegramPatch(tijelo: unknown): Provjera {
     }
   }
 
+  if ('privitci' in t) {
+    const r = validirajPrivitke(t.privitci)
+    greske.push(...r.greske)
+    if (!r.greske.length && Object.keys(r.izlaz).length) zakrpa.privitci = r.izlaz
+  }
+
   if (!greske.length && !Object.keys(zakrpa).length) {
     greske.push('Nijedna postavka nije poslana')
   }
@@ -329,6 +344,7 @@ export function saveTelegramConfig(
   const novo = {
     ...trenutno, ...zakrpa,
     ulaz: { ...trenutno.ulaz, ...(zakrpa.ulaz || {}) },
+    privitci: { ...trenutno.privitci, ...(zakrpa.privitci || {}) },
   }
 
   const token = String(novo.botToken || '').trim()
@@ -424,6 +440,34 @@ export async function posaljiTelegramPoruku(
   }
 }
 
+const OZNAKA_BEZ_MEMORIJE = '🧠🚫'
+
+/**
+ * TASK-5292: oznaka rada BEZ memorije iz zadatka — prvi redak izvještaja ili zadnje bilješke
+ * koji počinje s 🧠🚫 (upisuje ga daemon). '' = memorija je bila ili nije tražena.
+ */
+export function oznakaMemorijeIzZadatka(t: { resultSummary?: unknown; progressNotes?: unknown } | null | undefined): string {
+  if (!t) return ''
+  const prvi = (x: unknown) => String(x ?? '').split('\n', 1)[0]!.trim()
+  // Izvještaj odlučuje kad postoji: retry s memorijom ne smije naslijediti staru bilješku 🧠🚫.
+  const izv = prvi(t.resultSummary)
+  if (izv) return izv.startsWith(OZNAKA_BEZ_MEMORIJE) ? izv.slice(0, 200) : ''
+  const biljeske = Array.isArray(t.progressNotes) ? t.progressNotes : []
+  for (let i = biljeske.length - 1; i >= 0; i--) {
+    const b = biljeske[i]
+    const r = prvi(typeof b === 'object' && b ? (b as any).text ?? (b as any).note ?? '' : b)
+    if (r.startsWith(OZNAKA_BEZ_MEMORIJE)) return r.slice(0, 200)
+  }
+  return ''
+}
+
+/** Tekst obavijesti o zadatku (HTML); oznaka memorije, ako je ima, ide u prvi redak. */
+export function tekstObavijestiZadatka(taskId: string, naslov: string, status: string, oznakaMemorije = ''): string {
+  const ikona = status === 'completed' ? '✅' : status === 'failed' ? '❌' : '📋'
+  const tekst = `${ikona} Zadatak <b>${_escHtml(taskId)}</b> — ${_escHtml(status)}\n${_escHtml(naslov)}`
+  return oznakaMemorije ? `${_escHtml(oznakaMemorije)}\n${tekst}` : tekst
+}
+
 /**
  * Ide li obavijest za ovu promjenu statusa? Samo PRIJELAZ u completed/failed — ponovljeni
  * PUT s istim statusom (completed → completed) slao je istu obavijest dvaput (TASK-5287).
@@ -438,6 +482,8 @@ export interface ObavijestOpcije {
   rezultat?: string
   /** Poveznica na zadatak na ploči. */
   detalji?: string
+  /** Oznaka rada bez memorije (`oznakaMemorijeIzZadatka`, TASK-5292). */
+  oznakaMemorije?: string
 }
 
 const STATUS_HR: Record<string, string> = { completed: 'završen', failed: 'nije uspio' }
@@ -445,14 +491,15 @@ const STATUS_HR: Record<string, string> = { completed: 'završen', failed: 'nije
 /**
  * Pošalji obavijest o završenom zadatku. Stil `kratko` (TASK-5285): prvi redak je ishod
  * („✅ TASK-9 Naslov — prva rečenica rezultata"), zatim do 3 točke i poveznica — bez prefiksa,
- * jer prvi znak poruke mora biti ishod. Stil `puno`: stari oblik s prefiksom.
+ * jer prvi znak poruke mora biti ishod; oznaka 🧠🚫 (TASK-5292) ide kao drugi redak.
+ * Stil `puno`: stari oblik s prefiksom. Peti argument smije biti i sama oznaka memorije (niz).
  */
 export async function obavijestiZadatak(
   taskId: string,
   naslov: string,
   status: string,
   configPath: string = TELEGRAM_CONFIG_PATH,
-  opcije: ObavijestOpcije = {},
+  opcije: ObavijestOpcije | string = {},
 ): Promise<{ ok: boolean; greska?: string }> {
   const cfg = loadTelegramConfig(configPath)
   // Poštuj pojedinačne prekidače
@@ -463,20 +510,20 @@ export async function obavijestiZadatak(
     return { ok: false, greska: 'obavijestGreska je isključeno' }
   }
 
+  const op: ObavijestOpcije = typeof opcije === 'string' ? { oznakaMemorije: opcije } : opcije
   if ((cfg.stil ?? ZADANI_STIL) === 'kratko') {
-    const rezultat = String(opcije.rezultat || '').trim() || STATUS_HR[status] || status
-    const tekst = kratkiIzvjestaj(rezultat, {
+    const rezultat = String(op.rezultat || '').trim() || STATUS_HR[status] || status
+    const reci = kratkiIzvjestaj(rezultat, {
       naslov: `${taskId} ${naslov}`.trim(),
       ishod: status === 'failed' ? 'greska' : undefined,
-      detalji: opcije.detalji,
+      detalji: op.detalji,
       maxTocaka: 3,
-    })
-    return posaljiTelegramPoruku(_escHtml(tekst), configPath, { bezPrefiksa: true })
+    }).split('\n')
+    if (op.oznakaMemorije) reci.splice(1, 0, op.oznakaMemorije)
+    return posaljiTelegramPoruku(_escHtml(reci.join('\n')), configPath, { bezPrefiksa: true })
   }
 
-  const ikona = status === 'completed' ? '✅' : status === 'failed' ? '❌' : '📋'
-  const tekst = `${ikona} Zadatak <b>${_escHtml(taskId)}</b> — ${_escHtml(status)}\n${_escHtml(naslov)}`
-  return posaljiTelegramPoruku(tekst, configPath)
+  return posaljiTelegramPoruku(tekstObavijestiZadatka(taskId, naslov, status, op.oznakaMemorije || ''), configPath)
 }
 
 /**

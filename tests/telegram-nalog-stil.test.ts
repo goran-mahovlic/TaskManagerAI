@@ -212,6 +212,12 @@ describe('Ingest — izvršitelj i razgovor', () => {
     expect(o.razlog).toBe(RAZLOG.RAZGOVOR)
   })
 
+  test('uz razgovor: nalog s imenovanim nositeljem ostaje zadatak (TASK-5293)', () => {
+    const o = procijeniIngest({ source: 'telegram', text: 'Provjeri da li je sustav funkcionalan!', razgovor: true, assignee: 'ana' }, INGEST_ZADANO)
+    expect(o.akcija).toBe('zadatak')
+    expect(o.zadatak!.assignee).toBe('ana')
+  })
+
   test('uz razgovor: „zadatak: …" ili /zadatak otvara zadatak i za E2', () => {
     expect(trazeZadatak('zadatak: provjeri disk')).toBe(true)
     expect(trazeZadatak('/zadatak provjeri disk')).toBe(true)

@@ -25,6 +25,8 @@ export interface OvlastiOpcije {
   /** Kanal i chat poteza — zapis razgovora smije se čitati samo za OVAJ chat. */
   kanal?: string
   chatId?: string
+  /** Datoteke koje sesija ne smije pisati ni na jednoj razini (vodič vlasnika, TASK-5293). */
+  zasticene?: string[]
 }
 
 /**
@@ -72,8 +74,9 @@ export function zabrane(o: Pick<OvlastiOpcije, 'tmHome' | 'home'>): string[] {
  * Datoteke kojima bi model s pravom pisanja u radnoj mapi sam sebi dao veća prava ili trajni
  * nalog u sljedećoj sesiji (projektne postavke, MCP, CLAUDE.md) — zabranjeno na svim razinama.
  */
-export function zabranePisanja(radniDir: string): string[] {
-  const putanje = [`/${radniDir}/.claude/**`, `/${radniDir}/.mcp.json`, `/${radniDir}/CLAUDE.md`, `/${radniDir}/CLAUDE.local.md`]
+export function zabranePisanja(radniDir: string, zasticene: string[] = []): string[] {
+  const putanje = [`/${radniDir}/.claude/**`, `/${radniDir}/.mcp.json`, `/${radniDir}/CLAUDE.md`, `/${radniDir}/CLAUDE.local.md`,
+    ...zasticene.filter(Boolean).map(z => `/${z}`)]
   return ['Edit', 'Write'].flatMap(alat => putanje.map(p => `${alat}(${p})`))
 }
 
@@ -105,7 +108,7 @@ export const ALATI_RAZINE: Record<Exclude<Ovlasti, 'puno'>, string[]> = {
 const IZOLACIJA = ['--setting-sources', '', '--strict-mcp-config']
 
 export function argumentiOvlasti(razina: Ovlasti, o: OvlastiOpcije): string[] {
-  const deny = [...zabrane(o), ...zabranePisanja(o.radniDir)]
+  const deny = [...zabrane(o), ...zabranePisanja(o.radniDir, o.zasticene)]
   if (razina === 'puno') {
     return [...IZOLACIJA, '--dangerously-skip-permissions', '--settings', JSON.stringify({ permissions: { deny } })]
   }

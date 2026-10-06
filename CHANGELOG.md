@@ -1,3 +1,24 @@
+## 2026-10-06 — privitci iz Telegrama spremaju se lokalno (TASK-5282)
+
+- Novo: postavka `telegram.privitci` `{ukljucen (zadano false), mapa (prazno = $TM_HOME/privitci),
+  maxMB (1–20, zadano 20), vrste: photo/document/voice/audio/video}` na Config stranici (kartica
+  Telegram, blok „Privitci"), vrijedi odmah bez restarta. Modul `src/TelegramPrivitci.ts`.
+- Kad je uključeno: `getFile` → preuzimanje (fotografija u najvećoj rezoluciji) u
+  `<mapa>/<chatId>/<datum>_<message_id>_<izvorno ime>`, a ulaz (`/api/ingest`) i razgovor dobivaju
+  putanju u tekstu: `[PRIVITAK: /putanja]` (ili `[PRIVITAK nije spremljen: razlog]`). Poruka samo
+  s privitkom više se NE preskače. Isključeno = ponašanje kao prije.
+- Sigurnost: preuzima se samo u dopuštenim chatovima (`ulaz.dopusteniChatovi`) i od korisnika s
+  popisa ulaza ili razgovora (id ili korisničko ime); bez ikakvog izričitog popisa ništa.
+  Ime sanitizirano (samo osnovno ime, bez `..`, kose crte i vodeće točke) uz provjeru da odredište
+  ostaje u mapi; strop veličine prema poruci, `getFile`, `Content-Length` i pročitanim bajtovima;
+  datoteka 0600, nikad izvršna. Token se iz teksta greške briše (`bezTajne`).
+- Oba smjera (uputa vlasnika #187): dokument koji bot pošalje u chat (SEND_DOC, `Kanal.posaljiDokument`)
+  kopira se u istu mapu chata (`<datum>_<message_id>_<ime>`, 0600), a svaki privitak — primljen ili
+  poslan, spremljen ili ne (s razlogom) — upisuje se u `<mapa>/<chatId>/evidencija.jsonl`
+  (`smjer`, `kad`, `tkoId`, `tko`, `putanja`, `izvor`, `greska`).
+- Pošiljatelj ne može glumiti oznaku: `[PRIVITAK` u njegovu tekstu postaje `(PRIVITAK` (kao `Ciscenje.ts`).
+- Test: `tests/telegram-privitci.test.ts` (26).
+
 ## 2026-10-04 — /api/odlucitelj/config više ne visi kad OpenRouter nije dostupan (TASK-5233)
 
 - Ispravak: na nodu bez izlaza prema openrouter.ai `GET /api/odlucitelj/config` (i
