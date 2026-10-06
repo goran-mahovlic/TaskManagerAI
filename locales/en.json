@@ -132,6 +132,8 @@
   "cfg_login_otvori_opis": "Open the link on any computer and approve it. If the CLI asks for a code, paste it below.",
   "cfg_login_pokrecem": "Starting the sign-in…",
   "cfg_login_prekinuta": "Sign-in cancelled/failed.",
+  "cfg_login_ponovno": "Start again",
+  "cfg_login_oauth_greska": "Sign-in rejected (OAuth error): the code is invalid, expired or already used. Click “Start again” and paste a NEW code.",
   "cfg_login_prijavljen": "signed in",
   "cfg_login_spremi_kljuc": "Save key",
   "cfg_login_uspjesna": "Signed in.",

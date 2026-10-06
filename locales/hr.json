@@ -132,6 +132,8 @@
   "cfg_login_otvori_opis": "Otvori link na bilo kojem računalu i odobri. Ako CLI traži kod, zalijepi ga ispod.",
   "cfg_login_pokrecem": "Pokrećem prijavu…",
   "cfg_login_prekinuta": "Prijava prekinuta/neuspješna.",
+  "cfg_login_ponovno": "Počni ponovno",
+  "cfg_login_oauth_greska": "Prijava odbijena (OAuth error): kod je neispravan, istekao ili već iskorišten. Klikni „Počni ponovno” i zalijepi NOVI kod.",
   "cfg_login_prijavljen": "prijavljen",
   "cfg_login_spremi_kljuc": "Spremi ključ",
   "cfg_login_uspjesna": "Prijava uspješna.",

@@ -81,6 +81,7 @@ import { getProjectManager } from './core/ProjectManager'
 import { getMessageQueue } from './core/MessageQueue'
 import { getRAGService, ragPodesen } from './RAGService'
 import { kljucPrisutanUDatoteci, ukloniKljucIzDatoteke } from './LoginCreds'
+import { ocistiLoginKod, izvuciLoginUrl, maskirajLoginTail, loginOauthGreska, LOGIN_POTVRDA } from './LoginUnos'
 import { tecajOdgovor } from './Tecaj'
 import type { Task, AgentId, TaskFilter } from './types/task-types'
 import { CreateTaskInputSchema, UpdateTaskInputSchema, TaskFilterSchema } from './zod/schemas/task'
@@ -9413,7 +9414,10 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       body.innerHTML = h;
     }
     function copyLoginLink(id){ var el=document.getElementById('login-url-'+id); if(el){ el.select(); if(navigator.clipboard) navigator.clipboard.writeText(el.value); var s=document.getElementById('login-status-'+id); if(s)s.textContent=_T('cfg_login_link_kopiran', 'Link kopiran.'); } }
-    async function doPaste(id){ var v=document.getElementById('login-paste-'+id); if(!v)return; try{ await fetch('/api/providers/login/paste',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:id,code:v.value})}); var s=document.getElementById('login-status-'+id); if(s)s.textContent=_T('cfg_login_kod_poslan', 'Kod poslan, čekam potvrdu…'); }catch(e){} }
+    async function doPaste(id){ var v=document.getElementById('login-paste-'+id); if(!v)return; var s=document.getElementById('login-status-'+id); try{ var r=await fetch('/api/providers/login/paste',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:id,code:v.value})}); var d=await r.json().catch(function(){return {};}); if(!r.ok){ if(s)s.innerHTML='<span style="color:var(--accent-red)">'+_esc(d.error||('HTTP '+r.status))+'</span>'; return; } v.value=''; if(s)s.textContent=_T('cfg_login_kod_poslan', 'Kod poslan, čekam potvrdu…'); }catch(e){ if(s)s.textContent=_T('cfg_greska', 'Greška')+': '+e.message; } }
+    // Neuspjela prijava (OAuth error / proces završio bez prijave): jasna poruka + novi početak.
+    // Novi /login/start sam ubija stari CLI proces (TASK-5269).
+    function loginNeuspjeh(id, poruka){ var s=document.getElementById('login-status-'+id); if(!s)return; s.innerHTML='<span style="color:var(--accent-red)">'+_esc(poruka)+'</span> <button class="cfg-btn" onclick="doLoginStart(\\''+id+'\\')">'+_T('cfg_login_ponovno', 'Počni ponovno')+'</button>'; }
     var loginPollTimers = {};
     function pollLogin(id){
       clearInterval(loginPollTimers[id]); var tries=0;
@@ -9425,7 +9429,8 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
           var u=document.getElementById('login-url-'+id);
           if (d.url && u && !u.value) u.value=d.url;
           if (d.loggedIn){ clearInterval(loginPollTimers[id]); if(s)s.textContent='✅ ' + _T('cfg_login_uspjesna', 'Prijava uspješna.'); setTimeout(fetchInfoData, 800); return; }
-          if (d.done && !d.loggedIn){ clearInterval(loginPollTimers[id]); if(s)s.textContent=_T('cfg_login_prekinuta', 'Prijava prekinuta/neuspješna.'); return; }
+          if (d.greska){ clearInterval(loginPollTimers[id]); loginNeuspjeh(id, _T('cfg_login_oauth_greska', 'Prijava odbijena (OAuth error): kod je neispravan, istekao ili već iskorišten. Klikni „Počni ponovno” i zalijepi NOVI kod.')); return; }
+          if (d.done && !d.loggedIn){ clearInterval(loginPollTimers[id]); loginNeuspjeh(id, _T('cfg_login_prekinuta', 'Prijava prekinuta/neuspješna.')); return; }
         } catch(e){}
         if (tries>150){ clearInterval(loginPollTimers[id]); }
       }, 2000);
@@ -11890,7 +11895,9 @@ interface LoginProviderDef { id: string; name: string; kind: 'oauth-cli' | 'apik
 const LOGIN_PROVIDERS: LoginProviderDef[] = [
   { id: 'kimicli',    name: 'Kimi',                kind: 'oauth-cli', cmd: 'kimi login',        bin: 'kimi',   creds: '~/.kimi-code/oauth' },
   { id: 'geminicli',  name: 'Gemini (Google)',     kind: 'oauth-cli', cmd: 'gemini',            bin: 'gemini', creds: '~/.gemini/oauth_creds.json', envKey: 'GEMINI_API_KEY' },
-  { id: 'claude',     name: 'Claude (Anthropic)',  kind: 'oauth-cli', cmd: 'claude setup-token', bin: 'claude', creds: '~/.claude/.credentials.json', install: 'curl -fsSL https://claude.ai/install.sh | bash' },
+  // `claude auth login` (NE `setup-token`): setup-token samo ISPIŠE dugotrajni token u terminal
+  // — ne piše creds pa ploča nikad ne vidi prijavu, a token bi otišao u `tail` (TASK-5269).
+  { id: 'claude',     name: 'Claude (Anthropic)',  kind: 'oauth-cli', cmd: 'claude auth login --claudeai', bin: 'claude', creds: '~/.claude/.credentials.json', install: 'curl -fsSL https://claude.ai/install.sh | bash' },
   { id: 'openrouter', name: 'OpenRouter (cloud)',  kind: 'apikey',    creds: '', envKey: 'OPENROUTER_API_KEY' },
 ]
 interface LoginSess { proc: any; url: string; buf: string; ok: boolean; done: boolean; err: string; started: number }
@@ -12267,8 +12274,9 @@ async function handleLoginStart(req: Request): Promise<Response> {
         const reader = proc.stdout.getReader(); const dec = new TextDecoder()
         while (true) {
           const { done, value } = await reader.read(); if (done) break
-          sess.buf += dec.decode(value, { stream: true })
-          if (!sess.url) { const m = sess.buf.replace(/\r/g, '').match(/https?:\/\/[^\s"'<>]+/); if (m) sess.url = m[0] }
+          sess.buf = (sess.buf + dec.decode(value, { stream: true })).slice(-65536)
+          // CLI ispisuje URL kao OSC-8 hipervezu — sirovi regex hvata BEL i dupli URL (TASK-5269).
+          if (!sess.url) sess.url = izvuciLoginUrl(sess.buf)
           if (loginCredsPresent(def)) break
         }
       } catch {}
@@ -12288,14 +12296,19 @@ function handleLoginPoll(url: URL): Response {
   const s = loginSessions.get(id)
   const loggedIn = loginCredsPresent(def)
   if (loggedIn && s && !s.done) { s.done = true; s.ok = true; loginSetProviderEnabled(id, true) }
-  return json({ id, url: s?.url || '', loggedIn, done: s?.done ?? !s, active: !!s && !s.done, tail: (s?.buf || '').replace(/\r/g, '').slice(-400) })
+  // `tail` ide u preglednik: bez ANSI/OSC-8 i bez ičega što liči na tajnu (TASK-5269).
+  const buf = s?.buf || ''
+  return json({ id, url: s?.url || '', loggedIn, done: s?.done ?? !s, active: !!s && !s.done, tail: maskirajLoginTail(buf), greska: loggedIn ? null : loginOauthGreska(buf) })
 }
 async function handleLoginPaste(req: Request): Promise<Response> {
   try {
     const { id, code } = await req.json() as { id: string; code: string }
     const s = loginSessions.get(id)
     if (!s || s.done) return json({ error: 'Nema aktivne sesije' }, 409)
-    s.proc.stdin.write((code || '') + '\n'); s.proc.stdin.flush?.()
+    // Zalijepljeno zna nositi ANSI rep i URL; Ink u raw PTY-u potvrđuje '\r', ne '\n' (TASK-5269).
+    const kod = ocistiLoginKod(code)
+    if (!kod) return json({ error: 'Kod je prazan ili neispravan — zalijepi samo kod s login stranice.' }, 400)
+    s.proc.stdin.write(kod + LOGIN_POTVRDA); s.proc.stdin.flush?.()
     return json({ ok: true })
   } catch (e: any) { return json({ error: String(e?.message || e) }, 500) }
 }
