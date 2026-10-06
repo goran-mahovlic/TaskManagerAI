@@ -398,11 +398,12 @@ describe('Razgovor — tipkanje, uid, Konzola, stil', () => {
 })
 
 describe('Ovlasti rad — čitanje zapisa razgovora i ulaza', () => {
-  const o = { port: 17781, radniDir: '/r', tmHome: '/tm', home: '/h', korijen: '/tm/data/razgovor', ingestLog: '/tm/data/ingest.jsonl' }
-  test('rad: Read zapisa razgovora, pošiljatelja i ingest.jsonl; bez pisanja tamo', () => {
+  const o = { port: 17781, radniDir: '/r', tmHome: '/tm', home: '/h', korijen: '/tm/data/razgovor', ingestLog: '/tm/data/ingest.jsonl', kanal: 'telegram', chatId: '-100777' }
+  test('rad: Read zapisa OVOG chata, pošiljatelja i ingest.jsonl; bez pisanja tamo i bez drugih chatova', () => {
     const a = argumentiOvlasti('rad', o)
     const dopusteno = a[a.indexOf('--allowedTools') + 1]!
-    expect(dopusteno).toContain('Read(//tm/data/razgovor/telegram/**)')
+    expect(dopusteno).toContain('Read(//tm/data/razgovor/telegram/-100777/**)')
+    expect(dopusteno).not.toContain('Read(//tm/data/razgovor/telegram/**)')
     expect(dopusteno).toContain('Read(//tm/data/razgovor/posiljatelji.json)')
     expect(dopusteno).toContain('Read(//tm/data/ingest.jsonl)')
     expect(dopusteno).not.toContain('Write(//tm/data/razgovor')

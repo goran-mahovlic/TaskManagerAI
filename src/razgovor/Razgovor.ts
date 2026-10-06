@@ -333,7 +333,7 @@ export function stvoriRazgovor(d: RazgovorOvisnosti): RazgovorJezgra {
       timeoutMs: s.rokSek * 1000,
       extra: {
         ...(resume ? { resume } : {}),
-        args: argumentiOvlasti(ovlasti, { port: d.port, radniDir, tmHome: d.tmHome, home: d.home, korijen: d.korijen, ingestLog: d.ingestLog }),
+        args: argumentiOvlasti(ovlasti, { port: d.port, radniDir, tmHome: d.tmHome, home: d.home, korijen: d.korijen, ingestLog: d.ingestLog, kanal: p.kanal, chatId: p.chatId }),
         env: okolinaRazgovora(d.env, oznaka),
       },
     })

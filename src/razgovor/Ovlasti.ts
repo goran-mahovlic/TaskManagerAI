@@ -22,16 +22,24 @@ export interface OvlastiOpcije {
   korijen?: string
   /** Dnevnik ulaza (`ingest.jsonl`) — uz `rad` samo za čitanje (TASK-5285). */
   ingestLog?: string
+  /** Kanal i chat poteza — zapis razgovora smije se čitati samo za OVAJ chat. */
+  kanal?: string
+  chatId?: string
 }
 
 /**
- * Zapisi koje sesija uz `rad` smije ČITATI (TASK-5285): dnevni zapisi razgovora, zadnji
- * pošiljatelji i dnevnik ulaza — da bot zna tko je pisao i što je odlučeno. Ne `sesije.json`
- * ni `radni/` (tuđi chatovi), ne konfiguracija bota i tajne (one ostaju u `zabrane`).
+ * Zapisi koje sesija uz `rad` smije ČITATI (TASK-5285): dnevni zapis razgovora OVOG chata,
+ * zadnji pošiljatelji i dnevnik ulaza — da bot zna tko je pisao i što je odlučeno (vlasnik je
+ * tražio „tko su zadnji nepoznati pošiljatelji"). `rad` vrijedi samo kad su svi pošiljatelji u
+ * potezu dopušteni. Ne zapisi drugih chatova, ne `sesije.json` ni `radni/`, ne konfiguracija
+ * bota i tajne (one ostaju u `zabrane`).
  */
-export function zapisiZaCitanje(o: Pick<OvlastiOpcije, 'korijen' | 'ingestLog'>): string[] {
+export function zapisiZaCitanje(o: Pick<OvlastiOpcije, 'korijen' | 'ingestLog' | 'kanal' | 'chatId'>): string[] {
   const out: string[] = []
-  if (o.korijen) out.push(`/${o.korijen}/telegram/**`, `/${o.korijen}/signal/**`, `/${o.korijen}/posiljatelji.json`)
+  if (o.korijen) {
+    if (o.kanal && o.chatId) out.push(`/${o.korijen}/${sigurnoIme(o.kanal)}/${sigurnoIme(o.chatId)}/**`)
+    out.push(`/${o.korijen}/posiljatelji.json`)
+  }
   if (o.ingestLog) out.push(`/${o.ingestLog}`)
   return out
 }

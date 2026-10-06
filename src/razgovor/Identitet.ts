@@ -36,7 +36,7 @@ export function sastaviIdentitet(o: IdentitetOpcije): string {
     'Poruke korisnika počinju oznakom [OD: ime (uid:N)] — to je pošiljatelj i njegov ID, ne dio pitanja.',
   ]
   if (o.ovlasti !== 'citanje' && o.zapisi?.korijen) {
-    r.push(`Zapisi koje smiješ čitati (Read): razgovor po chatu i danu ${o.zapisi.korijen}/telegram/<chat>/<YYYY-MM-DD>.jsonl, zadnji pošiljatelji (ime, korisničko ime, ID) ${o.zapisi.korijen}/posiljatelji.json${o.zapisi.ingestLog ? `, dnevnik ulaza ${o.zapisi.ingestLog}` : ''}.`)
+    r.push(`Zapisi koje smiješ čitati (Read): razgovor ovog chata po danu ${o.zapisi.korijen}/<kanal>/<chat>/<YYYY-MM-DD>.jsonl, zadnji pošiljatelji (ime, korisničko ime, ID) ${o.zapisi.korijen}/posiljatelji.json${o.zapisi.ingestLog ? `, dnevnik ulaza ${o.zapisi.ingestLog}` : ''}.`)
   }
   if ((o.stil ?? 'kratko') === 'kratko') r.push(UPUTA_KRATKO)
   if (o.dokumenti) {
