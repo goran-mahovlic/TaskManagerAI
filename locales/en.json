@@ -960,5 +960,20 @@
   "cap_tier2_napomena": "A Tier-2 request (internet, mesh, root, lan) stays pending until regoc-admin approves it on the machine (e.g. sudo /usr/local/sbin/regoc-capguard approve internet on) or a host token is placed at /media/sf_regoc_approvals/<name>.approve (content: on|off <epoch>). Approval is valid for 15 min. The board has no root and cannot bypass capguard.",
   "cap_greska": "Error",
   "cap_tier2_poslan": "The request is recorded and waits for approval.",
-  "cfg_kartica_razgovor": "Conversation — the bot replies in chat (Telegram; Signal later)"
+  "cfg_kartica_razgovor": "Conversation — the bot replies in chat (Telegram; Signal later)",
+  "tel_priv_naslov": "Attachments — photos, documents and voice are saved locally",
+  "tel_priv_uvod": "The attachment is downloaded (photo in the largest resolution) and saved as <date>_<message>_<name>; intake and chat get the path in the text: [PRIVITAK: /path]. Only from allowed chats and users of Incoming and Chat; the file is never executed. Documents the bot sends (SEND_DOC) are copied into the same folder; both directions are logged in evidencija.jsonl (who, when, path).",
+  "tel_priv_ukljucen": "Save attachments",
+  "tel_priv_ukljucen_opis": "Off: a message with only an attachment is skipped as before.",
+  "tel_priv_mapa": "Folder",
+  "tel_priv_mapa_opis": "Absolute path; empty = $TM_HOME/privitci. A per-chat folder (<chatId>/) is added below.",
+  "tel_priv_max": "Maximum size (MB)",
+  "tel_priv_max_opis": "1–20 (the Bot API does not allow downloading more than 20 MB).",
+  "tel_priv_vrste": "Types",
+  "tel_priv_vrste_opis": "Which attachment types are saved.",
+  "tel_priv_v_photo": "photo",
+  "tel_priv_v_document": "document",
+  "tel_priv_v_voice": "voice",
+  "tel_priv_v_audio": "audio",
+  "tel_priv_v_video": "video"
 }

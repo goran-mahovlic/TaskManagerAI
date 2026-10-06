@@ -20,6 +20,7 @@ import { chmodSync, readFileSync, renameSync, writeFileSync } from 'fs'
 import { existsSync } from 'fs'
 import { konfigPutanja, konfigPutanjaZaPisanje, osigurajMapu } from './core/paths'
 import { procitajTajnu, zapisiTajnu } from './core/ConfigModul'
+import { GRANICE_PRIVITAKA, ZADANI_PRIVITCI, validirajPrivitke, type TelegramPrivitci } from './TelegramPrivitci'
 
 /**
  * ADR-0001 O1.4: postavke se traže obrascem `TM_TELEGRAM_CONFIG` → `$TM_HOME/config/`
@@ -64,6 +65,8 @@ export interface TelegramPostavke {
   prefix: string
   /** ULAZNI smjer (poller). Zaseban prekidač — v. `ulaz.ukljucen`. */
   ulaz: TelegramUlaz
+  /** Privitci (slika, dokument, glas…) se spremaju lokalno — TASK-5282, v. `TelegramPrivitci`. */
+  privitci: TelegramPrivitci
 }
 
 /**
@@ -113,6 +116,7 @@ export const ZADANE_POSTAVKE: TelegramPostavke = {
   obavijestGreska: true,
   prefix: '📋',
   ulaz: ZADANI_ULAZ,
+  privitci: ZADANI_PRIVITCI,
 }
 
 /** Ime varijable okoline, ne sama tajna — isti uzorak kao u ostale četiri integracije. */
@@ -127,6 +131,7 @@ export const GRANICE = {
   okidac: { maxDuljina: 40 },
   maxDuljina: { min: 100, max: 20000 },
   popis: { maxStavki: 50 },
+  privitci: GRANICE_PRIVITAKA,
 } as const
 
 /** Uvijek svjež pročitaj s diska. Nepoznata polja se ČUVAJU. */
@@ -143,6 +148,10 @@ export function loadTelegramConfig(
       ...ZADANE_POSTAVKE,
       ...sirovo,
       ulaz: { ...ZADANI_ULAZ, ...(sirovo.ulaz && typeof sirovo.ulaz === 'object' ? sirovo.ulaz : {}) },
+      privitci: {
+        ...ZADANI_PRIVITCI,
+        ...(sirovo.privitci && typeof sirovo.privitci === 'object' && !Array.isArray(sirovo.privitci) ? sirovo.privitci : {}),
+      },
     }
   } catch {
     return { ...ZADANE_POSTAVKE }
@@ -266,6 +275,12 @@ export function validateTelegramPatch(tijelo: unknown): Provjera {
     }
   }
 
+  if ('privitci' in t) {
+    const r = validirajPrivitke(t.privitci)
+    greske.push(...r.greske)
+    if (!r.greske.length && Object.keys(r.izlaz).length) zakrpa.privitci = r.izlaz
+  }
+
   if (!greske.length && !Object.keys(zakrpa).length) {
     greske.push('Nijedna postavka nije poslana')
   }
@@ -305,6 +320,7 @@ export function saveTelegramConfig(
   const novo = {
     ...trenutno, ...zakrpa,
     ulaz: { ...trenutno.ulaz, ...(zakrpa.ulaz || {}) },
+    privitci: { ...trenutno.privitci, ...(zakrpa.privitci || {}) },
   }
 
   const token = String(novo.botToken || '').trim()

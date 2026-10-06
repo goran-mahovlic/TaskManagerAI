@@ -8622,7 +8622,55 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         _T('tel_provjera_opis', 'Pošalje testnu poruku na postavljeni chat ID.'));
       h += '</tbody></table>';
       h += renderTelegramUlaz(d);
+      h += renderTelegramPrivitci(d);
       return h;
+    }
+
+    // ── Telegram PRIVITCI (TASK-5282) — slika, dokument, glas… spremaju se lokalno ──────
+    // Putanja ide dalje u tekstu poruke ([PRIVITAK: …]); preuzima se samo od dopuštenih
+    // chatova/korisnika iz Ulaza i Razgovora. Zadano isključeno.
+    var _TEL_VRSTE = ['photo', 'document', 'voice', 'audio', 'video'];
+    function renderTelegramPrivitci(d) {
+      var p = (d.postavke && d.postavke.privitci) || {};
+      var vrste = p.vrste || [];
+      var znacka = p.ukljucen
+        ? '<span class="info-badge enabled">' + _T('tel_aktivno', 'aktivno') + '</span>'
+        : '<span class="info-badge disabled">' + _T('tel_iskljuceno', 'isključeno') + '</span>';
+      var h = '<div style="margin-top:0.8rem;padding-top:0.5rem;border-top:1px solid var(--border-color)">';
+      h += '<div style="font-size:0.74rem;font-weight:600;margin-bottom:0.3rem">' +
+        _T('tel_priv_naslov', 'Privitci — slike, dokumenti i glas spremaju se lokalno') + ' ' + znacka + '</div>';
+      h += '<div style="font-size:0.7rem;color:var(--text-secondary);margin-bottom:0.4rem">' +
+        _esc(_T('tel_priv_uvod',
+          'Privitak se preuzima (fotografija u najvećoj rezoluciji) i sprema kao <datum>_<poruka>_<ime>; ' +
+          'ulaz i razgovor dobivaju putanju u tekstu: [PRIVITAK: /putanja]. Samo od dopuštenih chatova i ' +
+          'korisnika iz Ulaza i Razgovora; datoteka se nikad ne pokreće. Dokumenti koje bot pošalje (SEND_DOC) kopiraju se u istu mapu; ' +
+          'oba smjera bilježe se u evidencija.jsonl (tko, kad, putanja).')) + '</div>';
+      h += '<table class="info-table"><tbody>';
+      h += _red(_T('tel_priv_ukljucen', 'Spremaj privitke'),
+        '<input type="checkbox"' + (p.ukljucen ? ' checked' : '') +
+        ' onchange="spremiTelegram({privitci:{ukljucen:this.checked}}, this)">',
+        _T('tel_priv_ukljucen_opis', 'Isključeno: poruka samo s privitkom se preskače kao i prije.'));
+      h += _red(_T('tel_priv_mapa', 'Mapa'),
+        '<input id="tel-priv-mapa" value="' + _esc(p.mapa || '') + '" style="' + _stil() + ';min-width:260px" placeholder="$TM_HOME/privitci">' +
+        ' <button class="cfg-btn" onclick="spremiTelegram({privitci:{mapa:document.getElementById(\\'tel-priv-mapa\\').value}}, this)">' + _T('tel_spremi', 'Spremi') + '</button>',
+        _esc(_T('tel_priv_mapa_opis', 'Apsolutna putanja; prazno = $TM_HOME/privitci. Ispod se slaže mapa po chatu (<chatId>/).')));
+      h += _red(_T('tel_priv_max', 'Najveća veličina (MB)'),
+        '<input id="tel-priv-max" type="number" min="1" max="20" value="' + (p.maxMB || 20) + '" style="' + _stil() + ';width:80px">' +
+        ' <button class="cfg-btn" onclick="spremiTelegram({privitci:{maxMB:Number(document.getElementById(\\'tel-priv-max\\').value)}}, this)">' + _T('tel_spremi', 'Spremi') + '</button>',
+        _T('tel_priv_max_opis', '1–20 (Bot API ne daje preuzeti više od 20 MB).'));
+      var kv = _TEL_VRSTE.map(function (v) {
+        return '<label style="margin-right:.6rem;font-size:.72rem"><input type="checkbox" class="tel-priv-vrsta" value="' + v + '"' +
+          (vrste.indexOf(v) >= 0 ? ' checked' : '') + ' onchange="spremiTelegramVrste(this)"> ' + _T('tel_priv_v_' + v, v) + '</label>';
+      }).join('');
+      h += _red(_T('tel_priv_vrste', 'Vrste'), kv, _T('tel_priv_vrste_opis', 'Koje se vrste privitaka spremaju.'));
+      h += '</tbody></table></div>';
+      return h;
+    }
+
+    function spremiTelegramVrste(el) {
+      var vrste = Array.prototype.slice.call(document.querySelectorAll('.tel-priv-vrsta'))
+        .filter(function (x) { return x.checked; }).map(function (x) { return x.value; });
+      return spremiTelegram({ privitci: { vrste: vrste } }, el);
     }
 
     // ── Telegram ULAZ (TASK-4800) — poruka → POST /api/ingest ──────────────────────────
