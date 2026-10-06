@@ -92,12 +92,20 @@ export class CliExecutor implements Executor {
       })
       let istekao = false
       const prekid = setTimeout(() => { istekao = true; try { proc.kill() } catch { /* već je gotov */ } }, rok)
+      // `extra.signal` (ADR-0003 §4.1, TASK-5290): domaćin može ubiti poziv u letu („Prekini komunikaciju").
+      const signal = extra.signal instanceof AbortSignal ? extra.signal : null
+      let prekinut = false
+      const naPrekid = () => { prekinut = true; try { proc.kill() } catch { /* već je gotov */ } }
+      if (signal?.aborted) naPrekid()
+      else signal?.addEventListener('abort', naPrekid, { once: true })
       const [izlaz, greska, exitCode] = await Promise.all([
         new Response(proc.stdout).text(),
         new Response(proc.stderr).text(),
         proc.exited,
       ])
       clearTimeout(prekid)
+      signal?.removeEventListener('abort', naPrekid)
+      if (prekinut) return { exitCode: exitCode || 130, resultText: '', greska: 'prekinuto (signal domaćina)' }
       if (istekao) return { exitCode: exitCode || 124, resultText: '', greska: `rok istekao (${rok} ms)` }
       return this.protumaci(izlaz, greska, exitCode)
     } catch (e: any) {
