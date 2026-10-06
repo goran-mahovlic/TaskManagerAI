@@ -1,3 +1,20 @@
+## 2026-10-06 — glasovne poruke u razgovoru: lokalni STT i odgovor glasom (TASK-5294)
+
+- Novo: postavke `razgovor.glasPrepoznavanje` (zadano false), `razgovor.glas` = off |
+  na-glasovno | uvijek (zadano off), `razgovor.glasUrl` (prazno = `http://127.0.0.1:8899`),
+  `razgovor.glasGlas` (ime glasa servisa; prazno = zadani), `razgovor.glasRokSek` (10–600,
+  zadano 120) — Config → Razgovor, blok 🎙️, vrijede odmah. Config prikazuje stanje servisa i
+  dostupne glasove (`GET /api/config/razgovor` → `glas`). Modul `src/razgovor/Glas.ts`.
+- Glasovna, zvučna i video-krug (`video_note`, nova vrsta privitka) poruka od dopuštenog
+  pošiljatelja → privitak → lokalni STT → u ulaz i razgovor kao `[GLAS] <transkript>` uz
+  `[PRIVITAK: …]`; transkript se sprema uz privitak (`<datoteka>.txt`, 0600). Traži uključene
+  privitke (`telegram.privitci`). Lažna oznaka `[GLAS]` u tuđem tekstu postaje `(GLAS]`.
+- Odgovor glasom: TTS → `sendVoice` (ogg/opus) kao odgovor na pitanje, NAKON teksta; izgovara se
+  odgovor bez markdowna, koda, poveznica, emojija i oznake memorije (≤1200 znakova).
+- Fail-open s vidljivom oznakom: `🎙️🚫 transkript nije uspio: <razlog>` (u chat i u tekst
+  poruke), `🔊🚫 glasovni odgovor nije uspio: <razlog>`. Rok STT/TTS je tvrd.
+- ADR-0002 §19. Test: `tests/razgovor-glas.test.ts` (36).
+
 ## 2026-10-06 — privitci iz Telegrama spremaju se lokalno (TASK-5282)
 
 - Novo: postavka `telegram.privitci` `{ukljucen (zadano false), mapa (prazno = $TM_HOME/privitci),

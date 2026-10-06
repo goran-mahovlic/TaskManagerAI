@@ -25,8 +25,10 @@ import { TM_ROOT, osigurajMapu } from './core/paths'
 import { jeDopusten } from './razgovor/Filtar'
 import type { RazgovorPostavke } from './razgovor/RazgovorPostavke'
 
-export type VrstaPrivitka = 'photo' | 'document' | 'voice' | 'audio' | 'video'
-export const VRSTE_PRIVITAKA: readonly VrstaPrivitka[] = ['photo', 'document', 'voice', 'audio', 'video']
+export type VrstaPrivitka = 'photo' | 'document' | 'voice' | 'audio' | 'video' | 'video_note'
+export const VRSTE_PRIVITAKA: readonly VrstaPrivitka[] = ['photo', 'document', 'voice', 'audio', 'video', 'video_note']
+/** Vrste koje nose govor — idu na STT kad je `razgovor.glasPrepoznavanje` uključen (TASK-5294). */
+export const GOVORNE_VRSTE: readonly VrstaPrivitka[] = ['voice', 'audio', 'video_note']
 
 export interface TelegramPrivitci {
   ukljucen: boolean
@@ -93,7 +95,7 @@ export function mapaPrivitaka(p: TelegramPrivitci, chatId: string, tmRoot: strin
 
 // ─── Odabir ──────────────────────────────────────────────────────────────────
 
-interface TgDatoteka { file_id: string; file_unique_id?: string; file_size?: number; file_name?: string }
+interface TgDatoteka { file_id: string; file_unique_id?: string; file_size?: number; file_name?: string; mime_type?: string }
 interface TgFoto extends TgDatoteka { width?: number; height?: number }
 
 /** Polja poruke s privitkom (samo ono što koristimo). */
@@ -105,9 +107,11 @@ export interface PorukaSPrivitkom {
   voice?: TgDatoteka & { duration?: number }
   audio?: TgDatoteka & { duration?: number }
   video?: TgDatoteka & { duration?: number }
+  /** Video-krug (okrugla video poruka). */
+  video_note?: TgDatoteka & { duration?: number; length?: number }
 }
 
-export interface OdabraniPrivitak { vrsta: VrstaPrivitka; fileId: string; ime?: string; velicina?: number }
+export interface OdabraniPrivitak { vrsta: VrstaPrivitka; fileId: string; ime?: string; velicina?: number; mime?: string }
 
 /** Prvi privitak dopuštene vrste; za fotografiju NAJVEĆA rezolucija (ne nužno zadnja u nizu). */
 export function odaberiPrivitak(m: PorukaSPrivitkom, vrste: readonly VrstaPrivitka[]): OdabraniPrivitak | null {
@@ -121,7 +125,10 @@ export function odaberiPrivitak(m: PorukaSPrivitkom, vrste: readonly VrstaPrivit
     }
     const d = m[vrsta]
     if (!d?.file_id) continue
-    return { vrsta, fileId: d.file_id, ...(d.file_name ? { ime: d.file_name } : {}), velicina: d.file_size }
+    return {
+      vrsta, fileId: d.file_id, ...(d.file_name ? { ime: d.file_name } : {}), velicina: d.file_size,
+      ...(d.mime_type ? { mime: d.mime_type } : {}),
+    }
   }
   return null
 }
@@ -188,7 +195,7 @@ export function bezTajne(s: string, token: string): string {
  * `[` → `(`, pa ulaz i model vide samo oznaku koju je složio poller.
  */
 export function neutralizirajOznakuPrivitka(t: string): string {
-  return t.replace(/\[(?=\s*PRIVITAK)/giu, '(')
+  return t.replace(/\[(?=\s*(?:PRIVITAK|GLAS\b))/giu, '(')
 }
 
 export type IshodPrivitka = { ok: true; putanja: string } | { ok: false; razlog: string }

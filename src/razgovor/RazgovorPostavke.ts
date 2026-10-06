@@ -14,6 +14,7 @@
 
 import { Database } from 'bun:sqlite'
 import { ensureSettingsSchema } from '../core/ConcurrencySetting'
+import { GLAS_NACINI, type GlasNacin } from './Glas'
 
 export type OdgovaraNa = 'sve' | 'spomen' | 'dopusteni' | 'dopusteni-sve'
 export type Ovlasti = 'citanje' | 'rad' | 'puno'
@@ -45,6 +46,15 @@ export interface RazgovorPostavke {
   memorijaRokMs: number
   /** Uz uspješan dohvat memorije stavi 🧠 na početak odgovora (bez memorije uvijek ide 🧠🚫). */
   memorijaOznakaUspjeha: boolean
+  /** TASK-5294: glasovna/zvučna/video-krug poruka → lokalni STT → `[GLAS] …` (traži uključene privitke). */
+  glasPrepoznavanje: boolean
+  /** Odgovor glasom (TTS → sendVoice, uz tekst): nikad, samo na glasovno pitanje, uvijek. */
+  glas: GlasNacin
+  /** Lokalni glasovni servis (`/stt`, `/tts`); prazno = http://127.0.0.1:8899. */
+  glasUrl: string
+  /** Ime glasa servisa (npr. piper model bez `.onnx`); prazno = zadani glas servisa. */
+  glasGlas: string
+  glasRokSek: number
 }
 
 export type Polje = keyof RazgovorPostavke
@@ -71,6 +81,11 @@ export const RAZGOVOR_KLJUCEVI: Readonly<Record<Polje, string>> = Object.freeze(
   memorijaUrl: 'memorija.url',
   memorijaRokMs: 'memorija.rokMs',
   memorijaOznakaUspjeha: 'memorija.oznakaUspjeha',
+  glasPrepoznavanje: 'razgovor.glasPrepoznavanje',
+  glas: 'razgovor.glas',
+  glasUrl: 'razgovor.glasUrl',
+  glasGlas: 'razgovor.glasGlas',
+  glasRokSek: 'razgovor.glasRokSek',
 })
 
 export const RAZGOVOR_ZADANO: Readonly<RazgovorPostavke> = Object.freeze({
@@ -95,6 +110,11 @@ export const RAZGOVOR_ZADANO: Readonly<RazgovorPostavke> = Object.freeze({
   memorijaUrl: '',
   memorijaRokMs: 1500,
   memorijaOznakaUspjeha: false,
+  glasPrepoznavanje: false,
+  glas: 'off',
+  glasUrl: '',
+  glasGlas: '',
+  glasRokSek: 120,
 }) as RazgovorPostavke
 
 export const RAZGOVOR_CACHE_MS = 5000
@@ -109,13 +129,16 @@ const RASPONI: Partial<Record<Polje, [number, number]>> = {
   // recall kroz SSH tunel na čvoru traje 6–7,5 s, a uz 9 s je 2/7 poteza isteklo — vlasnik je
   // odlučio 20 s na čvoru. Odgovor čeka najviše toliko; bez memorije ide uz oznaku 🧠🚫.
   memorijaRokMs: [200, 30000],
+  // STT „small" na CPU-u: ~0,3–1× trajanja snimke; minuta govora stane u zadanih 120 s.
+  glasRokSek: [10, 600],
 }
 const IZBORI: Partial<Record<Polje, readonly string[]>> = {
   odgovaraNa: ['sve', 'spomen', 'dopusteni', 'dopusteni-sve'],
   ovlasti: ['citanje', 'rad', 'puno'],
   memorijaRazgovor: ['off', 'shadow', 'on'],
+  glas: GLAS_NACINI,
 }
-const BOOL: readonly Polje[] = ['ukljucen', 'dokumenti', 'ostaliUzObracanje', 'tisinaKadDrugom', 'memorijaOznakaUspjeha']
+const BOOL: readonly Polje[] = ['ukljucen', 'dokumenti', 'ostaliUzObracanje', 'tisinaKadDrugom', 'memorijaOznakaUspjeha', 'glasPrepoznavanje']
 const NIZOVI: readonly Polje[] = ['dopusteniKorisnici', 'preskociAkoSadrzi']
 const MAX_KORISNIKA = 50
 const MAX_DRUGIH = 20
@@ -169,13 +192,16 @@ function provjeriPolje(polje: Polje, v: unknown): { ok: true; value: unknown } |
         ? { ok: true, value: t } : { ok: false, error: 'radniDir mora biti apsolutna putanja (ili prazno)' }
     case 'memorijaBanka':
       return /^[\w.-]{0,64}$/.test(t) ? { ok: true, value: t } : { ok: false, error: 'memorijaBanka: slova, brojke, _ . -' }
+    case 'glasGlas':
+      return /^[\w.-]{0,100}$/.test(t) && !t.startsWith('.') ? { ok: true, value: t } : { ok: false, error: 'glasGlas: ime glasa (slova, brojke, _ . -), bez putanje' }
+    case 'glasUrl':
     case 'memorijaUrl':
       if (t === '') return { ok: true, value: t }
       try {
         const u = new URL(t)
         if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new Error()
         return { ok: true, value: t.replace(/\/+$/, '') }
-      } catch { return { ok: false, error: 'memorijaUrl mora biti http(s) adresa (ili prazno)' } }
+      } catch { return { ok: false, error: `${polje} mora biti http(s) adresa (ili prazno)` } }
   }
   return { ok: false, error: `${polje}: nepoznata vrsta` }
 }

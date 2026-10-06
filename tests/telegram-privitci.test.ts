@@ -76,10 +76,10 @@ class LazniApi implements Api {
 const stanje = (): StanjePollera => ({ ...ZADANO_STANJE })
 
 describe('postavka telegram.privitci', () => {
-  test('zadano je ISKLJUČENO, 20 MB i svih pet vrsta', () => {
+  test('zadano je ISKLJUČENO, 20 MB i svih šest vrsta (TASK-5294: video_note)', () => {
     expect(ZADANE_POSTAVKE.privitci.ukljucen).toBe(false)
     expect(ZADANE_POSTAVKE.privitci.maxMB).toBe(20)
-    expect(ZADANE_POSTAVKE.privitci.vrste.sort()).toEqual(['audio', 'document', 'photo', 'video', 'voice'])
+    expect(ZADANE_POSTAVKE.privitci.vrste.sort()).toEqual(['audio', 'document', 'photo', 'video', 'video_note', 'voice'])
     expect(ZADANE_POSTAVKE.privitci.mapa).toBe('')
   })
 
@@ -104,7 +104,7 @@ describe('postavka telegram.privitci', () => {
     const c = loadTelegramConfig(p)
     expect(c.privitci.ukljucen).toBe(true)
     expect(c.privitci.maxMB).toBe(20)
-    expect(c.privitci.vrste.length).toBe(5)
+    expect(c.privitci.vrste.length).toBe(6)
   })
 
   test('mapa: zadano $TM_HOME/privitci/<chatId>, inače <mapa>/<chatId>', () => {
