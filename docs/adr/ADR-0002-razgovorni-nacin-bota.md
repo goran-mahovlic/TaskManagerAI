@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Stanje** | Predloženo — čeka Malikov pregled §7 (ovlasti) prije koraka R3 |
+| **Stanje** | Izvedeno R1–R6 (TASK-5277), isporučeno s `razgovor.ukljucen=off`; uključivanje čeka Malikov pregled §7 i Potjehov E2E §11 |
 | **Datum** | 06.10.2026. |
 | **Autorica** | Kosjenka (Architect), TASK-5276 (PRJ-048) |
 | **Nalog** | Goran, grupa node-A, 06.10.2026.: bot node-A (@regoc_saban_bot, „Šaban") odgovara u razgovoru kao Klaudio na glavnom stroju — ali kao **opcija paketa** (Config), ne zakrpa za node-A |
@@ -319,3 +319,22 @@ P8. Isključivanje `razgovor.ukljucen` → sljedeća poruka bez odgovora, u `set
   razgovor kao `POST /api/razgovor` koji drži HTTP vezu minutama (rok proxyja, a burst i
   red po chatu ionako traže stanje u procesu); preslika `telegram_agent.ts` (2 447 redaka,
   naše putanje i puna prava).
+
+## 14. Izvedba (TASK-5277, 06.10.2026.)
+
+| Dio | Datoteka | Mjerila |
+|---|---|---|
+| R1 postavke + API | `src/razgovor/RazgovorPostavke.ts`, `src/razgovor/RazgovorPloca.ts`, kartica „Razgovor" u Configu | J2, J3 — `tests/razgovor-postavke.test.ts` |
+| R2 jezgra | `src/razgovor/Razgovor.ts`, `Kanal.ts`, `Filtar.ts`, `Zapis.ts` | J4, J6, J8, J12, J13 — `tests/razgovor-jezgra.test.ts`, `tests/razgovor-dijelovi.test.ts` |
+| R3 izvršitelj, ovlasti, identitet | `src/razgovor/Izvrsitelj.ts`, `Ovlasti.ts`, `Identitet.ts`; `CliExecutor` dobio `resumeFlag`, `extra.args`, `extra.env`, oznaku „rok istekao" | J7, J9 — `tests/razgovor-izvrsitelj.test.ts` |
+| R4 SEND_DOC | `src/razgovor/SendDoc.ts` | J10 |
+| R5 memorija | `src/razgovor/Memorija.ts` (Hindsight `/v1/default/banks/<banka>/memories/recall`) | J11 |
+| R6 Telegram | `src/TelegramPoller.ts`: `RazgovorUlaza`, `ulaznaPorukaIzTelegrama`, `telegramKanal`, `getMe`; petlja radi kad je uključen ulaz ILI razgovor | J1, J5 — `tests/razgovor-telegram.test.ts` |
+
+Odstupanja i napomene za pregled:
+- Prompt ide kroz **stdin**, ne kao argument: `--allowedTools <alati...>` je variadičan i progutao bi prompt.
+- CLI se traži redom `TM_CLAUDE_BIN` → `PATH` → `~/.local/bin/claude` (usluga pod systemd-om nema `~/.local/bin` u PATH-u).
+- Okolina modela: bijela lista + `TM_*` bez tajnih imena. **Propuštaju se** `ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN` i `ANTHROPIC_BASE_URL`, jer bez njih CLI ne radi na instalaciji koja se prijavljuje kroz okolinu. Na `citanje`/`rad` model nema ljusku kojom bi ih pročitao, a na `puno` ima — to je pitanje (d) za Malika.
+- `puno` traži `source='ploca'` (kartica ga šalje); provjera „changed_by ≠ agent" svodi se na to — pitanje (c).
+- Zbrajanje troška u telemetriju pod agentom `razgovor` nije izvedeno; trošak je po potezu u zapisu (`cijenaUsd`).
+- Stvarna proba (`claude -p`, haiku, razina `citanje`): `--resume` pamti sadržaj prethodnog poteza; čitanje konfiguracije kanala odbijeno i token nije iznesen; pisanje u radni dir odbijeno; dopušteni dokument poslan kroz SEND_DOC.

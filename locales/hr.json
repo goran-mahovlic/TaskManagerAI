@@ -959,5 +959,6 @@
   "cap_akcija": "Akcija",
   "cap_tier2_napomena": "Tier-2 zahtjev (internet, mesh, root, lan) ostaje na čekanju dok ga ne odobri regoc-admin na stroju (npr. sudo /usr/local/sbin/regoc-capguard approve internet on) ili host token u /media/sf_regoc_approvals/<ime>.approve (sadržaj: on|off <epoch>). Odobrenje traje 15 min. Ploča nema root i ne može zaobići capguard.",
   "cap_greska": "Greška",
-  "cap_tier2_poslan": "Zahtjev je upisan i čeka odobrenje."
+  "cap_tier2_poslan": "Zahtjev je upisan i čeka odobrenje.",
+  "cfg_kartica_razgovor": "Razgovor — bot odgovara u chatu (Telegram; Signal kasnije)"
 }

@@ -45,6 +45,8 @@ export interface ExecutorConfigCli {
   systemPromptFlag?: string | null
   sessionIdFlag?: string | null
   modelFlag?: string | null
+  /** Nastavak postojeće sesije (`extra.resume`), npr. `--resume` (ADR-0002 §6.1). */
+  resumeFlag?: string | null
 }
 
 export interface ExecutorConfigHttp {

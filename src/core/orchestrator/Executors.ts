@@ -55,6 +55,12 @@ export class CliExecutor implements Executor {
     if (c.modelFlag && req.model && !argv.includes(c.modelFlag)) argv.push(c.modelFlag, req.model)
     if (c.systemPromptFlag && req.systemPrompt) argv.push(c.systemPromptFlag, req.systemPrompt)
     if (c.sessionIdFlag && req.sessionId) argv.push(c.sessionIdFlag, req.sessionId)
+    // ADR-0002 §6.1: razgovor koristi ovaj isti izvođač — nastavak sesije, zastavice ovlasti
+    // i okolina BIJELOM listom (bez tajni kanala) dolaze kroz `extra`.
+    const extra = req.extra || {}
+    if (c.resumeFlag && typeof extra.resume === 'string' && extra.resume) argv.push(c.resumeFlag, extra.resume)
+    if (Array.isArray(extra.args)) argv.push(...extra.args.map(String))
+    const okolina = extra.env && typeof extra.env === 'object' ? extra.env as Record<string, string> : null
 
     let tmpMapa: string | null = null
     let stdinTekst: string | null = null
@@ -80,15 +86,19 @@ export class CliExecutor implements Executor {
         stderr: 'pipe',
         // TASK-5013: hook `hooks/TaskInstructionsInject.hook.ts` po ovome zna za koji zadatak
         // preuzima dodatne upute. Bez ID-a zadatka okolina ostaje naslijeđena kao i prije.
-        env: req.taskId ? { ...process.env, TM_TASK_ID: req.taskId } : undefined,
+        env: okolina
+          ? { ...okolina, ...(req.taskId ? { TM_TASK_ID: req.taskId } : {}) }
+          : req.taskId ? { ...process.env, TM_TASK_ID: req.taskId } : undefined,
       })
-      const prekid = setTimeout(() => { try { proc.kill() } catch { /* već je gotov */ } }, rok)
+      let istekao = false
+      const prekid = setTimeout(() => { istekao = true; try { proc.kill() } catch { /* već je gotov */ } }, rok)
       const [izlaz, greska, exitCode] = await Promise.all([
         new Response(proc.stdout).text(),
         new Response(proc.stderr).text(),
         proc.exited,
       ])
       clearTimeout(prekid)
+      if (istekao) return { exitCode: exitCode || 124, resultText: '', greska: `rok istekao (${rok} ms)` }
       return this.protumaci(izlaz, greska, exitCode)
     } catch (e: any) {
       return { exitCode: 127, resultText: '', greska: `naredba se ne može pokrenuti: ${e?.message || e}` }

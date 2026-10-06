@@ -27,6 +27,9 @@ import { osigurajMapu, stanjePutanja } from './core/paths'
 import {
   loadTelegramConfig, posaljiTelegramPoruku, telegramBotToken, type TelegramPostavke,
 } from './TelegramConfig'
+import type { Kanal, Razgovor, UlaznaPoruka } from './razgovor/Kanal'
+import type { RazgovorPostavke } from './razgovor/RazgovorPostavke'
+import { pocinjeImenom } from './razgovor/Filtar'
 
 export const STANJE_PUTANJA = stanjePutanja('telegram-poller.json')
 export const BRAVA_PUTANJA = stanjePutanja('telegram-poller.lock')
@@ -113,8 +116,26 @@ export interface Update {
     caption?: string
     chat: { id: number | string; title?: string; username?: string; type?: string }
     from?: { id: number | string; first_name?: string; username?: string; is_bot?: boolean }
-    entities?: { type: string }[]
+    entities?: { type: string; offset?: number; length?: number }[]
+    caption_entities?: { type: string; offset?: number; length?: number }[]
+    reply_to_message?: { from?: { id: number | string; is_bot?: boolean } }
   }
+}
+
+/** Ovaj bot (`getMe`) — za vlastiti spomen i odgovor na njegovu poruku (ADR-0002 §5). */
+export interface JaBot { id: number | string; username?: string; firstName?: string }
+
+/**
+ * Razgovorni sloj koji poller hrani (ADR-0002 §10). Poller ne zna ništa o razgovoru osim
+ * da mu preda poruku koja nije postala zadatak — o odgovoru odlučuje sloj, ne poller.
+ */
+export interface RazgovorUlaza {
+  razgovor: Razgovor
+  postavke: () => RazgovorPostavke
+  /** Ako nedostaje, petlja ga dohvati `getMe` pri pokretanju. */
+  ja?: JaBot | null
+  /** Ako nedostaje, petlja složi Telegram kanal iz bot tokena. */
+  kanal?: Kanal
 }
 
 export interface Api {
@@ -126,6 +147,8 @@ export interface Api {
   ingest(tijelo: Record<string, unknown>): Promise<{ status: number; tijelo: any }>
   /** Poruka natrag u chat (potvrda). */
   odgovori(chatId: string | number, tekst: string, replyTo?: number): Promise<boolean>
+  /** `getMe` — tko je ovaj bot (za razgovor; nije obavezno). */
+  getMe?(): Promise<JaBot | null>
 }
 
 export interface Ishod {
@@ -145,9 +168,21 @@ export interface Ishod {
  * prolaz testabilan bez ijednog mrežnog poziva.
  */
 export async function jedanProlaz(
-  cfg: TelegramPostavke, stanje: StanjePollera, api: Api,
+  cfg: TelegramPostavke, stanje: StanjePollera, api: Api, razg?: RazgovorUlaza,
 ): Promise<Ishod> {
   const u = cfg.ulaz
+  const rp = razg ? razg.postavke() : null
+  const razgovorUkljucen = !!(razg && rp?.ukljucen && razg.kanal)
+  const ja = razg?.ja || null
+  /** ADR-0002: poruka koja NIJE postala zadatak ide razgovornom sloju — bez `await`. */
+  const uRazgovor = (m: NonNullable<Update['message']>, tekst: string) => {
+    if (!razgovorUkljucen) return
+    try {
+      razg!.razgovor.primi(ulaznaPorukaIzTelegrama(m, tekst, ja, rp!.ime || ja?.firstName || ''), razg!.kanal!)
+    } catch (e: any) {
+      ishod.greske.push(`razgovor: ${String(e?.message || e)}`)
+    }
+  }
   const ishod: Ishod = {
     dohvaceno: 0, poslano: 0, preskoceno: 0, potvrde: 0,
     greske: [], zaustavljen: stanje.zaustavljen, cekajMs: 0,
@@ -199,9 +234,18 @@ export async function jedanProlaz(
     const tekstSirovi = m.text ?? m.caption ?? ''
     if (!tekstSirovi.trim()) { ishod.preskoceno++; continue }
 
-    if (!propusti(u, m, tekstSirovi)) { ishod.preskoceno++; stanje.preskoceno++; continue }
-
     const tekst = tekstSirovi.length > u.maxDuljina ? tekstSirovi.slice(0, u.maxDuljina) : tekstSirovi
+
+    // Dopušteni chatovi vrijede za OBA sloja; ostali filtri ulaza (okidač, spomen,
+    // korisnici) odlučuju samo o ingestu — razgovor ima vlastiti filtar (ADR-0002 §5).
+    if (u.dopusteniChatovi.length && !u.dopusteniChatovi.includes(String(m.chat.id))) {
+      ishod.preskoceno++; stanje.preskoceno++; continue
+    }
+    if (!u.ukljucen || !propusti(u, m, tekstSirovi, ja?.username)) {
+      ishod.preskoceno++; stanje.preskoceno++
+      uRazgovor(m, tekst)
+      continue
+    }
     const tijelo = preslikaj(m, tekst)
 
     try {
@@ -214,10 +258,11 @@ export async function jedanProlaz(
           if (poslano) ishod.potvrde++
         }
       } else if (status === 200) {
-        // Ulaz je odlučio da ovo nije zadatak (sjena, ispod praga, isključeno) → TIŠINA.
-        // Bot koji komentira svaku poruku brzo postane šum koji se isključi.
+        // Ulaz je odlučio da ovo nije zadatak (sjena, ispod praga, isključeno) → TIŠINA,
+        // osim ako je uključen razgovorni način (ADR-0002) — tada o odgovoru odlučuje on.
         stanje.obradeno++
         ishod.preskoceno++
+        uRazgovor(m, tekst)
       } else {
         const razlog = odgovor?.error || odgovor?.greske?.join?.('; ') || `HTTP ${status}`
         stanje.zadnjaGreska = razlog
@@ -231,15 +276,59 @@ export async function jedanProlaz(
   return ishod
 }
 
-/** Filtri: dopušteni chatovi, dopušteni korisnici, okidač, spomen bota. */
+/**
+ * Filtri: dopušteni chatovi, dopušteni korisnici, okidač, spomen bota.
+ *
+ * `jaUsername` (ADR-0002 §5, nalaz): bez njega `sameSpomeni` prihvaća BILO KOJI spomen, pa
+ * u grupi s dva bota poruka upućena drugome prolazi i ovaj filtar. Kad je korisničko ime
+ * ovog bota poznato, broji se samo vlastiti spomen.
+ */
 export function propusti(
-  u: TelegramPostavke['ulaz'], m: NonNullable<Update['message']>, tekst: string,
+  u: TelegramPostavke['ulaz'], m: NonNullable<Update['message']>, tekst: string, jaUsername?: string,
 ): boolean {
   if (u.dopusteniChatovi.length && !u.dopusteniChatovi.includes(String(m.chat.id))) return false
   if (u.dopusteniKorisnici.length && !u.dopusteniKorisnici.includes(String(m.from?.id ?? ''))) return false
   if (u.okidac && !tekst.trim().startsWith(u.okidac)) return false
-  if (u.sameSpomeni && !(m.entities || []).some(e => e.type === 'mention')) return false
+  if (u.sameSpomeni) {
+    if (jaUsername) { if (!spominjeBota(m, tekst, jaUsername)) return false }
+    else if (!(m.entities || []).some(e => e.type === 'mention')) return false
+  }
   return true
+}
+
+/** Sadrži li poruka spomen `@jaUsername` (entitet `mention` ili, bez entiteta, sam tekst). */
+export function spominjeBota(m: NonNullable<Update['message']>, tekst: string, jaUsername: string): boolean {
+  const cilj = `@${jaUsername}`.toLowerCase()
+  const ent = [...(m.entities || []), ...(m.caption_entities || [])].filter(e => e.type === 'mention')
+  if (ent.some(e => typeof e.offset === 'number' && typeof e.length === 'number' &&
+    tekst.slice(e.offset, e.offset + e.length).toLowerCase() === cilj)) return true
+  return new RegExp(`(^|[^\\w@])${cilj.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\w])`, 'i').test(tekst)
+}
+
+/**
+ * Telegram → `UlaznaPoruka` (ADR-0002 §10). Ovdje i samo ovdje se odlučuje je li poruka
+ * upućena OVOM botu: vlastiti @spomen, ime bota na početku ili odgovor na njegovu poruku.
+ */
+export function ulaznaPorukaIzTelegrama(
+  m: NonNullable<Update['message']>, tekst: string, ja: JaBot | null, ime: string,
+): UlaznaPoruka {
+  const posiljateljIme = [m.from?.first_name, m.from?.username ? `(@${m.from.username})` : '']
+    .filter(Boolean).join(' ').trim() || String(m.from?.id ?? '?')
+  const odgovorNaBota = !!ja && m.reply_to_message?.from?.id !== undefined &&
+    String(m.reply_to_message.from.id) === String(ja.id)
+  const spomen = !!ja?.username && spominjeBota(m, tekst, ja.username)
+  return {
+    kanal: 'telegram',
+    chatId: String(m.chat.id),
+    porukaId: String(m.message_id),
+    posiljateljId: String(m.from?.id ?? ''),
+    posiljateljIme,
+    posiljateljJeBot: m.from?.is_bot === true,
+    tekst,
+    ts: m.date ? new Date(m.date * 1000).toISOString() : new Date().toISOString(),
+    privatno: m.chat.type === 'private',
+    obracanjeBotu: spomen || odgovorNaBota || pocinjeImenom(tekst, ime),
+  }
 }
 
 /**
@@ -294,6 +383,16 @@ export function telegramApi(botToken: string, plocaBase: string): Api {
       try { parsed = t ? JSON.parse(t) : null } catch { parsed = { raw: t } }
       return { status: r.status, tijelo: parsed }
     },
+    async getMe() {
+      try {
+        const r = await fetch(`${base}/getMe`)
+        const j: any = await r.json().catch(() => ({}))
+        if (!r.ok || !j?.ok || !j.result) return null
+        return { id: j.result.id, username: j.result.username, firstName: j.result.first_name }
+      } catch {
+        return null
+      }
+    },
     async odgovori(chatId, tekst, replyTo) {
       try {
         const r = await fetch(`${base}/sendMessage`, {
@@ -312,6 +411,51 @@ export function telegramApi(botToken: string, plocaBase: string): Api {
   }
 }
 
+// ─── Kanal za razgovor (ADR-0002 §10) ────────────────────────────────────────
+
+/**
+ * Telegram kao `Kanal` razgovornog sloja. Token ostaje ovdje — razgovorna jezgra i model
+ * ga nikad ne vide.
+ */
+export function telegramKanal(botToken: string): Kanal {
+  const base = `https://api.telegram.org/bot${botToken}`
+  const posalji = async (metoda: string, tijelo: Record<string, unknown>) => {
+    try {
+      const r = await fetch(`${base}/${metoda}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(tijelo),
+      })
+      return r.ok
+    } catch { return false }
+  }
+  return {
+    ime: 'telegram',
+    maxDuljinaPoruke: 4096,
+    maxDokumentBajta: 50 * 1024 * 1024,
+    async posaljiTekst(chatId, tekst, replyTo) {
+      const ok = await posalji('sendMessage', {
+        chat_id: chatId, text: tekst,
+        ...(replyTo ? { reply_parameters: { message_id: Number(replyTo), allow_sending_without_reply: true } } : {}),
+      })
+      // Poruka na koju se odgovara mogla je nestati — tada bez reply-a, ne bez odgovora.
+      return ok || (replyTo ? posalji('sendMessage', { chat_id: chatId, text: tekst }) : false)
+    },
+    async posaljiDokument(chatId, putanja, opis) {
+      try {
+        const fd = new FormData()
+        fd.append('chat_id', chatId)
+        if (opis) fd.append('caption', opis.slice(0, 1024))
+        const f = Bun.file(putanja)
+        fd.append('document', f, putanja.split('/').pop() || 'dokument')
+        const r = await fetch(`${base}/sendDocument`, { method: 'POST', body: fd })
+        return r.ok
+      } catch { return false }
+    },
+    async pise(chatId) {
+      await posalji('sendChatAction', { chat_id: chatId, action: 'typing' })
+    },
+  }
+}
+
 // ─── Petlja ──────────────────────────────────────────────────────────────────
 
 export interface PokretanjeOpcije {
@@ -321,6 +465,14 @@ export interface PokretanjeOpcije {
   bravaPath?: string
   api?: Api
   log?: (r: string) => void
+  /** Razgovorni način (ADR-0002). Bez njega poller radi točno kao prije. */
+  razgovor?: RazgovorUlaza
+}
+
+/** Petlja treba raditi ako je uključen ulaz ILI razgovor (ADR-0002 §3). */
+function trebaPetlja(cfg: TelegramPostavke, razg?: RazgovorUlaza): boolean {
+  if (cfg.ulaz?.ukljucen) return true
+  try { return !!razg?.postavke().ukljucen } catch { return false }
 }
 
 export interface Pokretanje {
@@ -345,7 +497,7 @@ export function pokreniTelegramPoller(opcije: PokretanjeOpcije = {}): Pokretanje
   const log = opcije.log || ((r: string) => console.log(r))
   const cfg = loadTelegramConfig(opcije.configPath)
 
-  if (!cfg.ulaz?.ukljucen) return { pokrenut: false, razlog: 'ulazni kanal je isključen' }
+  if (!trebaPetlja(cfg, opcije.razgovor)) return { pokrenut: false, razlog: 'ulazni kanal je isključen' }
   // Token dolazi iz datoteke s tajnama (v. `telegramBotToken`), ne iz JSON-a — nalaz B2.
   const token = telegramBotToken(cfg)
   if (!token) return { pokrenut: false, razlog: 'bot token nije postavljen' }
@@ -364,6 +516,11 @@ export function pokreniTelegramPoller(opcije: PokretanjeOpcije = {}): Pokretanje
   let radi = true
   let tajmer: ReturnType<typeof setTimeout> | null = null
   let uzastopnihKvarova = 0
+  // Razgovor: tko je ovaj bot (`getMe`, jednom po petlji) i kanal za odgovore.
+  const razg: RazgovorUlaza | undefined = opcije.razgovor
+    ? { ...opcije.razgovor, kanal: opcije.razgovor.kanal || telegramKanal(token) }
+    : undefined
+  let jaDohvacen = !!razg?.ja
 
   const korak = async () => {
     if (!radi) return
@@ -371,7 +528,12 @@ export function pokreniTelegramPoller(opcije: PokretanjeOpcije = {}): Pokretanje
     const stanje = ucitajStanje(stanjePath)
     let cekaj = Math.max(1, svjez.ulaz.intervalSek) * 1000
 
-    if (!svjez.ulaz.ukljucen) {
+    if (razg && !jaDohvacen && api.getMe) {
+      const ja = await api.getMe().catch(() => null)
+      if (ja) { razg.ja = ja; jaDohvacen = true }
+    }
+
+    if (!trebaPetlja(svjez, razg)) {
       log('[telegram-poller] ulaz je isključen s ploče — zaustavljam petlju')
       zaustavi()
       return
@@ -379,7 +541,7 @@ export function pokreniTelegramPoller(opcije: PokretanjeOpcije = {}): Pokretanje
     if (stanje.cekajDo > Date.now()) {
       cekaj = stanje.cekajDo - Date.now()
     } else {
-      const ishod = await jedanProlaz(svjez, stanje, api)
+      const ishod = await jedanProlaz(svjez, stanje, api, razg)
       zapisiStanje(stanje, stanjePath)
       if (ishod.zaustavljen) {
         log(`[telegram-poller] zaustavljen: ${stanje.zaustavljenRazlog}`)
@@ -465,7 +627,7 @@ export function uskladiTelegramPoller(
   }
 
   if (aktivna?.ziv()) return { radnja: 'vec_radi' }
-  if (!cfg.ulaz?.ukljucen) return { radnja: zaustavljena ? 'zaustavljen' : 'nista', razlog: 'ulazni kanal je isključen' }
+  if (!trebaPetlja(cfg, opcije.razgovor)) return { radnja: zaustavljena ? 'zaustavljen' : 'nista', razlog: 'ulazni kanal je isključen' }
 
   const p = pokreniTelegramPoller(opcije)
   if (!p.pokrenut) return { radnja: zaustavljena ? 'zaustavljen' : 'nista', razlog: p.razlog }

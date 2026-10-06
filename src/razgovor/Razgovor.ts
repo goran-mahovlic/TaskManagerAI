@@ -1,0 +1,373 @@
+// ─── Razgovor — jezgra razgovornog načina (ADR-0002 §2, §6, §8, §9) ──────────
+//
+//   UlaznaPoruka → filtar → burst → red po chatu → vrata (pauza/kvota) → strop →
+//   [memorija] → izvršitelj (claude -p --resume) → SEND_DOC → Kanal.posalji*
+//
+// Jezgra ne zna ni za Telegram ni za Signal (radi samo s `Kanal`), ni za konkretan CLI
+// (radi s portom `Executor`). Sve što ima stanje u procesu je ovdje: burst tajmeri, red po
+// chatu, strop istodobnih poziva. Stanje sesija je u datoteci (preživi restart).
+//
+// JEDAN POZIV PO CHATU U ISTO VRIJEME: dva istodobna `--resume` na istu sesiju je račvaju.
+// Poruke koje stignu dok poziv traje čekaju i spajaju se u SLJEDEĆI potez.
+//
+// Autorica: Jelena (Engineer), TASK-5277.
+
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'fs'
+import { join } from 'path'
+import type { ExecRequest, ExecResult, Executor } from '../core/orchestrator/Ports'
+import type { Kanal, Razgovor, UlaznaPoruka } from './Kanal'
+import type { RazgovorPostavke } from './RazgovorPostavke'
+import { trebaOdgovoriti } from './Filtar'
+import { argumentiOvlasti, okolinaRazgovora } from './Ovlasti'
+import { sastaviIdentitet } from './Identitet'
+import { dohvatiMemoriju, type MemorijaRezultat } from './Memorija'
+import { izvuciDokumente, provjeriDokument } from './SendDoc'
+import { ocistiStareZapise, zapisiPotez } from './Zapis'
+
+export interface RazgovorOvisnosti {
+  postavke: () => RazgovorPostavke
+  izvrsitelj: Executor
+  jePauza: () => boolean
+  kvotaPuna: () => Promise<boolean> | boolean
+  /** `$TM_HOME/data/razgovor` — sesije.json i zapisi po chatu. */
+  korijen: string
+  tmHome: string
+  home: string
+  port: number
+  plocaUrl: string
+  instalacija: string
+  env: Record<string, string | undefined>
+  /** Model kad `razgovor.model` nije postavljen (model-config `agentOverrides.razgovor`). */
+  modelZadano?: () => string | undefined
+  /** Dodatne mape iz kojih SEND_DOC smije slati (uz radniDir). */
+  dokumentiMape?: string[]
+  sat?: () => number
+  log?: (r: string) => void
+  fetchImpl?: typeof fetch
+}
+
+export interface RazgovorJezgra extends Razgovor {
+  /**
+   * Razriješi se kad nema tajmera, reda ni poziva u tijeku (testovi, gašenje). Bez roka
+   * čeka koliko treba — poziv modela traje desetke sekundi, pa bi kratak rok lagao „mirno".
+   */
+  mirno(rokMs?: number): Promise<void>
+  /** Koliko poziva modela je upravo u tijeku. */
+  aktivnih(): number
+}
+
+interface Stavka { p: UlaznaPoruka; k: Kanal }
+interface StanjeChata {
+  kljuc: string
+  cekaju: Stavka[]
+  tajmer: ReturnType<typeof setTimeout> | null
+  uTijeku: boolean
+  uRedu: boolean
+  prigusenje: Map<string, number>
+}
+
+export interface SesijaChata {
+  sessionId: string
+  zadnjiMs: number
+  teme: string[]
+  memorija: string[]
+}
+
+const PRIGUSENJE_MS = 10 * 60_000
+const RED_OBAVIJEST_MS = 30_000
+const MAX_TEMA = 5
+const MAX_MEMORIJSKIH_KLJUCEVA = 500
+const CISCENJE_MS = 24 * 3600_000
+
+export const PORUKE = {
+  pauza: '⏸ Sustav je pauziran s ploče.',
+  kvota: 'Kvota je pri kraju — odgovaram kad se obnovi.',
+  red: '⏳ U redu sam — odgovaram čim se oslobodi mjesto.',
+  rok: (s: number) => `⏱ Nisam stigao odgovoriti u ${s} s.`,
+  kvar: '⚠ Odgovor nije uspio (kvar izvršitelja) — pokušaj ponovno malo kasnije.',
+}
+
+// ─── Sesije (stanje, ne konfiguracija) ───────────────────────────────────────
+
+export function ucitajSesije(put: string): Record<string, SesijaChata> {
+  try {
+    const s = JSON.parse(readFileSync(put, 'utf-8'))
+    return s && typeof s === 'object' && !Array.isArray(s) ? s : {}
+  } catch { return {} }
+}
+
+export function zapisiSesije(put: string, s: Record<string, SesijaChata>): void {
+  try {
+    mkdirSync(join(put, '..'), { recursive: true })
+    const tmp = `${put}.tmp-${process.pid}`
+    writeFileSync(tmp, JSON.stringify(s, null, 2) + '\n', 'utf-8')
+    renameSync(tmp, put)
+  } catch { /* gubitak sesije = nova sesija, ne kvar */ }
+}
+
+/** Reži na granici odlomka, pa retka, pa tvrdo — nijedan komad dulji od `max`. */
+export function podijeli(tekst: string, max: number): string[] {
+  const out: string[] = []
+  let ostatak = tekst.trim()
+  while (ostatak.length > max) {
+    let rez = ostatak.lastIndexOf('\n\n', max)
+    if (rez < max * 0.3) rez = ostatak.lastIndexOf('\n', max)
+    if (rez < max * 0.3) rez = ostatak.lastIndexOf(' ', max)
+    if (rez < max * 0.3) rez = max
+    out.push(ostatak.slice(0, rez).trim())
+    ostatak = ostatak.slice(rez).trim()
+  }
+  if (ostatak) out.push(ostatak)
+  return out
+}
+
+const NEVAZECA_SESIJA = /no conversation found|session not found|invalid session|session .* not found/i
+
+export function stvoriRazgovor(d: RazgovorOvisnosti): RazgovorJezgra {
+  const sat = d.sat ?? Date.now
+  const log = d.log ?? ((r: string) => console.log(r))
+  const sesijePut = join(d.korijen, 'sesije.json')
+  const chatovi = new Map<string, StanjeChata>()
+  const red: StanjeChata[] = []
+  let aktivnih = 0
+  const uLetu = new Set<Promise<unknown>>()
+  let zadnjeCiscenje = 0
+
+  const prati = <T>(p: Promise<T>): Promise<T> => {
+    uLetu.add(p)
+    p.finally(() => uLetu.delete(p)).catch(() => {})
+    return p
+  }
+
+  function chat(kljuc: string): StanjeChata {
+    let c = chatovi.get(kljuc)
+    if (!c) {
+      c = { kljuc, cekaju: [], tajmer: null, uTijeku: false, uRedu: false, prigusenje: new Map() }
+      chatovi.set(kljuc, c)
+    }
+    return c
+  }
+
+  async function prigusi(c: StanjeChata, s: Stavka, vrsta: string, tekst: string): Promise<void> {
+    const t = sat()
+    const zadnje = c.prigusenje.get(vrsta)
+    if (zadnje !== undefined && t - zadnje < PRIGUSENJE_MS) return
+    c.prigusenje.set(vrsta, t)
+    try { await s.k.posaljiTekst(s.p.chatId, tekst, s.p.porukaId) } catch { /* kanal je javio grešku */ }
+  }
+
+  function zakazi(c: StanjeChata, ms: number): void {
+    if (c.tajmer) clearTimeout(c.tajmer)
+    c.tajmer = setTimeout(() => {
+      c.tajmer = null
+      void prati(nakonBursta(c))
+    }, Math.max(0, ms))
+  }
+
+  async function nakonBursta(c: StanjeChata): Promise<void> {
+    if (!c.cekaju.length || c.uTijeku || c.uRedu) return
+    const zadnja = c.cekaju[c.cekaju.length - 1]!
+    // Vrata redom (ADR §6.2): ručna kočnica, kvota, strop.
+    if (d.jePauza()) {
+      c.cekaju = []
+      return prigusi(c, zadnja, 'pauza', PORUKE.pauza)
+    }
+    let kvota = false
+    try { kvota = await d.kvotaPuna() } catch { kvota = false }
+    if (kvota) {
+      c.cekaju = []
+      return prigusi(c, zadnja, 'kvota', PORUKE.kvota)
+    }
+    if (aktivnih >= d.postavke().maxUsporednih) {
+      c.uRedu = true
+      red.push(c)
+      const t = setTimeout(() => {
+        if (c.uRedu) void prati(prigusi(c, zadnja, 'red', PORUKE.red))
+      }, RED_OBAVIJEST_MS)
+      if (typeof (t as any)?.unref === 'function') (t as any).unref()
+      return
+    }
+    await pokreni(c)
+  }
+
+  async function pokreni(c: StanjeChata): Promise<void> {
+    c.uTijeku = true
+    aktivnih++
+    const stavke = c.cekaju.splice(0)
+    try {
+      if (stavke.length) await potez(c, stavke)
+    } catch (e: any) {
+      log(`[razgovor] ${c.kljuc}: ${String(e?.message || e)}`)
+    } finally {
+      aktivnih--
+      c.uTijeku = false
+      if (c.cekaju.length) zakazi(c, 0)
+      const max = d.postavke().maxUsporednih
+      while (red.length && aktivnih < max) {
+        const sljedeci = red.shift()!
+        sljedeci.uRedu = false
+        void prati(pokreni(sljedeci))
+      }
+    }
+  }
+
+  function spoji(stavke: Stavka[]): string {
+    const isti = stavke.every(s => s.p.posiljateljId === stavke[0]!.p.posiljateljId)
+    if (isti) return `[OD: ${stavke[0]!.p.posiljateljIme}]\n${stavke.map(s => s.p.tekst).join('\n')}`
+    return stavke.map(s => `[OD: ${s.p.posiljateljIme}] ${s.p.tekst}`).join('\n')
+  }
+
+  async function potez(c: StanjeChata, stavke: Stavka[]): Promise<void> {
+    const s = d.postavke()
+    const zadnja = stavke[stavke.length - 1]!
+    const { p, k } = zadnja
+    const t0 = sat()
+    const sada = new Date(t0).toISOString()
+    const radniDir = s.radniDir || join(d.korijen, 'radni')
+    const tekst = spoji(stavke)
+    const cistiTekst = stavke.map(x => x.p.tekst).join(' ').replace(/\s+/g, ' ').trim()
+
+    if (t0 - zadnjeCiscenje > CISCENJE_MS) {
+      zadnjeCiscenje = t0
+      try { ocistiStareZapise(d.korijen, s.zadrzavanjeDana, t0) } catch { /* sljedeći put */ }
+    }
+
+    zapisiPotez(d.korijen, p.kanal, p.chatId, {
+      ts: sada, smjer: 'ulaz', posiljateljId: p.posiljateljId, posiljateljIme: p.posiljateljIme,
+      tekst, poruka: stavke.length,
+    })
+
+    const sesije = ucitajSesije(sesijePut)
+    let ses: SesijaChata | undefined = sesije[c.kljuc]
+    let prethodne: string[] = []
+    if (ses && t0 - ses.zadnjiMs > s.sesijaNeaktivnostMin * 60_000) {
+      prethodne = ses.teme || []
+      ses = undefined
+    }
+
+    let mem: MemorijaRezultat | null = null
+    if (s.memorijaRazgovor !== 'off') {
+      mem = await dohvatiMemoriju({
+        nacin: s.memorijaRazgovor,
+        url: s.memorijaUrl || d.env.TM_HINDSIGHT_URL || '',
+        banka: s.memorijaBanka,
+        rokMs: s.memorijaRokMs,
+        upit: cistiTekst,
+        vecPoslano: new Set(ses?.memorija || []),
+        fetchImpl: d.fetchImpl,
+      })
+      if (mem.greska) log(`[razgovor] memorija (${c.kljuc}): ${mem.greska}`)
+    }
+
+    const prompt = [
+      prethodne.length ? `[PRETHODNI KONTEKST: teme prethodnog razgovora u ovom chatu]\n${prethodne.map(t => `• ${t}`).join('\n')}\n[/PRETHODNI KONTEKST]` : '',
+      mem?.blok || '',
+      tekst,
+    ].filter(Boolean).join('\n\n')
+
+    const oznaka = `${p.kanal}:${p.chatId}`
+    const zahtjev = (resume?: string): ExecRequest => ({
+      agentId: 'razgovor',
+      model: s.model || d.modelZadano?.() || undefined,
+      prompt,
+      systemPrompt: resume ? undefined : sastaviIdentitet({
+        ime: s.ime, instalacija: d.instalacija, ovlasti: s.ovlasti, plocaUrl: d.plocaUrl,
+        dokumenti: s.dokumenti, radniDir,
+      }),
+      cwd: radniDir,
+      timeoutMs: s.rokSek * 1000,
+      extra: {
+        ...(resume ? { resume } : {}),
+        args: argumentiOvlasti(s.ovlasti, { port: d.port, radniDir, tmHome: d.tmHome, home: d.home }),
+        env: okolinaRazgovora(d.env, oznaka),
+      },
+    })
+
+    try { mkdirSync(radniDir, { recursive: true }) } catch { /* izvršitelj će javiti */ }
+    if (k.pise) void k.pise(p.chatId).catch(() => {})
+
+    let novaSesija = !ses
+    let res: ExecResult = await d.izvrsitelj.run(zahtjev(ses?.sessionId))
+    if (res.exitCode !== 0 && ses?.sessionId && NEVAZECA_SESIJA.test(res.greska || '')) {
+      log(`[razgovor] ${c.kljuc}: sesija ${ses.sessionId} više ne postoji — nova sesija`)
+      ses = undefined
+      novaSesija = true
+      res = await d.izvrsitelj.run(zahtjev(undefined))
+    }
+
+    const zajednicko = {
+      sessionId: res.sessionId || ses?.sessionId || null, novaSesija,
+      model: s.model || d.modelZadano?.() || null,
+      trajanjeMs: sat() - t0,
+      tokeni: { ul: res.usage?.inputTokens ?? null, izl: res.usage?.outputTokens ?? null },
+      cijenaUsd: res.usage?.costUsd ?? null,
+      memorija: mem ? { nacin: mem.nacin, cinjenica: mem.cinjenica, ms: mem.ms, greska: mem.greska } : null,
+    }
+
+    if (res.exitCode !== 0) {
+      const rok = /rok istekao|timed? ?out/i.test(res.greska || '')
+      await prigusi(c, zadnja, rok ? 'rok' : 'kvar', rok ? PORUKE.rok(s.rokSek) : PORUKE.kvar)
+      zapisiPotez(d.korijen, p.kanal, p.chatId, {
+        ts: new Date(sat()).toISOString(), smjer: 'izlaz', tekst: '', ...zajednicko,
+        greska: (res.greska || `exit ${res.exitCode}`).slice(0, 300), vrata: rok ? 'rok' : 'kvar',
+      })
+      return
+    }
+
+    const sessionId = res.sessionId || ses?.sessionId
+    if (sessionId) {
+      sesije[c.kljuc] = {
+        sessionId,
+        zadnjiMs: sat(),
+        teme: [...(ses?.teme || []), cistiTekst.slice(0, 200)].slice(-MAX_TEMA),
+        memorija: [...(ses?.memorija || []), ...(mem?.noviKljucevi || [])].slice(-MAX_MEMORIJSKIH_KLJUCEVA),
+      }
+      zapisiSesije(sesijePut, sesije)
+    }
+
+    let odgovor = (res.resultText || '').trim()
+    const zaSlanje: { putanja: string; opis: string }[] = []
+    if (s.dokumenti) {
+      const iz = izvuciDokumente(odgovor)
+      odgovor = iz.tekst
+      const mape = [radniDir, ...(d.dokumentiMape || [])]
+      for (const m of iz.markeri) {
+        const pr = provjeriDokument(m.putanja, { dopusteneMape: mape, maxBajta: k.maxDokumentBajta, home: d.home })
+        if (pr.ok) zaSlanje.push({ putanja: pr.putanja, opis: m.opis })
+        else odgovor += `\n📎 dokument nije poslan: ${pr.razlog}`
+      }
+    }
+
+    const dijelovi = podijeli(odgovor, k.maxDuljinaPoruke)
+    for (let i = 0; i < dijelovi.length; i++) {
+      await k.posaljiTekst(p.chatId, dijelovi[i]!, i === 0 ? p.porukaId : undefined)
+    }
+    for (const dok of zaSlanje) await k.posaljiDokument(p.chatId, dok.putanja, dok.opis)
+
+    zapisiPotez(d.korijen, p.kanal, p.chatId, {
+      ts: new Date(sat()).toISOString(), smjer: 'izlaz', tekst: odgovor, ...zajednicko,
+      sessionId: sessionId || null, dokumenti: zaSlanje.length,
+    })
+  }
+
+  return {
+    primi(p: UlaznaPoruka, k: Kanal): void {
+      const s = d.postavke()
+      if (!trebaOdgovoriti(p, s)) return
+      const c = chat(`${p.kanal}:${p.chatId}`)
+      c.cekaju.push({ p, k })
+      if (c.uTijeku || c.uRedu) return
+      zakazi(c, s.burstMs)
+    },
+    aktivnih: () => aktivnih,
+    async mirno(rokMs = Infinity): Promise<void> {
+      const kraj = Date.now() + rokMs
+      while (Date.now() < kraj) {
+        const zauzeto = uLetu.size > 0 || aktivnih > 0 || red.length > 0 ||
+          [...chatovi.values()].some(c => c.tajmer !== null || c.uTijeku || c.uRedu)
+        if (!zauzeto) return
+        await new Promise(r => setTimeout(r, 5))
+      }
+    },
+  }
+}

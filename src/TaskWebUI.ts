@@ -20,7 +20,7 @@ import { dirname, join, resolve } from 'path'
 import { hostname as osHostname, networkInterfaces as osNetworkInterfaces, homedir } from 'os'
 // SQL-Only TaskManager (v2.0) - replaces MD+SQLite dual-write
 import { getTaskManagerSQL, INBOX_PROJECT_ID } from './core/TaskManagerSQL'
-import { konfigPutanja, osigurajMapu, PAKET_DIR, stanjePutanja, sustavPutanja, TM_DB } from './core/paths'
+import { konfigPutanja, osigurajMapu, PAKET_DIR, stanjePutanja, sustavPutanja, TM_DATA, TM_DB, TM_ROOT } from './core/paths'
 import { datotekaTajni, datotekaTajniZaPisanje } from './core/ConfigModul'
 /**
  * Registar PAI agenata (`REGOC_AGENTS.json`, upisuje ga `scripts/install-agents.sh`).
@@ -59,7 +59,9 @@ import {
   loadGitHubConfig, validateGitHubPatch, saveGitHubConfig, stanjeGitHub, probajGitHub, GITHUB_CONFIG_PATH,
   githubKonfigModul,
 } from './GitHubConfig'
-import { probajUlaz, stanjeUlaza, pokreniTelegramPoller, uskladiTelegramPoller } from './TelegramPoller'
+import { probajUlaz, stanjeUlaza, pokreniTelegramPoller, uskladiTelegramPoller, type RazgovorUlaza } from './TelegramPoller'
+import { razgovorGet, razgovorPut, razgovorPovijestGet, sklopiRazgovor } from './razgovor/RazgovorPloca'
+import type { RazgovorJezgra } from './razgovor/Razgovor'
 import {
   loadOrchestratorConfig, validateOrchestratorPatch, saveOrchestratorConfig, stanjeOrkestratora,
   orchestratorConfigPath,
@@ -2741,6 +2743,10 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         <div class="info-card info-full" id="info-ulaz-card">
           <div class="info-card-title"><span class="icon">&#8623;</span> <span data-i18n="cfg_kartica_ulaz">Ulazna vrata &mdash; kako telegramska poruka ulazi u plo&#269;u</span></div>
           <div id="info-ulaz-content"><div class="empty" data-i18n="loading">Loading...</div></div>
+        </div>
+        <div class="info-card info-full" id="info-razgovor-card">
+          <div class="info-card-title"><span class="icon">&#128172;</span> <span data-i18n="cfg_kartica_razgovor">Razgovor &mdash; bot odgovara u chatu (Telegram; Signal kasnije)</span></div>
+          <div id="info-razgovor-content"><div class="empty" data-i18n="loading">Loading...</div></div>
         </div>
         <div class="info-skupina" id="cfg-skupina-4">
           <span class="info-skupina-broj">04</span>
@@ -8248,6 +8254,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         loadAutonomija();
         loadTelegram();
         loadUlaznaVrata();
+        loadRazgovor();
         loadIntegracije();
         loadOrkestrator();
         renderInfoModules(d);
@@ -9040,6 +9047,93 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       var el = document.getElementById('orc-facts');
       var popis = el.value.split('|').map(function (x) { return x.trim(); }).filter(Boolean);
       return spremiOrkestrator({ prompt: { systemFacts: popis } }, btn);
+    }
+
+    // ── Razgovor (ADR-0002, TASK-5277) — bot odgovara u chatu; postavke vrijede uživo ────
+    async function loadRazgovor() {
+      var el = document.getElementById('info-razgovor-content');
+      if (!el) return;
+      try {
+        var d = await (await fetch('/api/config/razgovor')).json();
+        if (d.error) throw new Error(d.error);
+        el.innerHTML = renderRazgovor(d);
+      } catch(e) {
+        el.innerHTML = '<div class="empty">' + _T('cfg_razg_greska', 'Greška pri čitanju postavki razgovora') + ': ' + _esc(e.message) + '</div>';
+      }
+    }
+
+    function _razgPolje(id, oznaka, html) {
+      return '<label style="display:flex;gap:8px;align-items:center;margin:4px 0"><span style="min-width:230px">' + oznaka + '</span>' + html + '</label>';
+    }
+    function _razgIzbor(id, vrijednost, opcije) {
+      return '<select id="' + id + '">' + opcije.map(function(o) {
+        return '<option value="' + o + '"' + (o === vrijednost ? ' selected' : '') + '>' + o + '</option>';
+      }).join('') + '</select>';
+    }
+
+    function renderRazgovor(d) {
+      var p = d.postavke || {};
+      var st = d.stanje || {};
+      var h = (d.povijest || []).slice(0, 8).map(function(r) {
+        return '<li>' + _esc(r.changedAt || '') + ' — ' + _esc(r.kljuc) + ': ' + _esc(String(r.staro == null ? '—' : r.staro)) +
+          ' → ' + _esc(String(r.novo)) + ' (' + _esc(r.changedBy) + ', ' + _esc(r.source) + ')</li>';
+      }).join('');
+      var upoz = (d.upozorenja || []).map(function(u) { return '<div>⚠️ ' + _esc(u) + '</div>'; }).join('');
+      return '<div class="cfg-napomena">' +
+          _T('cfg_razg_opis', 'Kad je uključen, bot odgovara na poruke koje NISU postale zadatak (nalozi i dalje otvaraju zadatak uz kratku potvrdu). Promjene vrijede odmah, bez restarta; svaka se bilježi u povijesti.') +
+          '<br>' + _T('cfg_razg_privatnost', 'Za odgovaraNa=sve u Telegram grupi bot mora imati isključen privacy mode (BotFather → /setprivacy).') +
+          '<br>' + _T('cfg_razg_stanje', 'Stanje') + ': ' + (st.petljaRadi ? '🟢 ' + _T('cfg_razg_petlja_radi', 'petlja radi') : '⚪ ' + _T('cfg_razg_petlja_ne', 'petlja ne radi')) +
+          ' · ' + _T('cfg_razg_aktivnih', 'odgovora u tijeku') + ': <b>' + (st.aktivnih || 0) + '</b>' +
+        '</div>' + upoz +
+        _razgPolje('razg-ukljucen', _T('cfg_razg_ukljucen', 'Razgovor uključen'), '<input id="razg-ukljucen" type="checkbox"' + (p.ukljucen ? ' checked' : '') + '>') +
+        _razgPolje('razg-ime', _T('cfg_razg_ime', 'Ime bota (prazno = ime iz Telegrama)'), '<input id="razg-ime" type="text" maxlength="40" value="' + _esc(p.ime || '') + '">') +
+        _razgPolje('razg-odgovaraNa', _T('cfg_razg_odgovara', 'Odgovara na'), _razgIzbor('razg-odgovaraNa', p.odgovaraNa, ['spomen', 'dopusteni', 'sve'])) +
+        _razgPolje('razg-dopusteni', _T('cfg_razg_dopusteni', 'Dopušteni korisnici (id, zarezom)'), '<input id="razg-dopusteni" type="text" value="' + _esc((p.dopusteniKorisnici || []).join(', ')) + '">') +
+        _razgPolje('razg-ovlasti', _T('cfg_razg_ovlasti', 'Ovlasti'), _razgIzbor('razg-ovlasti', p.ovlasti, ['citanje', 'rad', 'puno'])) +
+        _razgPolje('razg-model', _T('cfg_razg_model', 'Model (prazno = model-config)'), '<input id="razg-model" type="text" value="' + _esc(p.model || '') + '">') +
+        _razgPolje('razg-rokSek', _T('cfg_razg_rok', 'Rok odgovora (s, 30–1800)'), '<input id="razg-rokSek" type="number" min="30" max="1800" value="' + p.rokSek + '">') +
+        _razgPolje('razg-maxUsporednih', _T('cfg_razg_strop', 'Istodobnih odgovora (1–5)'), '<input id="razg-maxUsporednih" type="number" min="1" max="5" value="' + p.maxUsporednih + '">') +
+        _razgPolje('razg-sesija', _T('cfg_razg_sesija', 'Nova sesija nakon mira (min)'), '<input id="razg-sesija" type="number" min="5" max="1440" value="' + p.sesijaNeaktivnostMin + '">') +
+        _razgPolje('razg-burst', _T('cfg_razg_burst', 'Spajanje uzastopnih poruka (ms)'), '<input id="razg-burst" type="number" min="0" max="10000" value="' + p.burstMs + '">') +
+        _razgPolje('razg-dokumenti', _T('cfg_razg_dokumenti', 'Slanje dokumenata (SEND_DOC)'), '<input id="razg-dokumenti" type="checkbox"' + (p.dokumenti ? ' checked' : '') + '>') +
+        _razgPolje('razg-memorija', _T('cfg_razg_memorija', 'Memorija (Hindsight)'), _razgIzbor('razg-memorija', p.memorijaRazgovor, ['off', 'shadow', 'on'])) +
+        _razgPolje('razg-banka', _T('cfg_razg_banka', 'Banka memorije'), '<input id="razg-banka" type="text" value="' + _esc(p.memorijaBanka || '') + '">') +
+        _razgPolje('razg-url', _T('cfg_razg_url', 'Adresa memorije (prazno = TM_HINDSIGHT_URL)'), '<input id="razg-url" type="text" value="' + _esc(p.memorijaUrl || '') + '">') +
+        '<div style="margin-top:8px"><button class="cfg-btn" onclick="spremiRazgovor(this)">' + _T('tel_spremi', 'Spremi') + '</button></div>' +
+        (h ? '<ul class="cfg-povijest">' + h + '</ul>' : '');
+    }
+
+    async function spremiRazgovor(btn) {
+      var v = function(id) { return document.getElementById(id); };
+      var tijelo = {
+        ukljucen: v('razg-ukljucen').checked,
+        ime: v('razg-ime').value,
+        odgovaraNa: v('razg-odgovaraNa').value,
+        dopusteniKorisnici: v('razg-dopusteni').value.split(',').map(function(x) { return x.trim(); }).filter(Boolean),
+        ovlasti: v('razg-ovlasti').value,
+        model: v('razg-model').value,
+        rokSek: Number(v('razg-rokSek').value),
+        maxUsporednih: Number(v('razg-maxUsporednih').value),
+        sesijaNeaktivnostMin: Number(v('razg-sesija').value),
+        burstMs: Number(v('razg-burst').value),
+        dokumenti: v('razg-dokumenti').checked,
+        memorijaRazgovor: v('razg-memorija').value,
+        memorijaBanka: v('razg-banka').value,
+        memorijaUrl: v('razg-url').value,
+        by: 'ploca', source: 'ploca'
+      };
+      if (btn) btn.disabled = true;
+      try {
+        var res = await fetch('/api/config/razgovor', {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(tijelo)
+        });
+        var d = await res.json();
+        if (!res.ok || d.error) throw new Error(d.error || 'save failed');
+        await loadRazgovor();
+      } catch(e) {
+        alert(_T('cfg_razg_greska_spremanje', 'Greška pri spremanju postavki razgovora') + ': ' + e.message);
+        if (btn) btn.disabled = false;
+      }
     }
 
     // ── Usporedni agenti — strop spawnova, vrijedi uživo (orkestrator čita ≤5 s) ─────────
@@ -10641,6 +10735,72 @@ function handleTelegramConfigGet(): Response {
   }
 }
 
+// ── Razgovorni način bota (ADR-0002, TASK-5277) ──────────────────────────────────────
+// Jedan razgovorni sloj po procesu ploče. Poller ga dobiva kroz `RazgovorUlaza`; uključuje
+// se postavkom `razgovor.ukljucen` (zadano off) — bez nje poller radi točno kao prije.
+let _razgovor: { ulaz: RazgovorUlaza; jezgra: RazgovorJezgra } | null = null
+function razgovorSloj(): { ulaz: RazgovorUlaza; jezgra: RazgovorJezgra } {
+  if (_razgovor) return _razgovor
+  _razgovor = sklopiRazgovor({
+    dbPath: TM_DB,
+    dataDir: TM_DATA,
+    modelConfigPath: MODEL_CONFIG_PATH,
+    jePauza: () => readPauseState().paused,
+    // Vrata kvote (ADR-0002 §6.2): isti pragovi i isti izvor potrošnje kao za agente.
+    // Nepoznata potrošnja ne zaustavlja razgovor (isto kao kod agenata: nema podatka ≠ puno).
+    kvotaPuna: async () => {
+      try {
+        const u = await resolveSessionUsage({ force: false }, sessionUsageDeps)
+        const t = taskManager.getAutonomySetting().values
+        return (typeof u.sessionPercent === 'number' && u.sessionPercent >= t.sessionBlock) ||
+          (typeof u.weeklyPercent === 'number' && u.weeklyPercent >= t.weeklyBlock)
+      } catch { return false }
+    },
+    tmHome: TM_ROOT,
+    home: homedir(),
+    port: PORT,
+    plocaUrl: `http://127.0.0.1:${PORT}`,
+    instalacija: process.env.TM_NAZIV || osHostname(),
+    env: process.env,
+    dokumentiMape: [join(TM_DATA, 'izvjestaji')],
+    log: (r: string) => console.log(r),
+  })
+  return _razgovor
+}
+
+function razgovorOdgovor(o: { status: number; tijelo: unknown }): Response {
+  return new Response(JSON.stringify(o.tijelo), { status: o.status, headers: { 'Content-Type': 'application/json' } })
+}
+
+function handleRazgovorGet(): Response {
+  try {
+    const st = stanjeUlaza()
+    return razgovorOdgovor(razgovorGet(TM_DB, {
+      stanje: { petljaRadi: st.radi, aktivnih: _razgovor ? _razgovor.jezgra.aktivnih() : 0, zadnjaGreska: st.zadnjaGreska },
+    }))
+  } catch (e) {
+    return razgovorOdgovor({ status: 500, tijelo: { error: String(e) } })
+  }
+}
+
+async function handleRazgovorPut(req: Request): Promise<Response> {
+  let tijelo: unknown
+  try { tijelo = await req.json() } catch { return razgovorOdgovor({ status: 400, tijelo: { error: 'Neispravan JSON' } }) }
+  const r = razgovorPut(TM_DB, tijelo)
+  if (r.status === 200) {
+    const promjene = ((r.tijelo as any).promjene || []).filter((c: any) => c.changed)
+    console.log(`[RAZGOVOR] postavke promijenjene: ${promjene.map((c: any) => `${c.kljuc}=${c.novo}`).join(', ') || '(bez promjene)'}`)
+    // Kao TASK-5274: paljenje razgovora pokreće petlju odmah, bez restarta.
+    try {
+      const u = uskladiTelegramPoller({ plocaBase: `http://localhost:${PORT}`, razgovor: razgovorSloj().ulaz })
+      if (u.radnja !== 'nista' && u.radnja !== 'vec_radi') console.log(`[telegram-poller] uskladeno s ploce (razgovor): ${u.radnja}`)
+    } catch (e) {
+      console.log(`[telegram-poller] uskladivanje nije uspjelo: ${String(e)}`)
+    }
+  }
+  return razgovorOdgovor(r)
+}
+
 async function handleTelegramConfigPut(req: Request): Promise<Response> {
   const json = (o: unknown, s = 200) =>
     new Response(JSON.stringify(o), { status: s, headers: { 'Content-Type': 'application/json' } })
@@ -10661,7 +10821,7 @@ async function handleTelegramConfigPut(req: Request): Promise<Response> {
     // TASK-5274: poller se prije pokretao samo pri startu ploče — uključen Ulaz nije radio
     // do restarta. Sad se petlja usklađuje odmah (jedna po procesu; novi token = nova petlja).
     try {
-      const u = uskladiTelegramPoller({ plocaBase: `http://localhost:${PORT}`, prijasnjiToken })
+      const u = uskladiTelegramPoller({ plocaBase: `http://localhost:${PORT}`, prijasnjiToken, razgovor: razgovorSloj().ulaz })
       if (u.radnja !== 'nista' && u.radnja !== 'vec_radi') console.log(`[telegram-poller] uskladeno s ploce: ${u.radnja}`)
       else if (u.razlog && !/isključen|nije postavljen/.test(u.razlog)) console.log(`[telegram-poller] ${u.razlog}`)
     } catch (e) {
@@ -16213,6 +16373,9 @@ async function obradiZahtjev(req: Request): Promise<Response | undefined> {
       return handleClaimInstructions(url.pathname.split('/')[3], req)
     }
     if (url.pathname === '/api/pause' && req.method === 'GET') return handleGetPause()
+    if (url.pathname === '/api/config/razgovor' && req.method === 'GET') return handleRazgovorGet()
+    if (url.pathname === '/api/config/razgovor' && req.method === 'PUT') return handleRazgovorPut(req)
+    if (url.pathname === '/api/config/razgovor/povijest' && req.method === 'GET') return razgovorOdgovor(razgovorPovijestGet(TM_DB))
     if (url.pathname === '/api/config/concurrency' && req.method === 'GET') return handleConcurrencyGet()
     if (url.pathname === '/api/config/concurrency' && req.method === 'PUT') return handleConcurrencyPut(req)
     if (url.pathname === '/api/config/autonomy' && req.method === 'GET') return handleAutonomyGet()
@@ -16733,6 +16896,7 @@ console.log(`
   const p = pokreniTelegramPoller({
     plocaBase: `http://localhost:${PORT}`,
     log: (r: string) => console.log(r),
+    razgovor: razgovorSloj().ulaz,
   })
   if (!p.pokrenut && p.razlog && !/isključen|nije postavljen/.test(p.razlog)) {
     console.log(`[telegram-poller] ${p.razlog}`)
