@@ -323,3 +323,8 @@ kroz `restart_kad_mirno.sh`, a provjerava `StaleCodeCheck`.
 - Brojilo stropa i vlastite poruke žive u procesu ploče; zastavica u `settings`.
 - Testovi: `tests/bot-kanal.test.ts` (B1, B4, B5, B7, B8, B9, B11), `tests/razgovor-bot-kanal.test.ts`
   (B2, B3, B4 iz poteza, B5 kroz poller, B6, prekid stvarnog procesa).
+- Tajna u paketu dolazi iz okoline usluge (`config/postavke.env` na čvoru, `EnvironmentFile`), na glavnom
+  stroju iz datoteke tajni u `~/.claude/tools/Telegram/config/`. Oboje 0600, ista vrijednost.
+- Uživo na node-A (06.10.2026., 22:10–22:12 UTC): bez tajne 401; s tajnom `/stanje` 200; poruka „od
+  Klaudija" 202 → Šaban odgovorio u grupi (lanac u zapisu razgovora); ručni stop → sljedeća poruka 409
+  `zaustavljeno`, redak `bot-kanal:rucno` u povijesti; nastavak gumbom.
