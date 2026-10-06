@@ -89,7 +89,9 @@ const RASPONI: Partial<Record<Polje, [number, number]>> = {
   sesijaNeaktivnostMin: [5, 1440],
   burstMs: [0, 10000],
   zadrzavanjeDana: [1, 365],
-  memorijaRokMs: [200, 5000],
+  // Gornja granica = strop memorije izvornog sustava (≤10 s). Izmjereno 06.10.2026.: recall
+  // kroz SSH tunel na čvoru traje 6–7,5 s, pa bi 5 s značilo da memorija uvijek istekne.
+  memorijaRokMs: [200, 10000],
 }
 const IZBORI: Partial<Record<Polje, readonly string[]>> = {
   odgovaraNa: ['sve', 'spomen', 'dopusteni'],

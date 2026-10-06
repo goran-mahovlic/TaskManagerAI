@@ -9099,6 +9099,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         _razgPolje('razg-memorija', _T('cfg_razg_memorija', 'Memorija (Hindsight)'), _razgIzbor('razg-memorija', p.memorijaRazgovor, ['off', 'shadow', 'on'])) +
         _razgPolje('razg-banka', _T('cfg_razg_banka', 'Banka memorije'), '<input id="razg-banka" type="text" value="' + _esc(p.memorijaBanka || '') + '">') +
         _razgPolje('razg-url', _T('cfg_razg_url', 'Adresa memorije (prazno = TM_HINDSIGHT_URL)'), '<input id="razg-url" type="text" value="' + _esc(p.memorijaUrl || '') + '">') +
+        _razgPolje('razg-memrok', _T('cfg_razg_memrok', 'Rok memorije (ms, 200–10000)'), '<input id="razg-memrok" type="number" min="200" max="10000" value="' + p.memorijaRokMs + '">') +
         '<div style="margin-top:8px"><button class="cfg-btn" onclick="spremiRazgovor(this)">' + _T('tel_spremi', 'Spremi') + '</button></div>' +
         (h ? '<ul class="cfg-povijest">' + h + '</ul>' : '');
     }
@@ -9120,6 +9121,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         memorijaRazgovor: v('razg-memorija').value,
         memorijaBanka: v('razg-banka').value,
         memorijaUrl: v('razg-url').value,
+        memorijaRokMs: Number(v('razg-memrok').value),
         by: 'ploca', source: 'ploca'
       };
       if (btn) btn.disabled = true;

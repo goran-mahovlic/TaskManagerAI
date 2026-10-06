@@ -76,11 +76,16 @@ describe('J2 — upis i audit', () => {
   test.each([
     ['rokSek', 10], ['rokSek', 5000], ['maxUsporednih', 0], ['maxUsporednih', 6],
     ['sesijaNeaktivnostMin', 1], ['burstMs', 20000], ['zadrzavanjeDana', 0],
-    ['memorijaRokMs', 100], ['odgovaraNa', 'svima'], ['ovlasti', 'admin'],
+    ['memorijaRokMs', 100], ['memorijaRokMs', 10001], ['odgovaraNa', 'svima'], ['ovlasti', 'admin'],
     ['memorijaRazgovor', 'da'], ['ukljucen', 'yes'], ['radniDir', 'relativna/putanja'],
     ['memorijaUrl', 'nije-url'], ['ime', 'x'.repeat(41)],
   ])('izvan raspona %s=%p → odbijeno, ne stisnuto', (polje, v) => {
     expect(parseRazgovorPatch({ [polje]: v }).ok).toBe(false)
+  })
+
+  test('memorijaRokMs do 10 s je dopušten (izmjereno: recall kroz tunel 6–7,5 s)', () => {
+    expect(parseRazgovorPatch({ memorijaRokMs: 9000 }).ok).toBe(true)
+    expect(parseRazgovorPatch({ memorijaRokMs: 10000 }).ok).toBe(true)
   })
 
   test('čitač vidi promjenu nakon isteka keša (≤5 s), bez restarta', () => {

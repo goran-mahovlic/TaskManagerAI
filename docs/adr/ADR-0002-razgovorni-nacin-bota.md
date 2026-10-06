@@ -89,7 +89,7 @@ nepoznata polja (HTTP 400 s popisom dopuštenih).
 | `memorija.razgovor` | `'off'` | `off` \| `shadow` \| `on` | potrošač memorije (§6.3) |
 | `memorija.banka` | `''` | — | Hindsight banka; **isti ključ koji node-A već ima** |
 | `memorija.url` | `''` | URL | `''` → `TM_HINDSIGHT_URL` → memorija isključena |
-| `memorija.rokMs` | `1500` | 200–5000 | rok dohvata memorije |
+| `memorija.rokMs` | `1500` | 200–10000 | rok dohvata memorije (TASK-5277: 5000 → 10000, recall kroz tunel na node-A mjeren 6–7,5 s) |
 
 Ključevi `memorija.*` su namjerno zajednički, ne `razgovor.memorija.*`: izvorni sustav već
 ima obrazac „prekidač po potrošaču + zajednička banka" (`memorija.telegram_sesija`), a node-A
