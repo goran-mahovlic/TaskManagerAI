@@ -5,6 +5,8 @@
 //
 // Autorica: Jelena (Engineer), TASK-5277.
 
+import type { Lanac } from './BotKanal'
+
 export type ImeKanala = 'telegram' | 'signal'
 
 export interface UlaznaPoruka {
@@ -28,6 +30,13 @@ export interface UlaznaPoruka {
   spomeni?: string[]
   /** Adapter: poruka je odgovor (reply) na poruku NEKOG DRUGOG (ne ovog bota). */
   odgovorNa?: OdgovorNa
+  /**
+   * `bot` = stigla LAN rutom `/api/razgovor/od-bota` s valjanom tajnom (ADR-0003). Postavlja je
+   * SAMO ta ruta — Telegram adapter nikad (poruka bota iz Telegrama i dalje = tišina).
+   */
+  izvor?: 'bot'
+  /** Uz `izvor:'bot'`: lanac razmjene — odgovor ga nastavlja sa `skok+1`. */
+  lanac?: Lanac
   /** Adapter: tekst je transkript glasovne/zvučne poruke (`[GLAS] …`, TASK-5294). */
   glasovna?: boolean
 }
@@ -47,6 +56,8 @@ export interface Kanal {
   /** Telegram bot: 50 MB. */
   maxDokumentBajta: number
   posaljiTekst(chatId: string, tekst: string, replyTo?: string): Promise<boolean>
+  /** Kao `posaljiTekst`, ali vraća id poslane poruke (`null` = nije poslano) — za kanal bot↔bot. */
+  posaljiTekstId?(chatId: string, tekst: string, replyTo?: string): Promise<string | null>
   posaljiDokument(chatId: string, putanja: string, opis: string): Promise<boolean>
   /** Glasovna poruka (ogg/opus) — TASK-5294. Kanal bez glasa je ne mora imati. */
   posaljiGlas?(chatId: string, ogg: Uint8Array, replyTo?: string): Promise<boolean>

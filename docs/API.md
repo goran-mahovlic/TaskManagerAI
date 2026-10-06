@@ -239,6 +239,42 @@ primjeri s ploče su u [ODLUCIVANJE.md](ODLUCIVANJE.md); ovdje su samo krajevi:
 | `/api/odlucitelj/config` | GET / PUT | postavke modela-odlučitelja (`config/odlucitelj.json`) |
 | `/api/odlucitelj/pokreni` | POST | pokreni prolaz odlučivanja; s `{"suho": true}` samo pokaže što bi odlučio, ništa ne mijenja |
 
+## Kanal bot↔bot (`/api/razgovor/od-bota`, ADR-0003)
+
+Dva bota u istoj Telegram grupi ne vide jedan drugoga (Telegram botu ne isporučuje poruke drugog
+bota), pa razgovaraju preko LAN-a. Ruta postoji samo uz `razgovor.botKanal.ukljucen=true`
+(zadano isključeno) i traži tajnu `TM_BOT_KANAL_TOKEN` iz okoline stroja (ista na oba kraja)
+**i** adresu s popisa `razgovor.botKanal.adrese`.
+
+```bash
+curl -X POST http://<ploča>:17781/api/razgovor/od-bota \
+  -H "Authorization: Bearer $TM_BOT_KANAL_TOKEN" -H "Content-Type: application/json" \
+  -d '{"izvor":"drugi-bot","chatId":"-100…","tekst":"…","telegramPorukaId":123,"lanacId":"uuid","skok":1,"izvornik":{"id":"…","ime":"…"},"ts":"…"}'
+```
+
+| Odgovor | Značenje |
+|---|---|
+| `202` | primljeno; razgovor odgovara u grupu (kao reply na `telegramPorukaId`). Bot-poruka **nikad** ne ide u `/api/ingest` |
+| `401` | tajna nedostaje ili je pogrešna |
+| `403` | kanal isključen, tajna nije postavljena na stroju, adresa / chat / izvor nije na popisu |
+| `409` | `razlog`: `zaustavljeno` (stop-fraza ili gumb), `strop`, `skok` (> strop), `vlastita` (odjek) |
+| `400` / `413` | nepoznato polje ili neispravna vrijednost / tekst dulji od 4000 znakova |
+| `503` | razgovor ili Telegram petlja na tom stroju ne radi |
+
+Uz istu tajnu: `POST …/od-bota/stop` i `…/od-bota/nastavi` (`{chatId, by, razlog?}`) — drugi
+kraj javlja promjenu zastavice; `GET …/od-bota/stanje` — zastavice po chatu (bez tajne).
+
+Postavke (kartica Config → Razgovor → Bot↔bot): `GET|PUT /api/config/razgovor/bot-kanal`
+(`ukljucen`, `drugi[{ime,korisnickoIme,url}]`, `chatovi`, `adrese`, `ovlasti` `citanje|rad`,
+`stopKorisnici` (brojčani id-evi), `strop` 1–20, `prozorMin` 1–120) i
+`POST /api/config/razgovor/bot-kanal/rucno` `{chatId, radnja:'nastavi'|'zaustavi'}`. Svaka
+promjena (i zastavice) je redak u `settings_history`.
+
+„Prekini komunikaciju" od stop-korisnika (u bilo kojem obliku: velika slova, bez kvačica, unutar
+rečenice) odmah diže zastavicu na oba kraja, ubija bot-potez u letu i odbacuje bot-poruke u
+redu; nastavak samo gumbom ili „Nastavi komunikaciju". Tvrdi strop: `strop` prijenosa u
+`prozorMin` bez ljudske poruke.
+
 ## Ulaz (`/api/ingest`)
 
 Generički ulaz za poruke izvana. Umjesto da svaki kanal (most za dopisivanje, pretinac

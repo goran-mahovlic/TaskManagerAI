@@ -17,6 +17,12 @@ import { izvrsiteljRazgovora } from './Izvrsitelj'
 import { ucitajAgente, ucitajUpute } from './Identitet'
 import { procitajPosiljatelje, zabiljeziPosiljatelja, type Posiljatelj } from './Posiljatelji'
 import type { RazgovorUlaza } from '../TelegramPoller'
+import { stvoriBotKanal, type BotKanal, type Zahtjev } from './BotKanal'
+import {
+  botKanalPovijest, createBotKanalReader, getBotKanalPostavke, parseBotKanalPatch, setBotKanalPostavke, spremisteUBazi,
+} from './BotKanalPostavke'
+import { normaliziraj } from './Filtar'
+import type { UlaznaPoruka } from './Kanal'
 
 export interface ApiOdgovor { status: number; tijelo: unknown }
 
@@ -90,11 +96,32 @@ export interface SklapanjeOpcije extends Omit<RazgovorOvisnosti, 'postavke' | 'i
   agentiPut?: string
 }
 
+/** Ime ovog kraja u ugovoru bot↔bot: ime razgovora bez dijakritike („Šaban" → `saban`). */
+export function imeUKanalu(ime: string): string {
+  return normaliziraj(ime).replace(/[^\w.-]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40) || 'bot'
+}
+
+export interface RazgovorSloj { ulaz: RazgovorUlaza; jezgra: RazgovorJezgra; botKanal: BotKanal }
+
 /** Jedan razgovorni sloj po procesu ploče; poller ga dobiva kroz `RazgovorUlaza`. */
-export function sklopiRazgovor(o: SklapanjeOpcije): { ulaz: RazgovorUlaza; jezgra: RazgovorJezgra } {
+export function sklopiRazgovor(o: SklapanjeOpcije): RazgovorSloj {
   const citac = createRazgovorReader({ dbPath: o.dbPath })
   const postavke = () => citac().postavke
-  const jezgra = stvoriRazgovor({
+  const bkPostavke = createBotKanalReader(o.dbPath)
+  let ulaz: RazgovorUlaza
+  let jezgra: RazgovorJezgra
+  // ADR-0003: kanal bot↔bot — tajna samo iz okoline stroja, nikad iz postavki.
+  const botKanal = stvoriBotKanal({
+    ja: imeUKanalu(postavke().ime || 'bot'),
+    postavke: bkPostavke,
+    token: () => o.env.TM_BOT_KANAL_TOKEN,
+    spremiste: spremisteUBazi(o.dbPath),
+    zadaniStopKorisnici: () => postavke().dopusteniKorisnici,
+    javiUGrupu: (chatId, tekst) => ulaz.aktivniKanal?.posaljiTekst(chatId, tekst),
+    naStop: chatId => { jezgra.prekiniBotPoteze('telegram', chatId) },
+    log: o.log,
+  })
+  jezgra = stvoriRazgovor({
     ...o,
     postavke,
     izvrsitelj: izvrsiteljRazgovora(),
@@ -102,7 +129,75 @@ export function sklopiRazgovor(o: SklapanjeOpcije): { ulaz: RazgovorUlaza; jezgr
     modelZadano: () => modelIzKonfiguracije(o.modelConfigPath),
     agenti: () => ucitajAgente(o.agentiPut),
     upute: () => ucitajUpute(o.uputePut),
+    botKanal: () => ({ jeZaustavljen: c => botKanal.jeZaustavljen(c), prenesi: u => botKanal.prenesi(u), ovlasti: () => bkPostavke().ovlasti }),
   })
   const put = posiljateljiPut(o.dataDir)
-  return { ulaz: { razgovor: jezgra, postavke, zabiljezi: p => zabiljeziPosiljatelja(put, p), konzola: o.konzola }, jezgra }
+  ulaz = { razgovor: jezgra, postavke, zabiljezi: p => zabiljeziPosiljatelja(put, p), konzola: o.konzola, botKanal }
+  return { ulaz, jezgra, botKanal }
+}
+
+// ─── Kanal bot↔bot: rute (ADR-0003 §3) ───────────────────────────────────────
+
+/**
+ * `POST /api/razgovor/od-bota`: brave i tajna u `BotKanal.primi`; uz 202 poruka ide u razgovor
+ * kao `izvor:'bot'` — NIKAD u ingest (bot-poruka ne otvara zadatak, ADR-0003 §4.4).
+ */
+export function odBotaPost(sloj: RazgovorSloj, raw: unknown, z: Zahtjev): ApiOdgovor {
+  const r = sloj.botKanal.primi(raw, z)
+  if (r.status !== 202 || !r.poruka) return { status: r.status, tijelo: r.tijelo }
+  const kanal = sloj.ulaz.aktivniKanal
+  if (!kanal || !sloj.ulaz.postavke().ukljucen) {
+    return { status: 503, tijelo: { error: 'razgovor ili Telegram petlja na ovom stroju ne radi' } }
+  }
+  const m = r.poruka
+  const drugi = m.izvor.charAt(0).toUpperCase() + m.izvor.slice(1)
+  const p: UlaznaPoruka = {
+    kanal: 'telegram', chatId: m.chatId, porukaId: m.telegramPorukaId || '',
+    posiljateljId: `bot:${m.izvor}`, posiljateljIme: `${drugi} (bot)`, posiljateljJeBot: true,
+    tekst: m.tekst, ts: m.ts || new Date().toISOString(), privatno: false, obracanjeBotu: true,
+    izvor: 'bot', lanac: { izvor: m.izvor, lanacId: m.lanacId, skok: m.skok, izvornik: m.izvornik },
+  }
+  sloj.jezgra.primi(p, kanal)
+  return { status: 202, tijelo: r.tijelo }
+}
+
+/** Kartica Config → Razgovor → Bot↔bot: postavke, zastavice, je li tajna postavljena (ne i ona). */
+export function botKanalGet(dbPath: string, sloj: RazgovorSloj | null, env: Record<string, string | undefined>): ApiOdgovor {
+  return sDb(dbPath, db => {
+    const { postavke, upozorenja } = getBotKanalPostavke(db)
+    return {
+      status: 200,
+      tijelo: {
+        postavke, upozorenja, tajna: env.TM_BOT_KANAL_TOKEN ? 'postavljena' : 'nedostaje',
+        ja: sloj ? imeUKanalu(sloj.ulaz.postavke().ime || 'bot') : null,
+        zastavice: sloj ? sloj.botKanal.stanje().zastavice : {},
+        povijest: botKanalPovijest(db, 20),
+      },
+    }
+  })
+}
+
+export function botKanalPut(dbPath: string, tijelo: unknown): ApiOdgovor {
+  const p = parseBotKanalPatch(tijelo)
+  if (!p.ok) return { status: 400, tijelo: { error: p.greske.join('; '), greske: p.greske, dopustena: p.dopustena } }
+  const t = (tijelo || {}) as Record<string, unknown>
+  const by = typeof t.by === 'string' && t.by.trim() ? t.by.trim().slice(0, 64) : 'config'
+  return sDb(dbPath, db => {
+    try {
+      const promjene = setBotKanalPostavke(db, p.value, by, 'api')
+      return { status: 200, tijelo: { ok: true, promjene, ...getBotKanalPostavke(db) } }
+    } catch (e: any) { return { status: 400, tijelo: { error: String(e?.message || e) } } }
+  })
+}
+
+/** Gumb na kartici: „Nastavi bot↔bot" / „Zaustavi" — šalje se i drugom kraju. */
+export async function botKanalRucno(sloj: RazgovorSloj, raw: unknown): Promise<ApiOdgovor> {
+  const t = (raw || {}) as Record<string, unknown>
+  const chatId = typeof t.chatId === 'number' ? String(t.chatId) : t.chatId
+  if (typeof chatId !== 'string' || !/^-?\d{1,20}$/.test(chatId)) return { status: 400, tijelo: { error: 'chatId je obavezan' } }
+  const by = typeof t.by === 'string' && t.by.trim() ? t.by.trim().slice(0, 64) : 'config'
+  if (t.radnja === 'nastavi') await sloj.botKanal.nastavi(chatId, by)
+  else if (t.radnja === 'zaustavi') await sloj.botKanal.zaustavi(chatId, by, 'rucno')
+  else return { status: 400, tijelo: { error: 'radnja: nastavi ili zaustavi' } }
+  return { status: 200, tijelo: { ok: true, zastavice: sloj.botKanal.stanje().zastavice } }
 }

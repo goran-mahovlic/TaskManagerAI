@@ -10,7 +10,7 @@
 // Autor: Malik (Security), TASK-5279.
 
 /** Otvaranje rezerviranih oznaka u tuđem tekstu: `[` → `(`, pa oznaka ostaje čitljiva, ali nije oznaka. */
-const OZNAKA = /\[(?=\s*(?:\/|OD\s*:|MEMORIJA|PRO[ČC]ITANO|PRETHODNI\s+KONTEKST|\[?\s*SEND_DOC))/giu
+const OZNAKA = /\[(?=\s*(?:\/|OD\s*:|OD\s+BOTA|MEMORIJA|PRO[ČC]ITANO|PRETHODNI\s+KONTEKST|\[?\s*SEND_DOC))/giu
 
 export function neutralizirajTekst(t: string): string {
   return t.replace(OZNAKA, '(')

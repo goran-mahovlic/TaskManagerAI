@@ -150,8 +150,16 @@ export interface RazgovorUlaza {
   ja?: JaBot | null
   /** Ako nedostaje, petlja složi Telegram kanal iz bot tokena. */
   kanal?: Kanal
+  /** Kanal koji petlja STVARNO koristi (upisuje ga petlja) — za LAN rutu bot↔bot (ADR-0003). */
+  aktivniKanal?: Kanal
   /** Zadnji pošiljatelji u dopuštenim chatovima (ime, @username, ID) za Config (TASK-5283). */
   zabiljezi?: (p: UlaznaPoruka) => void
+  /**
+   * Kanal bot↔bot (ADR-0003): svaka LJUDSKA poruka ide mu PRVA — stop-fraza „Prekini
+   * komunikaciju" ne smije zapeti ni na jednom filtru (ni na `preskociAkoSadrzi`), a obična
+   * poruka nulira strop. `stop`/`nastavak` = poruka je obrađena, dalje ne ide.
+   */
+  botKanal?: { ljudska(p: { chatId: string; posiljateljId: string; posiljateljIme: string; tekst: string }): Promise<'stop' | 'nastavak' | null> }
   /** Živi redak za Konzolu ploče (TASK-5285) — npr. „poruka → zadatak TASK-x (izvršitelj)". */
   konzola?: (redak: string, razina: 'info' | 'ok' | 'greska') => void
 }
@@ -261,6 +269,17 @@ export async function jedanProlaz(
     if (!m) { ishod.preskoceno++; continue }
 
     const tekstSirovi = m.text ?? m.caption ?? ''
+    // ADR-0003 §4.2: stop-fraza je prva provjera — prije dopuštenih chatova, ingesta i Filtra.
+    if (razg?.botKanal && m.from && m.from.is_bot !== true && tekstSirovi.trim()) {
+      let r: 'stop' | 'nastavak' | null = null
+      try {
+        r = await razg.botKanal.ljudska({
+          chatId: String(m.chat.id), posiljateljId: String(m.from.id),
+          posiljateljIme: m.from.first_name || m.from.username || String(m.from.id), tekst: tekstSirovi,
+        })
+      } catch (e: any) { ishod.greske.push(`bot-kanal: ${String(e?.message || e)}`) }
+      if (r) { ishod.preskoceno++; stanje.preskoceno++; continue }
+    }
     // TASK-5282: uz uključene privitke poruka SAMO sa slikom/dokumentom/glasom nije prazna.
     const sPrivitkom = imaPrivitak(m, priv)
     if (!tekstSirovi.trim() && !sPrivitkom) { ishod.preskoceno++; continue }
@@ -586,6 +605,25 @@ export function telegramKanal(
       // Poruka na koju se odgovara mogla je nestati — tada bez reply-a, ne bez odgovora.
       return ok || (replyTo ? posalji('sendMessage', { chat_id: chatId, text: tekst }) : false)
     },
+    // ADR-0003: id vidljive poruke ide drugom botu (`telegramPorukaId`, reply i zaštita od odjeka).
+    async posaljiTekstId(chatId, tekst, replyTo) {
+      const jedan = async (reply: boolean): Promise<string | null> => {
+        try {
+          const r = await fetch(`${base}/sendMessage`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              chat_id: chatId, text: tekst,
+              ...(reply && replyTo ? { reply_parameters: { message_id: Number(replyTo), allow_sending_without_reply: true } } : {}),
+            }),
+          })
+          if (!r.ok) return null
+          const j: any = await r.json().catch(() => ({}))
+          return j?.result?.message_id ? String(j.result.message_id) : ''
+        } catch { return null }
+      }
+      const id = await jedan(true)
+      return id !== null || !replyTo ? id : jedan(false)
+    },
     async posaljiDokument(chatId, putanja, opis) {
       try {
         const fd = new FormData()
@@ -691,6 +729,7 @@ export function pokreniTelegramPoller(opcije: PokretanjeOpcije = {}): Pokretanje
         () => razg?.ja || null),
     }
     : undefined
+  if (opcije.razgovor && razg) opcije.razgovor.aktivniKanal = razg.kanal
   let jaDohvacen = !!razg?.ja
 
   const korak = async () => {
