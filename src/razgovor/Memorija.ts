@@ -48,8 +48,13 @@ export async function dohvatiMemoriju(z: MemorijaZahtjev): Promise<MemorijaRezul
   const t0 = Date.now()
   const ctl = new AbortController()
   let istekao = false
-  const tajmer = setTimeout(() => { istekao = true; ctl.abort() }, z.rokMs)
-  try {
+  let tajmer: ReturnType<typeof setTimeout> | undefined
+  // Rok je tvrda granica (TASK-5286): Bun zna odbiti fetch tek ~13 s nakon abort-a, pa se
+  // ne čeka na njega — utrka s tajmerom koji odmah vraća odgovor bez memorije.
+  const rok = new Promise<never>((_res, rej) => {
+    tajmer = setTimeout(() => { istekao = true; ctl.abort(); rej(new Error('rok')) }, z.rokMs)
+  })
+  const posao = (async () => {
     const odg = await (z.fetchImpl ?? fetch)(`${z.url}/v1/default/banks/${encodeURIComponent(z.banka)}/memories/recall`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -57,7 +62,11 @@ export async function dohvatiMemoriju(z: MemorijaZahtjev): Promise<MemorijaRezul
       signal: ctl.signal,
     })
     if (!odg.ok) throw new Error(`Hindsight HTTP ${odg.status}`)
-    const d = await odg.json() as { results?: Array<{ id?: string; text?: unknown }> }
+    return await odg.json() as { results?: Array<{ id?: string; text?: unknown }> }
+  })()
+  posao.catch(() => {}) // zakašnjelo odbijanje nakon isteka roka ne smije postati unhandled rejection
+  try {
+    const d = await Promise.race([posao, rok])
     const sve = (Array.isArray(d?.results) ? d.results : [])
       .filter((x): x is { id?: string; text: string } => !!x && typeof x.text === 'string' && !!x.text.trim())
     r.cinjenica = sve.length
