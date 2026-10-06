@@ -391,3 +391,15 @@ Ovo provodi §13 (a). Ugovor je opisan u `docs/API.md` → „Kanal bot↔bot".
 - **Isporuka na čvor.** Čvor je na grani `zadatak/TASK-194` s vlastitim commitovima. Ova grana
   se na nju **spaja** (`git merge`), bez `checkout -f`. Kanal na oba kraja ostaje isključen dok
   ga vlasnik ne uključi.
+- **Stanje 07.10.2026. (UTC).** Čvor: `zadatak/TASK-194` je brzim pomakom (`--ff-only`) došao na
+  spojni commit `6d7b37e` (stari vrh `4c3e70a` + ova grana). Necommitane izmjene druge isporuke u
+  `src/razgovor/*` (TASK-5300) spremljene su prije spajanja i vraćene `git apply --3way`. Dodani i
+  uklonjeni retci su identični onima prije. Usluga je restartana u 23:03:40 UTC i StaleCodeCheck
+  izlazi s 0. Kartica pokazuje obje tajne kao „postavljena", a ruta vraća 403 „isključen". Tajne
+  su upisane na oba kraja (0600) i ukrštene, a stari `TM_BOT_KANAL_TOKEN` je obrisan s oba kraja.
+  `grupe.json` ima `provjeraAdrese:false` i `ukljucen:false`. Pomak sata čvora prema glavnom
+  stroju je −4 s (NTP na čvoru), unutar roka od ±60 s.
+- Testovi: paket 1436 pass / 0 fail. Na čvoru je 9 padova koji postoje i bez ove isporuke: brana
+  „naše vrijednosti" nad commitovima TASK-194 i test arhitekture koji traži putanju čvora. Ostali
+  testovi: kanal i razgovor na čvoru 122/0, Klaudijev kraj 16/0, glavna ploča 5/0, ukršteni E2E
+  oba kraja 1/0 (Klaudio → Šaban → glavna ploča s 172.24.0.1 → stop, tajne nisu na žici).
