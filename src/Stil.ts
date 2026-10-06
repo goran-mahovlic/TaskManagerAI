@@ -47,6 +47,20 @@ const SABLONA = /^(REGOC-STATUS|REGOC-IZLAZ|REGOC-POZADINA|===|📊\s*STATUS|➡
 const CRTA = /^(?:[-*_=—–~]\s*)+$/u
 /** Naslovi sažetka/zaključka — sve ispod njih se ne prenosi (sažetak sažetka). */
 const SAZETAK = /^(sažetak|sazetak|ukratko|zaključak|zakljucak|summary|tl;?dr)\s*:?\s*$/i
+/** Prihvatni kriteriji (provjera agenta za vratara) — za čitatelja u chatu šum; sve ispod se ne prenosi. */
+const KRITERIJI = /^(provjera\s+)?prihvatn\w*\s+kriterij/i
+/**
+ * Uvodna fraza bez sadržaja („Sve je na mjestu.", „Evo izvještaja:", „Gotovo.") — prvi redak
+ * mora biti ishod, ne najava (izmjereno na node-A, TASK-201).
+ */
+const UVOD = /^(?:sve je (?:na mjestu|gotovo|spremno)|gotovo|done|evo\b[^.:!]*|zadatak je (?:gotov|završen|zavrsen|zatvoren|izvršen|izvrsen)[^.:!]*)\s*[.:!]+\s*/i
+
+function makniUvod(t: string): string {
+  let r = t
+  for (let i = 0; i < 4 && UVOD.test(r); i++) r = r.replace(UVOD, '')
+  return r.trim()
+}
+
 /** Oznaka-etikete na početku retka: „📋 REZULTAT:", „REZULTAT:", „SUMMARY:". */
 const ETIKETA = /^(?:[\p{Extended_Pictographic}️]\s*)?(?:rezultat|summary|analysis|analiza|actions|results|sažetak|status)\s*:\s*/iu
 /** Vodeća ikona ishoda — da se ne ponovi uz našu. */
@@ -102,25 +116,9 @@ export function kratkiIzvjestaj(tekst: string, o: KratkoOpcije = {}): string {
   const izvor = String(tekst || '')
   const ishod = o.ishod ?? procitajIshod(izvor)
   const maxTocaka = Math.max(0, Math.min(5, o.maxTocaka ?? 4))
-  const sadrzaj: string[] = []
-  let uKodu = false
-  let tablicaPrvi = true
-  for (const sirovi of izvor.replace(/\r/g, '').split('\n')) {
-    const r = sirovi.trim()
-    if (r.startsWith('```')) { uKodu = !uKodu; continue }
-    if (uKodu || !r) { if (!r) tablicaPrvi = true; continue }
-    if (SABLONA.test(r) || CRTA.test(r)) continue
-    if (SAZETAK.test(ocistiRedak(r))) break
-    if (r.startsWith('|')) {
-      const t = redTablice(r, tablicaPrvi)
-      tablicaPrvi = false
-      if (t) sadrzaj.push(t)
-      continue
-    }
-    tablicaPrvi = true
-    const c = ocistiRedak(r).replace(ETIKETA, '').replace(VODECA_IKONA, '').replace(ETIKETA, '')
-    if (c) sadrzaj.push(c)
-  }
+  // Naslovi i uvodne fraze nisu sadržaj — osim kad drugog sadržaja nema (tada ostaju).
+  const sadrzaj = sadrzajniRetci(izvor, true)
+  if (!sadrzaj.length) sadrzaj.push(...sadrzajniRetci(izvor, false))
 
   // Kratko zaglavlje s dvotočkom („Ana završio zadatak:") spaja se sa sljedećim retkom.
   let prvi = sadrzaj.shift() || ''
@@ -135,6 +133,31 @@ export function kratkiIzvjestaj(tekst: string, o: KratkoOpcije = {}): string {
   for (const t of sadrzaj.slice(0, maxTocaka)) izlaz.push(`• ${skrati(t, MAX_TOCKA)}`)
   if (o.detalji) izlaz.push(`↪ detalji: ${o.detalji}`)
   return izlaz.join('\n')
+}
+
+function sadrzajniRetci(izvor: string, strogo: boolean): string[] {
+  const sadrzaj: string[] = []
+  let uKodu = false
+  let tablicaPrvi = true
+  for (const sirovi of izvor.replace(/\r/g, '').split('\n')) {
+    const r = sirovi.trim()
+    if (r.startsWith('```')) { uKodu = !uKodu; continue }
+    if (uKodu || !r) { if (!r) tablicaPrvi = true; continue }
+    if (SABLONA.test(r) || CRTA.test(r)) continue
+    if (SAZETAK.test(ocistiRedak(r)) || KRITERIJI.test(ocistiRedak(r))) break
+    if (strogo && /^#{1,6}\s/.test(r)) continue
+    if (r.startsWith('|')) {
+      const t = redTablice(r, tablicaPrvi)
+      tablicaPrvi = false
+      if (t) sadrzaj.push(t)
+      continue
+    }
+    tablicaPrvi = true
+    let c = ocistiRedak(r).replace(ETIKETA, '').replace(VODECA_IKONA, '').replace(ETIKETA, '')
+    if (strogo) c = makniUvod(c)
+    if (c) sadrzaj.push(c)
+  }
+  return sadrzaj
 }
 
 export function primijeniStil(tekst: string, stil: Stil | undefined, o: KratkoOpcije = {}): string {

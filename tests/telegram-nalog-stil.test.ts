@@ -101,6 +101,32 @@ describe('Stil kratko', () => {
     expect(k.split('\n').filter(r => r.startsWith('• '))).toEqual(['• free -h na node-A:', '• Mem: 15Gi'])
   })
 
+  // Stvarna poruka daemona na node-A (TASK-201, 06.10.2026.): uvodna fraza je bila „ishod",
+  // a naslovi i tablica prihvatnih kriterija postali su točke.
+  test('uvodna fraza, naslovi i prihvatni kriteriji nisu ni ishod ni točke', () => {
+    const t = [
+      '✅ **Jelena** završio zadatak:', '',
+      'Sve je na mjestu. Evo finalnog izvještaja.', '', '---', '',
+      '## TASK-201 — Rezultat', '',
+      '**node-A** je VirtualBox appliance VM `regocAI`.', '',
+      '**Uptime: 1 dan, 15 sati, 10 minuta** (boot: 2026-10-05 u 02:35:22).', '', '---', '',
+      '## Provjera prihvatnih kriterija (1–20)', '',
+      '| # | Stavka | Status | Dokaz |', '|---|---|---|---|',
+      '| 1 | Zahtjev korisnika | ✅ | curl |',
+    ].join('\n')
+    const reci = kratkiIzvjestaj(t, { maxTocaka: 5 }).split('\n')
+    expect(reci[0]).toBe('✅ Jelena završio zadatak: node-A je VirtualBox appliance VM regocAI.')
+    expect(reci.slice(1)).toEqual(['• Uptime: 1 dan, 15 sati, 10 minuta (boot: 2026-10-05 u 02:35:22).'])
+  })
+
+  test.each([
+    ['Gotovo. Disk je na 71 %.', 'Disk je na 71 %.'],
+    ['Evo rezultata: disk je na 71 %.', 'disk je na 71 %.'],
+    ['Zadatak je završen. Disk je na 71 %.', 'Disk je na 71 %.'],
+  ])('uvodna fraza %p se preskače', (ulaz, ocekivano) => {
+    expect(kratkiIzvjestaj(ulaz).split('\n')[0]).toBe(`✅ ${ocekivano}`)
+  })
+
   test('detalji idu u zadnji redak kao poveznica', () => {
     const k = kratkiIzvjestaj(DUGI, { detalji: 'http://127.0.0.1:17781/#TASK-9' })
     expect(k.split('\n').pop()).toBe('↪ detalji: http://127.0.0.1:17781/#TASK-9')
