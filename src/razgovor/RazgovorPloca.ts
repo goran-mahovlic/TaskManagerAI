@@ -17,7 +17,7 @@ import { izvrsiteljRazgovora } from './Izvrsitelj'
 import { ucitajAgente, ucitajUpute } from './Identitet'
 import { procitajPosiljatelje, zabiljeziPosiljatelja, type Posiljatelj } from './Posiljatelji'
 import type { RazgovorUlaza } from '../TelegramPoller'
-import { cistaAdresa, stvoriBotKanal, type BotKanal, type Zahtjev } from './BotKanal'
+import { MIN_TAJNA, cistaAdresa, stvoriBotKanal, type BotKanal, type Zahtjev } from './BotKanal'
 import {
   botKanalPovijest, createBotKanalReader, getBotKanalPostavke, parseBotKanalPatch, setBotKanalPostavke, spremisteUBazi,
 } from './BotKanalPostavke'
@@ -110,11 +110,12 @@ export function sklopiRazgovor(o: SklapanjeOpcije): RazgovorSloj {
   const bkPostavke = createBotKanalReader(o.dbPath)
   let ulaz: RazgovorUlaza
   let jezgra: RazgovorJezgra
-  // ADR-0003: kanal bot↔bot — tajna samo iz okoline stroja, nikad iz postavki.
+  // ADR-0003: kanal bot↔bot — tajne (po jedna po smjeru, TASK-5299) samo iz okoline stroja, nikad iz postavki.
   const botKanal = stvoriBotKanal({
     ja: imeUKanalu(postavke().ime || 'bot'),
     postavke: bkPostavke,
-    token: () => o.env.TM_BOT_KANAL_TOKEN,
+    tajnaSlanja: () => o.env.TM_BOT_KANAL_TAJNA_SLANJE,
+    tajnaPrimanja: () => o.env.TM_BOT_KANAL_TAJNA_PRIMANJE,
     spremiste: spremisteUBazi(o.dbPath),
     zadaniStopKorisnici: () => postavke().dopusteniKorisnici,
     javiUGrupu: (chatId, tekst) => ulaz.aktivniKanal?.posaljiTekst(chatId, tekst),
@@ -139,11 +140,11 @@ export function sklopiRazgovor(o: SklapanjeOpcije): RazgovorSloj {
 // ─── Kanal bot↔bot: rute (ADR-0003 §3) ───────────────────────────────────────
 
 /**
- * `POST /api/razgovor/od-bota`: brave i tajna u `BotKanal.primi`; uz 202 poruka ide u razgovor
+ * `POST /api/razgovor/od-bota`: brave i potpis u `BotKanal.primi` (nad sirovim tijelom `z.tijelo`); uz 202 poruka ide u razgovor
  * kao `izvor:'bot'` — NIKAD u ingest (bot-poruka ne otvara zadatak, ADR-0003 §4.4).
  */
-export function odBotaPost(sloj: RazgovorSloj, raw: unknown, z: Zahtjev): ApiOdgovor {
-  const r = sloj.botKanal.primi(raw, z)
+export function odBotaPost(sloj: RazgovorSloj, z: Zahtjev): ApiOdgovor {
+  const r = sloj.botKanal.primi(z)
   if (r.status !== 202 || !r.poruka) return { status: r.status, tijelo: r.tijelo }
   const kanal = sloj.ulaz.aktivniKanal
   if (!kanal || !sloj.ulaz.postavke().ukljucen) {
@@ -161,14 +162,16 @@ export function odBotaPost(sloj: RazgovorSloj, raw: unknown, z: Zahtjev): ApiOdg
   return { status: 202, tijelo: r.tijelo }
 }
 
-/** Kartica Config → Razgovor → Bot↔bot: postavke, zastavice, je li tajna postavljena (ne i ona). */
+const stanjeTajne = (t: string | undefined) => !t ? 'nedostaje' : t.length < MIN_TAJNA ? 'prekratka' : 'postavljena'
+
+/** Kartica Config → Razgovor → Bot↔bot: postavke, zastavice, jesu li tajne postavljene (ne i one). */
 export function botKanalGet(dbPath: string, sloj: RazgovorSloj | null, env: Record<string, string | undefined>): ApiOdgovor {
   return sDb(dbPath, db => {
     const { postavke, upozorenja } = getBotKanalPostavke(db)
     return {
       status: 200,
       tijelo: {
-        postavke, upozorenja, tajna: env.TM_BOT_KANAL_TOKEN ? 'postavljena' : 'nedostaje',
+        postavke, upozorenja, tajna: { slanje: stanjeTajne(env.TM_BOT_KANAL_TAJNA_SLANJE), primanje: stanjeTajne(env.TM_BOT_KANAL_TAJNA_PRIMANJE) },
         ja: sloj ? imeUKanalu(sloj.ulaz.postavke().ime || 'bot') : null,
         zastavice: sloj ? sloj.botKanal.stanje().zastavice : {},
         povijest: botKanalPovijest(db, 20),

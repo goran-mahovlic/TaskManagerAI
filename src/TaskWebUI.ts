@@ -65,7 +65,7 @@ import {
   zadnjiPosiljatelji, type RazgovorSloj,
 } from './razgovor/RazgovorPloca'
 import { ucitajAgente } from './razgovor/Identitet'
-import { smijeTajnuNa } from './razgovor/BotKanal'
+import { MIN_TAJNA, PUT_RUTE, ZAGLAVLJE_POTPISA, potpisi, smijeTajnuNa, type Zahtjev } from './razgovor/BotKanal'
 import { jeDopustenAgent } from './core/AgentIds'
 import {
   loadOrchestratorConfig, validateOrchestratorPatch, saveOrchestratorConfig, stanjeOrkestratora,
@@ -9166,7 +9166,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       var csv = function(a) { return _esc((a || []).join(', ')); };
       return '<b>' + _T('cfg_bk_naslov', 'Bot↔bot (LAN)') + '</b>' +
         '<div class="cfg-napomena">' + _T('cfg_bk_opis', 'Telegram botu ne isporučuje poruke drugog bota, pa dva bota razgovaraju preko LAN-a (poruka u grupi ostaje za ljude). Odgovor koji spominje @drugog bota ide mu i LAN-om. „Prekini komunikaciju" od stop-korisnika odmah zaustavlja razmjenu; nastavak samo gumbom ili „Nastavi komunikaciju". Bot-poruka nikad ne otvara zadatak.') +
-          '<br>' + _T('cfg_bk_tajna', 'Tajna (TM_BOT_KANAL_TOKEN u okolini stroja)') + ': <b>' + _esc(d.tajna || '?') + '</b> · ' + _T('cfg_bk_ja', 'ime ovog kraja') + ': <code>' + _esc(d.ja || '?') + '</code>' +
+          '<br>' + _T('cfg_bk_tajna', 'Tajne (TM_BOT_KANAL_TAJNA_SLANJE / _PRIMANJE u okolini stroja, HMAC potpis)') + ': <b>' + _esc(d.tajna ? ('slanje ' + d.tajna.slanje + ' · primanje ' + d.tajna.primanje) : '?') + '</b> · ' + _T('cfg_bk_ja', 'ime ovog kraja') + ': <code>' + _esc(d.ja || '?') + '</code>' +
           '<br>' + _T('cfg_bk_ovdje', 'Ovaj kraj') + ': ' + _bkZastavice(d.zastavice) +
           '<br>' + _T('cfg_bk_drugi_kraj', 'Drugi kraj') + ': ' + drugiKraj +
         '</div>' + upoz +
@@ -11014,23 +11014,22 @@ async function handleRazgovorPut(req: Request): Promise<Response> {
 }
 
 // ── Kanal bot↔bot preko LAN-a (ADR-0003, TASK-5290) ─────────────────────────────────
-// Tajna `TM_BOT_KANAL_TOKEN` samo iz okoline stroja; ruta postoji samo uz botKanal.ukljucen.
-function zahtjevBota(req: Request): { authorization: string | null; ip: string | null } {
-  let ip: string | null = null
-  try { ip = server.requestIP(req)?.address || null } catch { ip = null }
-  return { authorization: req.headers.get('authorization'), ip }
+// Tajne (TM_BOT_KANAL_TAJNA_SLANJE / _PRIMANJE, TASK-5299) samo iz okoline stroja; ruta postoji samo uz
+// botKanal.ukljucen. Zahtjev nosi HMAC potpis u zaglavlju — jezgra ga provjerava nad SIROVIM tijelom.
+function ipZahtjeva(req: Request): string | null {
+  try { return server.requestIP(req)?.address || null } catch { return null }
 }
 
 async function handleOdBota(req: Request, put: string): Promise<Response> {
-  const z = zahtjevBota(req)
+  const tijelo = req.method === 'GET' ? '' : await req.text().catch(() => '')
+  if (tijelo.length > 64_000) return razgovorOdgovor({ status: 413, tijelo: { error: 'tijelo je predugačko' } })
+  const z: Zahtjev = { ip: ipZahtjeva(req), potpis: req.headers.get(ZAGLAVLJE_POTPISA), tijelo }
   const sloj = razgovorSloj()
-  if (put === '/stanje') return razgovorOdgovor(sloj.botKanal.stanjeZaDrugog(z))
-  let tijelo: unknown
-  try { tijelo = await req.json() } catch { return razgovorOdgovor({ status: 400, tijelo: { error: 'Neispravan JSON' } }) }
-  const r = put === '/stop' ? sloj.botKanal.primiStop(tijelo, z)
-    : put === '/nastavi' ? sloj.botKanal.primiNastavak(tijelo, z)
-      : odBotaPost(sloj, tijelo, z)
-  // Dnevnik bez tijela (tekst je razgovor) i bez zaglavlja (tajna).
+  const r = put === '/stanje' ? sloj.botKanal.stanjeZaDrugog(z)
+    : put === '/stop' ? sloj.botKanal.primiStop(z)
+      : put === '/nastavi' ? sloj.botKanal.primiNastavak(z)
+        : odBotaPost(sloj, z)
+  // Dnevnik bez tijela (tekst je razgovor) i bez zaglavlja (potpis).
   console.log(`[bot-kanal] ${req.method} od-bota${put} s ${z.ip || '?'} → ${r.status}${(r.tijelo as any)?.razlog ? ` (${(r.tijelo as any).razlog})` : ''}`)
   return razgovorOdgovor(r)
 }
@@ -11041,14 +11040,16 @@ async function handleBotKanalConfigGet(): Promise<Response> {
     const r = botKanalGet(TM_DB, sloj, process.env)
     // Stanje drugog kraja (ADR-0003 §7) — kartica pokazuje oba; tajna ide samo u zaglavlje.
     const tijelo = r.tijelo as any
-    const token = process.env.TM_BOT_KANAL_TOKEN
+    const slanje = process.env.TM_BOT_KANAL_TAJNA_SLANJE || ''
     tijelo.drugiKraj = await Promise.all((tijelo.postavke?.drugi || []).map(async (d: any) => {
-      if (!token || !tijelo.postavke.ukljucen) return { ime: d.ime, greska: 'kanal isključen ili tajna nedostaje' }
-      // TASK-5291 (N3): tajna samo hostu s popisa adresa — `drugi.url` može promijeniti bilo tko s mreže.
-      if (!smijeTajnuNa(d.url, tijelo.postavke.adrese || [])) return { ime: d.ime, greska: 'host adrese ploče nije u popisu adresa — tajna ne ide' }
+      if (slanje.length < MIN_TAJNA || !tijelo.postavke.ukljucen) return { ime: d.ime, greska: 'kanal isključen ili tajna slanja nedostaje' }
+      // TASK-5291 (N3): upit samo hostu s popisa adresa — `drugi.url` može promijeniti bilo tko s mreže.
+      if (!smijeTajnuNa(d.url, tijelo.postavke.adrese || [])) return { ime: d.ime, greska: 'host adrese ploče nije u popisu adresa — upit ne ide' }
       try {
-        const o = await fetch(`${d.url}/api/razgovor/od-bota/stanje`, {
-          headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(3000),
+        // TASK-5299: GET je potpisan (prazno tijelo); tajna ne ide na žicu.
+        const o = await fetch(`${d.url}${PUT_RUTE}/stanje`, {
+          headers: { [ZAGLAVLJE_POTPISA]: potpisi(slanje, 'GET', `${PUT_RUTE}/stanje`, '', Math.floor(Date.now() / 1000)) },
+          signal: AbortSignal.timeout(3000),
         })
         const j: any = await o.json().catch(() => ({}))
         return o.ok ? { ime: d.ime, zastavice: j.zastavice || {} } : { ime: d.ime, greska: `HTTP ${o.status}${j?.error ? `: ${j.error}` : ''}` }
@@ -11063,7 +11064,7 @@ async function handleBotKanalConfigGet(): Promise<Response> {
 async function handleBotKanalConfigPut(req: Request): Promise<Response> {
   let tijelo: unknown
   try { tijelo = await req.json() } catch { return razgovorOdgovor({ status: 400, tijelo: { error: 'Neispravan JSON' } }) }
-  const r = botKanalPut(TM_DB, tijelo, zahtjevBota(req).ip)
+  const r = botKanalPut(TM_DB, tijelo, ipZahtjeva(req))
   if (r.status === 200) {
     const promjene = ((r.tijelo as any).promjene || []).filter((c: any) => c.changed).map((c: any) => c.kljuc)
     console.log(`[bot-kanal] postavke promijenjene: ${promjene.join(', ') || '(bez promjene)'}`)
@@ -11074,7 +11075,7 @@ async function handleBotKanalConfigPut(req: Request): Promise<Response> {
 async function handleBotKanalRucno(req: Request): Promise<Response> {
   let tijelo: unknown
   try { tijelo = await req.json() } catch { return razgovorOdgovor({ status: 400, tijelo: { error: 'Neispravan JSON' } }) }
-  const r = await botKanalRucno(razgovorSloj(), tijelo, zahtjevBota(req).ip, TM_DB)
+  const r = await botKanalRucno(razgovorSloj(), tijelo, ipZahtjeva(req), TM_DB)
   if (r.status === 200) console.log(`[bot-kanal] ručno: ${(tijelo as any)?.radnja} ${(tijelo as any)?.chatId}`)
   return razgovorOdgovor(r)
 }

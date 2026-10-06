@@ -45,7 +45,8 @@ stop-fraza, tvrdi strop i ručni gumb, a pali je samo ručni nastavak.**
 
 ## 3. Ugovor kanala (isti na oba kraja)
 
-`POST /api/razgovor/od-bota`, zaglavlje `Authorization: Bearer <TM_BOT_KANAL_TOKEN>`.
+`POST /api/razgovor/od-bota`, zaglavlje `Authorization: Bearer <TM_BOT_KANAL_TOKEN>`. Od TASK-5299 to zaglavlje
+zamjenjuje HMAC potpis `X-Bot-Kanal-Potpis` s po jednom tajnom za svaki smjer (§14).
 
 ```jsonc
 {
@@ -362,3 +363,31 @@ ili postavke svog kraja, pa i poništiti stop na SVOM kraju. N2 drži stop na dr
 Ostali hostovi u LAN-u i dalje mogu mijenjati postavke ploče (ploča nema prijavu — zaseban posao).
 Glasovna „prekini komunikaciju" se ne prepoznaje (provjera je samo nad tekstom); uređena poruka
 također ne (`allowed_updates=["message"]`).
+
+## 14. HMAC potpis i isporuka na čvor (TASK-5299, Jelena)
+
+Ovo provodi §13 (a). Ugovor je opisan u `docs/API.md` → „Kanal bot↔bot".
+- **Potpis umjesto tajne na žici.** Zaglavlje je `X-Bot-Kanal-Potpis: t=<unix s>,v1=<hex>`, a
+  vrijednost je HMAC-SHA256 nad `"<t>\n<METODA>\n<put>\n<sirovo tijelo>"`. Primatelj računa
+  potpis nad metodom i putem **rute koja obrađuje zahtjev**, a ne nad onim što tvrdi klijent.
+  Jezgra parsira samo potpisane bajtove (`Zahtjev.tijelo`), pa ruta ne može pročitati jedno tijelo
+  dok potpis jamči drugo. `Authorization: Bearer` se više ne prima i ne šalje.
+- **Vrijeme i ponavljanje.** `t` smije odstupati ±60 s, inače `401`. Potpis se provjerava prije
+  vremena, pa i zastarjeli lažni potpis dobiva odgovor „neispravan". Ponovljeni
+  `(izvor, lanacId, skok)` unutar 10 min dobiva `409 ponovljeno`. Pamćenje živi u procesu ploče;
+  nakon restarta ponavljanje i dalje drži ±60 s. Ponavljanje stopa ništa ne mijenja jer je stop
+  idempotentan. Ponavljanje nastavka također ne, jer se nastavak ne prenosi (N2).
+- **Po jedna tajna po smjeru.** Paket čita `TM_BOT_KANAL_TAJNA_SLANJE` i
+  `TM_BOT_KANAL_TAJNA_PRIMANJE` iz `config/postavke.env`. Klaudio ih čita iz
+  `~/.claude/tools/Telegram/config/.env`. Obje datoteke imaju prava 0600. Tajna slanja čvora je
+  tajna primanja glavnog stroja, i obratno. Tajna kraća od 32 znaka ne vrijedi. Ako su tajne
+  slanja i primanja na istom kraju jednake, odgovor je `403`, jer bi tada snimljena poruka mogla
+  biti odbijena natrag. `TM_BOT_KANAL_TOKEN` više ne postoji.
+- **Adresa iza docker-proxyja.** Uvedena je postavka jezgre `provjeraAdrese`, zadano `true`. Paket
+  je ne izlaže kroz API: čvor vidi pravu adresu, pa brava ostaje. Glavna ploča u kontejneru sve
+  klijente vidi kao `172.24.0.1`, zato `grupe.json` → `botKanal.provjeraAdrese: false`, a tamo
+  vrata drži potpis. `172.24.0.1` se **ne** upisuje u `adrese`. `adrese` i dalje određuju kojem
+  hostu smije ići potpisana poruka (N3).
+- **Isporuka na čvor.** Čvor je na grani `zadatak/TASK-194` s vlastitim commitovima. Ova grana
+  se na nju **spaja** (`git merge`), bez `checkout -f`. Kanal na oba kraja ostaje isključen dok
+  ga vlasnik ne uključi.

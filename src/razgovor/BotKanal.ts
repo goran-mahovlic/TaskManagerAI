@@ -13,7 +13,13 @@
 //   2. tvrdi strop: `strop` prijenosa u `prozorMin` bez poruke stop-korisnika, uz `skok ≤ strop`;
 //   3. nikad odgovor na vlastitu poruku (`izvor` = ja, ili vlastiti `telegramPorukaId`).
 //
-// Autorica: Jelena (Engineer), TASK-5290 — po dizajnu Kosjenke (ADR-0003, TASK-5289).
+// Autentikacija (TASK-5299, ADR-0003 §13 (a)): HMAC-SHA256 nad (ts, metoda, put, tijelo) u
+// zaglavlju `X-Bot-Kanal-Potpis: t=<unix s>,v1=<hex>`, `ts` ±60 s, ponovljeni (izvor, lanacId, skok)
+// u 10 min se odbija, tajna nikad ne ide na žicu. Po jedna tajna po smjeru: ovaj kraj potpisuje
+// tajnom SLANJA, a provjerava tajnom PRIMANJA (= tajna slanja drugog kraja). Adresa je druga brava
+// samo gdje se vidi prava adresa (`provjeraAdrese`); iza docker-proxyja svi su `172.24.0.1`.
+//
+// Autorica: Jelena (Engineer), TASK-5290, TASK-5299 — po dizajnu Kosjenke (ADR-0003, TASK-5289).
 
 export type RazlogStopa = 'fraza' | 'strop' | 'rucno'
 
@@ -36,11 +42,17 @@ export interface BotKanalPostavke {
   stopKorisnici: string[]
   strop: number
   prozorMin: number
+  /**
+   * Gleda li se adresa dolaznog zahtjeva (`adrese`). `false` SAMO gdje proces ne vidi pravu adresu
+   * klijenta (glavna ploča u kontejneru: svi su `172.24.0.1`, TASK-5291 §13) — tada drži potpis.
+   * `adrese` i dalje određuju kome smije ići potpisana poruka (N3).
+   */
+  provjeraAdrese: boolean
 }
 
 export const BOT_KANAL_ZADANO: Readonly<BotKanalPostavke> = Object.freeze({
   ukljucen: false, drugi: [], chatovi: [], adrese: [], ovlasti: 'citanje',
-  stopKorisnici: [], strop: 6, prozorMin: 10,
+  stopKorisnici: [], strop: 6, prozorMin: 10, provjeraAdrese: true,
 }) as BotKanalPostavke
 
 export interface ZastavicaChata {
@@ -119,6 +131,36 @@ export function spominje(tekst: string, korisnickoIme: string): boolean {
   return new RegExp(`(^|[^\\p{L}\\p{N}_])@${esc}(?![\\p{L}\\p{N}_])`, 'iu').test(tekst)
 }
 
+// ─── Potpis (TASK-5299) ──────────────────────────────────────────────────────
+
+export const PUT_RUTE = '/api/razgovor/od-bota'
+export const ZAGLAVLJE_POTPISA = 'X-Bot-Kanal-Potpis'
+/** Dopušteni pomak sata između dva kraja. */
+export const POTPIS_ROK_S = 60
+/** Najkraća tajna koja se priznaje (32 nasumična bajta = 64 hex znaka; ispod 32 znaka = nema je). */
+export const MIN_TAJNA = 32
+const PONOVLJENO_MS = 10 * 60_000
+
+function hmacHex(tajna: string, poruka: string): string {
+  return new Bun.CryptoHasher('sha256', tajna).update(poruka).digest('hex')
+}
+
+/** `t=<unix s>,v1=<HMAC-SHA256(tajna, "<t>\n<METODA>\n<put>\n<tijelo>")>` — tijelo je sirovi tekst. */
+export function potpisi(tajna: string, metoda: string, put: string, tijelo: string, tsS: number): string {
+  return `t=${tsS},v1=${hmacHex(tajna, `${tsS}\n${metoda.toUpperCase()}\n${put}\n${tijelo}`)}`
+}
+
+export type IshodPotpisa = 'ok' | 'nedostaje' | 'neispravan' | 'istekao'
+
+export function provjeriPotpis(zaglavlje: string | null | undefined, tajna: string, metoda: string, put: string, tijelo: string, sadaMs: number): IshodPotpisa {
+  const m = /^t=(\d{1,12}),v1=([0-9a-f]{64})$/.exec(String(zaglavlje || '').trim())
+  if (!m) return 'nedostaje'
+  const ts = Number(m[1])
+  // Prvo potpis, pa tek onda vrijeme: zastarjeli lažni potpis je i dalje „neispravan".
+  if (!jednakaTajna(m[2]!, potpisi(tajna, metoda, put, tijelo, ts).slice(-64))) return 'neispravan'
+  return Math.abs(sadaMs / 1000 - ts) <= POTPIS_ROK_S ? 'ok' : 'istekao'
+}
+
 // ─── Ugovor ──────────────────────────────────────────────────────────────────
 
 /** Usporedba tajne u stalnom vremenu (ne curi duljina zajedničkog prefiksa). */
@@ -130,19 +172,15 @@ export function jednakaTajna(a: string, b: string): boolean {
   return r === 0 && x.length > 0
 }
 
-export function bearer(authorization: string | null | undefined): string {
-  const m = /^Bearer\s+(.+)$/i.exec((authorization || '').trim())
-  return m ? m[1]!.trim() : ''
-}
-
 /** Host iz adrese ploče (`http://10.0.0.2:17781` → `10.0.0.2`); nečitljivo = ''. */
 export function hostUrla(url: string): string {
   try { return new URL(url).hostname.replace(/^\[|\]$/g, '') } catch { return '' }
 }
 
 /**
- * Tajna ide SAMO ploči čiji je host na popisu `adrese` (TASK-5291, N3): bez toga promjena
- * `drugi.url` (API ploče nema prijavu) šalje `Authorization: Bearer <tajna>` bilo kome.
+ * Potpisana poruka ide SAMO ploči čiji je host na popisu `adrese` (TASK-5291, N3): bez toga
+ * promjena `drugi.url` (API ploče nema prijavu) šalje razgovor bilo kome. Tajna sama ne ide
+ * nikamo (TASK-5299), ali sadržaj i dalje nije za tuđe.
  */
 export function smijeTajnuNa(url: string, adrese: string[]): boolean {
   const h = hostUrla(url)
@@ -193,8 +231,13 @@ export interface BotKanalOvisnosti {
   /** Ime ovog kraja u ugovoru (`saban` na node-A, `klaudio` na glavnom stroju). */
   ja: string
   postavke: () => BotKanalPostavke
-  /** `TM_BOT_KANAL_TOKEN` — nikad u postavkama, zapisu ni okolini modela (ADR-0003 §3). */
-  token: () => string | undefined
+  /**
+   * Tajne kanala, po jedna po smjeru (TASK-5299) — nikad u postavkama, zapisu, okolini modela ni na
+   * žici. `tajnaSlanja` potpisuje odlazno (`TM_BOT_KANAL_TAJNA_SLANJE`), `tajnaPrimanja` provjerava
+   * dolazno (`TM_BOT_KANAL_TAJNA_PRIMANJE` = tajna slanja drugog kraja).
+   */
+  tajnaSlanja: () => string | undefined
+  tajnaPrimanja: () => string | undefined
   spremiste: Spremiste
   /** Kad je `stopKorisnici` prazan: dopušteni korisnici razgovora koji su brojčani. */
   zadaniStopKorisnici?: () => string[]
@@ -210,7 +253,11 @@ export interface BotKanalOvisnosti {
   log?: (r: string) => void
 }
 
-export interface Zahtjev { authorization?: string | null; ip?: string | null }
+/**
+ * Dolazni zahtjev: `tijelo` je SIROVI tekst tijela kako je stigao (potpisuje se i parsira samo on),
+ * `potpis` je zaglavlje `X-Bot-Kanal-Potpis`, `ip` adresa klijenta kako je vidi proces.
+ */
+export interface Zahtjev { ip?: string | null; potpis?: string | null; tijelo?: string | null }
 
 export interface PrijenosUlaz {
   chatId: string
@@ -226,12 +273,12 @@ export interface PrijenosUlaz {
 export type PrijenosIshod = 'poslano' | 'iskljuceno' | 'bez-spomena' | 'zaustavljeno' | 'strop' | 'pad'
 
 export interface BotKanal {
-  /** Ruta `POST /api/razgovor/od-bota`. Uz 202 vraća i provjerenu poruku za razgovor. */
-  primi(raw: unknown, z: Zahtjev): Odgovor & { poruka?: BotPoruka }
+  /** Ruta `POST /api/razgovor/od-bota`. Uz 202 vraća i provjerenu poruku (iz potpisanih bajtova). */
+  primi(z: Zahtjev): Odgovor & { poruka?: BotPoruka }
   /** Rute `POST /od-bota/stop` i `/od-bota/nastavi` (drugi kraj javlja; ne prosljeđuje se dalje). */
-  primiStop(raw: unknown, z: Zahtjev): Odgovor
-  primiNastavak(raw: unknown, z: Zahtjev): Odgovor
-  /** `GET /od-bota/stanje` — samo uz tajnu; bez tajne u odgovoru. */
+  primiStop(z: Zahtjev): Odgovor
+  primiNastavak(z: Zahtjev): Odgovor
+  /** `GET /od-bota/stanje` — samo uz potpis; bez tajne u odgovoru. */
   stanjeZaDrugog(z: Zahtjev): Odgovor
   /** Poruka čovjeka u grupi. PRVA provjera, prije svih filtara (§4.2). */
   ljudska(p: { chatId: string; posiljateljId: string; posiljateljIme: string; tekst: string }): Promise<'stop' | 'nastavak' | null>
@@ -250,6 +297,9 @@ export function stvoriBotKanal(d: BotKanalOvisnosti): BotKanal {
   const ponoviMs = d.ponoviMs ?? 2000
   const uuid = d.uuid ?? (() => crypto.randomUUID())
   const zadnjaDojavaPada = new Map<string, number>()
+  /** (izvor, lanacId, skok) primljenih poruka → ms; ponavljanje u 10 min = 409 (TASK-5299). */
+  const primljeno = new Map<string, number>()
+  const tajna = (f: () => string | undefined): string => { const t = f() || ''; return t.length >= MIN_TAJNA ? t : '' }
 
   const st = (): BotKanalStanje => {
     const s = d.spremiste.citaj()
@@ -269,39 +319,52 @@ export function stvoriBotKanal(d: BotKanalOvisnosti): BotKanal {
     return (s.brojilo[chatId] || []).filter(ms => t - ms <= prozor)
   }
 
-  /** Autentikacija i opći uvjeti rute — `null` = prolazi. */
-  function vrata(z: Zahtjev, chatId?: string): Odgovor | null {
+  /**
+   * Autentikacija i opći uvjeti rute — `null` = prolazi. Potpis se provjerava nad metodom i putem
+   * RUTE koja obrađuje zahtjev (ne nad onim što klijent tvrdi) i nad sirovim tijelom.
+   */
+  function vrata(z: Zahtjev, metoda: 'GET' | 'POST', put: string, chatId?: string): Odgovor | null {
     const p = d.postavke()
     if (!p.ukljucen) return { status: 403, tijelo: { error: 'kanal bot↔bot je isključen' } }
-    const token = d.token() || ''
-    if (!token) return { status: 403, tijelo: { error: 'tajna kanala nije postavljena na ovom stroju' } }
-    if (!jednakaTajna(bearer(z.authorization), token)) return { status: 401, tijelo: { error: 'neispravna tajna' } }
-    if (!p.adrese.includes(cistaAdresa(z.ip))) return { status: 403, tijelo: { error: 'adresa nije na popisu' } }
+    const primanje = tajna(d.tajnaPrimanja)
+    if (!primanje) return { status: 403, tijelo: { error: 'tajna primanja kanala nije postavljena na ovom stroju' } }
+    if (primanje === d.tajnaSlanja()) return { status: 403, tijelo: { error: 'tajne slanja i primanja moraju biti različite (po jedna po smjeru)' } }
+    const ishod = provjeriPotpis(z.potpis, primanje, metoda, `${PUT_RUTE}${put}`, typeof z.tijelo === 'string' ? z.tijelo : '', sat())
+    if (ishod !== 'ok') {
+      const zasto = ishod === 'istekao' ? `potpis je stariji ili noviji od ${POTPIS_ROK_S} s (sat?)` : ishod === 'nedostaje' ? `nema zaglavlja ${ZAGLAVLJE_POTPISA}` : 'neispravan potpis'
+      return { status: 401, tijelo: { error: zasto } }
+    }
+    if (p.provjeraAdrese !== false && !p.adrese.includes(cistaAdresa(z.ip))) return { status: 403, tijelo: { error: 'adresa nije na popisu' } }
     if (chatId !== undefined && !p.chatovi.includes(chatId)) return { status: 403, tijelo: { error: 'chat nije na popisu' } }
     return null
   }
 
+  /** Potpisano tijelo kao objekt; `null` = nije JSON. */
+  const json = (z: Zahtjev): unknown => { try { return JSON.parse(String(z.tijelo ?? '')) } catch { return null } }
+
   async function zaDrugog(put: string, tijelo: unknown): Promise<boolean> {
     const p = d.postavke()
-    const token = d.token()
-    if (!token || !p.drugi.length) return false
+    const slanje = tajna(d.tajnaSlanja)
+    if (!slanje || !p.drugi.length) return false
     let ok = true
     for (const drugi of p.drugi) {
-      if (!smijeTajnuNa(drugi.url, p.adrese)) { log(`[bot-kanal] ${drugi.ime}: host adrese ploče nije u popisu adresa — tajna ne ide`); ok = false; continue }
-      const r = await posalji(`${drugi.url.replace(/\/+$/, '')}/api/razgovor/od-bota${put}`, tijelo, token)
+      if (!smijeTajnuNa(drugi.url, p.adrese)) { log(`[bot-kanal] ${drugi.ime}: host adrese ploče nije u popisu adresa — poruka ne ide`); ok = false; continue }
+      const r = await posalji(drugi.url, put, tijelo, slanje)
       ok = ok && r
     }
     return ok
   }
 
-  /** Jedan ponovljeni pokušaj nakon `ponoviMs`; nema reda za kasniju isporuku (§5). */
-  async function posalji(url: string, tijelo: unknown, token: string): Promise<boolean> {
+  /** Jedan ponovljeni pokušaj nakon `ponoviMs`; nema reda za kasniju isporuku (§5). Svaki pokušaj nosi svjež potpis. */
+  async function posalji(baza: string, put: string, tijelo: unknown, slanje: string): Promise<boolean> {
+    const url = `${baza.replace(/\/+$/, '')}${PUT_RUTE}${put}`
+    const tekst = JSON.stringify(tijelo)
     for (let pokusaj = 1; pokusaj <= 2; pokusaj++) {
       try {
         const r = await fetchImpl(url, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-          body: JSON.stringify(tijelo),
+          headers: { 'Content-Type': 'application/json', [ZAGLAVLJE_POTPISA]: potpisi(slanje, 'POST', `${PUT_RUTE}${put}`, tekst, Math.floor(sat() / 1000)) },
+          body: tekst,
           signal: AbortSignal.timeout(10_000),
         })
         if (r.status < 500) {
@@ -367,9 +430,11 @@ export function stvoriBotKanal(d: BotKanalOvisnosti): BotKanal {
   }
 
   return {
-    primi(raw, z) {
-      const prije = vrata(z)
+    primi(z) {
+      const prije = vrata(z, 'POST', '')
       if (prije) return prije
+      const raw = json(z)
+      if (raw === null) return { status: 400, tijelo: { error: 'Neispravan JSON' } }
       const v = provjeriTijelo(raw)
       if (!v.ok) return { status: v.status, tijelo: { error: v.error } }
       const m = v.value
@@ -377,6 +442,12 @@ export function stvoriBotKanal(d: BotKanalOvisnosti): BotKanal {
       if (!p.chatovi.includes(m.chatId)) return { status: 403, tijelo: { error: 'chat nije na popisu' } }
       if (!p.drugi.some(x => x.ime === m.izvor) && m.izvor !== d.ja) return { status: 403, tijelo: { error: 'izvor nije na popisu' } }
       if (m.izvor === d.ja) return { status: 409, tijelo: { razlog: 'vlastita' } }
+      // Ponovljena poruka (snimljena pa ponovno poslana u roku potpisa ili s novim potpisom) — TASK-5299.
+      const t = sat()
+      for (const [k, ms] of primljeno) if (t - ms > PONOVLJENO_MS) primljeno.delete(k)
+      const kljuc = `${m.izvor}\n${m.lanacId}\n${m.skok}`
+      if (primljeno.has(kljuc)) return { status: 409, tijelo: { razlog: 'ponovljeno' } }
+      primljeno.set(kljuc, t)
       const s = st()
       if (m.telegramPorukaId && s.poslano.some(x => x.id === `${m.chatId}:${m.telegramPorukaId}`)) {
         return { status: 409, tijelo: { razlog: 'vlastita' } }
@@ -394,19 +465,19 @@ export function stvoriBotKanal(d: BotKanalOvisnosti): BotKanal {
       return { status: 202, tijelo: { primljeno: true }, poruka: m }
     },
 
-    primiStop(raw, z) {
-      const t = tijeloChata(raw)
-      if (!t) return vrata(z) || { status: 400, tijelo: { error: 'chatId je obavezan' } }
-      const prije = vrata(z, t.chatId)
+    primiStop(z) {
+      const t = tijeloChata(json(z))
+      if (!t) return vrata(z, 'POST', '/stop') || { status: 400, tijelo: { error: 'chatId je obavezan' } }
+      const prije = vrata(z, 'POST', '/stop', t.chatId)
       if (prije) return prije
       void zaustavi(t.chatId, t.by, t.razlog || 'fraza', false)
       return { status: 200, tijelo: { ok: true, zaustavljen: true } }
     },
 
-    primiNastavak(raw, z) {
-      const t = tijeloChata(raw)
-      if (!t) return vrata(z) || { status: 400, tijelo: { error: 'chatId je obavezan' } }
-      const prije = vrata(z, t.chatId)
+    primiNastavak(z) {
+      const t = tijeloChata(json(z))
+      if (!t) return vrata(z, 'POST', '/nastavi') || { status: 400, tijelo: { error: 'chatId je obavezan' } }
+      const prije = vrata(z, 'POST', '/nastavi', t.chatId)
       if (prije) return prije
       // Nastavak s drugog kraja NE skida zastavicu (TASK-5291, N2): stop bi inače bio jak koliko
       // i slabiji kraj — tko ima tajnu ili ljusku na drugom stroju poništio bi stop vlasnika. Oba
@@ -417,7 +488,7 @@ export function stvoriBotKanal(d: BotKanalOvisnosti): BotKanal {
     },
 
     stanjeZaDrugog(z) {
-      const prije = vrata(z)
+      const prije = vrata(z, 'GET', '/stanje')
       if (prije) return prije
       return { status: 200, tijelo: { ja: d.ja, zastavice: st().zastavice } }
     },
@@ -450,7 +521,8 @@ export function stvoriBotKanal(d: BotKanalOvisnosti): BotKanal {
 
     async prenesi(u) {
       const p = d.postavke()
-      if (!p.ukljucen || !p.chatovi.includes(u.chatId) || !d.token()) return 'iskljuceno'
+      const slanje = tajna(d.tajnaSlanja)
+      if (!p.ukljucen || !p.chatovi.includes(u.chatId) || !slanje) return 'iskljuceno'
       const drugi = p.drugi.filter(x => spominje(u.tekst, x.korisnickoIme))
       if (!drugi.length) return 'bez-spomena'
       const s = st()
@@ -469,8 +541,8 @@ export function stvoriBotKanal(d: BotKanalOvisnosti): BotKanal {
       let ok = true
       for (const x of drugi) {
         const smijeTajnu = smijeTajnuNa(x.url, p.adrese)
-        if (!smijeTajnu) log(`[bot-kanal] ${x.ime}: host adrese ploče nije u popisu adresa — tajna ne ide`)
-        const r = smijeTajnu && await posalji(`${x.url.replace(/\/+$/, '')}/api/razgovor/od-bota`, tijelo, d.token()!)
+        if (!smijeTajnu) log(`[bot-kanal] ${x.ime}: host adrese ploče nije u popisu adresa — poruka ne ide`)
+        const r = smijeTajnu && await posalji(x.url, '', tijelo, slanje)
         ok = ok && r
         if (!r) {
           const t = sat()

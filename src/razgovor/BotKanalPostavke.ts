@@ -4,7 +4,7 @@
 // Zastavica po chatu (`razgovor.botKanal.stanje`) upisuje sustav (stop-fraza, strop, gumb);
 // brojilo stropa i vlastite poslane poruke žive u procesu (restart ih hvata `skok ≤ strop`).
 //
-// Tajna (`TM_BOT_KANAL_TOKEN`) NIJE postavka — samo okolina stroja (ADR-0003 §3).
+// Tajne (`TM_BOT_KANAL_TAJNA_SLANJE` / `_PRIMANJE`, TASK-5299) NISU postavka — samo okolina stroja (ADR-0003 §3).
 //
 // Autorica: Jelena (Engineer), TASK-5290.
 
