@@ -94,6 +94,11 @@ nepoznata polja (HTTP 400 s popisom dopuštenih).
 | `memorija.url` | `''` | URL | `''` → `TM_HINDSIGHT_URL` → memorija isključena |
 | `memorija.rokMs` | `1500` | 200–30000 | rok dohvata memorije, TVRD (TASK-5277: 5000 → 10000, recall kroz tunel na node-A mjeren 6–7,5 s; TASK-5292: strop 30000, node-A 20000) |
 | `memorija.oznakaUspjeha` | `false` | bool | uz uspješan dohvat odgovor počinje s 🧠 (bez memorije u načinu `on` UVIJEK ide `🧠🚫 bez memorije: <razlog>`, TASK-5292) |
+| `razgovor.glasPrepoznavanje` | `false` | bool | glasovna/zvučna/video-krug poruka → lokalni STT → `[GLAS] …` (§19; traži `telegram.privitci`) |
+| `razgovor.glas` | `'off'` | `off` \| `na-glasovno` \| `uvijek` | odgovor glasom (TTS → `sendVoice`) uz tekst (§19) |
+| `razgovor.glasUrl` | `''` | http(s) ili prazno | glasovni servis (`/stt`, `/tts`, `/health`); prazno = `http://127.0.0.1:8899` |
+| `razgovor.glasGlas` | `''` | ime glasa (`[\w.-]`, bez putanje) | piper model servisa bez `.onnx`; prazno = zadani glas servisa |
+| `razgovor.glasRokSek` | `120` | 10–600 | tvrdi rok jednog STT ili TTS poziva |
 
 Ključevi `memorija.*` su namjerno zajednički, ne `razgovor.memorija.*`: izvorni sustav već
 ima obrazac „prekidač po potrošaču + zajednička banka" (`memorija.telegram_sesija`), a node-A
@@ -638,3 +643,28 @@ pokreće), rezultati su išli u konzolu daemona umjesto u grupu, izravno obraća
    sadrži „<riječ s popisa>"") i izlaz (trajanje, 🧠/🧠🚫, trošak), tajne zatamnjene. Uz `rad` sesija smije
    ČITATI zapise razgovora, `posiljatelji.json` i `ingest.jsonl` (ne `sesije.json`, ne `radni/`
    drugih chatova, ne konfiguraciju bota i tajne).
+
+## 19. Dopunska odluka (TASK-5294, 06.10.2026.): glasovne poruke i odgovor glasom — lokalno
+
+Vlasnik (grupa node-A, 06.10. 19:19): bot mora transkribirati glasovne poruke i odgovarati
+glasom kao izvorni sustav, **sve na čvoru, ništa preko glavnog stroja**.
+
+- **Servis**: lokalni glasovni servis (na node-A `regoc-voice.service`, 127.0.0.1:8899 —
+  faster-whisper `small` + piper). Paket ga samo zove (`src/razgovor/Glas.ts`): `POST /stt`
+  sirovi bajtovi s vrstom zvuka → `{text}`; `POST /tts` `{text, voice?}` → ogg/opus;
+  `GET /health` → zadani glas i popis `voices` (Config ga prikazuje). Zadana adresa je loopback.
+- **Ulaz** (poller): `voice`, `audio` i `video_note` (nova vrsta privitka) od dopuštenog
+  pošiljatelja → privitak se spremi (§ TASK-5282) → STT → tekst poruke postaje
+  `[GLAS] <transkript>` + `[PRIVITAK: …]`, transkript se sprema uz privitak (`<datoteka>.txt`,
+  0600). Ime bota izgovoreno na početku (i u vokativu) je obraćanje, kao u pisanoj poruci.
+  Tuđi tekst ne može glumiti `[GLAS]` (neutralizira se kao `[PRIVITAK`).
+- **Odgovor**: `razgovor.glas` = `off` | `na-glasovno` (glasom samo kad je u potezu bilo
+  glasovno pitanje) | `uvijek`. Tekst ide PRVI, glas (`sendVoice`) uz njega; izgovara se odgovor
+  bez markdowna, koda, poveznica, emojija i oznake memorije, najviše 1200 znakova.
+- **Fail-open, vidljivo**: STT ne uspije → u chat ide `🎙️🚫 transkript nije uspio: <razlog>`, a
+  poruka ide dalje s istom oznakom i privitkom. TTS/slanje ne uspije → tekst je već poslan, uz
+  `🔊🚫 glasovni odgovor nije uspio: <razlog>`. Rok je tvrd (`razgovor.glasRokSek`).
+- **Glas**: `razgovor.glasGlas` bira piper model servisa po imenu (servis prima `voice` i odbija
+  putanje i nepoznata imena s 400). Hrvatski TTS glas je otvoreno pitanje izvan ovog paketa
+  (PRJ-035 / TASK-2695) — ovdje je samo omogućen odabir.
+
