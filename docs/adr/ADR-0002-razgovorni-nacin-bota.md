@@ -600,3 +600,11 @@ mape NE učitava sama — vodič za stroj mora doći kroz identitet.
    prepoznaje izričito imenovanog agenta („neka Ana napravi…", `@ana`, „Ana, …") i otvara zadatak s
    tim nositeljem (`nositeljIzPoruke`, samo dopušteni nositelji); potvrda u chatu nosi `→ <id>`.
    Pitanje („koji agenti postoje…") je ispod praga i ide razgovoru, koji zna agente iz identiteta.
+
+## 18. Nastavak: kanal bot↔bot (ADR-0003, TASK-5289)
+
+Pravilo §5.1 („pošiljatelj je bot → nikad") i §15 („sadrži @klaudioAI_bot → tišina") imaju
+jednu iznimku: poruku koja stiže LAN rutom `/api/razgovor/od-bota` s valjanom tajnom. Ta
+poruka uvijek ide na razinu ≤ `razgovor.botKanal.ovlasti` (zadano `citanje`) i nikad ne ide u
+ingest. Stop-fraza „Prekini komunikaciju" provjerava se prije cijelog Filtra. Detalji su u
+`docs/adr/ADR-0003-kanal-bot-bot-preko-lan-a.md`.
