@@ -69,7 +69,7 @@ export function sadrziRijec(tekst: string, rijec: string): boolean {
  * Vrijedi i za ulaz: poruka za drugoga ne otvara zadatak.
  */
 export function jeZaDrugog(p: UlaznaPoruka, s: Pick<RazgovorPostavke, 'preskociAkoSadrzi' | 'tisinaKadDrugom'>): boolean {
-  if (p.privatno || p.obracanjeBotu) return false
+  if (p.privatno || p.obracanjeBotu || p.izvor === 'bot') return false
   const spomeni = p.spomeni || []
   const o = p.odgovorNa && p.odgovorNa.id !== p.posiljateljId ? p.odgovorNa : undefined
   for (const unos of s.preskociAkoSadrzi || []) {
@@ -85,6 +85,9 @@ export function jeZaDrugog(p: UlaznaPoruka, s: Pick<RazgovorPostavke, 'preskociA
 
 export function trebaOdgovoriti(p: UlaznaPoruka, s: RazgovorPostavke): boolean {
   if (!s.ukljucen) return false
+  // Jedina iznimka od „bot → nikad": LAN kanal s tajnom (ADR-0003 §5.1). Brave protiv petlje
+  // (zastavica, strop, skok, vlastita) su već prošle na ruti.
+  if (p.izvor === 'bot') return true
   // Dva bota u istoj grupi ne smiju se dopisivati.
   if (p.posiljateljJeBot) return false
   if (jeZaDrugog(p, s)) return false

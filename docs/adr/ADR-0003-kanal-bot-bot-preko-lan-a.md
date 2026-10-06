@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Stanje** | Prijedlog (dizajn). Izvedbu radi Jelena (B1–B6), sigurnosni pregled Malik (§8) prije uključivanja |
+| **Stanje** | Izvedeno (TASK-5290): B1–B4 u paketu, B5 glavna ploča, B6 Klaudio. Zadano isključeno; sigurnosni pregled Malik (§8, TASK-5291) prije uključivanja |
 | **Datum** | 06.10.2026. |
 | **Autorica** | Kosjenka (Architect), TASK-5289 (PRJ-048) |
 | **Nalog** | Goran, grupa node-A (-5112799687), 06.10.2026. 18:41 |
@@ -312,3 +312,14 @@ kroz `restart_kad_mirno.sh`, a provjerava `StaleCodeCheck`.
 - **Odbačeno:** (1) kanal preko Telegrama (izmjereno ne radi); (2) zajednički `messages.db`
   preko mreže, NFS ili SSH (SQLite preko mreže, plus ključ na node-A); (3) samo IP allowlista
   bez tajne (§3); (4) automatski istek zastavice (Goran je tražio ručni nastavak).
+
+## 12. Izvedba (TASK-5290, Jelena)
+
+- Paket: `src/razgovor/BotKanal.ts` (jezgra ugovora i brava, bez uvoza — Klaudijev kraj drži
+  doslovnu kopiju u `~/.claude/tools/Telegram/lib/BotKanal.ts`), `BotKanalPostavke.ts`,
+  `RazgovorPloca.ts` (`odBotaPost`, kartica), rute u `TaskWebUI.ts`, stop-fraza prva u
+  `TelegramPoller.jedanProlaz`, `Razgovor.prekiniBotPoteze` + `extra.signal` u `CliExecutor`.
+- Ime ovog kraja u ugovoru = ime razgovora bez dijakritike (`Šaban` → `saban`).
+- Brojilo stropa i vlastite poruke žive u procesu ploče; zastavica u `settings`.
+- Testovi: `tests/bot-kanal.test.ts` (B1, B4, B5, B7, B8, B9, B11), `tests/razgovor-bot-kanal.test.ts`
+  (B2, B3, B4 iz poteza, B5 kroz poller, B6, prekid stvarnog procesa).
