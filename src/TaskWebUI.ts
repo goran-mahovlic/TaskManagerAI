@@ -162,7 +162,7 @@ import {
 import {
   TELEGRAM_CONFIG_PATH,
   loadTelegramConfig, saveTelegramConfig, validateTelegramPatch, telegramBotToken,
-  posaljiTelegramPoruku, obavijestiZadatak, odgovorTelegramPloci,
+  posaljiTelegramPoruku, obavijestiZadatak, oznakaMemorijeIzZadatka, odgovorTelegramPloci,
 } from './TelegramConfig'
 // Prigusenje proba (DIZAJN-integracije §1.4 t.3) — jedno mjesto za svih pet kartica.
 import { prigusenje } from './core/ProbeGuard'
@@ -13007,7 +13007,8 @@ async function handleUpdateTask(taskId: string, req: Request): Promise<Response>
     // Nikad ne ruši PUT — neuspjeh slanja se samo logira.
     if (task.status === 'completed' || task.status === 'failed') {
       try {
-        const tgRez = await obavijestiZadatak(taskId, String(task.title || ''), task.status)
+        // TASK-5292: rad BEZ memorije (🧠🚫 u izvještaju/bilješci) vidi se i u obavijesti.
+        const tgRez = await obavijestiZadatak(taskId, String(task.title || ''), task.status, undefined, oznakaMemorijeIzZadatka(task as any))
         if (tgRez.ok) {
           console.log(`[TELEGRAM] obavijest poslana: ${taskId} → ${task.status}`)
         } else {

@@ -399,15 +399,44 @@ export async function posaljiTelegramPoruku(
   }
 }
 
+const OZNAKA_BEZ_MEMORIJE = '🧠🚫'
+
+/**
+ * TASK-5292: oznaka rada BEZ memorije iz zadatka — prvi redak izvještaja ili zadnje bilješke
+ * koji počinje s 🧠🚫 (upisuje ga daemon). '' = memorija je bila ili nije tražena.
+ */
+export function oznakaMemorijeIzZadatka(t: { resultSummary?: unknown; progressNotes?: unknown } | null | undefined): string {
+  if (!t) return ''
+  const prvi = (x: unknown) => String(x ?? '').split('\n', 1)[0]!.trim()
+  // Izvještaj odlučuje kad postoji: retry s memorijom ne smije naslijediti staru bilješku 🧠🚫.
+  const izv = prvi(t.resultSummary)
+  if (izv) return izv.startsWith(OZNAKA_BEZ_MEMORIJE) ? izv.slice(0, 200) : ''
+  const biljeske = Array.isArray(t.progressNotes) ? t.progressNotes : []
+  for (let i = biljeske.length - 1; i >= 0; i--) {
+    const b = biljeske[i]
+    const r = prvi(typeof b === 'object' && b ? (b as any).text ?? (b as any).note ?? '' : b)
+    if (r.startsWith(OZNAKA_BEZ_MEMORIJE)) return r.slice(0, 200)
+  }
+  return ''
+}
+
+/** Tekst obavijesti o zadatku (HTML); oznaka memorije, ako je ima, ide u prvi redak. */
+export function tekstObavijestiZadatka(taskId: string, naslov: string, status: string, oznakaMemorije = ''): string {
+  const ikona = status === 'completed' ? '✅' : status === 'failed' ? '❌' : '📋'
+  const tekst = `${ikona} Zadatak <b>${_escHtml(taskId)}</b> — ${_escHtml(status)}\n${_escHtml(naslov)}`
+  return oznakaMemorije ? `${_escHtml(oznakaMemorije)}\n${tekst}` : tekst
+}
+
 /**
  * Pošalji obavijest o završenom zadatku.
- * Formatira poruku s ID-em zadatka, naslovom i statusom.
+ * Formatira poruku s ID-em zadatka, naslovom i statusom (i oznakom 🧠🚫, TASK-5292).
  */
 export async function obavijestiZadatak(
   taskId: string,
   naslov: string,
   status: string,
   configPath: string = TELEGRAM_CONFIG_PATH,
+  oznakaMemorije = '',
 ): Promise<{ ok: boolean; greska?: string }> {
   const cfg = loadTelegramConfig(configPath)
   // Poštuj pojedinačne prekidače
@@ -418,9 +447,7 @@ export async function obavijestiZadatak(
     return { ok: false, greska: 'obavijestGreska je isključeno' }
   }
 
-  const ikona = status === 'completed' ? '✅' : status === 'failed' ? '❌' : '📋'
-  const tekst = `${ikona} Zadatak <b>${_escHtml(taskId)}</b> — ${_escHtml(status)}\n${_escHtml(naslov)}`
-  return posaljiTelegramPoruku(tekst, configPath)
+  return posaljiTelegramPoruku(tekstObavijestiZadatka(taskId, naslov, status, oznakaMemorije), configPath)
 }
 
 /** HTML-escape za Telegram poruke (parse_mode: HTML). */
