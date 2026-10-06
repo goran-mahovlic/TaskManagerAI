@@ -323,6 +323,7 @@ export function ulaznaPorukaIzTelegrama(
     porukaId: String(m.message_id),
     posiljateljId: String(m.from?.id ?? ''),
     posiljateljIme,
+    ...(m.from?.username ? { posiljateljKorisnickoIme: m.from.username } : {}),
     posiljateljJeBot: m.from?.is_bot === true,
     tekst,
     ts: m.date ? new Date(m.date * 1000).toISOString() : new Date().toISOString(),

@@ -349,5 +349,9 @@ Odstupanja i napomene za pregled:
      čitač `puno` spušta na `citanje`. Time je odgovoreno i na pitanje (c).
   Proba s pravim modelom: točna naredba vraća stvarni broj blokiranih zadataka, pokušaj
   `curl … file://…config…` odbijen, `/etc/hostname` izvan radne mape nije pročitan.
+- `dopusteniKorisnici` prima **id ili korisničko ime** (bez `@`, neovisno o velikim slovima).
+  Vlasnik je na node-A upisao imena; usporedba samo po id-u ostavila bi bota tihim bez traga.
+  Napomena za pregled: korisničko ime u Telegramu može se promijeniti i kasnije ga može
+  preuzeti netko drugi — za razine `rad`/`puno` sigurniji je brojčani id.
 - Zbrajanje troška u telemetriju pod agentom `razgovor` nije izvedeno; trošak je po potezu u zapisu (`cijenaUsd`).
 - Stvarna proba (`claude -p`, haiku, razina `citanje`): `--resume` pamti sadržaj prethodnog poteza; čitanje konfiguracije kanala odbijeno i token nije iznesen; pisanje u radni dir odbijeno; dopušteni dokument poslan kroz SEND_DOC.

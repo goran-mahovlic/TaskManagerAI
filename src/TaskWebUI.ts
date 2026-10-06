@@ -9088,7 +9088,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         _razgPolje('razg-ukljucen', _T('cfg_razg_ukljucen', 'Razgovor uključen'), '<input id="razg-ukljucen" type="checkbox"' + (p.ukljucen ? ' checked' : '') + '>') +
         _razgPolje('razg-ime', _T('cfg_razg_ime', 'Ime bota (prazno = ime iz Telegrama)'), '<input id="razg-ime" type="text" maxlength="40" value="' + _esc(p.ime || '') + '">') +
         _razgPolje('razg-odgovaraNa', _T('cfg_razg_odgovara', 'Odgovara na'), _razgIzbor('razg-odgovaraNa', p.odgovaraNa, ['spomen', 'dopusteni', 'sve'])) +
-        _razgPolje('razg-dopusteni', _T('cfg_razg_dopusteni', 'Dopušteni korisnici (id, zarezom)'), '<input id="razg-dopusteni" type="text" value="' + _esc((p.dopusteniKorisnici || []).join(', ')) + '">') +
+        _razgPolje('razg-dopusteni', _T('cfg_razg_dopusteni', 'Dopušteni korisnici (id ili korisničko ime, zarezom)'), '<input id="razg-dopusteni" type="text" value="' + _esc((p.dopusteniKorisnici || []).join(', ')) + '">') +
         _razgPolje('razg-ovlasti', _T('cfg_razg_ovlasti', 'Ovlasti'), _razgIzbor('razg-ovlasti', p.ovlasti, ['citanje', 'rad', 'puno'])) +
         _razgPolje('razg-model', _T('cfg_razg_model', 'Model (prazno = model-config)'), '<input id="razg-model" type="text" value="' + _esc(p.model || '') + '">') +
         _razgPolje('razg-rokSek', _T('cfg_razg_rok', 'Rok odgovora (s, 30–1800)'), '<input id="razg-rokSek" type="number" min="30" max="1800" value="' + p.rokSek + '">') +

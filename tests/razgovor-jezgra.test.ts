@@ -228,6 +228,13 @@ describe('ovlasti iznad citanja vrijede samo za dopuštene pošiljatelje', () =>
     expect(alati(b!)).toContain('Edit(')
   })
 
+  test('dopušten po korisničkom imenu → rad', async () => {
+    const o = okolina({ burstMs: 0, ovlasti: 'rad', dopusteniKorisnici: ['ivan'] })
+    o.r.primi(por({ posiljateljId: '7', posiljateljKorisnickoIme: 'Ivan' }), o.kanal)
+    await o.r.mirno()
+    expect(alati(o.izv.zahtjevi[0]!)).toContain('Edit(')
+  })
+
   test('spojeni burst s jednim nedopuštenim pošiljateljem → citanje', async () => {
     const o = okolina({ burstMs: 30, ovlasti: 'rad', dopusteniKorisnici: ['42'] })
     o.r.primi(por({ posiljateljId: '42' }), o.kanal)

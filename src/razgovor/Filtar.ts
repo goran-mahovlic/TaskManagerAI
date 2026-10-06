@@ -23,6 +23,20 @@ export function pocinjeImenom(tekst: string, ime: string): boolean {
   return iza === '' || !/[\p{L}\p{N}_]/u.test(iza)
 }
 
+/**
+ * Je li pošiljatelj na popisu dopuštenih: po id-u ili po korisničkom imenu (bez `@`, bez
+ * obzira na veličinu slova). Ploča prima oboje, a vlasnik prirodno upiše ime, ne broj —
+ * usporedba samo po id-u ostavljala je bota tihim bez ikakvog traga.
+ */
+export function jeDopusten(p: Pick<UlaznaPoruka, 'posiljateljId' | 'posiljateljKorisnickoIme'>, dopusteni: string[]): boolean {
+  const ime = (p.posiljateljKorisnickoIme || '').replace(/^@/, '').toLowerCase()
+  return dopusteni.some(d => {
+    const x = d.trim()
+    if (x === p.posiljateljId) return true
+    return !!ime && x.replace(/^@/, '').toLowerCase() === ime
+  })
+}
+
 export function trebaOdgovoriti(p: UlaznaPoruka, s: RazgovorPostavke): boolean {
   if (!s.ukljucen) return false
   // Dva bota u istoj grupi ne smiju se dopisivati.
@@ -30,6 +44,6 @@ export function trebaOdgovoriti(p: UlaznaPoruka, s: RazgovorPostavke): boolean {
   const obracanje = p.privatno || p.obracanjeBotu
   if (s.odgovaraNa === 'sve') return true
   if (!obracanje) return false
-  if (s.odgovaraNa === 'dopusteni') return s.dopusteniKorisnici.includes(p.posiljateljId)
+  if (s.odgovaraNa === 'dopusteni') return jeDopusten(p, s.dopusteniKorisnici)
   return true
 }

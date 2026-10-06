@@ -160,6 +160,10 @@ describe('adapter: obraćanje botu (ADR §5)', () => {
     expect(ulaznaPorukaIzTelegrama(m({ reply_to_message: { from: { id: 901, is_bot: true } } }), 'a?', JA, '').obracanjeBotu).toBe(false)
   })
 
+  test('korisničko ime pošiljatelja se prenosi (za dopuštene korisnike po imenu)', () => {
+    expect(ulaznaPorukaIzTelegrama(m({}), 'x', JA, '').posiljateljKorisnickoIme).toBe('ivan')
+  })
+
   test('privatni chat i bot-pošiljatelj se prenose', () => {
     const u = ulaznaPorukaIzTelegrama(m({ chat: { id: 42, type: 'private' }, from: { id: 5, is_bot: true, first_name: 'B' } }), 'x', JA, '')
     expect(u.privatno).toBe(true)

@@ -13,6 +13,8 @@ export interface UlaznaPoruka {
   porukaId: string
   posiljateljId: string
   posiljateljIme: string
+  /** Korisničko ime u kanalu (Telegram `username`), bez `@`; nema ga svaki korisnik. */
+  posiljateljKorisnickoIme?: string
   posiljateljJeBot: boolean
   tekst: string
   ts: string

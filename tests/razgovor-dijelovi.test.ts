@@ -45,6 +45,9 @@ describe('J4 — kada bot odgovara', () => {
     ['dopusteni: obraćanje od dopuštenog → odgovara', por({ obracanjeBotu: true }), post({ odgovaraNa: 'dopusteni', dopusteniKorisnici: ['42'] }), true],
     ['dopusteni: privatno od tuđeg → šuti', por({ privatno: true, posiljateljId: '7' }), post({ odgovaraNa: 'dopusteni', dopusteniKorisnici: ['42'] }), false],
     ['razgovor isključen → šuti', por({ privatno: true }), post({ ukljucen: false }), false],
+    ['dopusteni po korisničkom imenu (bez @, velika slova)', por({ obracanjeBotu: true, posiljateljId: '7', posiljateljKorisnickoIme: 'Marko' }), post({ odgovaraNa: 'dopusteni', dopusteniKorisnici: ['marko'] }), true],
+    ['dopusteni s @ u popisu', por({ obracanjeBotu: true, posiljateljId: '7', posiljateljKorisnickoIme: 'marko' }), post({ odgovaraNa: 'dopusteni', dopusteniKorisnici: ['@marko'] }), true],
+    ['dopusteni: tuđe korisničko ime → šuti', por({ obracanjeBotu: true, posiljateljId: '7', posiljateljKorisnickoIme: 'netko' }), post({ odgovaraNa: 'dopusteni', dopusteniKorisnici: ['marko'] }), false],
   ])('%s', (_, p, s, ocekivano) => {
     expect(trebaOdgovoriti(p as UlaznaPoruka, s as RazgovorPostavke)).toBe(ocekivano as boolean)
   })

@@ -17,7 +17,7 @@ import { join } from 'path'
 import type { ExecRequest, ExecResult, Executor } from '../core/orchestrator/Ports'
 import type { Kanal, Razgovor, UlaznaPoruka } from './Kanal'
 import type { RazgovorPostavke } from './RazgovorPostavke'
-import { trebaOdgovoriti } from './Filtar'
+import { jeDopusten, trebaOdgovoriti } from './Filtar'
 import { argumentiOvlasti, okolinaRazgovora } from './Ovlasti'
 import { sastaviIdentitet } from './Identitet'
 import { dohvatiMemoriju, type MemorijaRezultat } from './Memorija'
@@ -267,7 +267,7 @@ export function stvoriRazgovor(d: RazgovorOvisnosti): RazgovorJezgra {
 
     // Ovlasti iznad `citanje` vrijede SAMO ako je svaki pošiljatelj u potezu dopušten — inače bi
     // svatko tko spomene bota dobio prava predviđena za vlasnika (sigurnosni pregled TASK-5277).
-    const ovlasti = s.ovlasti !== 'citanje' && stavke.every(x => s.dopusteniKorisnici.includes(x.p.posiljateljId))
+    const ovlasti = s.ovlasti !== 'citanje' && stavke.every(x => jeDopusten(x.p, s.dopusteniKorisnici))
       ? s.ovlasti : 'citanje'
     const oznaka = `${p.kanal}:${p.chatId}`
     const zahtjev = (resume?: string): ExecRequest => ({
