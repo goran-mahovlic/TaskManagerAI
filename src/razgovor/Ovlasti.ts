@@ -46,13 +46,21 @@ export function naredbePloce(port: number): string[] {
   return [baza, ...STATUSI_PLOCE.map(st => `${baza}?status=${st}`)]
 }
 
+/**
+ * Za SVE razine: samo postavke iz `--settings`, bez MCP poslužitelja. Inače sesija učita
+ * `~/.claude` korisnika usluge (hookovi i njihov kontekst, allow liste koje bi proširile
+ * `citanje`) i `radniDir/CLAUDE.md` — a njega `rad` smije napisati, pa bi postao trajna
+ * uputa za sve buduće poteze, i one na `citanje` (Malikov pregled, TASK-5280).
+ */
+const IZOLACIJA = ['--setting-sources', '', '--strict-mcp-config']
+
 export function argumentiOvlasti(razina: Ovlasti, o: OvlastiOpcije): string[] {
   const settings = JSON.stringify({ permissions: { deny: zabrane(o) } })
-  if (razina === 'puno') return ['--dangerously-skip-permissions', '--settings', settings]
+  if (razina === 'puno') return [...IZOLACIJA, '--dangerously-skip-permissions', '--settings', settings]
   // Pravilo `Read(...)` vrijedi i za Glob i Grep — čitanje samo unutar radne mape.
   const alati = [`Read(/${o.radniDir}/**)`, ...naredbePloce(o.port).map(n => `Bash(${n})`)]
   if (razina === 'rad') alati.push(`Edit(/${o.radniDir}/**)`, `Write(/${o.radniDir}/**)`)
-  return ['--permission-mode', 'default', '--allowedTools', alati.join(' '), '--settings', settings]
+  return [...IZOLACIJA, '--permission-mode', 'default', '--allowedTools', alati.join(' '), '--settings', settings]
 }
 
 const DOPUSTENE_VARIJABLE = ['PATH', 'HOME', 'USER', 'LOGNAME', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TZ', 'TERM', 'TMPDIR', 'SHELL']

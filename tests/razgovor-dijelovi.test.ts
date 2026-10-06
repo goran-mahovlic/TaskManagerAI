@@ -115,6 +115,17 @@ describe('J9 — ovlasti i okolina izvršitelja', () => {
     expect(a).toContain('--settings')
   })
 
+  // TASK-5280 (Malikov pregled): bez ovoga sesija učita ~/.claude korisnika usluge (hookovi,
+  // njegove allow liste, kontekst) i `radniDir/CLAUDE.md` koji `rad` smije napisati — trajna
+  // uputa za sve buduće poteze, i one na `citanje`. Mjereno na CLI 2.1.280.
+  test.each(['citanje', 'rad', 'puno'] as const)('%s: bez korisničkih/projektnih postavki i tuđih MCP poslužitelja', razina => {
+    const a = argumentiOvlasti(razina, o)
+    expect(a).toContain('--setting-sources')
+    expect(a[a.indexOf('--setting-sources') + 1]).toBe('')
+    expect(a).toContain('--strict-mcp-config')
+    expect(a).not.toContain('--mcp-config')
+  })
+
   test('okolina je bijela lista: bez tokena, bez CLAUDECODE, uz TM_RAZGOVOR', () => {
     const env = okolinaRazgovora({
       PATH: '/bin', HOME: '/home/x', LANG: 'hr_HR.UTF-8', CLAUDECODE: '1', CLAUDE_CODE_ENTRYPOINT: 'cli',

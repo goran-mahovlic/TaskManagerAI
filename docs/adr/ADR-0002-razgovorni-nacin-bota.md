@@ -190,6 +190,61 @@ Pitanja za Malika (odgovor upisati ovdje prije R3): (a) je li `Bash(curl …)` u
 uzak ili treba vlastiti alat `ploca_get`; (b) `WebFetch` u `citanje` — da ili ne (izlaz prema
 van); (c) treba li `puno` uopće postojati u paketu ili samo kroz `config/` datoteku.
 
+### 7.1 Presuda sigurnosnog pregleda (Malik, TASK-5280, 06.10.2026.)
+
+Pregledano stanje `0e25b17` (uključuje ispravke §14). Probe s pravim `claude -p` (CLI 2.1.280,
+haiku), zastavice iz `argumentiOvlasti`, okolina iz `okolinaRazgovora`, lažni kanarinci.
+
+**Nađeno i popravljeno u ovom pregledu (VISOKO):** sesija je učitavala korisničke i projektne
+postavke CLI-ja. (1) `~/.claude` korisnika usluge — hookovi i njihov kontekst ušli su u
+razgovor (model je na `citanje` nabrojio PAI/REGOČ kontekst operatora i hostname), a allow
+liste iz tih postavki bi tiho proširile `citanje`. (2) `rad` smije pisati u `radniDir`, a
+`radniDir/CLAUDE.md` CLI učitava kao uputu: upisan na `rad`, idući potez na `citanje` (drugi
+pošiljatelj) poslušao je podmetnutu uputu — trajna injekcija preko vrata „svaki pošiljatelj
+dopušten". Popravak: sve razine dobivaju `--setting-sources "" --strict-mcp-config`
+(`Ovlasti.ts` `IZOLACIJA`, test J9). Nakon popravka: podmetnuti `CLAUDE.md` ne djeluje,
+kontekst operatora ne ulazi, točni curl i dalje radi, `Read` izvan radne mape odbijen.
+(`--settings` iz zastavice se i dalje primjenjuje — deny lista vrijedi.)
+
+**(a) `Bash(curl …)` — dovoljno uzak, vlastiti alat zasad ne treba.** Točne naredbe bez
+zamjenskog znaka (ispravak §14.2) drže. Proba: CLI cijepa složene naredbe i provjerava svaki
+dio — `curl… | wc -c && cat ../izvan.txt`, `…; echo $TM_RAZGOVOR`, `… > blokirani.json`,
+`… ; head ../config/…` odbijeni; prolazi samo `curl… | head/wc` (filtrira izlaz ploče, ništa
+ne iznosi). `.claude/settings*.json` u radnoj mapi CLI ne da pisati ni na `rad`. Namjenski
+alat `ploca_get` (MCP) treba tek kad `rad` dobije POST na ploču — tada NE uzorak `curl -X POST*`.
+Napomena: GET vraća CIJELU ploču (svi projekti, opisi) svakom članu grupe — to je odluka o
+povjerljivosti ploče, ne rupa; za node-A prihvatljivo jer je ploča njihova.
+
+**(b) `WebFetch` na `citanje` — NE.** Bilo koji URL s upitom je kanal za iznošenje svega što
+je model vidio (ploča, memorija, radna mapa) prema van, bez traga u zapisu kanala. Proba:
+nije dopušten (odbijen u `permission_denials`). Ako zatreba pretraga, samo `WebFetch(domain:…)`
+na popisu domena i samo na `rad`.
+
+**(c) `puno` — ostaje u paketu, ali samo kako je sada:** otključava ga isključivo
+`TM_RAZGOVOR_PUNO=1` u okolini ploče (vlasnik stroja), `source`/`by` iz tijela se ne
+priznaje (API nema prijavu). Bez zastavice čitač spušta na `citanje`. Na **node-A `puno`
+se NE uključuje** — razgovor je grupni, a `puno` = ljuska korisnika usluge za svakoga s
+popisa dopuštenih (popis po korisničkom imenu je preuzimljiv, v. §14).
+
+**(d) `ANTHROPIC_API_KEY` / `CLAUDE_CODE_OAUTH_TOKEN` / `ANTHROPIC_BASE_URL` u okolini —
+prihvatljivo za `citanje`/`rad`, NE za `puno`.** Na `citanje`/`rad` model nema čime pročitati
+okolinu (proba: `printenv`, `echo $X`, `env | grep` odbijeni). Na `puno` ih model čita
+(`env`, `/proc/self/environ`); deny lista je tamo samo zaštita najboljim trudom (proba:
+`cat x.env` odbijen, ali `python3 -c open(...)`/`base64` nije pokriven). Dakle `puno` =
+povjerenje kao u vlasnika ljuske; tko to ne prihvaća, ne uključuje `puno`. Preporuka za
+kasnije: na `puno` prijava CLI-ja kroz datoteku (`~/.claude/.credentials.json`, deny) umjesto
+okoline — ne blokira node-A.
+
+**Preostali rizici (niski, ne blokiraju node-A):** jedan `radniDir` za sve chatove (grupa B
+čita/šalje što je grupa A napisala — za node-A jedna grupa; kasnije `radni/<kanal>/<chatId>`);
+SEND_DOC smije i `$TM_HOME/data/izvjestaji` (svaki član grupe može tražiti izvještaj po imenu);
+`dopusteniKorisnici` po korisničkom imenu — za `rad` upisati brojčane id-eve.
+
+**Odobrenje za node-A (-5112799687):** sigurnosno ODOBRENO za `ukljucen=true` uz
+`ovlasti=citanje`, `odgovaraNa=spomen|dopusteni`, bez `TM_RAZGOVOR_PUNO`, **tek nakon što je
+popravak `IZOLACIJA` (TASK-5280) na node-A u pogonu** (proces ploče/pollera restartan).
+`rad` uz brojčane id-eve u `dopusteniKorisnici`. Konačno uključenje čeka i Potjehov E2E (§11).
+
 ## 8. Zapis razgovora po chatu
 
 `$TM_HOME/data/razgovor/<kanal>/<chatId>/<YYYY-MM-DD>.jsonl`, jedan redak po potezu:
