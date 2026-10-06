@@ -560,3 +560,11 @@ node-A: `odgovaraNa=dopusteni-sve`, `preskociAkoSadrzi=["Bubi","Goran","@klaudio
 Testovi: `tests/razgovor-drugom.test.ts` (tablica slučajeva Filtra, adapter, ulaz, postavke,
 pošiljatelji, jezgra).
 
+
+## 16. Nastavak: kanal bot↔bot (ADR-0003, TASK-5289)
+
+Pravilo §5.1 („pošiljatelj je bot → nikad") i §15 („sadrži @klaudioAI_bot → tišina") imaju
+jednu iznimku: poruku koja stiže LAN rutom `/api/razgovor/od-bota` s valjanom tajnom. Ta
+poruka uvijek ide na razinu ≤ `razgovor.botKanal.ovlasti` (zadano `citanje`) i nikad ne ide u
+ingest. Stop-fraza „Prekini komunikaciju" provjerava se prije cijelog Filtra. Detalji su u
+`docs/adr/ADR-0003-kanal-bot-bot-preko-lan-a.md`.
