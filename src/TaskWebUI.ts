@@ -59,7 +59,7 @@ import {
   loadGitHubConfig, validateGitHubPatch, saveGitHubConfig, stanjeGitHub, probajGitHub, GITHUB_CONFIG_PATH,
   githubKonfigModul,
 } from './GitHubConfig'
-import { probajUlaz, stanjeUlaza, pokreniTelegramPoller } from './TelegramPoller'
+import { probajUlaz, stanjeUlaza, pokreniTelegramPoller, uskladiTelegramPoller } from './TelegramPoller'
 import {
   loadOrchestratorConfig, validateOrchestratorPatch, saveOrchestratorConfig, stanjeOrkestratora,
   orchestratorConfigPath,
@@ -159,7 +159,7 @@ import {
 // ~/.claude/tools/Telegram/ (to je Klaudio agent, glavni stroj). Ovo je NOVI modul u paketu.
 import {
   TELEGRAM_CONFIG_PATH,
-  loadTelegramConfig, saveTelegramConfig, validateTelegramPatch,
+  loadTelegramConfig, saveTelegramConfig, validateTelegramPatch, telegramBotToken,
   posaljiTelegramPoruku, obavijestiZadatak, odgovorTelegramPloci,
 } from './TelegramConfig'
 // Prigusenje proba (DIZAJN-integracije §1.4 t.3) — jedno mjesto za svih pet kartica.
@@ -10653,10 +10653,20 @@ async function handleTelegramConfigPut(req: Request): Promise<Response> {
   const provjera = validateTelegramPatch(tijelo)
   if (!provjera.ok) return json({ error: provjera.greske.join('; '), greske: provjera.greske }, 400)
   try {
+    const prijasnjiToken = telegramBotToken(loadTelegramConfig())
     const postavke = saveTelegramConfig(provjera.zakrpa)
     // Ni odgovor ni dnevnik ne nose vrijednost tajne — dnevnik zna SAMO koja su se polja
     // promijenila. `JSON.stringify(zakrpa)` je ispisivao token u cistom tekstu.
     console.log(`[TELEGRAM] postavke promijenjene s ploce: ${Object.keys(provjera.zakrpa).join(', ')}`)
+    // TASK-5274: poller se prije pokretao samo pri startu ploče — uključen Ulaz nije radio
+    // do restarta. Sad se petlja usklađuje odmah (jedna po procesu; novi token = nova petlja).
+    try {
+      const u = uskladiTelegramPoller({ plocaBase: `http://localhost:${PORT}`, prijasnjiToken })
+      if (u.radnja !== 'nista' && u.radnja !== 'vec_radi') console.log(`[telegram-poller] uskladeno s ploce: ${u.radnja}`)
+      else if (u.razlog && !/isključen|nije postavljen/.test(u.razlog)) console.log(`[telegram-poller] ${u.razlog}`)
+    } catch (e) {
+      console.log(`[telegram-poller] uskladivanje nije uspjelo: ${String(e)}`)
+    }
     const odgovor = odgovorTelegramPloci(postavke, TELEGRAM_CONFIG_PATH)
     return json({ ok: true, postavke: odgovor.postavke, stanje: odgovor.stanje })
   } catch (err) {

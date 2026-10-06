@@ -327,7 +327,15 @@ export interface Pokretanje {
   pokrenut: boolean
   razlog?: string
   stop?: () => void
+  /** Vrti li se petlja još (sama se gasi kad se ulaz isključi, na 401/409 i na `stop`). */
+  ziv?: () => boolean
 }
+
+/**
+ * Petlja ovog procesa (TASK-5274). Datoteka-brava prima vlastiti PID — tako ploča nakon
+ * pada preuzme bravu — pa NE štiti od druge petlje u istom procesu. To čini ova varijabla.
+ */
+let aktivna: { ziv: () => boolean; stop: () => void; token: string } | null = null
 
 /**
  * Pokreni ulaznu petlju. Bez bot tokena ili s isključenim ulazom NE pokreće se i to NIJE
@@ -341,6 +349,8 @@ export function pokreniTelegramPoller(opcije: PokretanjeOpcije = {}): Pokretanje
   // Token dolazi iz datoteke s tajnama (v. `telegramBotToken`), ne iz JSON-a — nalaz B2.
   const token = telegramBotToken(cfg)
   if (!token) return { pokrenut: false, razlog: 'bot token nije postavljen' }
+
+  if (aktivna?.ziv()) return { pokrenut: false, razlog: 'poller već radi u ovom procesu' }
 
   const brava = uzmiBravu(opcije.bravaPath)
   if (!brava.ok) {
@@ -396,14 +406,70 @@ export function pokreniTelegramPoller(opcije: PokretanjeOpcije = {}): Pokretanje
   }
 
   const zaustavi = () => {
+    if (!radi) return
     radi = false
     if (tajmer) { clearTimeout(tajmer); tajmer = null }
     brava.osloboditi?.()
+    if (aktivna?.stop === zaustavi) aktivna = null
   }
+  const ziv = () => radi
+  aktivna = { ziv, stop: zaustavi, token }
 
   log(`[telegram-poller] pokrenut (interval ${cfg.ulaz.intervalSek} s, ploča ${ploca})`)
   void korak()
-  return { pokrenut: true, stop: zaustavi }
+  return { pokrenut: true, stop: zaustavi, ziv }
+}
+
+/** Zaustavi petlju ovog procesa, ako je ima. */
+export function zaustaviTelegramPoller(): void {
+  aktivna?.stop()
+}
+
+export interface Uskladivanje {
+  radnja: 'pokrenut' | 'ponovno' | 'vec_radi' | 'zaustavljen' | 'nista'
+  razlog?: string
+}
+
+/**
+ * Uskladi petlju sa svježim postavkama — zove se nakon svakog spremanja s ploče (TASK-5274).
+ * Prije se poller pokretao SAMO pri startu ploče, pa uključivanje Ulaza nije činilo ništa
+ * do restarta.
+ *
+ *  - ulaz uključen, petlja ne radi           → pokreni;
+ *  - ulaz uključen, petlja radi, isti token  → ne diraj (jedan poller);
+ *  - token promijenjen                       → stara petlja stane; stanje staroga bota
+ *    (offset, „zaustavljen" nakon 401) se briše jer za novog bota ne znači ništa; nova
+ *    petlja krene ako je ulaz uključen;
+ *  - ulaz isključen                          → ništa: petlja to sama pročita i stane. Aktivno
+ *    gašenje bi ostavilo `getUpdates` u letu, a brzo ponovno uključivanje bi tada pokrenulo
+ *    drugi `getUpdates` s istim tokenom → 409 i trajno zaustavljena petlja.
+ */
+export function uskladiTelegramPoller(
+  opcije: PokretanjeOpcije & { prijasnjiToken?: string } = {},
+): Uskladivanje {
+  const cfg = loadTelegramConfig(opcije.configPath)
+  const token = telegramBotToken(cfg)
+  const tokenPromijenjen =
+    (opcije.prijasnjiToken !== undefined && opcije.prijasnjiToken !== token) ||
+    (!!aktivna?.ziv() && aktivna.token !== token)
+
+  let zaustavljena = false
+  if (tokenPromijenjen) {
+    if (aktivna?.ziv()) { aktivna.stop(); zaustavljena = true }
+    const stanjePath = opcije.stanjePath || STANJE_PUTANJA
+    const s = ucitajStanje(stanjePath)
+    zapisiStanje({
+      ...s, offset: 0, zaustavljen: false, zaustavljenRazlog: null, cekajDo: 0,
+      zadnjaGreska: null, zadnjaGreskaTs: null,
+    }, stanjePath)
+  }
+
+  if (aktivna?.ziv()) return { radnja: 'vec_radi' }
+  if (!cfg.ulaz?.ukljucen) return { radnja: zaustavljena ? 'zaustavljen' : 'nista', razlog: 'ulazni kanal je isključen' }
+
+  const p = pokreniTelegramPoller(opcije)
+  if (!p.pokrenut) return { radnja: zaustavljena ? 'zaustavljen' : 'nista', razlog: p.razlog }
+  return { radnja: zaustavljena ? 'ponovno' : 'pokrenut' }
 }
 
 // ─── Proba ulaza (ploča) ─────────────────────────────────────────────────────
@@ -444,12 +510,14 @@ export async function probajUlaz(configPath?: string, api?: Api): Promise<{
 }
 
 /** Stanje ulazne petlje za ploču. */
-export function stanjeUlaza(stanjePath?: string): StanjePollera & { radi: boolean } {
+export function stanjeUlaza(
+  stanjePath?: string, bravaPath: string = BRAVA_PUTANJA,
+): StanjePollera & { radi: boolean } {
   const s = ucitajStanje(stanjePath)
   let radi = false
   try {
-    if (existsSync(BRAVA_PUTANJA)) {
-      const pid = Number(readFileSync(BRAVA_PUTANJA, 'utf-8').trim())
+    if (existsSync(bravaPath)) {
+      const pid = Number(readFileSync(bravaPath, 'utf-8').trim())
       try { process.kill(pid, 0); radi = true } catch (e: any) { radi = e?.code === 'EPERM' }
     }
   } catch { /* brave nema */ }
