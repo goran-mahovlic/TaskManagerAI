@@ -38,24 +38,45 @@ export function jeDopusten(p: Pick<UlaznaPoruka, 'posiljateljId' | 'posiljateljK
 }
 
 const bezEt = (x: string) => x.trim().replace(/^@/, '').toLowerCase()
+const escRe = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+/** Najviše toliko slova smije slijediti korijen imena (padeži: Ivane, Ivanu, Ivanom, Bubiju). */
+const MAX_NASTAVAK = 3
+
+/**
+ * Sadrži li tekst riječ s popisa BILO GDJE (odluka vlasnika, 06.10. 18:39), bez obzira na velika
+ * slova i dijakritiku:
+ *  - `@korisnicko_ime` → točno taj spomen (iza ne smije biti slovo, broj ni `_`);
+ *  - ime → riječ koja POČINJE tim korijenom uz najviše 3 slova nastavka (padeži), a ispred
+ *    nema slova („Divan" ne pogađa „Ivan", „Ivanovićevi" ne pogađa — predug nastavak).
+ */
+export function sadrziRijec(tekst: string, rijec: string): boolean {
+  const r = normaliziraj(rijec.trim())
+  if (!r || r === '@') return false
+  const t = normaliziraj(tekst)
+  if (r.startsWith('@')) {
+    return new RegExp(`(^|[^\\p{L}\\p{N}_@])${escRe(r)}(?![\\p{L}\\p{N}_])`, 'u').test(t)
+  }
+  return new RegExp(`(^|[^\\p{L}\\p{N}_])${escRe(r)}\\p{L}{0,${MAX_NASTAVAK}}(?![\\p{L}\\p{N}_])`, 'u').test(t)
+}
 
 /**
  * Je li poruka upućena NEKOM DRUGOM, a ne ovom botu (TASK-5283, ADR-0002 §15):
- *  - počinje imenom s popisa `preskociAkoSpominje`, sadrži njegov @spomen ili je odgovor na
- *    poruku tog bota (po korisničkom imenu ili imenu);
+ *  - sadrži BILO GDJE riječ s popisa `preskociAkoSadrzi` (po korijenu, v. `sadrziRijec`), ili
+ *    je odgovor (reply) na poruku korisnika s tog popisa (po korisničkom imenu ili imenu);
  *  - uz `tisinaKadDrugom`: bilo koji tuđi @spomen (bot ili čovjek) ili odgovor na tuđu poruku.
- * Obraćanje OVOM botu (spomen, ime, reply, privatni chat) uvijek pobjeđuje. Vrijedi i za ulaz:
- * poruka za drugoga ne otvara zadatak.
+ * Izravno obraćanje OVOM botu (spomen, ime na početku, reply, privatni chat) uvijek pobjeđuje.
+ * Vrijedi i za ulaz: poruka za drugoga ne otvara zadatak.
  */
-export function jeZaDrugog(p: UlaznaPoruka, s: Pick<RazgovorPostavke, 'preskociAkoSpominje' | 'tisinaKadDrugom'>): boolean {
+export function jeZaDrugog(p: UlaznaPoruka, s: Pick<RazgovorPostavke, 'preskociAkoSadrzi' | 'tisinaKadDrugom'>): boolean {
   if (p.privatno || p.obracanjeBotu) return false
   const spomeni = p.spomeni || []
   const o = p.odgovorNa && p.odgovorNa.id !== p.posiljateljId ? p.odgovorNa : undefined
-  for (const unos of s.preskociAkoSpominje || []) {
+  for (const unos of s.preskociAkoSadrzi || []) {
     const e = bezEt(unos)
     if (!e) continue
-    if (pocinjeImenom(p.tekst, e) || pocinjeImenom(p.tekst, `@${e}`)) return true
-    if (spomeni.includes(e)) return true
+    if (sadrziRijec(p.tekst, unos)) return true
+    if (unos.trim().startsWith('@') && spomeni.includes(e)) return true
     if (o && (o.korisnickoIme === e || (!!o.ime && normaliziraj(o.ime.trim()) === normaliziraj(e)))) return true
   }
   if (s.tisinaKadDrugom && (spomeni.length > 0 || !!o)) return true

@@ -65,7 +65,7 @@ interface StanjeChata {
   uRedu: boolean
   prigusenje: Map<string, number>
   /** Poruke upućene drugome koje bot samo čita — idu u kontekst sljedećeg poteza (TASK-5283). */
-  procitano: { ms: number; ime: string; tekst: string }[]
+  procitano: { ms: number; ime: string; tekst: string; p: UlaznaPoruka }[]
 }
 
 export interface SesijaChata {
@@ -273,7 +273,9 @@ export function stvoriRazgovor(d: RazgovorOvisnosti): RazgovorJezgra {
 
     // Ovlasti iznad `citanje` vrijede SAMO ako je svaki pošiljatelj u potezu dopušten — inače bi
     // svatko tko spomene bota dobio prava predviđena za vlasnika (sigurnosni pregled TASK-5277).
-    const ovlasti = s.ovlasti !== 'citanje' && stavke.every(x => jeDopusten(x.p, s.dopusteniKorisnici))
+    // Pročitane poruke (TASK-5283) ulaze u prompt, pa su i njihovi autori sudionici poteza.
+    const ovlasti = s.ovlasti !== 'citanje' && stavke.every(x => jeDopusten(x.p, s.dopusteniKorisnici)) &&
+      procitano.every(x => jeDopusten(x.p, s.dopusteniKorisnici))
       ? s.ovlasti : 'citanje'
     const oznaka = `${p.kanal}:${p.chatId}`
     const zahtjev = (resume?: string): ExecRequest => ({
@@ -367,7 +369,7 @@ export function stvoriRazgovor(d: RazgovorOvisnosti): RazgovorJezgra {
         // Obraćanje drugome (botu ili čovjeku): bot ne odgovara, ali čita — zapis + kontekst.
         if (s.ukljucen && !p.posiljateljJeBot && jeZaDrugog(p, s)) {
           const c = chat(`${p.kanal}:${p.chatId}`)
-          c.procitano.push({ ms: sat(), ime: p.posiljateljIme, tekst: p.tekst.slice(0, 1000) })
+          c.procitano.push({ ms: sat(), ime: p.posiljateljIme, tekst: p.tekst.slice(0, 1000), p })
           if (c.procitano.length > MAX_PROCITANO) c.procitano.splice(0, c.procitano.length - MAX_PROCITANO)
           zapisiPotez(d.korijen, p.kanal, p.chatId, {
             ts: new Date(sat()).toISOString(), smjer: 'procitano', posiljateljId: p.posiljateljId,

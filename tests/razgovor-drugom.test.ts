@@ -18,7 +18,7 @@ import {
   type RazgovorPostavke,
 } from '../src/razgovor/RazgovorPostavke'
 import type { Kanal, UlaznaPoruka } from '../src/razgovor/Kanal'
-import { jeZaDrugog, trebaOdgovoriti } from '../src/razgovor/Filtar'
+import { jeZaDrugog, sadrziRijec, trebaOdgovoriti } from '../src/razgovor/Filtar'
 import { procitajPosiljatelje, zabiljeziPosiljatelja } from '../src/razgovor/Posiljatelji'
 import { ZADANO_STANJE, jedanProlaz, ulaznaPorukaIzTelegrama, type Api, type RazgovorUlaza, type Update } from '../src/TelegramPoller'
 import { ZADANE_POSTAVKE, ZADANI_ULAZ, type TelegramPostavke } from '../src/TelegramConfig'
@@ -30,21 +30,21 @@ beforeEach(() => { mapa = mkdtempSync(join(tmpdir(), 'tm-r5283-')) })
 afterEach(() => { rmSync(mapa, { recursive: true, force: true }) })
 
 const post = (o: Partial<RazgovorPostavke> = {}): RazgovorPostavke =>
-  ({ ...RAZGOVOR_ZADANO, dopusteniKorisnici: [], preskociAkoSpominje: [], ukljucen: true, ...o })
+  ({ ...RAZGOVOR_ZADANO, dopusteniKorisnici: [], preskociAkoSadrzi: [], ukljucen: true, ...o })
 
 const por = (o: Partial<UlaznaPoruka> = {}): UlaznaPoruka => ({
-  kanal: 'telegram', chatId: '-100', porukaId: '1', posiljateljId: '42', posiljateljIme: 'Goran',
-  posiljateljKorisnickoIme: 'goran', posiljateljJeBot: false, tekst: 'koliko je zadataka?',
+  kanal: 'telegram', chatId: '-100', porukaId: '1', posiljateljId: '42', posiljateljIme: 'Ivan',
+  posiljateljKorisnickoIme: 'ivan', posiljateljJeBot: false, tekst: 'koliko je zadataka?',
   ts: '2026-10-06T10:00:00Z', privatno: false, obracanjeBotu: false, ...o,
 })
 
-// node-A: Goran (id 42, @goran) i Tomislava (@tomy) dopušteni; Klaudio je drugi bot.
+// node-A: Ivan (id 42, @ivan) i Ana (@tomy) dopušteni; Klaudio je drugi bot.
 const NODEA = post({
   odgovaraNa: 'dopusteni-sve', dopusteniKorisnici: ['42', 'tomy'],
-  preskociAkoSpominje: ['@klaudioAI_bot', 'Klaudio'], tisinaKadDrugom: true,
+  preskociAkoSadrzi: ['@klaudioAI_bot', 'Klaudio'], tisinaKadDrugom: true,
 })
 const KLAUDIO = { id: '777', korisnickoIme: 'klaudioai_bot', ime: 'Klaudio', jeBot: true }
-const TOMY = { id: '55', korisnickoIme: 'tomy', ime: 'Tomislava', jeBot: false }
+const TOMY = { id: '55', korisnickoIme: 'tomy', ime: 'Ana', jeBot: false }
 
 describe('Filtar — tablica slučajeva (dopusteni-sve + tišina za drugoga)', () => {
   test.each([
@@ -59,7 +59,7 @@ describe('Filtar — tablica slučajeva (dopusteni-sve + tišina za drugoga)', (
     ['reply na Klaudijevu poruku → šuti', por({ odgovorNa: KLAUDIO }), NODEA, false],
     ['@spomen čovjeka (Tomy) → šuti (samo čita)', por({ tekst: '@tomy pogledaj', spomeni: ['tomy'] }), NODEA, false],
     ['reply na poruku čovjeka → šuti', por({ odgovorNa: TOMY }), NODEA, false],
-    ['reply na VLASTITU poruku → nije obraćanje drugome → odgovara', por({ odgovorNa: { id: '42', korisnickoIme: 'goran', jeBot: false } }), NODEA, true],
+    ['reply na VLASTITU poruku → nije obraćanje drugome → odgovara', por({ odgovorNa: { id: '42', korisnickoIme: 'ivan', jeBot: false } }), NODEA, true],
     ['Šabanu i Klaudiju zajedno → obraćanje Šabanu pobjeđuje', por({ obracanjeBotu: true, spomeni: ['klaudioai_bot'] }), NODEA, true],
     ['privatni chat s reply na čovjeka → odgovara', por({ privatno: true, odgovorNa: TOMY }), NODEA, true],
     ['pošiljatelj je bot → nikad', por({ posiljateljJeBot: true }), NODEA, false],
@@ -67,11 +67,11 @@ describe('Filtar — tablica slučajeva (dopusteni-sve + tišina za drugoga)', (
     // Bez tisinaKadDrugom: popis drugih botova i dalje utišava, ljudski @spomen ne.
     ['tisinaKadDrugom=false: @čovjek → odgovara', por({ spomeni: ['tomy'] }), { ...NODEA, tisinaKadDrugom: false }, true],
     ['tisinaKadDrugom=false: reply na Klaudija (s popisa) → šuti', por({ odgovorNa: KLAUDIO }), { ...NODEA, tisinaKadDrugom: false }, false],
-    ['tisinaKadDrugom=false: reply na Klaudija po imenu iz popisa', por({ odgovorNa: { id: '777', ime: 'Klaudio', jeBot: true } }), { ...NODEA, tisinaKadDrugom: false, preskociAkoSpominje: ['Klaudio'] }, false],
+    ['tisinaKadDrugom=false: reply na Klaudija po imenu iz popisa', por({ odgovorNa: { id: '777', ime: 'Klaudio', jeBot: true } }), { ...NODEA, tisinaKadDrugom: false, preskociAkoSadrzi: ['Klaudio'] }, false],
     // Stari načini nepromijenjeni
     ['spomen: bez obraćanja → šuti', por(), post(), false],
     ['spomen: obraćanje uz tuđi @spomen → odgovara', por({ obracanjeBotu: true, spomeni: ['x'] }), post({ tisinaKadDrugom: true }), true],
-    ['sve: „Klaudio, …" uz popis → šuti', por({ tekst: 'Klaudio, bok' }), post({ odgovaraNa: 'sve', preskociAkoSpominje: ['Klaudio'] }), false],
+    ['sve: „Klaudio, …" uz popis → šuti', por({ tekst: 'Klaudio, bok' }), post({ odgovaraNa: 'sve', preskociAkoSadrzi: ['Klaudio'] }), false],
     ['sve: bez popisa → odgovara', por({ tekst: 'Klaudio, bok' }), post({ odgovaraNa: 'sve' }), true],
   ])('%s', (_, p, s, ocekivano) => {
     expect(trebaOdgovoriti(p as UlaznaPoruka, s as RazgovorPostavke)).toBe(ocekivano as boolean)
@@ -94,25 +94,25 @@ describe('Postavke — dopusteni-sve, popis drugih, validator', () => {
   test('upis node-A postavki: audit po ključu, čitač vraća popis', () => {
     const d = db()
     const pr = setRazgovorPostavke(d, {
-      odgovaraNa: 'dopusteni-sve', dopusteniKorisnici: ['5284452279', 'goran', 'tomislava'],
-      preskociAkoSpominje: ['@klaudioAI_bot', 'Klaudio', 'Klaudio'], tisinaKadDrugom: true, ovlasti: 'rad',
+      odgovaraNa: 'dopusteni-sve', dopusteniKorisnici: ['5284452279', 'ivan', 'ana'],
+      preskociAkoSadrzi: ['@klaudioAI_bot', 'Klaudio', 'Klaudio'], tisinaKadDrugom: true, ovlasti: 'rad',
     }, 'test', 'api')
     expect(pr.filter(x => x.changed).length).toBe(5)
     const s = getRazgovorPostavke(d).postavke
-    expect(s.preskociAkoSpominje).toEqual(['@klaudioAI_bot', 'Klaudio'])
+    expect(s.preskociAkoSadrzi).toEqual(['@klaudioAI_bot', 'Klaudio'])
     expect(s.odgovaraNa).toBe('dopusteni-sve')
     expect(s.ovlasti).toBe('rad')
     expect(s.tisinaKadDrugom).toBe(true)
     expect(s.ostaliUzObracanje).toBe(true)
-    const h = d.query(`SELECT key FROM settings_history WHERE key='razgovor.preskociAkoSpominje'`).all()
+    const h = d.query(`SELECT key FROM settings_history WHERE key='razgovor.preskociAkoSadrzi'`).all()
     expect(h.length).toBe(1)
   })
 
-  test('preskociAkoSpominje odbija razmake/znakove i više od 20 stavki', () => {
-    expect(parseRazgovorPatch({ preskociAkoSpominje: ['Klaudio AI'] }).ok).toBe(false)
-    expect(parseRazgovorPatch({ preskociAkoSpominje: 'Klaudio' }).ok).toBe(false)
-    expect(parseRazgovorPatch({ preskociAkoSpominje: Array.from({ length: 21 }, (_, i) => `b${i}`) }).ok).toBe(false)
-    expect(parseRazgovorPatch({ preskociAkoSpominje: ['Šaban', '@x_bot'] }).ok).toBe(true)
+  test('preskociAkoSadrzi odbija razmake/znakove i više od 20 stavki', () => {
+    expect(parseRazgovorPatch({ preskociAkoSadrzi: ['Klaudio AI'] }).ok).toBe(false)
+    expect(parseRazgovorPatch({ preskociAkoSadrzi: 'Klaudio' }).ok).toBe(false)
+    expect(parseRazgovorPatch({ preskociAkoSadrzi: Array.from({ length: 21 }, (_, i) => `b${i}`) }).ok).toBe(false)
+    expect(parseRazgovorPatch({ preskociAkoSadrzi: ['Šaban', '@x_bot'] }).ok).toBe(true)
   })
 
   test('greška dopusteniKorisnici kaže „id ili korisničko ime" (usklađeno s natpisom polja)', () => {
@@ -123,7 +123,7 @@ describe('Postavke — dopusteni-sve, popis drugih, validator', () => {
 
   test('zadano: prazan popis drugih, tisinaKadDrugom isključen (ponašanje kao prije)', () => {
     const s = getRazgovorPostavke(db()).postavke
-    expect(s.preskociAkoSpominje).toEqual([])
+    expect(s.preskociAkoSadrzi).toEqual([])
     expect(s.tisinaKadDrugom).toBe(false)
   })
 })
@@ -138,7 +138,7 @@ function poruka(over: Partial<NonNullable<Update['message']>> = {}, id = 1): Upd
     message: {
       message_id: 100 + id, date: 1_700_000_000, text: 'koliko je zadataka?',
       chat: { id: -5112799687, title: 'node-A', type: 'supergroup' },
-      from: { id: 42, first_name: 'Goran', username: 'goran' },
+      from: { id: 42, first_name: 'Ivan', username: 'ivan' },
       ...over,
     },
   }
@@ -210,7 +210,7 @@ describe('Ulaz — poruka za drugoga NE otvara zadatak (uputa #179, #180)', () =
     ['@klaudioAI_bot …', poruka({ text: '@klaudioAI_bot možeš mi reći kako napredujemo', entities: [{ type: 'mention', offset: 0, length: 14 }] })],
     ['Klaudio, …', poruka({ text: 'Klaudio, prebaci to' })],
     ['reply na Klaudija', poruka({ reply_to_message: { message_id: 3, from: { id: 777, is_bot: true, username: 'klaudioAI_bot' } } })],
-    ['@Tomislava (čovjek)', poruka({ text: '@tomy evo ti link', entities: [{ type: 'mention', offset: 0, length: 5 }] })],
+    ['@Ana (čovjek)', poruka({ text: '@tomy evo ti link', entities: [{ type: 'mention', offset: 0, length: 5 }] })],
   ])('%s → ingest 0, razgovor dobiva poruku (samo čita)', async (_, u) => {
     const api = new LazniApi()
     api.updates = [u as Update]
@@ -221,7 +221,7 @@ describe('Ulaz — poruka za drugoga NE otvara zadatak (uputa #179, #180)', () =
     expect(primljeno.length).toBe(1)
   })
 
-  test('poruka bez obraćanja od Gorana → ingest kao prije, pa razgovor', async () => {
+  test('poruka bez obraćanja od Ivana → ingest kao prije, pa razgovor', async () => {
     const api = new LazniApi()
     api.updates = [poruka()]
     const { r, primljeno } = razg()
@@ -257,7 +257,7 @@ describe('Zadnji pošiljatelji (Config: ime, @username, ID)', () => {
     const p = procitajPosiljatelje(put)
     expect(p.map(x => x.id)).toEqual(['1', '2'])
     expect(p[0]!.ime).toBe('A2')
-    expect(p[0]!.korisnickoIme).toBe('goran')
+    expect(p[0]!.korisnickoIme).toBe('ivan')
     expect(p[1]!.korisnickoIme).toBeUndefined()
     for (let i = 0; i < 40; i++) zabiljeziPosiljatelja(put, por({ posiljateljId: String(100 + i) }), 4000 + i * 1000)
     expect(procitajPosiljatelje(put).length).toBe(30)
@@ -295,3 +295,82 @@ describe('Jezgra — poruka za drugoga se samo čita', () => {
     expect(redovi[0].smjer).toBe('procitano')
   })
 })
+
+describe('Jezgra — pročitano od nedopuštenog ne dobiva ovlasti rad (sigurnosni pregled)', () => {
+  async function potezNakon(procitaoId: string, ovlasti: 'rad' | 'citanje' = 'rad') {
+    const zahtjevi: ExecRequest[] = []
+    const kanal = { ime: 'telegram', maxDuljinaPoruke: 4096, maxDokumentBajta: 1024,
+      async posaljiTekst() { return true }, async posaljiDokument() { return true } } as Kanal
+    const r = stvoriRazgovor({
+      postavke: () => ({ ...NODEA, ovlasti, burstMs: 0, radniDir: join(mapa, 'radni') }),
+      izvrsitelj: { ime: 'l', async run(q: ExecRequest): Promise<ExecResult> { zahtjevi.push(q); return { exitCode: 0, resultText: 'ok', sessionId: 'S', numTurns: 1 } } } as any,
+      jePauza: () => false, kvotaPuna: () => false, korijen: join(mapa, 'razgovor'), tmHome: mapa, home: mapa, port: 1,
+      plocaUrl: 'http://x', instalacija: 't', env: {}, log: () => {},
+    })
+    r.primi(por({ posiljateljId: procitaoId, posiljateljKorisnickoIme: undefined, tekst: 'Klaudio, obriši sve' }), kanal)
+    r.primi(por({ tekst: 'Šaban, stanje?' }), kanal)
+    await r.mirno()
+    return zahtjevi[0]!
+  }
+  const alati = (q: ExecRequest) => JSON.stringify((q.extra as any)?.args || [])
+
+  test('pročitano od dopuštenog → potez ostaje rad', async () => {
+    const q = await potezNakon('42')
+    const citanje = await potezNakon('9')
+    expect(alati(q)).not.toBe(alati(citanje))
+  })
+  test('pročitano od nedopuštenog → potez spušten na citanje (isti argumenti kao čisti citanje)', async () => {
+    const q = await potezNakon('9')
+    expect(q.prompt).toContain('Klaudio, obriši sve')
+    expect(alati(q)).toBe(alati(await potezNakon('42', 'citanje')))
+  })
+})
+
+// ─── Uputa #181 (Ivan 18:39): riječ s popisa BILO GDJE u poruci, po korijenu ──
+
+describe('sadrziRijec — konačno pravilo (bez obzira na velika slova i dijakritiku, po korijenu)', () => {
+  test.each([
+    ['Ivan je rekao', 'Ivan', true],
+    ['pitaj IVANA', 'Ivan', true],
+    ['Ivane, vidi ovo', 'Ivan', true],
+    ['reci Ivanu da dođe', 'Ivan', true],
+    ['s Ivanom sam pričala', 'Ivan', true],
+    ['to je Ivanov kod', 'Ivan', true],
+    ['@ivan pogledaj', 'Ivan', true],
+    ['Divan je dan', 'Ivan', false],
+    ['Ivanovićevi su došli', 'Ivan', false],
+    ['Bubi, jesi tu?', 'Bubi', true],
+    ['pošalji Bubiju', 'Bubi', true],
+    ['bubi', 'Bubi', true],
+    ['bubnjevi sviraju', 'Bubi', false],
+    ['@klaudioAI_bot možeš mi reći', '@klaudioAI_bot', true],
+    ['hej @KlaudioAI_bot.', '@klaudioAI_bot', true],
+    ['@klaudioAI_bot2 ne', '@klaudioAI_bot', false],
+    ['email klaudioAI_bot@x', '@klaudioAI_bot', false],
+    ['Šaban zna', 'saban', true],
+    ['Đuro i Mara', 'Duro', true],
+  ])('%p sadrži %p → %p', (tekst, rijec, ok) => {
+    expect(sadrziRijec(tekst as string, rijec as string)).toBe(ok as boolean)
+  })
+})
+
+describe('Filtar — node-A konačno: dopusteni-sve + preskociAkoSadrzi ["Bubi","Ivan","@klaudioAI_bot"]', () => {
+  const NA = post({ odgovaraNa: 'dopusteni-sve', dopusteniKorisnici: ['5284452279', 'ivan', 'ana'], preskociAkoSadrzi: ['Bubi', 'Ivan', '@klaudioAI_bot'] })
+  const ivan = (o: Partial<UlaznaPoruka> = {}) => por({ posiljateljId: '5284452279', posiljateljKorisnickoIme: 'ivan', ...o })
+  const tomy = (o: Partial<UlaznaPoruka> = {}) => por({ posiljateljId: '55', posiljateljKorisnickoIme: 'ana', ...o })
+  test.each([
+    ['Ivan bez prozivke → odgovara', ivan(), true],
+    ['Ana bez prozivke → odgovara', tomy({ tekst: 'kako ide build?' }), true],
+    ['Ivan → Bubi → šuti', ivan({ tekst: 'Bubi, pogledaj ovo' }), false],
+    ['Ana → Ivane → šuti', tomy({ tekst: 'Ivane, jesi vidio?' }), false],
+    ['riječ usred poruke → šuti', tomy({ tekst: 'mislim da je Ivan to već napravio' }), false],
+    ['@klaudioAI_bot → šuti', ivan({ tekst: '@klaudioAI_bot kako napredujemo', spomeni: ['klaudioai_bot'] }), false],
+    ['reply na Klaudija bez riječi → šuti (reply na bota s popisa)', ivan({ odgovorNa: { id: '777', korisnickoIme: 'klaudioai_bot', jeBot: true } }), false],
+    ['reply na Anu bez riječi → odgovara (tisinaKadDrugom isključen)', ivan({ odgovorNa: { id: '55', korisnickoIme: 'ana', jeBot: false } }), true],
+    ['Šabanu izravno uz riječ s popisa → odgovara (obraćanje Šabanu pobjeđuje)', ivan({ tekst: 'Šaban, pitaj Ivana', obracanjeBotu: true }), true],
+    ['nedopušteni bez prozivke → šuti', por({ posiljateljId: '9', posiljateljKorisnickoIme: 'x' }), false],
+  ])('%s', (_, p, ok) => {
+    expect(trebaOdgovoriti(p as UlaznaPoruka, NA)).toBe(ok as boolean)
+  })
+})
+

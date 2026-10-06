@@ -26,8 +26,8 @@ export interface RazgovorPostavke {
   dopusteniKorisnici: string[]
   /** Uz `dopusteni-sve`: nedopušteni dobivaju odgovor samo uz obraćanje (true) ili nikad (false). */
   ostaliUzObracanje: boolean
-  /** Imena / @korisnička imena drugih botova — poruka za njih = tišina i bez zadatka (TASK-5283). */
-  preskociAkoSpominje: string[]
+  /** Riječi (ime po korijenu ili @korisničko ime): poruka koja ih sadrži BILO GDJE = samo čita, bez zadatka (TASK-5283). */
+  preskociAkoSadrzi: string[]
   /** Svaki tuđi @spomen ili odgovor na tuđu poruku (bot ili čovjek) = tišina i bez zadatka. */
   tisinaKadDrugom: boolean
   model: string
@@ -53,7 +53,7 @@ export const RAZGOVOR_KLJUCEVI: Readonly<Record<Polje, string>> = Object.freeze(
   odgovaraNa: 'razgovor.odgovaraNa',
   dopusteniKorisnici: 'razgovor.dopusteniKorisnici',
   ostaliUzObracanje: 'razgovor.ostaliUzObracanje',
-  preskociAkoSpominje: 'razgovor.preskociAkoSpominje',
+  preskociAkoSadrzi: 'razgovor.preskociAkoSadrzi',
   tisinaKadDrugom: 'razgovor.tisinaKadDrugom',
   model: 'razgovor.model',
   rokSek: 'razgovor.rokSek',
@@ -76,7 +76,7 @@ export const RAZGOVOR_ZADANO: Readonly<RazgovorPostavke> = Object.freeze({
   odgovaraNa: 'spomen',
   dopusteniKorisnici: [],
   ostaliUzObracanje: true,
-  preskociAkoSpominje: [],
+  preskociAkoSadrzi: [],
   tisinaKadDrugom: false,
   model: '',
   rokSek: 300,
@@ -111,7 +111,7 @@ const IZBORI: Partial<Record<Polje, readonly string[]>> = {
   memorijaRazgovor: ['off', 'shadow', 'on'],
 }
 const BOOL: readonly Polje[] = ['ukljucen', 'dokumenti', 'ostaliUzObracanje', 'tisinaKadDrugom']
-const NIZOVI: readonly Polje[] = ['dopusteniKorisnici', 'preskociAkoSpominje']
+const NIZOVI: readonly Polje[] = ['dopusteniKorisnici', 'preskociAkoSadrzi']
 const MAX_KORISNIKA = 50
 const MAX_DRUGIH = 20
 
@@ -143,12 +143,12 @@ function provjeriPolje(polje: Polje, v: unknown): { ok: true; value: unknown } |
     }
     return { ok: true, value: [...new Set(ids)] }
   }
-  if (polje === 'preskociAkoSpominje') {
-    if (!Array.isArray(v)) return { ok: false, error: 'preskociAkoSpominje mora biti popis' }
-    if (v.length > MAX_DRUGIH) return { ok: false, error: `preskociAkoSpominje: najviše ${MAX_DRUGIH}` }
+  if (polje === 'preskociAkoSadrzi') {
+    if (!Array.isArray(v)) return { ok: false, error: 'preskociAkoSadrzi mora biti popis' }
+    if (v.length > MAX_DRUGIH) return { ok: false, error: `preskociAkoSadrzi: najviše ${MAX_DRUGIH}` }
     const imena = v.map(x => String(x).trim()).filter(Boolean)
     if (imena.some(x => !/^@?[\p{L}\p{N}_.-]{1,64}$/u.test(x))) {
-      return { ok: false, error: 'preskociAkoSpominje: ime ili @korisničko ime, jedna riječ' }
+      return { ok: false, error: 'preskociAkoSadrzi: ime ili @korisničko ime, jedna riječ' }
     }
     return { ok: true, value: [...new Set(imena)] }
   }
@@ -258,7 +258,7 @@ export function getRazgovorPostavke(db: Database, opcije: OpcijeOvlasti = {}): R
       .all(...kljucevi) as Array<{ key: string; value: string }>
   } catch { /* tablica ne postoji = sve zadano */ }
   const poKljucu = new Map(redovi.map(r => [r.key, r.value]))
-  const postavke: Record<string, unknown> = { ...RAZGOVOR_ZADANO, dopusteniKorisnici: [], preskociAkoSpominje: [] }
+  const postavke: Record<string, unknown> = { ...RAZGOVOR_ZADANO, dopusteniKorisnici: [], preskociAkoSadrzi: [] }
   const izBaze: Polje[] = []
   const upozorenja: string[] = []
   for (const [polje, kljuc] of Object.entries(RAZGOVOR_KLJUCEVI) as [Polje, string][]) {
@@ -370,7 +370,7 @@ export function createRazgovorReader(o: { dbPath: string; ttlMs?: number; now?: 
       db = new Database(o.dbPath, { readonly: true })
       kes = getRazgovorPostavke(db, { dopustiPuno: o.dopustiPuno ?? puniDopusten() })
     } catch {
-      if (!kes) kes = { postavke: { ...RAZGOVOR_ZADANO, dopusteniKorisnici: [], preskociAkoSpominje: [] }, izBaze: [], upozorenja: ['baza nije čitljiva'] }
+      if (!kes) kes = { postavke: { ...RAZGOVOR_ZADANO, dopusteniKorisnici: [], preskociAkoSadrzi: [] }, izBaze: [], upozorenja: ['baza nije čitljiva'] }
     } finally {
       try { db?.close() } catch { /* ništa */ }
     }

@@ -9091,7 +9091,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         _razgPolje('razg-odgovaraNa', _T('cfg_razg_odgovara', 'Odgovara na'), _razgIzbor('razg-odgovaraNa', p.odgovaraNa, ['spomen', 'dopusteni', 'dopusteni-sve', 'sve'])) +
         _razgPolje('razg-ostali', _T('cfg_razg_ostali', 'Uz dopusteni-sve: ostali dobivaju odgovor uz prozivku'), '<input id="razg-ostali" type="checkbox"' + (p.ostaliUzObracanje !== false ? ' checked' : '') + '>') +
         _razgPolje('razg-dopusteni', _T('cfg_razg_dopusteni', 'Dopušteni korisnici (id ili korisničko ime, zarezom)'), '<input id="razg-dopusteni" type="text" value="' + _esc((p.dopusteniKorisnici || []).join(', ')) + '">') +
-        _razgPolje('razg-preskoci', _T('cfg_razg_preskoci', 'Drugi botovi — šuti i ne otvaraj zadatak (ime ili @korisničko ime, zarezom)'), '<input id="razg-preskoci" type="text" value="' + _esc((p.preskociAkoSpominje || []).join(', ')) + '">') +
+        _razgPolje('razg-preskoci', _T('cfg_razg_preskoci', 'Šuti i ne otvaraj zadatak ako poruka sadrži (ime po korijenu: Ivan → Ivane, Ivanu; ili @korisničko ime; zarezom)'), '<input id="razg-preskoci" type="text" value="' + _esc((p.preskociAkoSadrzi || []).join(', ')) + '">') +
         _razgPolje('razg-tisina', _T('cfg_razg_tisina', 'Obraćanje drugome (@spomen ili odgovor na tuđu poruku, bot ili čovjek) = samo čita'), '<input id="razg-tisina" type="checkbox"' + (p.tisinaKadDrugom ? ' checked' : '') + '>') +
         _razgPolje('razg-ovlasti', _T('cfg_razg_ovlasti', 'Ovlasti'), _razgIzbor('razg-ovlasti', p.ovlasti, ['citanje', 'rad', 'puno'])) +
         _razgPolje('razg-model', _T('cfg_razg_model', 'Model (prazno = model-config)'), '<input id="razg-model" type="text" value="' + _esc(p.model || '') + '">') +
@@ -9140,7 +9140,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         odgovaraNa: v('razg-odgovaraNa').value,
         dopusteniKorisnici: v('razg-dopusteni').value.split(',').map(function(x) { return x.trim(); }).filter(Boolean),
         ostaliUzObracanje: v('razg-ostali').checked,
-        preskociAkoSpominje: v('razg-preskoci').value.split(',').map(function(x) { return x.trim(); }).filter(Boolean),
+        preskociAkoSadrzi: v('razg-preskoci').value.split(',').map(function(x) { return x.trim(); }).filter(Boolean),
         tisinaKadDrugom: v('razg-tisina').checked,
         ovlasti: v('razg-ovlasti').value,
         model: v('razg-model').value,

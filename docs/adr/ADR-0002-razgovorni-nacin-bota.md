@@ -78,7 +78,7 @@ nepoznata polja (HTTP 400 s popisom dopuštenih).
 | `razgovor.odgovaraNa` | `'spomen'` | `sve` \| `spomen` \| `dopusteni` \| `dopusteni-sve` | §5, §15 |
 | `razgovor.dopusteniKorisnici` | `[]` | id ili korisničko ime | za `dopusteni`/`dopusteni-sve`; i uvjet za ovlasti > `citanje` (§7) |
 | `razgovor.ostaliUzObracanje` | `true` | bool | uz `dopusteni-sve`: nedopušteni dobivaju odgovor uz prozivku (`false` = nikad) — §15 |
-| `razgovor.preskociAkoSpominje` | `[]` | ≤20 imena / @korisničkih imena | drugi botovi: poruka za njih = tišina i bez zadatka — §15 |
+| `razgovor.preskociAkoSadrzi` | `[]` | ≤20 imena / @korisničkih imena | poruka koja BILO GDJE sadrži riječ s popisa (ime po korijenu) = samo čita, bez zadatka — §15 |
 | `razgovor.tisinaKadDrugom` | `false` | bool | svaki tuđi @spomen ili reply na tuđu poruku (bot ili čovjek) = samo čita — §15 |
 | `razgovor.model` | `''` | — | `''` → `model-config.json` `agentOverrides['razgovor']` → `defaults` (čita se po poruci) |
 | `razgovor.rokSek` | `300` | 30–1800 | rok jednog odgovora; istek = `kill` + kratka poruka |
@@ -376,14 +376,21 @@ node-A ploči).
    ionako vrijede samo za potez u kojem je SVAKI pošiljatelj dopušten (ispravak 1 iz §14).
    Nedopušteni uz prozivku dobivaju odgovor na razini `citanje`. `sve` uz `rad` ostaje zabranjen.
    Uvjet „barem jedan dopušteni korisnik" vrijedi kao i dosad.
-2. **Obraćanje drugome = tišina** (`Filtar.jeZaDrugog`):
-   - `preskociAkoSpominje` (popis drugih botova): poruka počinje tim imenom (`^ime\b`), sadrži
-     njegov @spomen ili je reply na njegovu poruku (po korisničkom imenu ili imenu);
-   - uz `tisinaKadDrugom=true`: SVAKI tuđi @spomen (i `text_mention`) ili reply na tuđu poruku,
-     bot ili čovjek. Reply na vlastitu poruku nije obraćanje drugome; „reply" na početnu
-     poruku teme u forumu se ne broji.
-   - Obraćanje OVOM botu (vlastiti @spomen, ime, reply na njega, privatni chat) **pobjeđuje**
-     („@Šaban i @Klaudio" → odgovara).
+2. **Obraćanje drugome = tišina** (`Filtar.jeZaDrugog`). Konačno pravilo (Goran 18:39,
+   nadjačava raniji prijedlog „počinje imenom / @spomen"):
+   - `preskociAkoSadrzi`: poruka **bilo gdje** sadrži riječ s popisa (`Filtar.sadrziRijec`),
+     bez obzira na velika slova i dijakritiku. Ime se uspoređuje **po korijenu**: riječ koja
+     počinje imenom uz najviše 3 slova nastavka (Gorane, Goranu, Goranom, Goranov, Bubiju);
+     ispred ne smije biti slovo (Zagoran ≠ Goran), predug nastavak ne pogađa (Goranovićevi).
+     `@korisnicko_ime` pogađa samo točan spomen. Uz to: reply na poruku korisnika s popisa
+     (po korisničkom imenu ili imenu) — reply na Klaudija je obraćanje Klaudiju;
+   - uz `tisinaKadDrugom=true` (zadano isključeno; prijedlog 18:26, ostavljen kao opcija
+     paketa): SVAKI tuđi @spomen (i `text_mention`) ili reply na tuđu poruku, bot ili čovjek.
+     Reply na vlastitu poruku nije obraćanje drugome; „reply" na početnu poruku teme u forumu
+     se ne broji.
+   - Izravno obraćanje OVOM botu (vlastiti @spomen, ime na početku, reply na njega, privatni
+     chat) **pobjeđuje** („Šaban, pitaj Gorana" → odgovara). Inače riječ s popisa ne bi
+     smjela ni u jednom pitanju Šabanu.
 3. **Vrijedi i za ulaz**: poruka za drugoga ne ide u `/api/ingest` ni kad je ulaz uključen —
    ni zadatak ni odgovor. Popis drugih štiti ulaz i kad je razgovor isključen.
 4. **Samo čita**: takvu poruku razgovor zapisuje (`smjer: "procitano"` u zapisu §8) i daje je
@@ -396,7 +403,9 @@ node-A ploči).
 6. Validator `dopusteniKorisnici` sada javlja „id ili korisničko ime" — usklađeno s natpisom
    polja i s `Filtar.jeDopusten`.
 
-Zadano je ponašanje nepromijenjeno (`preskociAkoSpominje=[]`, `tisinaKadDrugom=false`).
+Zadano je ponašanje nepromijenjeno (`preskociAkoSadrzi=[]`, `tisinaKadDrugom=false`).
+node-A: `odgovaraNa=dopusteni-sve`, `preskociAkoSadrzi=["Bubi","Goran","@klaudioAI_bot"]`
+(Bubi = Tomislava), `dopusteniKorisnici=[5284452279, goran, tomislava]`.
 Testovi: `tests/razgovor-drugom.test.ts` (tablica slučajeva Filtra, adapter, ulaz, postavke,
 pošiljatelji, jezgra).
 
