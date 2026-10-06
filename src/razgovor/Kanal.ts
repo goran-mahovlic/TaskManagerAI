@@ -21,6 +21,21 @@ export interface UlaznaPoruka {
   privatno: boolean
   /** Adapter: vlastiti spomen / ime na početku / odgovor na poruku ovog bota. */
   obracanjeBotu: boolean
+  /**
+   * Adapter: TUĐI spomeni u poruci (bez vlastitog) — korisnička imena malim slovima bez `@`,
+   * a spomen korisnika bez imena kao `id:<n>`. Za tišinu kad je poruka za drugoga (TASK-5283).
+   */
+  spomeni?: string[]
+  /** Adapter: poruka je odgovor (reply) na poruku NEKOG DRUGOG (ne ovog bota). */
+  odgovorNa?: OdgovorNa
+}
+
+export interface OdgovorNa {
+  id: string
+  /** Malim slovima, bez `@`. */
+  korisnickoIme?: string
+  ime?: string
+  jeBot: boolean
 }
 
 export interface Kanal {

@@ -29,7 +29,7 @@ import {
 } from './TelegramConfig'
 import type { Kanal, Razgovor, UlaznaPoruka } from './razgovor/Kanal'
 import type { RazgovorPostavke } from './razgovor/RazgovorPostavke'
-import { pocinjeImenom } from './razgovor/Filtar'
+import { jeZaDrugog, pocinjeImenom } from './razgovor/Filtar'
 
 export const STANJE_PUTANJA = stanjePutanja('telegram-poller.json')
 export const BRAVA_PUTANJA = stanjePutanja('telegram-poller.lock')
@@ -107,6 +107,8 @@ export function uzmiBravu(path: string = BRAVA_PUTANJA): Brava {
 
 // ─── Telegram tipovi (samo ono što doista koristimo) ─────────────────────────
 
+export interface Entitet { type: string; offset?: number; length?: number; user?: { id: number | string } }
+
 export interface Update {
   update_id: number
   message?: {
@@ -116,9 +118,15 @@ export interface Update {
     caption?: string
     chat: { id: number | string; title?: string; username?: string; type?: string }
     from?: { id: number | string; first_name?: string; username?: string; is_bot?: boolean }
-    entities?: { type: string; offset?: number; length?: number }[]
-    caption_entities?: { type: string; offset?: number; length?: number }[]
-    reply_to_message?: { from?: { id: number | string; is_bot?: boolean } }
+    entities?: Entitet[]
+    caption_entities?: Entitet[]
+    reply_to_message?: {
+      message_id?: number
+      from?: { id: number | string; is_bot?: boolean; username?: string; first_name?: string }
+    }
+    /** Forum (teme): svaka poruka teme ima `reply_to_message` = početna poruka teme. */
+    is_topic_message?: boolean
+    message_thread_id?: number
   }
 }
 
@@ -136,6 +144,8 @@ export interface RazgovorUlaza {
   ja?: JaBot | null
   /** Ako nedostaje, petlja složi Telegram kanal iz bot tokena. */
   kanal?: Kanal
+  /** Zadnji pošiljatelji u dopuštenim chatovima (ime, @username, ID) za Config (TASK-5283). */
+  zabiljezi?: (p: UlaznaPoruka) => void
 }
 
 export interface Api {
@@ -174,11 +184,13 @@ export async function jedanProlaz(
   const rp = razg ? razg.postavke() : null
   const razgovorUkljucen = !!(razg && rp?.ukljucen && razg.kanal)
   const ja = razg?.ja || null
+  const ulazna = (m: NonNullable<Update['message']>, tekst: string) =>
+    ulaznaPorukaIzTelegrama(m, tekst, ja, rp?.ime || ja?.firstName || '')
   /** ADR-0002: poruka koja NIJE postala zadatak ide razgovornom sloju — bez `await`. */
-  const uRazgovor = (m: NonNullable<Update['message']>, tekst: string) => {
+  const uRazgovor = (m: NonNullable<Update['message']>, tekst: string, u?: UlaznaPoruka) => {
     if (!razgovorUkljucen) return
     try {
-      razg!.razgovor.primi(ulaznaPorukaIzTelegrama(m, tekst, ja, rp!.ime || ja?.firstName || ''), razg!.kanal!)
+      razg!.razgovor.primi(u || ulazna(m, tekst), razg!.kanal!)
     } catch (e: any) {
       ishod.greske.push(`razgovor: ${String(e?.message || e)}`)
     }
@@ -241,9 +253,18 @@ export async function jedanProlaz(
     if (u.dopusteniChatovi.length && !u.dopusteniChatovi.includes(String(m.chat.id))) {
       ishod.preskoceno++; stanje.preskoceno++; continue
     }
+    const ul = razg ? ulazna(m, tekst) : undefined
+    if (ul && razg?.zabiljezi) { try { razg.zabiljezi(ul) } catch { /* samo pomoć vlasniku */ } }
+    // TASK-5283: poruka upućena drugome (drugi bot s popisa ili, uz tisinaKadDrugom, čovjek)
+    // ne otvara zadatak ni kad je ulaz uključen — razgovor je samo čita.
+    if (ul && rp && jeZaDrugog(ul, rp)) {
+      ishod.preskoceno++; stanje.preskoceno++
+      uRazgovor(m, tekst, ul)
+      continue
+    }
     if (!u.ukljucen || !propusti(u, m, tekstSirovi, ja?.username)) {
       ishod.preskoceno++; stanje.preskoceno++
-      uRazgovor(m, tekst)
+      uRazgovor(m, tekst, ul)
       continue
     }
     const tijelo = preslikaj(m, tekst)
@@ -262,7 +283,7 @@ export async function jedanProlaz(
         // osim ako je uključen razgovorni način (ADR-0002) — tada o odgovoru odlučuje on.
         stanje.obradeno++
         ishod.preskoceno++
-        uRazgovor(m, tekst)
+        uRazgovor(m, tekst, ul)
       } else {
         const razlog = odgovor?.error || odgovor?.greske?.join?.('; ') || `HTTP ${status}`
         stanje.zadnjaGreska = razlog
@@ -296,6 +317,26 @@ export function propusti(
   return true
 }
 
+/**
+ * Tuđi spomeni u poruci (TASK-5283): `@ime` iz entiteta `mention` i iz samog teksta (malim
+ * slovima, bez `@`), `text_mention` (korisnik bez imena) kao `id:<n>`. Vlastiti spomen se izostavlja.
+ */
+export function tudjiSpomeni(m: NonNullable<Update['message']>, tekst: string, ja: JaBot | null): string[] {
+  const vlastiti = (ja?.username || '').toLowerCase()
+  const out = new Set<string>()
+  for (const e of [...(m.entities || []), ...(m.caption_entities || [])]) {
+    if (e.type === 'text_mention' && e.user?.id !== undefined) {
+      if (!ja || String(e.user.id) !== String(ja.id)) out.add(`id:${e.user.id}`)
+    } else if (e.type === 'mention' && typeof e.offset === 'number' && typeof e.length === 'number') {
+      out.add(tekst.slice(e.offset + 1, e.offset + e.length).toLowerCase())
+    }
+  }
+  for (const x of tekst.matchAll(/(?:^|[^\w@])@(\w{3,64})/g)) out.add(x[1]!.toLowerCase())
+  out.delete(vlastiti)
+  out.delete('')
+  return [...out]
+}
+
 /** Sadrži li poruka spomen `@jaUsername` (entitet `mention` ili, bez entiteta, sam tekst). */
 export function spominjeBota(m: NonNullable<Update['message']>, tekst: string, jaUsername: string): boolean {
   const cilj = `@${jaUsername}`.toLowerCase()
@@ -317,6 +358,17 @@ export function ulaznaPorukaIzTelegrama(
   const odgovorNaBota = !!ja && m.reply_to_message?.from?.id !== undefined &&
     String(m.reply_to_message.from.id) === String(ja.id)
   const spomen = !!ja?.username && spominjeBota(m, tekst, ja.username)
+  const spomeni = tudjiSpomeni(m, tekst, ja)
+  const r = m.reply_to_message
+  const pocetakTeme = m.is_topic_message === true && r?.message_id !== undefined && r.message_id === m.message_thread_id
+  const odgovorNa = r?.from?.id !== undefined && !odgovorNaBota && !pocetakTeme
+    ? {
+      id: String(r.from.id),
+      ...(r.from.username ? { korisnickoIme: r.from.username.toLowerCase() } : {}),
+      ...(r.from.first_name ? { ime: r.from.first_name } : {}),
+      jeBot: r.from.is_bot === true,
+    }
+    : undefined
   return {
     kanal: 'telegram',
     chatId: String(m.chat.id),
@@ -329,6 +381,8 @@ export function ulaznaPorukaIzTelegrama(
     ts: m.date ? new Date(m.date * 1000).toISOString() : new Date().toISOString(),
     privatno: m.chat.type === 'private',
     obracanjeBotu: spomen || odgovorNaBota || pocinjeImenom(tekst, ime),
+    ...(spomeni.length ? { spomeni } : {}),
+    ...(odgovorNa ? { odgovorNa } : {}),
   }
 }
 

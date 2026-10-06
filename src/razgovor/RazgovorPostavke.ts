@@ -15,7 +15,7 @@
 import { Database } from 'bun:sqlite'
 import { ensureSettingsSchema } from '../core/ConcurrencySetting'
 
-export type OdgovaraNa = 'sve' | 'spomen' | 'dopusteni'
+export type OdgovaraNa = 'sve' | 'spomen' | 'dopusteni' | 'dopusteni-sve'
 export type Ovlasti = 'citanje' | 'rad' | 'puno'
 export type MemorijaNacin = 'off' | 'shadow' | 'on'
 
@@ -24,6 +24,12 @@ export interface RazgovorPostavke {
   ime: string
   odgovaraNa: OdgovaraNa
   dopusteniKorisnici: string[]
+  /** Uz `dopusteni-sve`: nedopušteni dobivaju odgovor samo uz obraćanje (true) ili nikad (false). */
+  ostaliUzObracanje: boolean
+  /** Riječi (ime po korijenu ili @korisničko ime): poruka koja ih sadrži BILO GDJE = samo čita, bez zadatka (TASK-5283). */
+  preskociAkoSadrzi: string[]
+  /** Svaki tuđi @spomen ili odgovor na tuđu poruku (bot ili čovjek) = tišina i bez zadatka. */
+  tisinaKadDrugom: boolean
   model: string
   rokSek: number
   maxUsporednih: number
@@ -46,6 +52,9 @@ export const RAZGOVOR_KLJUCEVI: Readonly<Record<Polje, string>> = Object.freeze(
   ime: 'razgovor.ime',
   odgovaraNa: 'razgovor.odgovaraNa',
   dopusteniKorisnici: 'razgovor.dopusteniKorisnici',
+  ostaliUzObracanje: 'razgovor.ostaliUzObracanje',
+  preskociAkoSadrzi: 'razgovor.preskociAkoSadrzi',
+  tisinaKadDrugom: 'razgovor.tisinaKadDrugom',
   model: 'razgovor.model',
   rokSek: 'razgovor.rokSek',
   maxUsporednih: 'razgovor.maxUsporednih',
@@ -66,6 +75,9 @@ export const RAZGOVOR_ZADANO: Readonly<RazgovorPostavke> = Object.freeze({
   ime: '',
   odgovaraNa: 'spomen',
   dopusteniKorisnici: [],
+  ostaliUzObracanje: true,
+  preskociAkoSadrzi: [],
+  tisinaKadDrugom: false,
   model: '',
   rokSek: 300,
   maxUsporednih: 2,
@@ -94,12 +106,14 @@ const RASPONI: Partial<Record<Polje, [number, number]>> = {
   memorijaRokMs: [200, 10000],
 }
 const IZBORI: Partial<Record<Polje, readonly string[]>> = {
-  odgovaraNa: ['sve', 'spomen', 'dopusteni'],
+  odgovaraNa: ['sve', 'spomen', 'dopusteni', 'dopusteni-sve'],
   ovlasti: ['citanje', 'rad', 'puno'],
   memorijaRazgovor: ['off', 'shadow', 'on'],
 }
-const BOOL: readonly Polje[] = ['ukljucen', 'dokumenti']
+const BOOL: readonly Polje[] = ['ukljucen', 'dokumenti', 'ostaliUzObracanje', 'tisinaKadDrugom']
+const NIZOVI: readonly Polje[] = ['dopusteniKorisnici', 'preskociAkoSadrzi']
 const MAX_KORISNIKA = 50
+const MAX_DRUGIH = 20
 
 /** Jedno polje s ploče → valjana vrijednost ili tekst greške. */
 function provjeriPolje(polje: Polje, v: unknown): { ok: true; value: unknown } | { ok: false; error: string } {
@@ -125,9 +139,18 @@ function provjeriPolje(polje: Polje, v: unknown): { ok: true; value: unknown } |
     if (v.length > MAX_KORISNIKA) return { ok: false, error: `dopusteniKorisnici: najviše ${MAX_KORISNIKA}` }
     const ids = v.map(x => String(x).trim()).filter(Boolean)
     if (ids.some(x => !/^-?\d{1,20}$|^[\w.+-]{1,64}$/.test(x))) {
-      return { ok: false, error: 'dopusteniKorisnici: samo id-evi korisnika' }
+      return { ok: false, error: 'dopusteniKorisnici: id ili korisničko ime (slova, brojke, _ . + -), bez razmaka' }
     }
     return { ok: true, value: [...new Set(ids)] }
+  }
+  if (polje === 'preskociAkoSadrzi') {
+    if (!Array.isArray(v)) return { ok: false, error: 'preskociAkoSadrzi mora biti popis' }
+    if (v.length > MAX_DRUGIH) return { ok: false, error: `preskociAkoSadrzi: najviše ${MAX_DRUGIH}` }
+    const imena = v.map(x => String(x).trim()).filter(Boolean)
+    if (imena.some(x => !/^@?[\p{L}\p{N}_.-]{1,64}$/u.test(x))) {
+      return { ok: false, error: 'preskociAkoSadrzi: ime ili @korisničko ime, jedna riječ' }
+    }
+    return { ok: true, value: [...new Set(imena)] }
   }
   if (typeof v !== 'string') return { ok: false, error: `${polje} mora biti tekst` }
   const t = v.trim()
@@ -156,6 +179,8 @@ function provjeriPolje(polje: Polje, v: unknown): { ok: true; value: unknown } |
 export function uvjetOvlasti(s: Pick<RazgovorPostavke, 'ovlasti' | 'dopusteniKorisnici' | 'odgovaraNa'>): string | null {
   if (s.ovlasti === 'citanje') return null
   if (!s.dopusteniKorisnici.length) return `ovlasti „${s.ovlasti}" traže barem jednog dopuštenog korisnika`
+  // `dopusteni-sve` je dopušten: ovlasti iznad čitanja ionako vrijede samo za potez u kojem je
+  // svaki pošiljatelj dopušten (Razgovor.potez), a odgovor bez prozivke dobivaju samo oni.
   if (s.odgovaraNa === 'sve') return `ovlasti „${s.ovlasti}" nisu dopuštene uz odgovaraNa=sve`
   return null
 }
@@ -191,7 +216,7 @@ export function parseRazgovorPatch(raw: unknown, trenutno?: RazgovorPostavke):
 // ─── Baza ────────────────────────────────────────────────────────────────────
 
 function uNiz(polje: Polje, v: unknown): string {
-  if (polje === 'dopusteniKorisnici') return JSON.stringify(v)
+  if (NIZOVI.includes(polje)) return JSON.stringify(v)
   return String(v)
 }
 
@@ -200,7 +225,7 @@ function izNiza(polje: Polje, s: string): { ok: true; value: unknown } | { ok: f
   if (BOOL.includes(polje)) {
     if (s !== 'true' && s !== 'false') return { ok: false }
     v = s === 'true'
-  } else if (polje === 'dopusteniKorisnici') {
+  } else if (NIZOVI.includes(polje)) {
     try { v = JSON.parse(s) } catch { return { ok: false } }
   }
   const p = provjeriPolje(polje, v)
@@ -233,7 +258,7 @@ export function getRazgovorPostavke(db: Database, opcije: OpcijeOvlasti = {}): R
       .all(...kljucevi) as Array<{ key: string; value: string }>
   } catch { /* tablica ne postoji = sve zadano */ }
   const poKljucu = new Map(redovi.map(r => [r.key, r.value]))
-  const postavke: Record<string, unknown> = { ...RAZGOVOR_ZADANO, dopusteniKorisnici: [] }
+  const postavke: Record<string, unknown> = { ...RAZGOVOR_ZADANO, dopusteniKorisnici: [], preskociAkoSadrzi: [] }
   const izBaze: Polje[] = []
   const upozorenja: string[] = []
   for (const [polje, kljuc] of Object.entries(RAZGOVOR_KLJUCEVI) as [Polje, string][]) {
@@ -345,7 +370,7 @@ export function createRazgovorReader(o: { dbPath: string; ttlMs?: number; now?: 
       db = new Database(o.dbPath, { readonly: true })
       kes = getRazgovorPostavke(db, { dopustiPuno: o.dopustiPuno ?? puniDopusten() })
     } catch {
-      if (!kes) kes = { postavke: { ...RAZGOVOR_ZADANO, dopusteniKorisnici: [] }, izBaze: [], upozorenja: ['baza nije čitljiva'] }
+      if (!kes) kes = { postavke: { ...RAZGOVOR_ZADANO, dopusteniKorisnici: [], preskociAkoSadrzi: [] }, izBaze: [], upozorenja: ['baza nije čitljiva'] }
     } finally {
       try { db?.close() } catch { /* ništa */ }
     }

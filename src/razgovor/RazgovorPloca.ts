@@ -14,6 +14,7 @@ import {
 } from './RazgovorPostavke'
 import { stvoriRazgovor, type RazgovorJezgra, type RazgovorOvisnosti } from './Razgovor'
 import { izvrsiteljRazgovora } from './Izvrsitelj'
+import { procitajPosiljatelje, zabiljeziPosiljatelja, type Posiljatelj } from './Posiljatelji'
 import type { RazgovorUlaza } from '../TelegramPoller'
 
 export interface ApiOdgovor { status: number; tijelo: unknown }
@@ -61,6 +62,15 @@ export function razgovorPovijestGet(dbPath: string, limit = 50): ApiOdgovor {
   return sDb(dbPath, db => ({ status: 200, tijelo: { povijest: razgovorPovijest(db, limit) } }))
 }
 
+/** `$TM_HOME/data/razgovor/posiljatelji.json` — zadnji pošiljatelji (TASK-5283). */
+export function posiljateljiPut(dataDir: string): string {
+  return join(dataDir, 'razgovor', 'posiljatelji.json')
+}
+
+export function zadnjiPosiljatelji(dataDir: string): Posiljatelj[] {
+  return procitajPosiljatelje(posiljateljiPut(dataDir))
+}
+
 /** Model iz `model-config.json`: `agentOverrides.razgovor`, inače ništa (CLI bira sam). */
 export function modelIzKonfiguracije(putanja: string): string | undefined {
   try {
@@ -88,5 +98,6 @@ export function sklopiRazgovor(o: SklapanjeOpcije): { ulaz: RazgovorUlaza; jezgr
     korijen: join(o.dataDir, 'razgovor'),
     modelZadano: () => modelIzKonfiguracije(o.modelConfigPath),
   })
-  return { ulaz: { razgovor: jezgra, postavke }, jezgra }
+  const put = posiljateljiPut(o.dataDir)
+  return { ulaz: { razgovor: jezgra, postavke, zabiljezi: p => zabiljeziPosiljatelja(put, p) }, jezgra }
 }

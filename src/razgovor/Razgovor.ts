@@ -17,7 +17,7 @@ import { join } from 'path'
 import type { ExecRequest, ExecResult, Executor } from '../core/orchestrator/Ports'
 import type { Kanal, Razgovor, UlaznaPoruka } from './Kanal'
 import type { RazgovorPostavke } from './RazgovorPostavke'
-import { jeDopusten, trebaOdgovoriti } from './Filtar'
+import { jeDopusten, jeZaDrugog, trebaOdgovoriti } from './Filtar'
 import { argumentiOvlasti, okolinaRazgovora } from './Ovlasti'
 import { sastaviIdentitet } from './Identitet'
 import { dohvatiMemoriju, type MemorijaRezultat } from './Memorija'
@@ -64,6 +64,8 @@ interface StanjeChata {
   uTijeku: boolean
   uRedu: boolean
   prigusenje: Map<string, number>
+  /** Poruke upućene drugome koje bot samo čita — idu u kontekst sljedećeg poteza (TASK-5283). */
+  procitano: { ms: number; ime: string; tekst: string; p: UlaznaPoruka }[]
 }
 
 export interface SesijaChata {
@@ -76,6 +78,7 @@ export interface SesijaChata {
 const PRIGUSENJE_MS = 10 * 60_000
 const RED_OBAVIJEST_MS = 30_000
 const MAX_TEMA = 5
+const MAX_PROCITANO = 10
 const MAX_MEMORIJSKIH_KLJUCEVA = 500
 const CISCENJE_MS = 24 * 3600_000
 
@@ -142,7 +145,7 @@ export function stvoriRazgovor(d: RazgovorOvisnosti): RazgovorJezgra {
   function chat(kljuc: string): StanjeChata {
     let c = chatovi.get(kljuc)
     if (!c) {
-      c = { kljuc, cekaju: [], tajmer: null, uTijeku: false, uRedu: false, prigusenje: new Map() }
+      c = { kljuc, cekaju: [], tajmer: null, uTijeku: false, uRedu: false, prigusenje: new Map(), procitano: [] }
       chatovi.set(kljuc, c)
     }
     return c
@@ -259,7 +262,10 @@ export function stvoriRazgovor(d: RazgovorOvisnosti): RazgovorJezgra {
       if (mem.greska) log(`[razgovor] memorija (${c.kljuc}): ${mem.greska}`)
     }
 
+    // Što je bot u međuvremenu samo pročitao (poruke za drugoga), ako je iz ove sesije.
+    const procitano = c.procitano.splice(0).filter(x => t0 - x.ms <= s.sesijaNeaktivnostMin * 60_000)
     const prompt = [
+      procitano.length ? `[PROČITANO U CHATU — nije bilo upućeno tebi, ne odgovaraj na to izravno]\n${procitano.map(x => `[OD: ${x.ime}] ${x.tekst}`).join('\n')}\n[/PROČITANO]` : '',
       prethodne.length ? `[PRETHODNI KONTEKST: teme prethodnog razgovora u ovom chatu]\n${prethodne.map(t => `• ${t}`).join('\n')}\n[/PRETHODNI KONTEKST]` : '',
       mem?.blok || '',
       tekst,
@@ -267,7 +273,9 @@ export function stvoriRazgovor(d: RazgovorOvisnosti): RazgovorJezgra {
 
     // Ovlasti iznad `citanje` vrijede SAMO ako je svaki pošiljatelj u potezu dopušten — inače bi
     // svatko tko spomene bota dobio prava predviđena za vlasnika (sigurnosni pregled TASK-5277).
-    const ovlasti = s.ovlasti !== 'citanje' && stavke.every(x => jeDopusten(x.p, s.dopusteniKorisnici))
+    // Pročitane poruke (TASK-5283) ulaze u prompt, pa su i njihovi autori sudionici poteza.
+    const ovlasti = s.ovlasti !== 'citanje' && stavke.every(x => jeDopusten(x.p, s.dopusteniKorisnici)) &&
+      procitano.every(x => jeDopusten(x.p, s.dopusteniKorisnici))
       ? s.ovlasti : 'citanje'
     const oznaka = `${p.kanal}:${p.chatId}`
     const zahtjev = (resume?: string): ExecRequest => ({
@@ -357,7 +365,19 @@ export function stvoriRazgovor(d: RazgovorOvisnosti): RazgovorJezgra {
   return {
     primi(p: UlaznaPoruka, k: Kanal): void {
       const s = d.postavke()
-      if (!trebaOdgovoriti(p, s)) return
+      if (!trebaOdgovoriti(p, s)) {
+        // Obraćanje drugome (botu ili čovjeku): bot ne odgovara, ali čita — zapis + kontekst.
+        if (s.ukljucen && !p.posiljateljJeBot && jeZaDrugog(p, s)) {
+          const c = chat(`${p.kanal}:${p.chatId}`)
+          c.procitano.push({ ms: sat(), ime: p.posiljateljIme, tekst: p.tekst.slice(0, 1000), p })
+          if (c.procitano.length > MAX_PROCITANO) c.procitano.splice(0, c.procitano.length - MAX_PROCITANO)
+          zapisiPotez(d.korijen, p.kanal, p.chatId, {
+            ts: new Date(sat()).toISOString(), smjer: 'procitano', posiljateljId: p.posiljateljId,
+            posiljateljIme: p.posiljateljIme, tekst: p.tekst,
+          })
+        }
+        return
+      }
       const c = chat(`${p.kanal}:${p.chatId}`)
       c.cekaju.push({ p, k })
       if (c.uTijeku || c.uRedu) return
