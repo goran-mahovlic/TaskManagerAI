@@ -3,7 +3,7 @@
 // nakon ingesta. Je li poruka upućena botu (spomen, ime, odgovor na bota) računa ADAPTER
 // kanala — ovdje se samo čita `obracanjeBotu`.
 //
-// Autorica: Jelena (Engineer), TASK-5277.
+// Autorica: Jelena (Engineer), TASK-5277; dopusteni-sve i tišina za drugoga TASK-5283.
 
 import type { UlaznaPoruka } from './Kanal'
 import type { RazgovorPostavke } from './RazgovorPostavke'
@@ -37,13 +37,44 @@ export function jeDopusten(p: Pick<UlaznaPoruka, 'posiljateljId' | 'posiljateljK
   })
 }
 
+const bezEt = (x: string) => x.trim().replace(/^@/, '').toLowerCase()
+
+/**
+ * Je li poruka upućena NEKOM DRUGOM, a ne ovom botu (TASK-5283, ADR-0002 §15):
+ *  - počinje imenom s popisa `preskociAkoSpominje`, sadrži njegov @spomen ili je odgovor na
+ *    poruku tog bota (po korisničkom imenu ili imenu);
+ *  - uz `tisinaKadDrugom`: bilo koji tuđi @spomen (bot ili čovjek) ili odgovor na tuđu poruku.
+ * Obraćanje OVOM botu (spomen, ime, reply, privatni chat) uvijek pobjeđuje. Vrijedi i za ulaz:
+ * poruka za drugoga ne otvara zadatak.
+ */
+export function jeZaDrugog(p: UlaznaPoruka, s: Pick<RazgovorPostavke, 'preskociAkoSpominje' | 'tisinaKadDrugom'>): boolean {
+  if (p.privatno || p.obracanjeBotu) return false
+  const spomeni = p.spomeni || []
+  const o = p.odgovorNa && p.odgovorNa.id !== p.posiljateljId ? p.odgovorNa : undefined
+  for (const unos of s.preskociAkoSpominje || []) {
+    const e = bezEt(unos)
+    if (!e) continue
+    if (pocinjeImenom(p.tekst, e) || pocinjeImenom(p.tekst, `@${e}`)) return true
+    if (spomeni.includes(e)) return true
+    if (o && (o.korisnickoIme === e || (!!o.ime && normaliziraj(o.ime.trim()) === normaliziraj(e)))) return true
+  }
+  if (s.tisinaKadDrugom && (spomeni.length > 0 || !!o)) return true
+  return false
+}
+
 export function trebaOdgovoriti(p: UlaznaPoruka, s: RazgovorPostavke): boolean {
   if (!s.ukljucen) return false
   // Dva bota u istoj grupi ne smiju se dopisivati.
   if (p.posiljateljJeBot) return false
+  if (jeZaDrugog(p, s)) return false
   const obracanje = p.privatno || p.obracanjeBotu
-  if (s.odgovaraNa === 'sve') return true
-  if (!obracanje) return false
-  if (s.odgovaraNa === 'dopusteni') return jeDopusten(p, s.dopusteniKorisnici)
-  return true
+  switch (s.odgovaraNa) {
+    case 'sve': return true
+    case 'dopusteni-sve':
+      // Dopušteni bez prozivke; ostali samo uz obraćanje (ili nikako — postavka).
+      if (jeDopusten(p, s.dopusteniKorisnici)) return true
+      return obracanje && s.ostaliUzObracanje
+    case 'dopusteni': return obracanje && jeDopusten(p, s.dopusteniKorisnici)
+    default: return obracanje
+  }
 }

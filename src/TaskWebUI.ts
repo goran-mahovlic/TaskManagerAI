@@ -60,7 +60,7 @@ import {
   githubKonfigModul,
 } from './GitHubConfig'
 import { probajUlaz, stanjeUlaza, pokreniTelegramPoller, uskladiTelegramPoller, type RazgovorUlaza } from './TelegramPoller'
-import { razgovorGet, razgovorPut, razgovorPovijestGet, sklopiRazgovor } from './razgovor/RazgovorPloca'
+import { razgovorGet, razgovorPut, razgovorPovijestGet, sklopiRazgovor, zadnjiPosiljatelji } from './razgovor/RazgovorPloca'
 import type { RazgovorJezgra } from './razgovor/Razgovor'
 import {
   loadOrchestratorConfig, validateOrchestratorPatch, saveOrchestratorConfig, stanjeOrkestratora,
@@ -9081,14 +9081,18 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       var upoz = (d.upozorenja || []).map(function(u) { return '<div>⚠️ ' + _esc(u) + '</div>'; }).join('');
       return '<div class="cfg-napomena">' +
           _T('cfg_razg_opis', 'Kad je uključen, bot odgovara na poruke koje NISU postale zadatak (nalozi i dalje otvaraju zadatak uz kratku potvrdu). Promjene vrijede odmah, bez restarta; svaka se bilježi u povijesti.') +
-          '<br>' + _T('cfg_razg_privatnost', 'Za odgovaraNa=sve u Telegram grupi bot mora imati isključen privacy mode (BotFather → /setprivacy).') +
+          '<br>' + _T('cfg_razg_privatnost', 'Za odgovaraNa=sve ili dopusteni-sve u Telegram grupi bot mora imati isključen privacy mode (BotFather → /setprivacy).') +
+          '<br>' + _T('cfg_razg_nacini', 'spomen = samo uz prozivku · dopusteni = prozivka od dopuštenih · dopusteni-sve = dopušteni bez prozivke, ostali uz prozivku (ili nikad) · sve = svaka poruka.') +
           '<br>' + _T('cfg_razg_stanje', 'Stanje') + ': ' + (st.petljaRadi ? '🟢 ' + _T('cfg_razg_petlja_radi', 'petlja radi') : '⚪ ' + _T('cfg_razg_petlja_ne', 'petlja ne radi')) +
           ' · ' + _T('cfg_razg_aktivnih', 'odgovora u tijeku') + ': <b>' + (st.aktivnih || 0) + '</b>' +
         '</div>' + upoz +
         _razgPolje('razg-ukljucen', _T('cfg_razg_ukljucen', 'Razgovor uključen'), '<input id="razg-ukljucen" type="checkbox"' + (p.ukljucen ? ' checked' : '') + '>') +
         _razgPolje('razg-ime', _T('cfg_razg_ime', 'Ime bota (prazno = ime iz Telegrama)'), '<input id="razg-ime" type="text" maxlength="40" value="' + _esc(p.ime || '') + '">') +
-        _razgPolje('razg-odgovaraNa', _T('cfg_razg_odgovara', 'Odgovara na'), _razgIzbor('razg-odgovaraNa', p.odgovaraNa, ['spomen', 'dopusteni', 'sve'])) +
+        _razgPolje('razg-odgovaraNa', _T('cfg_razg_odgovara', 'Odgovara na'), _razgIzbor('razg-odgovaraNa', p.odgovaraNa, ['spomen', 'dopusteni', 'dopusteni-sve', 'sve'])) +
+        _razgPolje('razg-ostali', _T('cfg_razg_ostali', 'Uz dopusteni-sve: ostali dobivaju odgovor uz prozivku'), '<input id="razg-ostali" type="checkbox"' + (p.ostaliUzObracanje !== false ? ' checked' : '') + '>') +
         _razgPolje('razg-dopusteni', _T('cfg_razg_dopusteni', 'Dopušteni korisnici (id ili korisničko ime, zarezom)'), '<input id="razg-dopusteni" type="text" value="' + _esc((p.dopusteniKorisnici || []).join(', ')) + '">') +
+        _razgPolje('razg-preskoci', _T('cfg_razg_preskoci', 'Drugi botovi — šuti i ne otvaraj zadatak (ime ili @korisničko ime, zarezom)'), '<input id="razg-preskoci" type="text" value="' + _esc((p.preskociAkoSpominje || []).join(', ')) + '">') +
+        _razgPolje('razg-tisina', _T('cfg_razg_tisina', 'Obraćanje drugome (@spomen ili odgovor na tuđu poruku, bot ili čovjek) = samo čita'), '<input id="razg-tisina" type="checkbox"' + (p.tisinaKadDrugom ? ' checked' : '') + '>') +
         _razgPolje('razg-ovlasti', _T('cfg_razg_ovlasti', 'Ovlasti'), _razgIzbor('razg-ovlasti', p.ovlasti, ['citanje', 'rad', 'puno'])) +
         _razgPolje('razg-model', _T('cfg_razg_model', 'Model (prazno = model-config)'), '<input id="razg-model" type="text" value="' + _esc(p.model || '') + '">') +
         _razgPolje('razg-rokSek', _T('cfg_razg_rok', 'Rok odgovora (s, 30–1800)'), '<input id="razg-rokSek" type="number" min="30" max="1800" value="' + p.rokSek + '">') +
@@ -9101,7 +9105,31 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         _razgPolje('razg-url', _T('cfg_razg_url', 'Adresa memorije (prazno = TM_HINDSIGHT_URL)'), '<input id="razg-url" type="text" value="' + _esc(p.memorijaUrl || '') + '">') +
         _razgPolje('razg-memrok', _T('cfg_razg_memrok', 'Rok memorije (ms, 200–10000)'), '<input id="razg-memrok" type="number" min="200" max="10000" value="' + p.memorijaRokMs + '">') +
         '<div style="margin-top:8px"><button class="cfg-btn" onclick="spremiRazgovor(this)">' + _T('tel_spremi', 'Spremi') + '</button></div>' +
+        _razgPosiljatelji(d.posiljatelji || [], p.dopusteniKorisnici || []) +
         (h ? '<ul class="cfg-povijest">' + h + '</ul>' : '');
+    }
+
+    // Zadnji pošiljatelji u dopuštenim chatovima (TASK-5283) — vlasnik ne mora tražiti ID.
+    function _razgPosiljatelji(lista, dopusteni) {
+      if (!lista.length) return '<div class="cfg-napomena" style="margin-top:8px">' + _T('cfg_razg_posiljatelji_prazno', 'Zadnji pošiljatelji: još nitko nije pisao u dopuštenim chatovima.') + '</div>';
+      var dop = dopusteni.map(function(x) { return String(x).replace(/^@/, '').toLowerCase(); });
+      var redovi = lista.map(function(s) {
+        var vec = dop.indexOf(String(s.id)) >= 0 || (s.korisnickoIme && dop.indexOf(String(s.korisnickoIme).toLowerCase()) >= 0);
+        return '<tr><td>' + _esc(s.ime || '') + (s.jeBot ? ' 🤖' : '') + '</td><td>' + (s.korisnickoIme ? '@' + _esc(s.korisnickoIme) : '—') + '</td><td><code>' + _esc(s.id) + '</code></td>' +
+          '<td>' + _esc(String(s.zadnjiTs || '').slice(0, 16).replace('T', ' ')) + '</td><td>' +
+          (vec ? '✅' : (s.jeBot ? '' : '<button class="cfg-btn" onclick="razgDodajDopustenog(this, \\'' + _esc(s.id) + '\\')">' + _T('cfg_razg_dodaj', 'dodaj u dopuštene') + '</button>')) +
+          '</td></tr>';
+      }).join('');
+      return '<div style="margin-top:10px"><b>' + _T('cfg_razg_posiljatelji', 'Zadnji pošiljatelji u dopuštenim chatovima') + '</b>' +
+        '<table style="border-collapse:collapse;margin-top:4px;font-size:0.9em" cellpadding="4"><tr><th>' + _T('cfg_razg_p_ime', 'ime') + '</th><th>@username</th><th>ID</th><th>' + _T('cfg_razg_p_zadnje', 'zadnja poruka') + '</th><th></th></tr>' + redovi + '</table></div>';
+    }
+
+    async function razgDodajDopustenog(btn, id) {
+      var el = document.getElementById('razg-dopusteni');
+      var popis = el.value.split(',').map(function(x) { return x.trim(); }).filter(Boolean);
+      if (popis.indexOf(id) < 0) popis.push(id);
+      el.value = popis.join(', ');
+      await spremiRazgovor(btn);
     }
 
     async function spremiRazgovor(btn) {
@@ -9111,6 +9139,9 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         ime: v('razg-ime').value,
         odgovaraNa: v('razg-odgovaraNa').value,
         dopusteniKorisnici: v('razg-dopusteni').value.split(',').map(function(x) { return x.trim(); }).filter(Boolean),
+        ostaliUzObracanje: v('razg-ostali').checked,
+        preskociAkoSpominje: v('razg-preskoci').value.split(',').map(function(x) { return x.trim(); }).filter(Boolean),
+        tisinaKadDrugom: v('razg-tisina').checked,
         ovlasti: v('razg-ovlasti').value,
         model: v('razg-model').value,
         rokSek: Number(v('razg-rokSek').value),
@@ -10779,6 +10810,7 @@ function handleRazgovorGet(): Response {
     const st = stanjeUlaza()
     return razgovorOdgovor(razgovorGet(TM_DB, {
       stanje: { petljaRadi: st.radi, aktivnih: _razgovor ? _razgovor.jezgra.aktivnih() : 0, zadnjaGreska: st.zadnjaGreska },
+      posiljatelji: zadnjiPosiljatelji(TM_DATA),
     }))
   } catch (e) {
     return razgovorOdgovor({ status: 500, tijelo: { error: String(e) } })

@@ -75,8 +75,11 @@ nepoznata polja (HTTP 400 s popisom dopuštenih).
 |---|---|---|---|
 | `razgovor.ukljucen` | `false` | bool | glavni prekidač |
 | `razgovor.ime` | `''` | ≤40 zn. | ime bota u identitetu i za prepoznavanje obraćanja; `''` → `first_name` iz `getMe` |
-| `razgovor.odgovaraNa` | `'spomen'` | `sve` \| `spomen` \| `dopusteni` | §5 |
-| `razgovor.dopusteniKorisnici` | `[]` | id-evi | za `dopusteni`; i uvjet za ovlasti > `citanje` (§7) |
+| `razgovor.odgovaraNa` | `'spomen'` | `sve` \| `spomen` \| `dopusteni` \| `dopusteni-sve` | §5, §15 |
+| `razgovor.dopusteniKorisnici` | `[]` | id ili korisničko ime | za `dopusteni`/`dopusteni-sve`; i uvjet za ovlasti > `citanje` (§7) |
+| `razgovor.ostaliUzObracanje` | `true` | bool | uz `dopusteni-sve`: nedopušteni dobivaju odgovor uz prozivku (`false` = nikad) — §15 |
+| `razgovor.preskociAkoSpominje` | `[]` | ≤20 imena / @korisničkih imena | drugi botovi: poruka za njih = tišina i bez zadatka — §15 |
+| `razgovor.tisinaKadDrugom` | `false` | bool | svaki tuđi @spomen ili reply na tuđu poruku (bot ili čovjek) = samo čita — §15 |
 | `razgovor.model` | `''` | — | `''` → `model-config.json` `agentOverrides['razgovor']` → `defaults` (čita se po poruci) |
 | `razgovor.rokSek` | `300` | 30–1800 | rok jednog odgovora; istek = `kill` + kratka poruka |
 | `razgovor.maxUsporednih` | `2` | 1–5 | strop istodobnih poziva modela (svi chatovi) |
@@ -110,7 +113,10 @@ Filtar se primjenjuje **nakon** filtara ulaza (`dopusteniChatovi`) i nakon inges
    zasebna riječ na početku poruke („Šabane, …" uz normalizaciju padeža nije cilj — dovoljno
    je `^ime\b`, bez obzira na velika slova i dijakritike), ili odgovor (*reply*) na poruku
    ovog bota;
-5. `dopusteni` → kao `spomen`, ali samo od `razgovor.dopusteniKorisnici`.
+5. `dopusteni` → kao `spomen`, ali samo od `razgovor.dopusteniKorisnici`;
+6. `dopusteni-sve` (TASK-5283) → svaka poruka dopuštenog korisnika bez prozivke; ostali kao
+   `spomen` (ili nikad uz `ostaliUzObracanje=false`);
+7. prije svega toga (osim pravila 1–2): poruka upućena **drugome** = tišina (§15).
 
 **Nalaz koji se popravlja usput:** današnji `propusti()` (`TelegramPoller.ts:241`) za
 `sameSpomeni` prihvaća **bilo koji** `mention`. U grupi node-A, gdje su i Klaudio i Šaban,
@@ -355,3 +361,42 @@ Odstupanja i napomene za pregled:
   preuzeti netko drugi — za razine `rad`/`puno` sigurniji je brojčani id.
 - Zbrajanje troška u telemetriju pod agentom `razgovor` nije izvedeno; trošak je po potezu u zapisu (`cijenaUsd`).
 - Stvarna proba (`claude -p`, haiku, razina `citanje`): `--resume` pamti sadržaj prethodnog poteza; čitanje konfiguracije kanala odbijeno i token nije iznesen; pisanje u radni dir odbijeno; dopušteni dokument poslan kroz SEND_DOC.
+
+## 15. Dopunska odluka (TASK-5283, 06.10.2026.): „dopušteni bez prozivke" i tišina za drugoga
+
+**Povod.** Goran (grupa node-A, 06.10. 17:58 i 18:26): Šaban mora odgovarati na SVE poruke
+dopuštenih korisnika bez prozivke, ali šutjeti kad je poruka upućena drugome — drugom botu
+(Klaudio, `@klaudioAI_bot`) ili čovjeku (`@Tomy`, reply na Goranovu poruku). Usput nalaz
+REGOČ-a 18:22: ulaz je otvarao zadatke i za poruke upućene Klaudiju (TASK-167/168/169 na
+node-A ploči).
+
+**Odluka.**
+1. Novi način `odgovaraNa='dopusteni-sve'`. **Dopušten uz ovlasti `rad`** (mijenja §7/J3 za
+   ovaj način): odgovor bez prozivke dobivaju samo dopušteni, a ovlasti iznad `citanje` i
+   ionako vrijede samo za potez u kojem je SVAKI pošiljatelj dopušten (ispravak 1 iz §14).
+   Nedopušteni uz prozivku dobivaju odgovor na razini `citanje`. `sve` uz `rad` ostaje zabranjen.
+   Uvjet „barem jedan dopušteni korisnik" vrijedi kao i dosad.
+2. **Obraćanje drugome = tišina** (`Filtar.jeZaDrugog`):
+   - `preskociAkoSpominje` (popis drugih botova): poruka počinje tim imenom (`^ime\b`), sadrži
+     njegov @spomen ili je reply na njegovu poruku (po korisničkom imenu ili imenu);
+   - uz `tisinaKadDrugom=true`: SVAKI tuđi @spomen (i `text_mention`) ili reply na tuđu poruku,
+     bot ili čovjek. Reply na vlastitu poruku nije obraćanje drugome; „reply" na početnu
+     poruku teme u forumu se ne broji.
+   - Obraćanje OVOM botu (vlastiti @spomen, ime, reply na njega, privatni chat) **pobjeđuje**
+     („@Šaban i @Klaudio" → odgovara).
+3. **Vrijedi i za ulaz**: poruka za drugoga ne ide u `/api/ingest` ni kad je ulaz uključen —
+   ni zadatak ni odgovor. Popis drugih štiti ulaz i kad je razgovor isključen.
+4. **Samo čita**: takvu poruku razgovor zapisuje (`smjer: "procitano"` u zapisu §8) i daje je
+   modelu u sljedećem potezu kao blok `[PROČITANO U CHATU …]` (najviše 10, unutar prozora
+   `sesijaNeaktivnostMin`). Model se za nju NE poziva.
+5. **Zadnji pošiljatelji**: poller bilježi svakog pošiljatelja u dopuštenom chatu (ime,
+   @username, ID, je li bot) u `data/razgovor/posiljatelji.json` (≤30, najnoviji prvi);
+   kartica „Razgovor" ih prikazuje s gumbom „dodaj u dopuštene" (dodaje **ID**, ne ime —
+   v. napomenu o preuzimanju korisničkog imena u §14).
+6. Validator `dopusteniKorisnici` sada javlja „id ili korisničko ime" — usklađeno s natpisom
+   polja i s `Filtar.jeDopusten`.
+
+Zadano je ponašanje nepromijenjeno (`preskociAkoSpominje=[]`, `tisinaKadDrugom=false`).
+Testovi: `tests/razgovor-drugom.test.ts` (tablica slučajeva Filtra, adapter, ulaz, postavke,
+pošiljatelji, jezgra).
+
