@@ -82,6 +82,7 @@ import { getMessageQueue } from './core/MessageQueue'
 import { getRAGService, ragPodesen } from './RAGService'
 import { kljucPrisutanUDatoteci, ukloniKljucIzDatoteke } from './LoginCreds'
 import { ocistiLoginKod, izvuciLoginUrl, maskirajLoginTail, loginOauthGreska, LOGIN_POTVRDA } from './LoginUnos'
+import { capguardPostavke, stanjeCapguarda, zatraziSposobnost } from './Capguard'
 import { tecajOdgovor } from './Tecaj'
 import type { Task, AgentId, TaskFilter } from './types/task-types'
 import { CreateTaskInputSchema, UpdateTaskInputSchema, TaskFilterSchema } from './zod/schemas/task'
@@ -2357,6 +2358,8 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         <button class="tab-btn" data-tab="potrosnja" data-i18n="potro_nja">Potro&#353;nja</button>
         <button class="tab-btn" data-tab="status" data-i18n="status">Status</button>
         <button class="tab-btn" data-tab="info" data-i18n="config">Config</button>
+        <!-- TASK-5270: kartica postoji samo uz capguard (otkriva je provjeriCapguard()) -->
+        <button class="tab-btn" data-tab="capabilities" id="tab-btn-capabilities" data-i18n="sigurnost" style="display:none">Sigurnost</button>
       </div>
       <div class="tab-nav-right">
         <select id="tasks-project-filter" class="filter-select">
@@ -2639,6 +2642,16 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         <div class="status-section-title" data-i18n="scheduler_queue">Scheduler &amp; Queue</div>
         <div id="status-queue-content"></div>
       </div>
+    </div>
+
+    <!-- SIGURNOST / CAPGUARD TAB (TASK-2619, uvjetno od TASK-5270) -->
+    <div id="tab-capabilities" class="tab-content">
+      <div class="status-header-bar">
+        <h2 style="margin:0;font-size:1.1rem;" data-i18n="cap_naslov">Sigurnost i sposobnosti</h2>
+        <button id="caps-refresh-btn" class="konzola-mode-btn plan-mode" style="border-color:var(--accent-blue);color:var(--accent-blue);" data-i18n="osvje_i">Osvje&#382;i</button>
+      </div>
+      <p style="color:var(--text-secondary);font-size:0.8rem;margin:0.5rem 0 1rem;" data-i18n="cap_opis">Stvarno stanje provodi capguard (root servis, izvan dosega ploče). Ploča smije samo zatražiti promjenu: Tier-1 capguard primijeni sam, Tier-2 tek uz odobrenje administratora ili host tokena.</p>
+      <div id="caps-content"><div class="empty" data-i18n="loading">Loading...</div></div>
     </div>
 
     <!-- INFO TAB -->
@@ -4138,6 +4151,8 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       zovi(osvjeziDezurniJezik);
       if (document.getElementById('info-grid')) zovi(fetchInfoData);
       if (window.CfgRaspored) zovi(window.CfgRaspored.jezik);   // TASK-5170: natpisi uređivača rasporeda
+      // sigurnost (capguard, TASK-5270)
+      if (currentTab === 'capabilities') zovi(fetchCapabilities);
     }
 
     async function postaviIzbornikJezika() {
@@ -6616,6 +6631,8 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         initStatus();
       } else if (tabId === 'info') {
         initInfo();
+      } else if (tabId === 'capabilities') {
+        fetchCapabilities();
       }
 
       // Stop intervals for inactive tabs
@@ -10177,6 +10194,94 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
 
     postaviIzbornikJezika();
 
+    // ============================================
+    // SIGURNOST / CAPGUARD (TASK-2619, uvjetno od TASK-5270)
+    // Ploča samo ČITA stanje i upisuje NAMJERU (pending); primjenu radi capguard (root).
+    // ============================================
+    let zadnjiCapguard = null;
+
+    async function provjeriCapguard() {
+      try {
+        const r = await fetch('/api/capabilities');
+        if (!r.ok) return;
+        const d = await r.json();
+        const gumb = document.getElementById('tab-btn-capabilities');
+        if (gumb && d && d.aktivno) gumb.style.display = '';
+      } catch (e) { /* bez capguarda kartica ostaje skrivena */ }
+    }
+
+    async function fetchCapabilities() {
+      const el = document.getElementById('caps-content');
+      try {
+        const r = await fetch('/api/capabilities');
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        zadnjiCapguard = await r.json();
+        renderCapabilities(zadnjiCapguard);
+      } catch (e) {
+        el.innerHTML = '<div class="empty">' + _esc(_T('cap_greska_dohvata', 'Greška pri dohvaćanju stanja capguarda')) + ': ' + _esc(e && e.message ? e.message : e) + '</div>';
+      }
+    }
+
+    function capUputaHtml(u) {
+      if (!u) return '';
+      return '<div style="font-size:0.72rem;color:var(--text-secondary);margin-top:4px;line-height:1.5;">'
+        + _esc(_T('cap_odobri_admin', 'Odobri kao regoc-admin:')) + ' <code>' + _esc(u.admin) + '</code><br>'
+        + _esc(_T('cap_odobri_host', 'ili host token:')) + ' <code>' + _esc(u.hostToken) + '</code> (' + _esc(_T('cap_sadrzaj', 'sadržaj')) + ' <code>' + _esc(u.hostTokenSadrzaj) + '</code>)</div>';
+    }
+
+    function renderCapabilities(d) {
+      const el = document.getElementById('caps-content');
+      if (!d || !d.aktivno) {
+        el.innerHTML = '<div class="empty">' + _esc(_T('cap_nije_prisutan', 'Capguard nije prisutan na ovom stroju.')) + '</div>';
+        return;
+      }
+      const eff = d.effective || {};
+      const pendMap = {};
+      (d.pending || []).forEach(function (p) { pendMap[p.name] = p; });
+      const rows = (d.catalog || []).map(function (c) {
+        const on = !!eff[c.name];
+        const pend = pendMap[c.name];
+        const stanje = '<span style="font-weight:700;color:' + (on ? 'var(--accent-green,#3fb950)' : 'var(--text-secondary)') + ';">' + (on ? 'ON' : 'OFF') + '</span>';
+        const tier = c.tier === 2
+          ? '<span style="color:#d29922;border:1px solid #d29922;border-radius:4px;padding:0 5px;font-size:0.7rem;">TIER-2</span>'
+          : '<span style="color:var(--text-secondary);border:1px solid var(--border-color);border-radius:4px;padding:0 5px;font-size:0.7rem;">TIER-1</span>';
+        let akcija;
+        if (pend) {
+          akcija = '<span style="color:#d29922;">&#9203; ' + _esc(_Tv('cap_ceka', 'zahtjev {smjer} čeka', { smjer: pend.desired ? 'ON' : 'OFF' }))
+            + (c.tier === 2 ? ' ' + _esc(_T('cap_odobrenje', 'odobrenje')) : '') + '</span>' + capUputaHtml(pend.uputa);
+        } else {
+          const cilj = on ? 'off' : 'on';
+          const natpis = (on ? _T('cap_zatrazi_off', 'Zatraži OFF') : _T('cap_zatrazi_on', 'Zatraži ON')) + (c.tier === 2 ? ' &#128274;' : '');
+          akcija = '<button class="konzola-mode-btn cap-zahtjev" style="font-size:0.72rem;padding:2px 8px;" data-ime="' + _esc(c.name) + '" data-cilj="' + cilj + '">' + natpis + '</button>';
+        }
+        return '<tr><td><code>' + _esc(c.name) + '</code></td><td>' + stanje + '</td><td>' + tier + '</td><td style="color:var(--text-secondary);font-size:0.75rem;">' + _esc(c.description || '') + '</td><td>' + akcija + '</td></tr>';
+      }).join('');
+      const meta = '<div style="color:var(--text-secondary);font-size:0.72rem;margin-bottom:0.6rem;">' + _esc(_T('cap_izvor', 'Izvor')) + ': <code>' + _esc(d.statePath) + '</code> &middot; host <b>' + _esc(d.host || '?') + '</b> &middot; ' + _esc(_T('cap_azurirano', 'ažurirano')) + ' ' + _esc(d.updated_at || '?') + '</div>'
+        + (d.greska ? '<div class="empty" style="color:#d29922;">' + _esc(d.greska) + '</div>' : '');
+      const tablica = '<table class="info-table"><thead><tr><th>' + _esc(_T('cap_sposobnost', 'Sposobnost')) + '</th><th>' + _esc(_T('cap_stanje', 'Stanje')) + '</th><th>Tier</th><th>' + _esc(_T('cap_opis_stupac', 'Opis')) + '</th><th>' + _esc(_T('cap_akcija', 'Akcija')) + '</th></tr></thead><tbody>' + rows + '</tbody></table>';
+      const napomena = '<p style="color:var(--text-secondary);font-size:0.72rem;margin-top:0.8rem;">&#128274; ' + _esc(_T('cap_tier2_napomena', 'Tier-2 zahtjev (internet, mesh, root, lan) ostaje na čekanju dok ga ne odobri regoc-admin na stroju (npr. sudo /usr/local/sbin/regoc-capguard approve internet on) ili host token u /media/sf_regoc_approvals/<ime>.approve (sadržaj: on|off <epoch>). Odobrenje traje 15 min. Ploča nema root i ne može zaobići capguard.')) + '</p>';
+      el.innerHTML = meta + tablica + napomena;
+      el.querySelectorAll('.cap-zahtjev').forEach(function (b) {
+        b.addEventListener('click', function () { requestCapability(b.dataset.ime, b.dataset.cilj); });
+      });
+    }
+
+    async function requestCapability(ime, cilj) {
+      try {
+        const r = await fetch('/api/capabilities/request', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: ime, desired: cilj })
+        });
+        const res = await r.json();
+        if (!r.ok) { alert(_T('cap_greska', 'Greška') + ': ' + (res.error || r.status)); return; }
+        if (res.uputa) alert(_T('cap_tier2_poslan', 'Zahtjev je upisan i čeka odobrenje.') + '\\n\\n' + res.uputa.admin + '\\n' + res.uputa.hostToken);
+        fetchCapabilities();
+      } catch (e) { alert(_T('cap_greska', 'Greška') + ': ' + e); }
+    }
+
+    document.getElementById('caps-refresh-btn')?.addEventListener('click', fetchCapabilities);
+    provjeriCapguard();
+
     document.getElementById('odluc-ukljucen')?.addEventListener('change', function () {
       spremiOdlucitelja({ ukljucen: this.checked });
     });
@@ -11879,6 +11984,33 @@ async function handleCreateTask(req: Request): Promise<Response> {
       headers: { 'Content-Type': 'application/json' }
     })
   }
+}
+
+// ─── TASK-2619/5270: Sigurnost (capguard) — uvjetno, v. src/Capguard.ts ───
+// Ploča samo ČITA datoteku stanja i upisuje NAMJERU u capability_requests (pending).
+function handleGetCapabilities(): Response {
+  if (!capguardPostavke().aktivno) return json({ aktivno: false })
+  let db: Database | null = null
+  try {
+    db = new Database(TM_DB, { readonly: true })
+    return json(stanjeCapguarda(db))
+  } catch (e: any) {
+    return json({ ...capguardPostavke(), greska: 'baza: ' + (e?.message || e) })
+  } finally { db?.close() }
+}
+
+async function handleCapabilityRequest(req: Request): Promise<Response> {
+  if (!capguardPostavke().aktivno) return json({ error: 'capguard nije prisutan na ovom stroju' }, 404)
+  let tijelo: any
+  try { tijelo = await req.json() } catch { return json({ error: 'neispravan JSON' }, 400) }
+  let db: Database | null = null
+  try {
+    db = new Database(TM_DB)
+    const r = zatraziSposobnost(db, tijelo)
+    return json(r.body, r.status)
+  } catch (e: any) {
+    return json({ error: 'baza: ' + (e?.message || e) }, 500)
+  } finally { db?.close() }
 }
 
 // Globalni JSON-response helper (lokalni `const json` u drugim funkcijama ga zasjenjuju).
@@ -16259,6 +16391,14 @@ async function obradiZahtjev(req: Request): Promise<Response | undefined> {
     // PUT /api/system/mode — change system mode
     if (url.pathname === '/api/system/mode' && req.method === 'PUT') {
       return handleSetSystemMode(req)
+    }
+
+    // TASK-2619/5270: Sigurnost (capguard) — bez capguarda GET vraća {aktivno:false}, POST 404
+    if (url.pathname === '/api/capabilities' && req.method === 'GET') {
+      return handleGetCapabilities()
+    }
+    if (url.pathname === '/api/capabilities/request' && req.method === 'POST') {
+      return handleCapabilityRequest(req)
     }
 
     // GET /api/system/persistent — persistent agents config
