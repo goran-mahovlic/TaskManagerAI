@@ -162,7 +162,7 @@ import {
 import {
   TELEGRAM_CONFIG_PATH,
   loadTelegramConfig, saveTelegramConfig, validateTelegramPatch, telegramBotToken,
-  posaljiTelegramPoruku, obavijestiZadatak, odgovorTelegramPloci,
+  posaljiTelegramPoruku, obavijestiZadatak, odgovorTelegramPloci, trebaObavijest,
 } from './TelegramConfig'
 // Prigusenje proba (DIZAJN-integracije §1.4 t.3) — jedno mjesto za svih pet kartica.
 import { prigusenje } from './core/ProbeGuard'
@@ -8616,6 +8616,11 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         '<input id="tel-prefix" value="' + _esc(p.prefix || '') + '" style="' + _stil() + ';width:80px">' +
         ' <button class="cfg-btn" onclick="spremiTelegram({prefix:document.getElementById(\\'tel-prefix\\').value}, this)">' + _T('tel_spremi', 'Spremi') + '</button>',
         _T('tel_prefix_opis', 'Emoji ili kratki tekst koji prethodi poruci.'));
+      h += _red(_T('tel_stil', 'Stil izlaza'),
+        '<select onchange="spremiTelegram({stil:this.value}, this)" style="' + _stil() + '">' +
+        '<option value="kratko"' + ((p.stil || 'kratko') === 'kratko' ? ' selected' : '') + '>' + _T('tel_stil_kratko', 'kratko') + '</option>' +
+        '<option value="puno"' + (p.stil === 'puno' ? ' selected' : '') + '>' + _T('tel_stil_puno', 'puno') + '</option></select>',
+        _T('tel_stil_opis', 'Kratko: prvi redak ishod (✅/⚠️/❌), do 5 točaka, poveznica za detalje. Vrijedi za obavijesti, poruke daemona i razgovor.'));
       h += _red(_T('tel_provjera', 'Provjera'),
         '<button id="tel-proba" class="cfg-btn" onclick="probajTelegram(this)">' + _T('tel_probni_slanje', 'Probno slanje') + '</button>' +
         ' <span id="tel-proba-ishod" style="font-size:.7rem"></span>',
@@ -8665,6 +8670,10 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         '<input type="checkbox"' + (u.potvrdaUChat ? ' checked' : '') +
         ' onchange="spremiTelegram({ulaz:{potvrdaUChat:this.checked}}, this)">',
         _T('tel_ulaz_potvrda_opis', 'Vrati broj otvorenog zadatka u isti razgovor.'));
+      h += _red(_T('tel_ulaz_izvrsitelj', 'Zadani izvršitelj'),
+        '<input id="tel-ulaz-izvrsitelj" value="' + _esc(u.zadaniIzvrsitelj || '') + '" style="' + _stil() + ';width:160px">' +
+        ' <button class="cfg-btn" onclick="spremiTelegram({ulaz:{zadaniIzvrsitelj:document.getElementById(\\'tel-ulaz-izvrsitelj\\').value}}, this)">' + _T('tel_spremi', 'Spremi') + '</button>',
+        _T('tel_ulaz_izvrsitelj_opis', 'Tko radi zadatak iz chata kad ga ruting (config/agents.json) ni vrsta posla ne odrede. Nalog dopuštenog korisnika ide odmah, bez čekanja kvote.'));
       h += _red(_T('tel_ulaz_stanje', 'Stanje petlje'),
         '<span style="font-family:monospace;font-size:.7rem">offset ' + (s.offset || 0) +
         ' · ' + _T('tel_ulaz_obradeno', 'obrađeno') + ' ' + (s.obradeno || 0) +
@@ -10799,8 +10808,24 @@ function razgovorSloj(): { ulaz: RazgovorUlaza; jezgra: RazgovorJezgra } {
     env: process.env,
     dokumentiMape: [join(TM_DATA, 'izvjestaji')],
     log: (r: string) => console.log(r),
+    // TASK-5285: razgovor se vidi u Konzoli (ulaz, odluka, izlaz), oblik odgovora iz
+    // `telegram.stil`, a uz `rad` sesija smije čitati dnevnik ulaza.
+    konzola: (r: string, razina: 'info' | 'ok' | 'greska') =>
+      broadcastKonzola(r, razina === 'ok' ? 'log-success' : razina === 'greska' ? 'log-error' : 'log-info', 'razgovor'),
+    stil: () => loadTelegramConfig().stil,
+    ingestLog: INGEST_LOG_PATH,
   })
   return _razgovor
+}
+
+/**
+ * Adresa ploče za poveznice u porukama (TASK-5285): `TM_JAVNI_URL`, inače prvi host iz
+ * `TM_ALLOWED_HOSTS` (adresa po kojoj je ploča dosežna s mreže), inače ime stroja.
+ */
+function plocaJavnaAdresa(): string {
+  if (process.env.TM_JAVNI_URL) return process.env.TM_JAVNI_URL.replace(/\/+$/, '')
+  const host = (process.env.TM_ALLOWED_HOSTS || '').split(',').map(x => x.trim()).find(Boolean) || osHostname()
+  return `http://${host}:${PORT}`
 }
 
 function razgovorOdgovor(o: { status: number; tijelo: unknown }): Response {
@@ -11250,6 +11275,7 @@ async function handleIngest(req: Request): Promise<Response> {
   return json({
     ok: true, created: true, taskId,
     title: odluka.zadatak!.title,
+    assignee: stvoreno?.assignee ?? odluka.zadatak!.assignee ?? null,
     tags: odluka.zadatak!.tags,
     ...sazetak,
     task: stvoreno,
@@ -12954,6 +12980,7 @@ async function handleUpdateTask(taskId: string, req: Request): Promise<Response>
       }
     }
 
+    const statusPrijePut = taskManager.getTask(taskId)?.status
     const task = taskManager.updateTask(taskId, updates as any)
 
     if (!task) {
@@ -13005,9 +13032,14 @@ async function handleUpdateTask(taskId: string, req: Request): Promise<Response>
     // ─── Telegram obavijest (Kosjenka, 09.09.2026.) ──────────────────────
     // Kad zadatak prijeđe u completed/failed, pošalji obavijest na Telegram.
     // Nikad ne ruši PUT — neuspjeh slanja se samo logira.
-    if (task.status === 'completed' || task.status === 'failed') {
+    // TASK-5285: samo na PRIJELAZU (completed → completed je slao drugu istu poruku, TASK-5287),
+    // u stilu `kratko` s točkama iz rezultata i poveznicom na ploču.
+    if (trebaObavijest(statusPrijePut, task.status)) {
       try {
-        const tgRez = await obavijestiZadatak(taskId, String(task.title || ''), task.status)
+        const tgRez = await obavijestiZadatak(taskId, String(task.title || ''), task.status, undefined, {
+          rezultat: String((task as any).resultSummary || ''),
+          detalji: `${plocaJavnaAdresa()}/#${taskId}`,
+        })
         if (tgRez.ok) {
           console.log(`[TELEGRAM] obavijest poslana: ${taskId} → ${task.status}`)
         } else {

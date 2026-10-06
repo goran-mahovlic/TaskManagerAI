@@ -20,6 +20,7 @@ import { chmodSync, readFileSync, renameSync, writeFileSync } from 'fs'
 import { existsSync } from 'fs'
 import { konfigPutanja, konfigPutanjaZaPisanje, osigurajMapu } from './core/paths'
 import { procitajTajnu, zapisiTajnu } from './core/ConfigModul'
+import { ZADANI_STIL, jeStil, kratkiIzvjestaj, type Stil, STILOVI } from './Stil'
 
 /**
  * ADR-0001 O1.4: postavke se traže obrascem `TM_TELEGRAM_CONFIG` → `$TM_HOME/config/`
@@ -60,8 +61,13 @@ export interface TelegramPostavke {
   obavijestZavrseno: boolean
   /** Šalje li se obavijest kad zadatak prijeđe u failed/error? */
   obavijestGreska: boolean
-  /** Prefix poruke — npr. emoji ili oznaka sustava. */
+  /** Prefix poruke — npr. emoji ili oznaka sustava. U stilu `kratko` se ne dodaje (prvi znak je ishod). */
   prefix: string
+  /**
+   * Oblik izlaza u chat (TASK-5285): `kratko` (zadano) — prvi redak ishod, do 5 točaka,
+   * poveznica; `puno` — tekst kakav jest. Vrijedi za obavijesti, poruke daemona i razgovor.
+   */
+  stil: Stil
   /** ULAZNI smjer (poller). Zaseban prekidač — v. `ulaz.ukljucen`. */
   ulaz: TelegramUlaz
 }
@@ -90,6 +96,11 @@ export interface TelegramUlaz {
   /** Pošalji natrag broj otvorenog zadatka. */
   potvrdaUChat: boolean
   maxDuljina: number
+  /**
+   * Izvršitelj zadatka otvorenog iz chata (TASK-5285). Prazno = odabir po vrsti posla
+   * (`Ingest.odaberiIzvrsitelja`). Bez izvršitelja zadatak nikad ne krene.
+   */
+  zadaniIzvrsitelj: string
 }
 
 export const ZADANI_ULAZ: TelegramUlaz = {
@@ -102,6 +113,7 @@ export const ZADANI_ULAZ: TelegramUlaz = {
   sameSpomeni: false,
   potvrdaUChat: true,
   maxDuljina: 4000,
+  zadaniIzvrsitelj: '',
 }
 
 export const ZADANE_POSTAVKE: TelegramPostavke = {
@@ -112,6 +124,7 @@ export const ZADANE_POSTAVKE: TelegramPostavke = {
   obavijestZavrseno: true,
   obavijestGreska: true,
   prefix: '📋',
+  stil: ZADANI_STIL,
   ulaz: ZADANI_ULAZ,
 }
 
@@ -208,6 +221,11 @@ export function validateTelegramPatch(tijelo: unknown): Provjera {
     }
   }
 
+  if ('stil' in t) {
+    if (!jeStil(t.stil)) greske.push(`stil mora biti jedno od: ${STILOVI.join(', ')}`)
+    else zakrpa.stil = t.stil
+  }
+
   if ('prefix' in t) {
     const v = String(t.prefix ?? '').trim()
     if (v.length > GRANICE.prefix.maxDuljina) {
@@ -261,6 +279,12 @@ export function validateTelegramPatch(tijelo: unknown): Provjera {
         if (popis.length > GRANICE.popis.maxStavki) {
           greske.push(`ulaz.${k}: najviše ${GRANICE.popis.maxStavki} stavki`)
         } else izlaz[k] = popis
+      }
+      if ('zadaniIzvrsitelj' in u) {
+        const v = String(u.zadaniIzvrsitelj ?? '').trim().toLowerCase()
+        if (v && !/^[a-z0-9][a-z0-9_-]{0,39}$/.test(v)) {
+          greske.push('ulaz.zadaniIzvrsitelj mora biti ime agenta (slova, brojke, - i _) ili prazno')
+        } else izlaz.zadaniIzvrsitelj = v
       }
       if (Object.keys(izlaz).length) zakrpa.ulaz = izlaz
     }
@@ -357,6 +381,7 @@ export function odgovorTelegramPloci(cfg: TelegramPostavke, putanja: string) {
 export async function posaljiTelegramPoruku(
   tekst: string,
   configPath: string = TELEGRAM_CONFIG_PATH,
+  opcije: { bezPrefiksa?: boolean } = {},
 ): Promise<{ ok: boolean; greska?: string }> {
   const cfg = loadTelegramConfig(configPath)
   if (!cfg.ukljucen) {
@@ -370,7 +395,7 @@ export async function posaljiTelegramPoruku(
     return { ok: false, greska: 'chatId nije postavljen' }
   }
 
-  const prefix = cfg.prefix ? `${cfg.prefix} ` : ''
+  const prefix = cfg.prefix && !opcije.bezPrefiksa ? `${cfg.prefix} ` : ''
   const poruka = `${prefix}${tekst}`
 
   try {
@@ -400,14 +425,34 @@ export async function posaljiTelegramPoruku(
 }
 
 /**
- * Pošalji obavijest o završenom zadatku.
- * Formatira poruku s ID-em zadatka, naslovom i statusom.
+ * Ide li obavijest za ovu promjenu statusa? Samo PRIJELAZ u completed/failed — ponovljeni
+ * PUT s istim statusom (completed → completed) slao je istu obavijest dvaput (TASK-5287).
+ */
+export function trebaObavijest(prije: string | undefined | null, poslije: string): boolean {
+  if (poslije !== 'completed' && poslije !== 'failed') return false
+  return prije !== poslije
+}
+
+export interface ObavijestOpcije {
+  /** Rezultat zadatka (`resultSummary`) — u stilu `kratko` iz njega idu do 3 točke. */
+  rezultat?: string
+  /** Poveznica na zadatak na ploči. */
+  detalji?: string
+}
+
+const STATUS_HR: Record<string, string> = { completed: 'završen', failed: 'nije uspio' }
+
+/**
+ * Pošalji obavijest o završenom zadatku. Stil `kratko` (TASK-5285): prvi redak je ishod
+ * („✅ TASK-9 Naslov — prva rečenica rezultata"), zatim do 3 točke i poveznica — bez prefiksa,
+ * jer prvi znak poruke mora biti ishod. Stil `puno`: stari oblik s prefiksom.
  */
 export async function obavijestiZadatak(
   taskId: string,
   naslov: string,
   status: string,
   configPath: string = TELEGRAM_CONFIG_PATH,
+  opcije: ObavijestOpcije = {},
 ): Promise<{ ok: boolean; greska?: string }> {
   const cfg = loadTelegramConfig(configPath)
   // Poštuj pojedinačne prekidače
@@ -418,9 +463,40 @@ export async function obavijestiZadatak(
     return { ok: false, greska: 'obavijestGreska je isključeno' }
   }
 
+  if ((cfg.stil ?? ZADANI_STIL) === 'kratko') {
+    const rezultat = String(opcije.rezultat || '').trim() || STATUS_HR[status] || status
+    const tekst = kratkiIzvjestaj(rezultat, {
+      naslov: `${taskId} ${naslov}`.trim(),
+      ishod: status === 'failed' ? 'greska' : undefined,
+      detalji: opcije.detalji,
+      maxTocaka: 3,
+    })
+    return posaljiTelegramPoruku(_escHtml(tekst), configPath, { bezPrefiksa: true })
+  }
+
   const ikona = status === 'completed' ? '✅' : status === 'failed' ? '❌' : '📋'
   const tekst = `${ikona} Zadatak <b>${_escHtml(taskId)}</b> — ${_escHtml(status)}\n${_escHtml(naslov)}`
   return posaljiTelegramPoruku(tekst, configPath)
+}
+
+/**
+ * Izlazni kanal ove instalacije za DRUGE procese na istom stroju (daemon orkestratora,
+ * TASK-5285): isti token (spremište tajni paketa) i isti chat kao obavijesti ploče — bez
+ * kopiranja tajne u drugu datoteku. `null` kad kanal nije spreman (isključen, bez tokena
+ * ili chata). Vrijednost tokena ide samo pozivatelju u memoriju, nikad u ispis.
+ */
+export function izlazniKanal(o: { configPath?: string; credPath?: string } = {}): {
+  token: string; chatId: string; stil: Stil; obavijestZavrseno: boolean
+} | null {
+  const cfg = loadTelegramConfig(o.configPath ?? telegramConfigPath())
+  if (!cfg.ukljucen || !cfg.chatId) return null
+  const ime = cfg.botTokenEnv || ZADANE_POSTAVKE.botTokenEnv
+  const token = (o.credPath ? procitajTajnu(ime, o.credPath) : procitajTajnu(ime)) || cfg.botToken || ''
+  if (!token) return null
+  return {
+    token, chatId: String(cfg.chatId), stil: jeStil(cfg.stil) ? cfg.stil : ZADANI_STIL,
+    obavijestZavrseno: cfg.obavijestZavrseno !== false,
+  }
 }
 
 /** HTML-escape za Telegram poruke (parse_mode: HTML). */

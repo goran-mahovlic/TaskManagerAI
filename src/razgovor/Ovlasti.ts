@@ -18,6 +18,22 @@ export interface OvlastiOpcije {
   home: string
   /** Izvršna datoteka za stražu ljuske (zadano: bun koji vrti ovaj proces). */
   bun?: string
+  /** Korijen zapisa razgovora (`$TM_HOME/data/razgovor`) — uz `rad` samo za čitanje (TASK-5285). */
+  korijen?: string
+  /** Dnevnik ulaza (`ingest.jsonl`) — uz `rad` samo za čitanje (TASK-5285). */
+  ingestLog?: string
+}
+
+/**
+ * Zapisi koje sesija uz `rad` smije ČITATI (TASK-5285): dnevni zapisi razgovora, zadnji
+ * pošiljatelji i dnevnik ulaza — da bot zna tko je pisao i što je odlučeno. Ne `sesije.json`
+ * ni `radni/` (tuđi chatovi), ne konfiguracija bota i tajne (one ostaju u `zabrane`).
+ */
+export function zapisiZaCitanje(o: Pick<OvlastiOpcije, 'korijen' | 'ingestLog'>): string[] {
+  const out: string[] = []
+  if (o.korijen) out.push(`/${o.korijen}/telegram/**`, `/${o.korijen}/signal/**`, `/${o.korijen}/posiljatelji.json`)
+  if (o.ingestLog) out.push(`/${o.ingestLog}`)
+  return out
 }
 
 /** Skripta PreToolUse straže (v. BashStraza.ts). */
@@ -96,7 +112,10 @@ export function argumentiOvlasti(razina: Ovlasti, o: OvlastiOpcije): string[] {
   })
   // Pravilo `Read(...)` vrijedi i za Glob i Grep — čitanje samo unutar radne mape.
   const alati = [`Read(/${o.radniDir}/**)`, ...naredbePloce(o.port).map(n => `Bash(${n})`)]
-  if (razina === 'rad') alati.push(`Edit(/${o.radniDir}/**)`, `Write(/${o.radniDir}/**)`)
+  if (razina === 'rad') {
+    alati.push(`Edit(/${o.radniDir}/**)`, `Write(/${o.radniDir}/**)`)
+    alati.push(...zapisiZaCitanje(o).map(x => `Read(${x})`))
+  }
   return [
     ...IZOLACIJA,
     '--permission-mode', 'default',
@@ -153,6 +172,6 @@ export function okolinaRazgovora(env: Record<string, string | undefined>, oznaka
 
 export const OPIS_OVLASTI: Record<Ovlasti, string> = {
   citanje: 'samo čita: smiješ čitati datoteke u radnoj mapi i čitati popis zadataka s ploče. Ne smiješ ništa mijenjati ni pokretati.',
-  rad: 'čitanje i rad u radnoj mapi: smiješ čitati popis zadataka s ploče te čitati i pisati datoteke u radnoj mapi.',
+  rad: 'čitanje i rad u radnoj mapi: smiješ čitati popis zadataka s ploče te čitati i pisati datoteke u radnoj mapi; smiješ ČITATI zapise razgovora, popis zadnjih pošiljatelja i dnevnik ulaza.',
   puno: 'puna prava na ovom stroju, osim čitanja tajni (vjerodajnice, ključevi, konfiguracija kanala).',
 }

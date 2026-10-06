@@ -29,7 +29,8 @@ import {
 } from './TelegramConfig'
 import type { Kanal, Razgovor, UlaznaPoruka } from './razgovor/Kanal'
 import type { RazgovorPostavke } from './razgovor/RazgovorPostavke'
-import { jeDopusten, jeZaDrugog, pocinjeImenom } from './razgovor/Filtar'
+import { jeDopusten, jeZaDrugog, pocinjeImenom, trebaOdgovoriti } from './razgovor/Filtar'
+import { zaKonzolu } from './razgovor/Razgovor'
 
 export const STANJE_PUTANJA = stanjePutanja('telegram-poller.json')
 export const BRAVA_PUTANJA = stanjePutanja('telegram-poller.lock')
@@ -146,6 +147,8 @@ export interface RazgovorUlaza {
   kanal?: Kanal
   /** Zadnji pošiljatelji u dopuštenim chatovima (ime, @username, ID) za Config (TASK-5283). */
   zabiljezi?: (p: UlaznaPoruka) => void
+  /** Živi redak za Konzolu ploče (TASK-5285) — npr. „poruka → zadatak TASK-x (izvršitelj)". */
+  konzola?: (redak: string, razina: 'info' | 'ok' | 'greska') => void
 }
 
 export interface Api {
@@ -272,14 +275,33 @@ export async function jedanProlaz(
       continue
     }
     const tijelo = preslikaj(m, tekst)
+    // TASK-5285: zadatak iz chata uvijek ima izvršitelja, a nalog DOPUŠTENOG korisnika ide
+    // putem „na nalog" (oznaka `nalog`) — ne čeka vrata autonomije (sesija ≥ 70 %).
+    // Dopušten = na popisu ulaza ili, uz razgovor, na popisu razgovora; prazni popisi nikoga
+    // ne čine dopuštenim (bot u javnoj grupi ne smije svakome otvarati nalog).
+    if (u.zadaniIzvrsitelj) tijelo.zadaniIzvrsitelj = u.zadaniIzvrsitelj
+    const posiljatelj = { posiljateljId: String(m.from?.id ?? ''), posiljateljKorisnickoIme: m.from?.username }
+    const dopusten = (u.dopusteniKorisnici.length > 0 && u.dopusteniKorisnici.includes(posiljatelj.posiljateljId)) ||
+      (!!rp && jeDopusten(posiljatelj, rp.dopusteniKorisnici))
+    if (dopusten) tijelo.tags = ['nalog']
+    // Uz razgovor jednostavan posao (E1–E2) odgovara razgovor, osim „zadatak: …" (Ingest).
+    if (razgovorUkljucen && ul && trebaOdgovoriti(ul, rp!)) tijelo.razgovor = true
 
     try {
       const { status, tijelo: odgovor } = await api.ingest(tijelo)
       if (status === 201 && odgovor?.taskId) {
         stanje.obradeno++
         ishod.poslano++
+        try {
+          const tko = [m.from?.first_name, m.from?.username ? `(@${m.from.username})` : ''].filter(Boolean).join(' ')
+          razg?.konzola?.(`📋 ⇢ ${zaKonzolu(tko || '?')} (uid:${m.from?.id ?? '?'}) [telegram:${m.chat.id}]: „${zaKonzolu(tekst, 160)}" → zadatak ${odgovor.taskId}` +
+            `${odgovor.assignee ? ` (${odgovor.assignee}${tijelo.tags ? ', nalog' : ''})` : ''}`, 'ok')
+        } catch { /* Konzola je prikaz */ }
         if (u.potvrdaUChat) {
-          const poslano = await api.odgovori(m.chat.id, `📋 Otvoren zadatak ${odgovor.taskId}`, m.message_id)
+          const naslov = String(odgovor.title || '').trim()
+          const tko = String(odgovor.assignee || odgovor.task?.assignee || '').trim()
+          const poslano = await api.odgovori(m.chat.id,
+            `⏳ radim ${odgovor.taskId}${naslov ? ` — ${naslov}` : ''}${tko ? ` (${tko})` : ''}`, m.message_id)
           if (poslano) ishod.potvrde++
         }
       } else if (status === 200) {

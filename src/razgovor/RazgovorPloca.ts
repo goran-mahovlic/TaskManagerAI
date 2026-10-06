@@ -99,5 +99,5 @@ export function sklopiRazgovor(o: SklapanjeOpcije): { ulaz: RazgovorUlaza; jezgr
     modelZadano: () => modelIzKonfiguracije(o.modelConfigPath),
   })
   const put = posiljateljiPut(o.dataDir)
-  return { ulaz: { razgovor: jezgra, postavke, zabiljezi: p => zabiljeziPosiljatelja(put, p) }, jezgra }
+  return { ulaz: { razgovor: jezgra, postavke, zabiljezi: p => zabiljeziPosiljatelja(put, p), konzola: o.konzola }, jezgra }
 }

@@ -94,6 +94,11 @@ const TAG_AGENT_MAP: Record<string, string> = {
 }
 
 const DEFAULT_AGENT = 'regoc'
+/**
+ * Prijedlog „nitko posebno" (orkestrator) — NIJE izvršitelj posla. Ulaz ga preskače kad bira
+ * tko radi zadatak (TASK-5285), inače bi zadatak iz chata čekao na nekoga tko ne radi zadatke.
+ */
+export const KLASIFIKATOR_ZADANI = DEFAULT_AGENT
 
 // ============================================
 // HELPERS

@@ -52,12 +52,13 @@ describe('J4 — kada bot odgovara', () => {
     expect(trebaOdgovoriti(p as UlaznaPoruka, s as RazgovorPostavke)).toBe(ocekivano as boolean)
   })
 
-  // „Šabane" (vokativ) namjerno NIJE cilj (ADR §5) — `^ime\b` traži cijelu riječ.
+  // TASK-5285 (uputa #182): vokativ „Šabane" JEST obraćanje (prije ADR §5 nije bio) —
+  // ime po korijenu uz ≤3 slova nastavka; „Šabanović" (4 slova) nije.
   test.each([
     ['šaban koliko je zadataka', true],
     ['SABAN: bok', true],
     ['  Šaban, bok', true],
-    ['Šabane, koliko je zadataka?', false],
+    ['Šabane, koliko je zadataka?', true],
     ['Šabanović je rekao', false],
     ['pitam Šabana nešto', false],
   ])('ime na početku: %p → %p', (tekst, ok) => {
