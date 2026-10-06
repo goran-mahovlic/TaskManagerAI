@@ -210,6 +210,34 @@ describe('J7 — sesija po chatu', () => {
   })
 })
 
+/** Samo dopušteni alati (lista zabrana u `--settings` također spominje Edit). */
+const alati = (z: ExecRequest): string => {
+  const a = (z.extra as any).args as string[]
+  return a[a.indexOf('--allowedTools') + 1] || ''
+}
+
+describe('ovlasti iznad citanja vrijede samo za dopuštene pošiljatelje', () => {
+  test('rad + spomen: nedopušteni pošiljatelj dobiva citanje za taj potez', async () => {
+    const o = okolina({ burstMs: 0, ovlasti: 'rad', dopusteniKorisnici: ['42'] })
+    o.r.primi(por({ posiljateljId: '7' }), o.kanal)
+    await o.r.mirno()
+    o.r.primi(por({ posiljateljId: '42' }), o.kanal)
+    await o.r.mirno()
+    const [a, b] = o.izv.zahtjevi
+    expect(alati(a!)).not.toContain('Edit(')
+    expect(alati(b!)).toContain('Edit(')
+  })
+
+  test('spojeni burst s jednim nedopuštenim pošiljateljem → citanje', async () => {
+    const o = okolina({ burstMs: 30, ovlasti: 'rad', dopusteniKorisnici: ['42'] })
+    o.r.primi(por({ posiljateljId: '42' }), o.kanal)
+    o.r.primi(por({ posiljateljId: '7' }), o.kanal)
+    await o.r.mirno()
+    expect(o.izv.zahtjevi.length).toBe(1)
+    expect(alati(o.izv.zahtjevi[0]!)).not.toContain('Edit(')
+  })
+})
+
 // ─── J8 ──────────────────────────────────────────────────────────────────────
 
 describe('J8 — vrata', () => {

@@ -33,14 +33,25 @@ export function zabrane(o: Pick<OvlastiOpcije, 'tmHome' | 'home'>): string[] {
   return ['Read', 'Edit', 'Write'].flatMap(alat => putanje.map(p => `${alat}(${p})`))
 }
 
+/** Statusi za koje model smije pročitati popis zadataka s ploče. */
+export const STATUSI_PLOCE = ['pending', 'in_progress', 'blocked', 'completed', 'cancelled'] as const
+
+/**
+ * TOČNE naredbe za čitanje ploče — bez zamjenskog znaka. Pravilo `Bash(curl -s …/api/tasks*)`
+ * pristaje i uz `curl -s …/api/tasks file:///bilo/sto` ili `… -d @tajna -X POST`, dakle uz
+ * čitanje proizvoljne datoteke i njezino iznošenje (sigurnosni pregled TASK-5277).
+ */
+export function naredbePloce(port: number): string[] {
+  const baza = `curl -s http://127.0.0.1:${port}/api/tasks`
+  return [baza, ...STATUSI_PLOCE.map(st => `${baza}?status=${st}`)]
+}
+
 export function argumentiOvlasti(razina: Ovlasti, o: OvlastiOpcije): string[] {
   const settings = JSON.stringify({ permissions: { deny: zabrane(o) } })
   if (razina === 'puno') return ['--dangerously-skip-permissions', '--settings', settings]
-  const ploca = `http://127.0.0.1:${o.port}/api/tasks`
-  const alati = ['Read', 'Glob', 'Grep', `Bash(curl -s ${ploca}*)`]
-  if (razina === 'rad') {
-    alati.push(`Edit(/${o.radniDir}/**)`, `Write(/${o.radniDir}/**)`, `Bash(curl -s -X POST ${ploca}*)`)
-  }
+  // Pravilo `Read(...)` vrijedi i za Glob i Grep — čitanje samo unutar radne mape.
+  const alati = [`Read(/${o.radniDir}/**)`, ...naredbePloce(o.port).map(n => `Bash(${n})`)]
+  if (razina === 'rad') alati.push(`Edit(/${o.radniDir}/**)`, `Write(/${o.radniDir}/**)`)
   return ['--permission-mode', 'default', '--allowedTools', alati.join(' '), '--settings', settings]
 }
 
@@ -65,7 +76,7 @@ export function okolinaRazgovora(env: Record<string, string | undefined>, oznaka
 }
 
 export const OPIS_OVLASTI: Record<Ovlasti, string> = {
-  citanje: 'samo čita: smiješ čitati datoteke u radnoj mapi i čitati ploču zadataka (GET). Ne smiješ ništa mijenjati ni pokretati.',
-  rad: 'čitanje i rad u radnoj mapi: smiješ čitati ploču, otvarati zadatke (POST na ploču) i pisati datoteke u radnoj mapi.',
+  citanje: 'samo čita: smiješ čitati datoteke u radnoj mapi i čitati popis zadataka s ploče. Ne smiješ ništa mijenjati ni pokretati.',
+  rad: 'čitanje i rad u radnoj mapi: smiješ čitati popis zadataka s ploče te čitati i pisati datoteke u radnoj mapi.',
   puno: 'puna prava na ovom stroju, osim čitanja tajni (vjerodajnice, ključevi, konfiguracija kanala).',
 }

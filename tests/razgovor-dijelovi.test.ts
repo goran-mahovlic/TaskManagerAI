@@ -76,8 +76,13 @@ describe('J9 — ovlasti i okolina izvršitelja', () => {
     expect(a).toContain('--permission-mode')
     expect(a[a.indexOf('--permission-mode') + 1]).toBe('default')
     const alati = a[a.indexOf('--allowedTools') + 1]!
-    expect(alati).toContain('Read')
-    expect(alati).toContain('Bash(curl -s http://127.0.0.1:17781/api/tasks*)')
+    expect(alati).toContain('Read(//srv/radni/**)')
+    expect(alati).toContain('Bash(curl -s http://127.0.0.1:17781/api/tasks)')
+    expect(alati).toContain('Bash(curl -s http://127.0.0.1:17781/api/tasks?status=blocked)')
+    // Nikakav zamjenski znak u Bash pravilu: `curl … /api/tasks file:///…` ili `-d @tajna`
+    // pristajali bi uz prefiks i iznijeli datoteku.
+    expect(alati).not.toMatch(/Bash\([^)]*\*\)/)
+    expect(alati.split(' ').filter(t => t === 'Read' || t === 'Glob' || t === 'Grep')).toEqual([])
     expect(alati).not.toContain('Write')
     expect(alati).not.toContain('Edit')
     expect(alati).not.toContain('WebFetch')
@@ -97,7 +102,7 @@ describe('J9 — ovlasti i okolina izvršitelja', () => {
     const alati = a[a.indexOf('--allowedTools') + 1]!
     expect(alati).toContain('Edit(//srv/radni/**)')
     expect(alati).toContain('Write(//srv/radni/**)')
-    expect(alati).toContain('Bash(curl -s -X POST http://127.0.0.1:17781/api/tasks*)')
+    expect(alati).not.toContain('POST')
     expect(a).not.toContain('--dangerously-skip-permissions')
   })
 
@@ -127,7 +132,7 @@ describe('J9 — ovlasti i okolina izvršitelja', () => {
   })
 
   test('identitet opisuje razinu ovlasti iz postavki, ne iz memorije', () => {
-    const t = sastaviIdentitet({ ime: 'Šaban', instalacija: 'cvor', ovlasti: 'citanje', plocaUrl: 'http://127.0.0.1:17781', dokumenti: true, radniDir: '/srv/radni' })
+    const t = sastaviIdentitet({ ime: 'Šaban', instalacija: 'cvor', ovlasti: 'citanje', plocaUrl: 'http://127.0.0.1:17781', port: 17781, dokumenti: true, radniDir: '/srv/radni' })
     expect(t).toContain('Šaban')
     expect(t).toContain('cvor')
     expect(t).toMatch(/samo čita|čitanje/i)

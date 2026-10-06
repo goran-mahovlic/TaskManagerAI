@@ -336,5 +336,18 @@ Odstupanja i napomene za pregled:
 - CLI se traži redom `TM_CLAUDE_BIN` → `PATH` → `~/.local/bin/claude` (usluga pod systemd-om nema `~/.local/bin` u PATH-u).
 - Okolina modela: bijela lista + `TM_*` bez tajnih imena. **Propuštaju se** `ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN` i `ANTHROPIC_BASE_URL`, jer bez njih CLI ne radi na instalaciji koja se prijavljuje kroz okolinu. Na `citanje`/`rad` model nema ljusku kojom bi ih pročitao, a na `puno` ima — to je pitanje (d) za Malika.
 - `puno` traži `source='ploca'` (kartica ga šalje); provjera „changed_by ≠ agent" svodi se na to — pitanje (c).
+- **Ispravci nakon automatskog sigurnosnog pregleda (TASK-5277, nadjačavaju tablicu §7):**
+  1. Ovlasti iznad `citanje` vrijede za potez SAMO ako je svaki pošiljatelj u potezu u
+     `dopusteniKorisnici`; inače se potez izvodi na `citanje` (prije: `rad` uz `odgovaraNa=spomen`
+     dobivao je svatko tko spomene bota).
+  2. Bash pravila su **točne naredbe bez zamjenskog znaka** (`curl -s http://127.0.0.1:<port>/api/tasks`
+     i `?status=<pending|in_progress|blocked|completed|cancelled>`). Uzorak `…/api/tasks*` je
+     pristajao uz `… file:///bilo/sto` i `-d @tajna -X POST`. `Read`/`Glob`/`Grep` samo kao
+     `Read(//<radniDir>/**)`. POST na ploču maknut iz `rad` — otvaranje zadataka čeka namjenski alat.
+  3. `puno` otključava samo vlasnik na stroju: `TM_RAZGOVOR_PUNO=1` u okolini ploče. `source`/`by`
+     iz tijela zahtjeva samo su oznake za povijest (API ploče nema prijavu). Bez zastavice
+     čitač `puno` spušta na `citanje`. Time je odgovoreno i na pitanje (c).
+  Proba s pravim modelom: točna naredba vraća stvarni broj blokiranih zadataka, pokušaj
+  `curl … file://…config…` odbijen, `/etc/hostname` izvan radne mape nije pročitan.
 - Zbrajanje troška u telemetriju pod agentom `razgovor` nije izvedeno; trošak je po potezu u zapisu (`cijenaUsd`).
 - Stvarna proba (`claude -p`, haiku, razina `citanje`): `--resume` pamti sadržaj prethodnog poteza; čitanje konfiguracije kanala odbijeno i token nije iznesen; pisanje u radni dir odbijeno; dopušteni dokument poslan kroz SEND_DOC.

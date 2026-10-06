@@ -265,20 +265,24 @@ export function stvoriRazgovor(d: RazgovorOvisnosti): RazgovorJezgra {
       tekst,
     ].filter(Boolean).join('\n\n')
 
+    // Ovlasti iznad `citanje` vrijede SAMO ako je svaki pošiljatelj u potezu dopušten — inače bi
+    // svatko tko spomene bota dobio prava predviđena za vlasnika (sigurnosni pregled TASK-5277).
+    const ovlasti = s.ovlasti !== 'citanje' && stavke.every(x => s.dopusteniKorisnici.includes(x.p.posiljateljId))
+      ? s.ovlasti : 'citanje'
     const oznaka = `${p.kanal}:${p.chatId}`
     const zahtjev = (resume?: string): ExecRequest => ({
       agentId: 'razgovor',
       model: s.model || d.modelZadano?.() || undefined,
       prompt,
       systemPrompt: resume ? undefined : sastaviIdentitet({
-        ime: s.ime, instalacija: d.instalacija, ovlasti: s.ovlasti, plocaUrl: d.plocaUrl,
+        ime: s.ime, instalacija: d.instalacija, ovlasti, plocaUrl: d.plocaUrl, port: d.port,
         dokumenti: s.dokumenti, radniDir,
       }),
       cwd: radniDir,
       timeoutMs: s.rokSek * 1000,
       extra: {
         ...(resume ? { resume } : {}),
-        args: argumentiOvlasti(s.ovlasti, { port: d.port, radniDir, tmHome: d.tmHome, home: d.home }),
+        args: argumentiOvlasti(ovlasti, { port: d.port, radniDir, tmHome: d.tmHome, home: d.home }),
         env: okolinaRazgovora(d.env, oznaka),
       },
     })

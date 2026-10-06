@@ -10,7 +10,7 @@ import { existsSync, readFileSync } from 'fs'
 import { join } from 'path'
 import {
   RAZGOVOR_KLJUCEVI, RAZGOVOR_ZADANO, createRazgovorReader, getRazgovorPostavke, parseRazgovorPatch,
-  razgovorPovijest, setRazgovorPostavke,
+  puniDopusten, razgovorPovijest, setRazgovorPostavke,
 } from './RazgovorPostavke'
 import { stvoriRazgovor, type RazgovorJezgra, type RazgovorOvisnosti } from './Razgovor'
 import { izvrsiteljRazgovora } from './Izvrsitelj'
@@ -25,7 +25,7 @@ function sDb<T>(dbPath: string, fn: (db: Database) => T): T {
 
 export function razgovorGet(dbPath: string, dodatno: Record<string, unknown> = {}): ApiOdgovor {
   return sDb(dbPath, db => {
-    const s = getRazgovorPostavke(db)
+    const s = getRazgovorPostavke(db, { dopustiPuno: puniDopusten() })
     return {
       status: 200,
       tijelo: {
@@ -42,13 +42,15 @@ export function razgovorPut(dbPath: string, tijelo: unknown): ApiOdgovor {
   }
   const t = tijelo as Record<string, unknown>
   const by = typeof t.by === 'string' && t.by.trim() ? t.by.trim().slice(0, 64) : 'config'
+  // `source` je samo oznaka za povijest — o pravima NE odlučuje (to može poslati bilo tko).
   const source = typeof t.source === 'string' && t.source.trim() ? t.source.trim().slice(0, 32) : 'api'
+  const opcije = { dopustiPuno: puniDopusten() }
   return sDb(dbPath, db => {
-    const p = parseRazgovorPatch(t, getRazgovorPostavke(db).postavke)
+    const p = parseRazgovorPatch(t, getRazgovorPostavke(db, opcije).postavke)
     if (!p.ok) return { status: 400, tijelo: { error: p.greske.join('; '), greske: p.greske, dopustena: p.dopustena } }
     try {
-      const promjene = setRazgovorPostavke(db, p.value, by, source)
-      return { status: 200, tijelo: { ok: true, promjene, ...getRazgovorPostavke(db) } }
+      const promjene = setRazgovorPostavke(db, p.value, by, source, opcije)
+      return { status: 200, tijelo: { ok: true, promjene, ...getRazgovorPostavke(db, opcije) } }
     } catch (e: any) {
       return { status: 400, tijelo: { error: String(e?.message || e) } }
     }

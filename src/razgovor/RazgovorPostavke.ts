@@ -214,7 +214,18 @@ export interface RazgovorStanje {
   upozorenja: string[]
 }
 
-export function getRazgovorPostavke(db: Database): RazgovorStanje {
+/**
+ * `dopustiPuno`: razinu `puno` otključava SAMO vlasnik na stroju (`TM_RAZGOVOR_PUNO=1` u
+ * okolini ploče), ne polje u tijelu zahtjeva — API ploče nema prijavu, pa `source`/`by`
+ * može poslati bilo tko (sigurnosni pregled TASK-5277).
+ */
+export interface OpcijeOvlasti { dopustiPuno?: boolean }
+
+export function puniDopusten(env: Record<string, string | undefined> = process.env): boolean {
+  return env.TM_RAZGOVOR_PUNO === '1'
+}
+
+export function getRazgovorPostavke(db: Database, opcije: OpcijeOvlasti = {}): RazgovorStanje {
   const kljucevi = Object.values(RAZGOVOR_KLJUCEVI)
   let redovi: Array<{ key: string; value: string }> = []
   try {
@@ -237,6 +248,9 @@ export function getRazgovorPostavke(db: Database): RazgovorStanje {
   if (u) {
     upozorenja.push(`${u} — spušteno na citanje`)
     p.ovlasti = 'citanje'
+  } else if (p.ovlasti === 'puno' && !opcije.dopustiPuno) {
+    upozorenja.push('ovlasti „puno" traže TM_RAZGOVOR_PUNO=1 na stroju — spušteno na citanje')
+    p.ovlasti = 'citanje'
   }
   return { postavke: p, izBaze, upozorenja }
 }
@@ -255,13 +269,15 @@ export interface RazgovorPromjena {
  * `puno` traži izvor `ploca` (ADR §7: odobrenje vlasnika, ne agent preko API-ja).
  * Redak u `settings_history` nastaje SAMO za ključ čija se vrijednost doista promijenila.
  */
-export function setRazgovorPostavke(db: Database, zakrpa: RazgovorPatch, by: string, source = 'api'): RazgovorPromjena[] {
+export function setRazgovorPostavke(
+  db: Database, zakrpa: RazgovorPatch, by: string, source = 'api', opcije: OpcijeOvlasti = {},
+): RazgovorPromjena[] {
   ensureSettingsSchema(db)
-  const trenutno = getRazgovorPostavke(db).postavke
+  const trenutno = getRazgovorPostavke(db, opcije).postavke
   const p = parseRazgovorPatch(zakrpa, trenutno)
   if (!p.ok) throw new Error(p.greske.join('; '))
-  if (p.value.ovlasti === 'puno' && trenutno.ovlasti !== 'puno' && source !== 'ploca') {
-    throw new Error('ovlasti „puno" smije uključiti samo vlasnik s ploče (source=ploca)')
+  if (p.value.ovlasti === 'puno' && !opcije.dopustiPuno) {
+    throw new Error('ovlasti „puno" uključuje samo vlasnik na stroju (TM_RAZGOVOR_PUNO=1 u okolini ploče)')
   }
   const who = (by || 'unknown').slice(0, 64)
   const promjene: RazgovorPromjena[] = []
@@ -315,7 +331,7 @@ export function razgovorPovijest(db: Database, limit = 30): RazgovorPovijestRed[
  * Čitač za dugotrajni proces (poller, razgovor): baza najviše jednom u `ttlMs` (≤5 s).
  * Nečitljiva baza → zadnje dobro stanje → zadano (razgovor isključen).
  */
-export function createRazgovorReader(o: { dbPath: string; ttlMs?: number; now?: () => number }): () => RazgovorStanje {
+export function createRazgovorReader(o: { dbPath: string; ttlMs?: number; now?: () => number; dopustiPuno?: boolean }): () => RazgovorStanje {
   const ttl = Math.min(o.ttlMs ?? RAZGOVOR_CACHE_MS, RAZGOVOR_CACHE_MS)
   const now = o.now ?? Date.now
   let kes: RazgovorStanje | null = null
@@ -327,7 +343,7 @@ export function createRazgovorReader(o: { dbPath: string; ttlMs?: number; now?: 
     let db: Database | null = null
     try {
       db = new Database(o.dbPath, { readonly: true })
-      kes = getRazgovorPostavke(db)
+      kes = getRazgovorPostavke(db, { dopustiPuno: o.dopustiPuno ?? puniDopusten() })
     } catch {
       if (!kes) kes = { postavke: { ...RAZGOVOR_ZADANO, dopusteniKorisnici: [] }, izBaze: [], upozorenja: ['baza nije čitljiva'] }
     } finally {

@@ -127,12 +127,16 @@ describe('J3 — ovlasti iznad citanja traže uvjete', () => {
     expect(p.ok).toBe(true)
   })
 
-  test('puno traži odobrenje vlasnika s ploče (source=ploca)', () => {
+  test('puno traži odobrenje vlasnika NA STROJU (dopustiPuno), ne polje iz zahtjeva', () => {
     const db = baza()
-    expect(() => setRazgovorPostavke(db, { ovlasti: 'puno', dopusteniKorisnici: ['42'] }, 'jelena', 'api'))
+    // `source` iz tijela zahtjeva može poslati bilo tko — ne smije otključati puno.
+    expect(() => setRazgovorPostavke(db, { ovlasti: 'puno', dopusteniKorisnici: ['42'] }, 'netko', 'ploca'))
       .toThrow()
-    const ok = setRazgovorPostavke(db, { ovlasti: 'puno', dopusteniKorisnici: ['42'] }, 'vlasnik', 'ploca')
+    const ok = setRazgovorPostavke(db, { ovlasti: 'puno', dopusteniKorisnici: ['42'] }, 'vlasnik', 'ploca', { dopustiPuno: true })
     expect(ok.some(c => c.kljuc === 'razgovor.ovlasti' && c.changed)).toBe(true)
+    // bez zastavice čitač puno spušta na citanje
+    expect(getRazgovorPostavke(db).postavke.ovlasti).toBe('citanje')
+    expect(getRazgovorPostavke(db, { dopustiPuno: true }).postavke.ovlasti).toBe('puno')
   })
 
   test('ručno upisan puno bez uvjeta → čitač spušta na citanje i to javlja', () => {
