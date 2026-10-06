@@ -975,5 +975,6 @@
   "tel_priv_v_document": "document",
   "tel_priv_v_voice": "voice",
   "tel_priv_v_audio": "audio",
-  "tel_priv_v_video": "video"
+  "tel_priv_v_video": "video",
+  "tel_priv_v_video_note": "video note"
 }

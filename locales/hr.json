@@ -975,5 +975,6 @@
   "tel_priv_v_document": "dokument",
   "tel_priv_v_voice": "glas",
   "tel_priv_v_audio": "zvuk",
-  "tel_priv_v_video": "video"
+  "tel_priv_v_video": "video",
+  "tel_priv_v_video_note": "video-krug"
 }

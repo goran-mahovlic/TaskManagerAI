@@ -28,6 +28,8 @@ export interface UlaznaPoruka {
   spomeni?: string[]
   /** Adapter: poruka je odgovor (reply) na poruku NEKOG DRUGOG (ne ovog bota). */
   odgovorNa?: OdgovorNa
+  /** Adapter: tekst je transkript glasovne/zvučne poruke (`[GLAS] …`, TASK-5294). */
+  glasovna?: boolean
 }
 
 export interface OdgovorNa {
@@ -46,6 +48,8 @@ export interface Kanal {
   maxDokumentBajta: number
   posaljiTekst(chatId: string, tekst: string, replyTo?: string): Promise<boolean>
   posaljiDokument(chatId: string, putanja: string, opis: string): Promise<boolean>
+  /** Glasovna poruka (ogg/opus) — TASK-5294. Kanal bez glasa je ne mora imati. */
+  posaljiGlas?(chatId: string, ogg: Uint8Array, replyTo?: string): Promise<boolean>
   /** „tipka…" dok model radi. */
   pise?(chatId: string): Promise<void>
 }
