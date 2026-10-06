@@ -1,0 +1,70 @@
+{
+  "taskId": "TASK-196",
+  "parentTask": "TASK-195",
+  "projectId": "PRJ-033",
+  "title": "Arhitektura i plan izvedbe — provjera RAM-a na node-A",
+  "architect": "kosjenka",
+  "previousStep": "jelena (TASK-195, completed)",
+  "createdAt": "2026-10-06",
+  "tezina": 26,
+  "pragB": 36,
+  "samoTekst": true,
+  "subtasks": [
+    {
+      "id": "P1",
+      "title": "Izvrši free -h na node-A",
+      "executor": "jelena",
+      "inputs": ["SSH pristup node-A"],
+      "outputs": ["Tekstualna tablica: total/used/free/available/swap"],
+      "dependsOn": [],
+      "status": "completed",
+      "proof": "commit 2ab4d06e; result_summary u TASK-195"
+    },
+    {
+      "id": "P2",
+      "title": "Zabilježi rezultat i commitaj",
+      "executor": "jelena",
+      "inputs": ["Izlaz P1"],
+      "outputs": ["Git commit + result_summary + task_log"],
+      "dependsOn": ["P1"],
+      "status": "completed",
+      "proof": "commit 2ab4d06e; data/task_logs/TASK-195.md"
+    },
+    {
+      "id": "P3",
+      "title": "Stvori dojavu korisniku",
+      "executor": "klaudio",
+      "inputs": ["Izlaz P1", "replyTo: -5112799687"],
+      "outputs": ["TASK-195-DOJAVA (report-back zadatak)"],
+      "dependsOn": ["P2"],
+      "status": "pending",
+      "proof": "TASK-195-DOJAVA stvoren, assignee: klaudio, status: pending"
+    }
+  ],
+  "normalizePlan": {
+    "cycles": false,
+    "knownExecutors": true,
+    "linear": true,
+    "passes": true
+  },
+  "components": [
+    {"id": "C1", "name": "Telegram ingest", "status": "done"},
+    {"id": "C2", "name": "TaskManager REST API", "status": "done"},
+    {"id": "C3", "name": "IngestTemplate / koraci.json", "status": "done"},
+    {"id": "C4", "name": "Registarski vrataši", "status": "done"},
+    {"id": "C5", "name": "Izvršitelj (Jelena)", "status": "done"},
+    {"id": "C6", "name": "Git", "status": "done"},
+    {"id": "C7", "name": "Dojava (Klaudio)", "status": "pending"},
+    {"id": "C8", "name": "node-A", "status": "done"}
+  ],
+  "risks": [
+    {"id": "R1", "risk": "free -h ne uspije (node-A nedostupan)", "probability": "niska", "impact": "srednji", "status": "not_occurred"},
+    {"id": "R2", "risk": "Dojava ne stigne do Gorana", "probability": "niska", "impact": "visoki", "status": "pending"},
+    {"id": "R3", "risk": "Zadatak bez projectId nestane iz izvještaja", "probability": "—", "impact": "srednji", "status": "mitigated"},
+    {"id": "R4", "risk": "Krivo čitanje free -h (free vs available)", "probability": "niska", "impact": "niski", "status": "mitigated"},
+    {"id": "R5", "risk": "Git commit izostane → GitCommitGate blokira", "probability": "niska", "impact": "visoki", "status": "mitigated"},
+    {"id": "R6", "risk": "Grill preskok pogrešan", "probability": "vrlo niska", "impact": "niski", "status": "mitigated"}
+  ],
+  "adr": "Nema značajne odluke — težina 26, trivijalni operativni upit",
+  "result": "ARCHITECTURE DONE — tijek ispravno proveden, svi obvezni koraci završeni, dojava čeka Klaudija"
+}
