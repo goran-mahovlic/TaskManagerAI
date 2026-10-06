@@ -21,7 +21,7 @@ export interface DrugiBot {
   ime: string
   /** Telegram korisničko ime bez `@`, npr. `klaudioAI_bot` — spomen u odgovoru = prijenos. */
   korisnickoIme: string
-  /** Ploča drugog kraja, npr. `http://192.168.10.200:17781`. */
+  /** Ploča drugog kraja, npr. `http://10.0.0.2:17781`. */
   url: string
 }
 
@@ -134,7 +134,7 @@ export function bearer(authorization: string | null | undefined): string {
   return m ? m[1]!.trim() : ''
 }
 
-/** `::ffff:192.168.10.200` → `192.168.10.200`. */
+/** `::ffff:10.0.0.2` → `10.0.0.2`. */
 export function cistaAdresa(ip: string | null | undefined): string {
   return String(ip || '').replace(/^::ffff:/i, '').trim()
 }
