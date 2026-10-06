@@ -76,16 +76,18 @@ describe('J2 — upis i audit', () => {
   test.each([
     ['rokSek', 10], ['rokSek', 5000], ['maxUsporednih', 0], ['maxUsporednih', 6],
     ['sesijaNeaktivnostMin', 1], ['burstMs', 20000], ['zadrzavanjeDana', 0],
-    ['memorijaRokMs', 100], ['memorijaRokMs', 10001], ['odgovaraNa', 'svima'], ['ovlasti', 'admin'],
+    ['memorijaRokMs', 100], ['memorijaRokMs', 30001], ['memorijaOznakaUspjeha', 'da'], ['odgovaraNa', 'svima'], ['ovlasti', 'admin'],
     ['memorijaRazgovor', 'da'], ['ukljucen', 'yes'], ['radniDir', 'relativna/putanja'],
     ['memorijaUrl', 'nije-url'], ['ime', 'x'.repeat(41)],
   ])('izvan raspona %s=%p → odbijeno, ne stisnuto', (polje, v) => {
     expect(parseRazgovorPatch({ [polje]: v }).ok).toBe(false)
   })
 
-  test('memorijaRokMs do 10 s je dopušten (izmjereno: recall kroz tunel 6–7,5 s)', () => {
+  test('memorijaRokMs do 30 s je dopušten (TASK-5292: node-A 20 s, strop 30 s)', () => {
     expect(parseRazgovorPatch({ memorijaRokMs: 9000 }).ok).toBe(true)
-    expect(parseRazgovorPatch({ memorijaRokMs: 10000 }).ok).toBe(true)
+    expect(parseRazgovorPatch({ memorijaRokMs: 20000 }).ok).toBe(true)
+    expect(parseRazgovorPatch({ memorijaRokMs: 30000 }).ok).toBe(true)
+    expect(parseRazgovorPatch({ memorijaOznakaUspjeha: true }).ok).toBe(true)
   })
 
   test('čitač vidi promjenu nakon isteka keša (≤5 s), bez restarta', () => {

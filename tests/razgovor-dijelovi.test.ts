@@ -15,7 +15,7 @@ import type { UlaznaPoruka } from '../src/razgovor/Kanal'
 import { pocinjeImenom, trebaOdgovoriti } from '../src/razgovor/Filtar'
 import { argumentiOvlasti, okolinaRazgovora } from '../src/razgovor/Ovlasti'
 import { izvuciDokumente, provjeriDokument } from '../src/razgovor/SendDoc'
-import { dohvatiMemoriju } from '../src/razgovor/Memorija'
+import { dohvatiMemoriju, oznakaMemorije } from '../src/razgovor/Memorija'
 import { ocistiStareZapise, zapisiPotez } from '../src/razgovor/Zapis'
 import { sastaviIdentitet } from '../src/razgovor/Identitet'
 
@@ -246,6 +246,55 @@ describe('J11 — memorija (Hindsight, fail-open)', () => {
     for (const k of r1.noviKljucevi) vec.add(k)
     const r2 = await dohvatiMemoriju(zahtjev({ fetchImpl: f, vecPoslano: vec }))
     expect(r2.blok).toBeNull()
+  })
+
+  // TASK-5292: odgovor bez memorije u načinu `on` NIKAD nije tih — razlog ide u oznaku 🧠🚫.
+  test('on + istek roka → bezMemorije „rok N s istekao”, oznaka 🧠🚫', async () => {
+    const spor = ((_: any, init: any) => new Promise((_res, rej) => {
+      init?.signal?.addEventListener('abort', () => rej(new Error('abort')))
+    })) as any
+    const r = await dohvatiMemoriju(zahtjev({ rokMs: 200, fetchImpl: spor }))
+    expect(r.bezMemorije).toBe('rok 0,2 s istekao')
+    expect(oznakaMemorije(r, false)).toBe('🧠🚫 bez memorije: rok 0,2 s istekao')
+  })
+
+  test('rok je TVRD: fetch koji ignorira abort ne produžuje čekanje (TASK-5286)', async () => {
+    const gluh = (() => new Promise(res => setTimeout(() => res(new Response('{"results":[]}')), 3000))) as any
+    const t0 = Date.now()
+    const r = await dohvatiMemoriju(zahtjev({ rokMs: 200, fetchImpl: gluh }))
+    expect(Date.now() - t0).toBeLessThan(1000)
+    expect(r.bezMemorije).toBe('rok 0,2 s istekao')
+  })
+
+  test('on + greška (HTTP 500, mreža) → bezMemorije „Hindsight nedostupan”', async () => {
+    const r1 = await dohvatiMemoriju(zahtjev({ fetchImpl: (async () => new Response('x', { status: 500 })) as any }))
+    expect(r1.bezMemorije).toBe('Hindsight nedostupan (HTTP 500)')
+    const r2 = await dohvatiMemoriju(zahtjev({ fetchImpl: (async () => { throw new Error('ECONNREFUSED') }) as any }))
+    expect(r2.bezMemorije).toBe('Hindsight nedostupan (ECONNREFUSED)')
+    expect(oznakaMemorije(r2, true)).toBe('🧠🚫 bez memorije: Hindsight nedostupan (ECONNREFUSED)')
+  })
+
+  test('on bez adrese ili banke → bezMemorije „nije postavljena” (nije tiho)', async () => {
+    const r = await dohvatiMemoriju(zahtjev({ url: '' }))
+    expect(r.bezMemorije).toBe('memorija nije postavljena (nema adrese ili banke)')
+  })
+
+  test('uspjeh (i prazna banka bez greške) → bez oznake; 🧠 samo uz oznakaUspjeha', async () => {
+    const f = (async () => new Response(JSON.stringify({ results: [{ id: 'a', text: 'činjenica' }] }))) as any
+    const r = await dohvatiMemoriju(zahtjev({ fetchImpl: f }))
+    expect(r.bezMemorije).toBeNull()
+    expect(oznakaMemorije(r, false)).toBe('')
+    expect(oznakaMemorije(r, true)).toBe('🧠')
+    const prazno = await dohvatiMemoriju(zahtjev({ fetchImpl: (async () => new Response('{"results":[]}')) as any }))
+    expect(prazno.bezMemorije).toBeNull()
+  })
+
+  test('shadow i off nikad ne nose oznaku (memorija modelu ionako ne ide)', async () => {
+    const r = await dohvatiMemoriju(zahtjev({ nacin: 'shadow', fetchImpl: (async () => new Response('x', { status: 500 })) as any }))
+    expect(r.greska).toContain('500')
+    expect(r.bezMemorije).toBeNull()
+    expect(oznakaMemorije(r, true)).toBe('')
+    expect(oznakaMemorije(null, true)).toBe('')
   })
 
   test('shadow → poziv da, blok modelu ne', async () => {

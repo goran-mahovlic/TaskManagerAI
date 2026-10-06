@@ -43,6 +43,8 @@ export interface RazgovorPostavke {
   memorijaBanka: string
   memorijaUrl: string
   memorijaRokMs: number
+  /** Uz uspješan dohvat memorije stavi 🧠 na početak odgovora (bez memorije uvijek ide 🧠🚫). */
+  memorijaOznakaUspjeha: boolean
 }
 
 export type Polje = keyof RazgovorPostavke
@@ -68,6 +70,7 @@ export const RAZGOVOR_KLJUCEVI: Readonly<Record<Polje, string>> = Object.freeze(
   memorijaBanka: 'memorija.banka',
   memorijaUrl: 'memorija.url',
   memorijaRokMs: 'memorija.rokMs',
+  memorijaOznakaUspjeha: 'memorija.oznakaUspjeha',
 })
 
 export const RAZGOVOR_ZADANO: Readonly<RazgovorPostavke> = Object.freeze({
@@ -91,6 +94,7 @@ export const RAZGOVOR_ZADANO: Readonly<RazgovorPostavke> = Object.freeze({
   memorijaBanka: '',
   memorijaUrl: '',
   memorijaRokMs: 1500,
+  memorijaOznakaUspjeha: false,
 }) as RazgovorPostavke
 
 export const RAZGOVOR_CACHE_MS = 5000
@@ -101,16 +105,17 @@ const RASPONI: Partial<Record<Polje, [number, number]>> = {
   sesijaNeaktivnostMin: [5, 1440],
   burstMs: [0, 10000],
   zadrzavanjeDana: [1, 365],
-  // Gornja granica = strop memorije izvornog sustava (≤10 s). Izmjereno 06.10.2026.: recall
-  // kroz SSH tunel na čvoru traje 6–7,5 s, pa bi 5 s značilo da memorija uvijek istekne.
-  memorijaRokMs: [200, 10000],
+  // Gornja granica = strop memorije izvornog sustava (30 s, TASK-5292). Izmjereno 06.10.2026.:
+  // recall kroz SSH tunel na čvoru traje 6–7,5 s, a uz 9 s je 2/7 poteza isteklo — vlasnik je
+  // odlučio 20 s na čvoru. Odgovor čeka najviše toliko; bez memorije ide uz oznaku 🧠🚫.
+  memorijaRokMs: [200, 30000],
 }
 const IZBORI: Partial<Record<Polje, readonly string[]>> = {
   odgovaraNa: ['sve', 'spomen', 'dopusteni', 'dopusteni-sve'],
   ovlasti: ['citanje', 'rad', 'puno'],
   memorijaRazgovor: ['off', 'shadow', 'on'],
 }
-const BOOL: readonly Polje[] = ['ukljucen', 'dokumenti', 'ostaliUzObracanje', 'tisinaKadDrugom']
+const BOOL: readonly Polje[] = ['ukljucen', 'dokumenti', 'ostaliUzObracanje', 'tisinaKadDrugom', 'memorijaOznakaUspjeha']
 const NIZOVI: readonly Polje[] = ['dopusteniKorisnici', 'preskociAkoSadrzi']
 const MAX_KORISNIKA = 50
 const MAX_DRUGIH = 20

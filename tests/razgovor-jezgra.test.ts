@@ -347,7 +347,33 @@ describe('jezgra: SEND_DOC, memorija, zapis, kanal', () => {
       { fetchImpl: (async () => { throw new Error('tunel pao') }) as any })
     lose.r.primi(por(), lose.kanal)
     await lose.r.mirno()
-    expect(lose.kanal.tekstovi[0]!.tekst).toBe('odgovor')
+    // TASK-5292: odgovor stiže, ali s vidljivom oznakom — nikad tiho bez memorije.
+    // (kanal reže na 50 znakova, pa se dijelovi spajaju razmakom na kojem su rezani)
+    expect(lose.kanal.tekstovi[0]!.tekst.startsWith('🧠🚫 bez memorije: Hindsight nedostupan')).toBe(true)
+    expect(lose.kanal.tekstovi.map(t => t.tekst).join(' ')).toBe('🧠🚫 bez memorije: Hindsight nedostupan (tunel pao)\nodgovor')
+  })
+
+  test('memorija on: uspjeh → odgovor bez oznake; uz memorijaOznakaUspjeha → 🧠 na početku', async () => {
+    const f = (async () => new Response(JSON.stringify({ results: [{ id: 'a', text: 'činjenica' }] }))) as any
+    const o = okolina({ burstMs: 0, memorijaRazgovor: 'on', memorijaUrl: 'http://x', memorijaBanka: 'b' }, { fetchImpl: f })
+    o.r.primi(por(), o.kanal)
+    await o.r.mirno()
+    expect(o.kanal.tekstovi[0]!.tekst).toBe('odgovor')
+    o.postavi({ memorijaOznakaUspjeha: true })
+    o.r.primi(por(), o.kanal)
+    await o.r.mirno()
+    expect(o.kanal.tekstovi[1]!.tekst).toBe('🧠 odgovor')
+  })
+
+  test('memorija on: istek roka → 🧠🚫 s rokom u sekundama, i zapis poteza nosi razlog', async () => {
+    const spor = ((_: any, init: any) => new Promise((_r, rej) => { init?.signal?.addEventListener('abort', () => rej(new Error('abort'))) })) as any
+    const o = okolina({ burstMs: 0, memorijaRazgovor: 'on', memorijaUrl: 'http://x', memorijaBanka: 'b', memorijaRokMs: 200 }, { fetchImpl: spor })
+    o.r.primi(por(), o.kanal)
+    await o.r.mirno()
+    expect(o.kanal.tekstovi.map(t => t.tekst).join('')).toBe('🧠🚫 bez memorije: rok 0,2 s istekao\nodgovor')
+    const put = join(mapa, 'razgovor', 'signal', 'c1', '2026-10-06.jsonl')
+    const izlaz = readFileSync(put, 'utf-8').trim().split('\n').map(r => JSON.parse(r)).find(r => r.smjer === 'izlaz')
+    expect(izlaz.memorija.bezMemorije).toBe('rok 0,2 s istekao')
   })
 
   test('zapis: ulaz i izlaz u <kanal>/<chatId>/<dan>.jsonl s modelom, sesijom i trošak bez tajni', async () => {

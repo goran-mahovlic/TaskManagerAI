@@ -92,7 +92,8 @@ nepoznata polja (HTTP 400 s popisom dopuštenih).
 | `memorija.razgovor` | `'off'` | `off` \| `shadow` \| `on` | potrošač memorije (§6.3) |
 | `memorija.banka` | `''` | — | Hindsight banka; **isti ključ koji node-A već ima** |
 | `memorija.url` | `''` | URL | `''` → `TM_HINDSIGHT_URL` → memorija isključena |
-| `memorija.rokMs` | `1500` | 200–10000 | rok dohvata memorije (TASK-5277: 5000 → 10000, recall kroz tunel na node-A mjeren 6–7,5 s) |
+| `memorija.rokMs` | `1500` | 200–30000 | rok dohvata memorije, TVRD (TASK-5277: 5000 → 10000, recall kroz tunel na node-A mjeren 6–7,5 s; TASK-5292: strop 30000, node-A 20000) |
+| `memorija.oznakaUspjeha` | `false` | bool | uz uspješan dohvat odgovor počinje s 🧠 (bez memorije u načinu `on` UVIJEK ide `🧠🚫 bez memorije: <razlog>`, TASK-5292) |
 
 Ključevi `memorija.*` su namjerno zajednički, ne `razgovor.memorija.*`: izvorni sustav već
 ima obrazac „prekidač po potrošaču + zajednička banka" (`memorija.telegram_sesija`), a node-A
@@ -560,3 +561,16 @@ node-A: `odgovaraNa=dopusteni-sve`, `preskociAkoSadrzi=["Bubi","Goran","@klaudio
 Testovi: `tests/razgovor-drugom.test.ts` (tablica slučajeva Filtra, adapter, ulaz, postavke,
 pošiljatelji, jezgra).
 
+
+## 16. Dopunska odluka (TASK-5292, 06.10.2026.): odgovor bez memorije nikad nije tih
+
+Vlasnik (grupa node-A, 06.10. 18:43): „Hindsight nedostupan → odgovor bez memorije" je opasno kad je tiho.
+
+- **Rok**: `memorija.rokMs` 200–**30000** (strop izvornog sustava), na node-A **20000**. Rok je tvrd:
+  utrka s tajmerom, pa Bun fetch koji zakasni s abortom ne produžuje čekanje (nalaz TASK-5286).
+- **Oznaka**: u načinu `on`, kad memorije nema zbog isteka, greške (HTTP, mreža, neispravan odgovor)
+  ili nepostavljene adrese/banke, odgovor počinje retkom `🧠🚫 bez memorije: <razlog>`
+  (npr. `rok 20 s istekao`, `Hindsight nedostupan (HTTP 502)`). Razlog ide i u zapis poteza
+  (`memorija.bezMemorije`). Prazna banka bez greške i već poslane činjenice NISU „bez memorije".
+- `shadow` i `off` ne nose oznaku: ondje memorija modelu ionako ne ide, po odluci.
+- `memorija.oznakaUspjeha=true` → uspješan dohvat počinje s `🧠`.

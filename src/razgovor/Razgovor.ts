@@ -21,7 +21,7 @@ import { jeDopusten, jeZaDrugog, trebaOdgovoriti } from './Filtar'
 import { argumentiOvlasti, okolinaRazgovora, radniDirRazgovora } from './Ovlasti'
 import { neutralizirajIme, neutralizirajTekst, zatamniTajne } from './Ciscenje'
 import { sastaviIdentitet } from './Identitet'
-import { dohvatiMemoriju, type MemorijaRezultat } from './Memorija'
+import { dohvatiMemoriju, oznakaMemorije, type MemorijaRezultat } from './Memorija'
 import { izvuciDokumente, provjeriDokument } from './SendDoc'
 import { ocistiStareZapise, zapisiPotez } from './Zapis'
 
@@ -264,7 +264,7 @@ export function stvoriRazgovor(d: RazgovorOvisnosti): RazgovorJezgra {
         vecPoslano: new Set(ses?.memorija || []),
         fetchImpl: d.fetchImpl,
       })
-      if (mem.greska) log(`[razgovor] memorija (${c.kljuc}): ${mem.greska}`)
+      if (mem.greska || mem.bezMemorije) log(`[razgovor] memorija (${c.kljuc}): ${mem.bezMemorije ? `🧠🚫 ${mem.bezMemorije}` : mem.greska}`)
     }
 
     // Što je bot u međuvremenu samo pročitao (poruke za drugoga), ako je iz ove sesije.
@@ -318,7 +318,7 @@ export function stvoriRazgovor(d: RazgovorOvisnosti): RazgovorJezgra {
       trajanjeMs: sat() - t0,
       tokeni: { ul: res.usage?.inputTokens ?? null, izl: res.usage?.outputTokens ?? null },
       cijenaUsd: res.usage?.costUsd ?? null,
-      memorija: mem ? { nacin: mem.nacin, cinjenica: mem.cinjenica, ms: mem.ms, greska: mem.greska } : null,
+      memorija: mem ? { nacin: mem.nacin, cinjenica: mem.cinjenica, ms: mem.ms, greska: mem.greska, bezMemorije: mem.bezMemorije } : null,
     }
 
     if (res.exitCode !== 0) {
@@ -358,6 +358,11 @@ export function stvoriRazgovor(d: RazgovorOvisnosti): RazgovorJezgra {
     const zt = zatamniTajne(odgovor)
     if (zt.zatamnjeno) log(`[razgovor] ${c.kljuc}: zatamnjeno ${zt.zatamnjeno} tajni u odgovoru`)
     odgovor = zt.tekst
+
+    // TASK-5292: odgovor bez memorije u načinu `on` nikad nije tih — 🧠🚫 s razlogom na početku.
+    const oznakaMem = oznakaMemorije(mem, s.memorijaOznakaUspjeha)
+    if (oznakaMem) odgovor = mem?.bezMemorije ? `${oznakaMem}\n${odgovor}` : `${oznakaMem} ${odgovor}`
+
     const dijelovi = podijeli(odgovor, k.maxDuljinaPoruke)
     for (let i = 0; i < dijelovi.length; i++) {
       await k.posaljiTekst(p.chatId, dijelovi[i]!, i === 0 ? p.porukaId : undefined)
