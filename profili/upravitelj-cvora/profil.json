@@ -768,7 +768,8 @@
         },
         "teamPilot": {
           "on": true,
-          "odluka": "paket"
+          "odluka": "paket",
+          "bezKoda": true
         },
         "tierRecipesEnabled": {
           "on": true,
