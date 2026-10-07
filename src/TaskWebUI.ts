@@ -64,6 +64,7 @@ import {
   botKanalGet, botKanalPut, botKanalRucno, odBotaPost, razgovorGet, razgovorPut, razgovorPovijestGet, sklopiRazgovor,
   zadnjiPosiljatelji, type RazgovorSloj,
 } from './razgovor/RazgovorPloca'
+import { GLAS_ZADANI_URL, stanjeGlasa, type StanjeGlasa } from './razgovor/Glas'
 import { ucitajAgente } from './razgovor/Identitet'
 import { MIN_TAJNA, PUT_RUTE, ZAGLAVLJE_POTPISA, potpisi, smijeTajnuNa, type Zahtjev } from './razgovor/BotKanal'
 import { jeDopustenAgent } from './core/AgentIds'
@@ -8639,7 +8640,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     // ── Telegram PRIVITCI (TASK-5282) — slika, dokument, glas… spremaju se lokalno ──────
     // Putanja ide dalje u tekstu poruke ([PRIVITAK: …]); preuzima se samo od dopuštenih
     // chatova/korisnika iz Ulaza i Razgovora. Zadano isključeno.
-    var _TEL_VRSTE = ['photo', 'document', 'voice', 'audio', 'video'];
+    var _TEL_VRSTE = ['photo', 'document', 'voice', 'audio', 'video', 'video_note'];
     function renderTelegramPrivitci(d) {
       var p = (d.postavke && d.postavke.privitci) || {};
       var vrste = p.vrste || [];
@@ -9262,6 +9263,16 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         _razgPolje('razg-url', _T('cfg_razg_url', 'Adresa memorije (prazno = TM_HINDSIGHT_URL)'), '<input id="razg-url" type="text" value="' + _esc(p.memorijaUrl || '') + '">') +
         _razgPolje('razg-memrok', _T('cfg_razg_memrok', 'Rok memorije (ms, 200–30000; bez memorije odgovor nosi 🧠🚫)'), '<input id="razg-memrok" type="number" min="200" max="30000" value="' + p.memorijaRokMs + '">') +
         _razgPolje('razg-memoznaka', _T('cfg_razg_memoznaka', 'Oznaka 🧠 i uz uspješan dohvat memorije'), '<input id="razg-memoznaka" type="checkbox"' + (p.memorijaOznakaUspjeha ? ' checked' : '') + '>') +
+        '<div class="cfg-napomena" style="margin-top:8px">🎙️ ' + _T('cfg_razg_glas_opis', 'Glas (lokalno): glasovna, zvučna i video-krug poruka ide na lokalni STT i u razgovor kao [GLAS] tekst; odgovor glasom ide uz tekst. Prepoznavanje traži uključene Privitke (Telegram → Privitci). Kvar = 🎙️🚫 / 🔊🚫 u chatu.') +
+          (d.glas ? '<br>' + _T('cfg_razg_glas_servis', 'Servis') + ': ' + (d.glas.ok
+            ? '🟢 ' + _esc(d.glas.glas || '') + (d.glas.sttModel ? ' · STT ' + _esc(d.glas.sttModel) : '')
+            : '🔴 ' + _esc(d.glas.greska || _T('cfg_razg_glas_nedostupan', 'nedostupan'))) : '') + '</div>' +
+        _razgPolje('razg-stt', _T('cfg_razg_stt', 'Prepoznavanje govora (STT)'), '<input id="razg-stt" type="checkbox"' + (p.glasPrepoznavanje ? ' checked' : '') + '>') +
+        _razgPolje('razg-glas', _T('cfg_razg_glas', 'Odgovor glasom (TTS)'), _razgIzbor('razg-glas', p.glas || 'off', ['off', 'na-glasovno', 'uvijek'])) +
+        _razgPolje('razg-glasurl', _T('cfg_razg_glasurl', 'Glasovni servis (prazno = http://127.0.0.1:8899)'), '<input id="razg-glasurl" type="text" placeholder="http://127.0.0.1:8899" value="' + _esc(p.glasUrl || '') + '">') +
+        _razgPolje('razg-glasglas', _T('cfg_razg_glasglas', 'Glas (ime modela servisa; prazno = zadani)'), '<input id="razg-glasglas" type="text" maxlength="100" value="' + _esc(p.glasGlas || '') + '">' +
+          (d.glas && d.glas.glasovi && d.glas.glasovi.length ? ' <small>' + _T('cfg_razg_glasovi', 'dostupno') + ': ' + d.glas.glasovi.map(_esc).join(', ') + '</small>' : '')) +
+        _razgPolje('razg-glasrok', _T('cfg_razg_glasrok', 'Rok glasa (s, 10–600)'), '<input id="razg-glasrok" type="number" min="10" max="600" value="' + (p.glasRokSek || 120) + '">') +
         '<div style="margin-top:8px"><button class="cfg-btn" onclick="spremiRazgovor(this)">' + _T('tel_spremi', 'Spremi') + '</button></div>' +
         _razgPosiljatelji(d.posiljatelji || [], p.dopusteniKorisnici || []) +
         (h ? '<ul class="cfg-povijest">' + h + '</ul>' : '');
@@ -9312,6 +9323,11 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         memorijaUrl: v('razg-url').value,
         memorijaRokMs: Number(v('razg-memrok').value),
         memorijaOznakaUspjeha: v('razg-memoznaka').checked,
+        glasPrepoznavanje: v('razg-stt').checked,
+        glas: v('razg-glas').value,
+        glasUrl: v('razg-glasurl').value,
+        glasGlas: v('razg-glasglas').value,
+        glasRokSek: Number(v('razg-glasrok').value),
         by: 'ploca', source: 'ploca'
       };
       if (btn) btn.disabled = true;
@@ -10983,12 +10999,19 @@ function razgovorOdgovor(o: { status: number; tijelo: unknown }): Response {
   return new Response(JSON.stringify(o.tijelo), { status: o.status, headers: { 'Content-Type': 'application/json' } })
 }
 
-function handleRazgovorGet(): Response {
+async function handleRazgovorGet(): Promise<Response> {
   try {
     const st = stanjeUlaza()
+    // TASK-5294: stanje lokalnog glasovnog servisa (i popis glasova) samo kad je glas u uporabi.
+    let glas: StanjeGlasa | null = null
+    try {
+      const rp = razgovorSloj().ulaz.postavke()
+      if (rp.glasPrepoznavanje || rp.glas !== 'off') glas = await stanjeGlasa(rp.glasUrl || GLAS_ZADANI_URL)
+    } catch { /* Config se prikaže i bez stanja glasa */ }
     return razgovorOdgovor(razgovorGet(TM_DB, {
       stanje: { petljaRadi: st.radi, aktivnih: _razgovor ? _razgovor.jezgra.aktivnih() : 0, zadnjaGreska: st.zadnjaGreska },
       posiljatelji: zadnjiPosiljatelji(TM_DATA),
+      ...(glas ? { glas } : {}),
     }))
   } catch (e) {
     return razgovorOdgovor({ status: 500, tijelo: { error: String(e) } })

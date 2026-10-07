@@ -31,8 +31,9 @@ import type { Kanal, Razgovor, UlaznaPoruka } from './razgovor/Kanal'
 import type { RazgovorPostavke } from './razgovor/RazgovorPostavke'
 import { jeDopusten, jeZaDrugog, pocinjeImenom, trebaOdgovoriti } from './razgovor/Filtar'
 import { zaKonzolu } from './razgovor/Razgovor'
+import { GLAS_ZADANI_URL, OZNAKA_STT_KVAR, prepoznajGovor, vrstaZvuka, type IshodStt } from './razgovor/Glas'
 import {
-  ZADANI_PRIVITCI, arhivirajPoslano, dopustenoPreuzeti, imaPrivitak, neutralizirajOznakuPrivitka, odaberiPrivitak, spremiPrivitak, telegramPreuzmi,
+  GOVORNE_VRSTE, ZADANI_PRIVITCI, arhivirajPoslano, dopustenoPreuzeti, imaPrivitak, neutralizirajOznakuPrivitka, odaberiPrivitak, spremiPrivitak, telegramPreuzmi,
   type PorukaSPrivitkom, type Preuzeto, type TelegramPrivitci,
 } from './TelegramPrivitci'
 
@@ -176,6 +177,8 @@ export interface Api {
   getMe?(): Promise<JaBot | null>
   /** `getFile` + preuzimanje privitka (TASK-5282). Bez njega se privitci ne spremaju. */
   preuzmi?(fileId: string, maxBajta: number): Promise<Preuzeto>
+  /** Lokalni STT (`POST <url>/stt`, TASK-5294). Bez njega se glasovne poruke ne transkribiraju. */
+  stt?(url: string, bajtovi: Uint8Array, vrsta: string, rokMs: number): Promise<IshodStt>
 }
 
 export interface Ishod {
@@ -201,8 +204,8 @@ export async function jedanProlaz(
   const rp = razg ? razg.postavke() : null
   const razgovorUkljucen = !!(razg && rp?.ukljucen && razg.kanal)
   const ja = razg?.ja || null
-  const ulazna = (m: NonNullable<Update['message']>, tekst: string) =>
-    ulaznaPorukaIzTelegrama(m, tekst, ja, rp?.ime || ja?.firstName || '')
+  const ulazna = (m: NonNullable<Update['message']>, tekst: string, glasovna = false) =>
+    ulaznaPorukaIzTelegrama(m, tekst, ja, rp?.ime || ja?.firstName || '', { glasovna })
   /** ADR-0002: poruka koja NIJE postala zadatak ide razgovornom sloju — bez `await`. */
   const uRazgovor = (m: NonNullable<Update['message']>, tekst: string, gotova?: UlaznaPoruka) => {
     if (!razgovorUkljucen) return
@@ -291,13 +294,26 @@ export async function jedanProlaz(
     }
     // Privitak se sprema samo od dopuštenih (v. `dopustenoPreuzeti`); putanja (ili razlog
     // zašto nije spremljen) ide dalje u tekstu — ulaz i razgovor je vide jednako.
+    let glasovna = false
     if (sPrivitkom && api.preuzmi && dopustenoPreuzeti(m, u, rp)) {
-      const r = await spremiPrivitak(m, odaberiPrivitak(m, priv.vrste)!, priv, api.preuzmi.bind(api), telegramBotToken(cfg))
+      const odabran = odaberiPrivitak(m, priv.vrste)!
+      const r = await spremiPrivitak(m, odabran, priv, api.preuzmi.bind(api), telegramBotToken(cfg))
       const oznaka = r.ok ? `[PRIVITAK: ${r.putanja}]` : `[PRIVITAK nije spremljen: ${r.razlog}]`
-      tekst = tekst.trim() ? `${tekst}\n${oznaka}` : oznaka
+      // TASK-5294: govor → lokalni STT → `[GLAS] …` na početku teksta; kvar ne gubi poruku.
+      let glas = ''
+      if (rp?.glasPrepoznavanje && GOVORNE_VRSTE.includes(odabran.vrsta)) {
+        glasovna = true
+        const g = await transkribiraj(api, rp, odabran.vrsta as 'voice' | 'audio' | 'video_note', odabran.mime, r)
+        if (g.ok) glas = `[GLAS] ${neutralizirajOznakuPrivitka(g.tekst)}`
+        else {
+          glas = `${OZNAKA_STT_KVAR}: ${g.greska}`
+          try { await api.odgovori(m.chat.id, glas, m.message_id) } catch { /* oznaka ostaje u tekstu */ }
+        }
+      }
+      tekst = [glas, tekst.trim(), oznaka].filter(Boolean).join('\n')
     }
     if (!tekst.trim()) { ishod.preskoceno++; stanje.preskoceno++; continue }
-    const ul = razg ? ulazna(m, tekst) : undefined
+    const ul = razg ? ulazna(m, tekst, glasovna) : undefined
     if (ul && razg?.zabiljezi) { try { razg.zabiljezi(ul) } catch { /* samo pomoć vlasniku */ } }
     // TASK-5283: poruka upućena drugome (drugi bot s popisa ili, uz tisinaKadDrugom, čovjek)
     // ne otvara zadatak ni kad je ulaz uključen — razgovor je samo čita.
@@ -361,6 +377,27 @@ export async function jedanProlaz(
 }
 
 /**
+ * Spremljeni govorni privitak → lokalni STT; transkript se sprema uz privitak (`<datoteka>.txt`,
+ * 0600). Greška je tekst bez tajni (servis je lokalan, token u njoj ne postoji).
+ */
+async function transkribiraj(
+  api: Api, rp: RazgovorPostavke, vrsta: 'voice' | 'audio' | 'video_note', mime: string | undefined,
+  spremljeno: { ok: true; putanja: string } | { ok: false; razlog: string },
+): Promise<IshodStt> {
+  if (!spremljeno.ok) return { ok: false, greska: `privitak nije spremljen (${spremljeno.razlog})` }
+  if (!api.stt) return { ok: false, greska: 'STT nije dostupan u ovom procesu' }
+  let bajtovi: Uint8Array
+  try { bajtovi = new Uint8Array(readFileSync(spremljeno.putanja)) } catch (e: any) {
+    return { ok: false, greska: String(e?.message || e).slice(0, 200) }
+  }
+  const g = await api.stt(rp.glasUrl || GLAS_ZADANI_URL, bajtovi, vrstaZvuka(vrsta, mime), rp.glasRokSek * 1000)
+  if (g.ok) {
+    try { writeFileSync(`${spremljeno.putanja}.txt`, g.tekst + '\n', { encoding: 'utf-8', mode: 0o600 }) } catch { /* tekst ionako ide dalje */ }
+  }
+  return g
+}
+
+/**
  * Filtri: dopušteni chatovi, dopušteni korisnici, okidač, spomen bota.
  *
  * `jaUsername` (ADR-0002 §5, nalaz): bez njega `sameSpomeni` prihvaća BILO KOJI spomen, pa
@@ -415,6 +452,7 @@ export function spominjeBota(m: NonNullable<Update['message']>, tekst: string, j
  */
 export function ulaznaPorukaIzTelegrama(
   m: NonNullable<Update['message']>, tekst: string, ja: JaBot | null, ime: string,
+  opcije: { glasovna?: boolean } = {},
 ): UlaznaPoruka {
   const posiljateljIme = [m.from?.first_name, m.from?.username ? `(@${m.from.username})` : '']
     .filter(Boolean).join(' ').trim() || String(m.from?.id ?? '?')
@@ -443,9 +481,12 @@ export function ulaznaPorukaIzTelegrama(
     tekst,
     ts: m.date ? new Date(m.date * 1000).toISOString() : new Date().toISOString(),
     privatno: m.chat.type === 'private',
-    obracanjeBotu: spomen || odgovorNaBota || pocinjeImenom(tekst, ime),
+    // Transkript počinje oznakom `[GLAS]`; ime bota izgovoreno na početku je obraćanje.
+    obracanjeBotu: spomen || odgovorNaBota ||
+      pocinjeImenom(opcije.glasovna ? tekst.replace(/^\[GLAS\]\s*/, '') : tekst, ime),
     ...(spomeni.length ? { spomeni } : {}),
     ...(odgovorNa ? { odgovorNa } : {}),
+    ...(opcije.glasovna ? { glasovna: true } : {}),
   }
 }
 
@@ -502,6 +543,7 @@ export function telegramApi(botToken: string, plocaBase: string): Api {
       return { status: r.status, tijelo: parsed }
     },
     preuzmi: telegramPreuzmi(botToken),
+    stt: (url, bajtovi, vrsta, rokMs) => prepoznajGovor({ url, bajtovi, vrsta, rokMs }),
     async getMe() {
       try {
         const r = await fetch(`${base}/getMe`)
@@ -599,6 +641,16 @@ export function telegramKanal(
             }
           } catch { /* arhiv nije vrijedan neuspjeha slanja */ }
         }
+        return r.ok
+      } catch { return false }
+    },
+    async posaljiGlas(chatId, ogg, replyTo) {
+      try {
+        const fd = new FormData()
+        fd.append('chat_id', chatId)
+        if (replyTo) fd.append('reply_parameters', JSON.stringify({ message_id: Number(replyTo), allow_sending_without_reply: true }))
+        fd.append('voice', new File([ogg], 'odgovor.ogg', { type: 'audio/ogg' }))
+        const r = await fetch(`${base}/sendVoice`, { method: 'POST', body: fd })
         return r.ok
       } catch { return false }
     },

@@ -23,6 +23,7 @@ import { neutralizirajIme, neutralizirajTekst, zatamniTajne } from './Ciscenje'
 import { sastaviIdentitet, type OpisAgenta } from './Identitet'
 import { dohvatiMemoriju, oznakaMemorije, type MemorijaRezultat } from './Memorija'
 import { izvuciDokumente, provjeriDokument } from './SendDoc'
+import { GLAS_ZADANI_URL, OZNAKA_TTS_KVAR, sintetizirajGovor, tekstZaGovor, trebaGlasovniOdgovor } from './Glas'
 import { ocistiStareZapise, zapisiPotez } from './Zapis'
 import type { PrijenosIshod, PrijenosUlaz } from './BotKanal'
 
@@ -479,6 +480,10 @@ export function stvoriRazgovor(d: RazgovorOvisnosti): RazgovorJezgra {
     if (zt.zatamnjeno) log(`[razgovor] ${c.kljuc}: zatamnjeno ${zt.zatamnjeno} tajni u odgovoru`)
     odgovor = zt.tekst
 
+    // TASK-5294: izgovara se sam odgovor — bez oznake memorije koja slijedi.
+    const zaGovor = k.posaljiGlas && trebaGlasovniOdgovor(s.glas, stavke.some(x => x.p.glasovna))
+      ? tekstZaGovor(odgovor) : ''
+
     // TASK-5292: odgovor bez memorije u načinu `on` nikad nije tih — 🧠🚫 s razlogom na početku.
     const oznakaMem = oznakaMemorije(mem, s.memorijaOznakaUspjeha)
     if (oznakaMem) odgovor = mem?.bezMemorije ? `${oznakaMem}\n${odgovor}` : `${oznakaMem} ${odgovor}`
@@ -504,9 +509,24 @@ export function stvoriRazgovor(d: RazgovorOvisnosti): RazgovorJezgra {
       } catch (e: any) { log(`[razgovor] ${c.kljuc}: prijenos drugom botu: ${String(e?.message || e)}`) }
     }
 
+    // Glas UZ tekst (tekst je već poslan): kvar TTS-a ili slanja = vidljiva napomena, ne tišina.
+    let glas: { poslan: boolean; ms: number; greska?: string } | null = null
+    if (zaGovor) {
+      const g0 = sat()
+      const t = await sintetizirajGovor({
+        url: s.glasUrl || GLAS_ZADANI_URL, tekst: zaGovor, glas: s.glasGlas, rokMs: s.glasRokSek * 1000, fetchImpl: d.fetchImpl,
+      })
+      const greska = !t.ok ? t.greska : (await k.posaljiGlas!(p.chatId, t.ogg, p.porukaId).catch(() => false)) ? undefined : 'slanje glasovne poruke nije uspjelo'
+      glas = { poslan: !greska, ms: sat() - g0, ...(greska ? { greska } : {}) }
+      if (greska) {
+        log(`[razgovor] ${c.kljuc}: glas — ${greska}`)
+        await k.posaljiTekst(p.chatId, `${OZNAKA_TTS_KVAR}: ${greska}`).catch(() => false)
+      }
+    }
+
     zapisiPotez(d.korijen, p.kanal, p.chatId, {
       ts: new Date(sat()).toISOString(), smjer: 'izlaz', tekst: odgovor, ...zajednicko,
-      sessionId: sessionId || null, dokumenti: zaSlanje.length,
+      sessionId: sessionId || null, dokumenti: zaSlanje.length, ...(glas ? { glas } : {}),
       ...(lanac ? { lanac: { lanacId: lanac.lanacId, skok: lanac.skok } } : {}),
       ...(prijenos && prijenos !== 'bez-spomena' && prijenos !== 'iskljuceno' ? { prijenos } : {}),
     })
