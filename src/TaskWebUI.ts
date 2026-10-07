@@ -103,6 +103,7 @@ import { kljucPrisutanUDatoteci, ukloniKljucIzDatoteke } from './LoginCreds'
 import { ocistiLoginKod, izvuciLoginUrl, maskirajLoginTail, loginOauthGreska, LOGIN_POTVRDA } from './LoginUnos'
 import { capguardPostavke, stanjeCapguarda, zatraziSposobnost } from './Capguard'
 import { tecajOdgovor } from './Tecaj'
+import { rijesiPreuzimanje, corsOdluka } from './core/PristupDatotekama'
 import type { Task, AgentId, TaskFilter } from './types/task-types'
 import { CreateTaskInputSchema, UpdateTaskInputSchema, TaskFilterSchema } from './zod/schemas/task'
 import { isNonActionableMessage, emptyOrFixtureReason, EMPTY_TASK_REASON_TEXT } from './core/DispatchGuard'
@@ -13428,23 +13429,15 @@ async function handleLoginLogout(req: Request): Promise<Response> {
   } catch (e: any) { return json({ error: String(e?.message || e) }, 500) }
 }
 
-// Sigurno preuzimanje datoteke na koju task linka (resultSummary). Dozvoljeno SAMO unutar
-// HOME-a; blokira path-traversal (resolve + prefix provjera), služi samo obične datoteke.
+// Sigurno preuzimanje datoteke na koju task linka (resultSummary). TASK-5333 (nalaz N4):
+// samo iz dopuštenih korijena (TM_DOWNLOAD_DIRS, zadano $HOME/app), bez dijelova s točkom
+// i imena tajni, realpath prije provjere prefiksa — pravila su u core/PristupDatotekama.
 function handleFileDownload(url: URL): Response {
   try {
-    const raw = (url.searchParams.get('path') || '').trim()
-    if (!raw) return new Response('Missing path', { status: 400 })
-    const HOME = process.env.HOME || ''
-    const expanded = raw.startsWith('~/') ? join(HOME, raw.slice(2)) : raw
-    const abs = resolve(expanded)
-    const homeAbs = resolve(HOME)
-    if (abs !== homeAbs && !abs.startsWith(homeAbs + '/')) {
-      return new Response('Forbidden path (izvan HOME-a)', { status: 403 })
-    }
-    if (!existsSync(abs) || !statSync(abs).isFile()) return new Response('Not found', { status: 404 })
-    const name = (abs.split('/').pop() || 'file').replace(/["\r\n]/g, '')
-    return new Response(Bun.file(abs), {
-      headers: { 'Content-Disposition': `attachment; filename="${name}"` }
+    const r = rijesiPreuzimanje(url.searchParams.get('path') || '')
+    if (!r.ok) return new Response(r.razlog, { status: r.status })
+    return new Response(Bun.file(r.putanja), {
+      headers: { 'Content-Disposition': `attachment; filename="${r.ime}"` }
     })
   } catch (e: any) {
     return new Response('Error: ' + (e?.message || e), { status: 500 })
@@ -17323,14 +17316,18 @@ async function obradiZahtjev(req: Request): Promise<Response | undefined> {
       return new Response('Forbidden - Host not allowed', { status: 403 })
     }
 
-    // CORS headers - allow specific origins
-    const origin = req.headers.get('origin') || '*'
-    const headers = {
-      'Access-Control-Allow-Origin': origin,
-      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type',
-      'Access-Control-Allow-Credentials': 'true'
+    // CORS — TASK-5333 (nalaz N4): Origin se odražava SAMO ako je vlastiti (Host zahtjeva
+    // ili host:port iz ALLOWED_HOSTS); strani Origin ne dobiva ACAO, a PUT/POST/DELETE s
+    // njim se odbija — inače tuđa stranica u pregledniku vlasnika čita i mijenja ploču.
+    const cors = corsOdluka({
+      origin: req.headers.get('origin'), host: req.headers.get('host') || '',
+      metoda: req.method, dopusteni: ALLOWED_HOSTS,
+    })
+    if (!cors.dopusti) {
+      console.warn(`[Security] Odbijen ${req.method} ${url.pathname} sa stranim Originom: ${req.headers.get('origin')}`)
+      return new Response('Forbidden - Origin not allowed', { status: 403 })
     }
+    const headers = cors.zaglavlja
 
     // Preflight
     if (req.method === 'OPTIONS') {
