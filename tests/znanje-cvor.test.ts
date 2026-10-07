@@ -47,6 +47,11 @@ describe('dokumenti čvora', () => {
     expect(r.sadrzaj).toBeNull()
     expect(r.tajna).toBe(true)
   })
+  test('tajna iza granice skraćivanja: razgovor i zadatak se ipak ne upisuju', () => {
+    const dugo = 'a'.repeat(900) + ' sk-ant-' + 'b'.repeat(30)
+    expect(dokumentRazgovor('c', 'Bot', '-1', 'd', [{ ts: '2026-10-07T10:00:00Z', smjer: 'ulaz', tekst: dugo }]).tajna).toBe(true)
+    expect(dokumentZadatak('c', { id: 'TASK-1', title: 'T', status: 'completed', resultSummary: 'x'.repeat(3000) + ' sk-ant-' + 'b'.repeat(30) })).toBeNull()
+  })
   test('razgovor: potezi s imenom i vremenom; bot pod svojim imenom', () => {
     const r = dokumentRazgovor('c', 'Bot', '-1', '2026-10-07', [
       { ts: '2026-10-07T10:00:00Z', smjer: 'ulaz', posiljateljIme: 'Ana', tekst: 'otvori projekt X' },

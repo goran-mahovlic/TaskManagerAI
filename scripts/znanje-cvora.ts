@@ -175,7 +175,7 @@ async function sastavi(o: Okolina, mem: { banka: string }, mog: Record<string, b
       const pr = z.projectId || z.project_id
       if (!pr || pretinci.has(pr)) continue
       const d = dokumentZadatak(cvor, z)
-      if (imaTajnu(d)) { preskoceno.push(`cvor/zadatak/${z.id} (oblik tajne)`); continue }
+      if (!d) { preskoceno.push(`cvor/zadatak/${z.id} (oblik tajne)`); continue }
       korpus.set(`cvor/zadatak/${z.id}`, { sadrzaj: d, kontekst: `Zatvoren zadatak ${z.id} na čvoru ${cvor}`, oznake: ['cvor', 'zadatak'] })
     }
   }
@@ -230,6 +230,9 @@ async function sastavi(o: Okolina, mem: { banka: string }, mog: Record<string, b
       }
     }
   }
+
+  // Brana tajni nad SVAKIM dokumentom korpusa, na jednom mjestu (i sustav/*, projekti, agenti, stanje).
+  for (const [id, d] of korpus) if (imaTajnu(d.sadrzaj)) { korpus.delete(id); preskoceno.push(`${id} (oblik tajne)`) }
 
   // Zapis korpusa na disk čvora (pregled i otisci); stara slika se zamjenjuje.
   rmSync(o.korpusDir, { recursive: true, force: true })
@@ -294,6 +297,7 @@ async function upisi(o: Okolina, mem: { url: string; banka: string }, korpus: Ko
     spremiStanje(o, st)
     for (const id of zaUpis) {
       const d = korpus.get(id)!
+      if (imaTajnu(d.sadrzaj)) { neuspjelo++; ispis(`  PRESKOČENO ${id} — oblik tajne`); continue } // druga linija
       const t0 = performance.now()
       if (id in st.dokumenti) {
         // Isti obrazac kao dopuna naše banke: brisanje pa upis = čisto ponovno izvlačenje činjenica.

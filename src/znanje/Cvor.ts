@@ -37,10 +37,16 @@ export function dokumentProjekti(cvor: string, projekti: Projekt[]): string {
 
 export interface Zadatak { id: string; title: string; status: string; assignee?: string | null; project_id?: string | null; projectId?: string | null; result_summary?: string | null; resultSummary?: string | null; completed_at?: string | null; updated_at?: string | null }
 
-/** Zatvoren zadatak → kratak dokument (naslov, projekt, izvršitelj, prvih ~2 KB rezultata). */
-export function dokumentZadatak(cvor: string, z: Zadatak, najvise = 2000): string {
+/**
+ * Zatvoren zadatak → kratak dokument (naslov, projekt, izvršitelj, prvih ~2 KB rezultata).
+ * `null` = PUNI tekst (prije skraćivanja) nosi oblik tajne — skraćivanje ne smije prepoloviti tajnu
+ * pa je pustiti kroz branu.
+ */
+export function dokumentZadatak(cvor: string, z: Zadatak, najvise = 2000): string | null {
   const projekt = z.projectId || z.project_id || 'bez projekta'
-  const rez = (z.resultSummary || z.result_summary || '').replace(/```[\s\S]*?```/g, '[blok koda izostavljen]').trim()
+  const sirovo = z.resultSummary || z.result_summary || ''
+  if (imaTajnu(`${z.title}\n${sirovo}`)) return null
+  const rez = sirovo.replace(/```[\s\S]*?```/g, '[blok koda izostavljen]').trim()
   return [`# Zadatak ${z.id} na čvoru ${cvor}: ${z.title}`, '',
     `Zadatak ${z.id} („${z.title}") u projektu ${projekt} izvršio je ${z.assignee || 'nepoznat izvršitelj'}; završen ${(z.completed_at || z.updated_at || '').slice(0, 10) || 'nepoznato kad'}.`,
     '', rez ? `Rezultat (skraćeno):\n${rez.slice(0, najvise)}${rez.length > najvise ? ' …' : ''}` : 'Rezultat nije zapisan.', ''].join('\n')
@@ -110,9 +116,11 @@ export interface PotezRazgovora { ts: string; smjer: string; posiljateljIme?: st
  */
 export function dokumentRazgovor(cvor: string, ime: string, chat: string, datum: string, potezi: PotezRazgovora[], najviseZnakova = 800): { sadrzaj: string | null; tajna: boolean; poteza: number } {
   const redovi: string[] = []
+  let tajna = false
   for (const p of potezi) {
     const t = String(p.tekst || '').replace(/\s+/g, ' ').trim()
     if (!t) continue
+    if (imaTajnu(t)) tajna = true // puni tekst, prije skraćivanja
     const tko = p.smjer === 'izlaz' ? ime : (p.posiljateljIme || p.posiljateljId || 'korisnik')
     const vrijeme = (p.ts || '').slice(11, 16)
     redovi.push(`- ${vrijeme} ${tko}${p.smjer === 'procitano' ? ' (nije se obraćao botu)' : ''}: ${t.slice(0, najviseZnakova)}${t.length > najviseZnakova ? ' …' : ''}`)
@@ -120,7 +128,7 @@ export function dokumentRazgovor(cvor: string, ime: string, chat: string, datum:
   if (!redovi.length) return { sadrzaj: null, tajna: false, poteza: 0 }
   const sadrzaj = [`# Razgovor u Telegram chatu ${chat} na čvoru ${cvor}, ${datum}`, '',
     `Zapis razgovora bota ${ime} u chatu ${chat} dana ${datum}. Izvuci odluke, imenovane projekte i zadatke te tko je što tražio; ne prepisuj svaku poruku.`, '', ...redovi, ''].join('\n')
-  if (imaTajnu(sadrzaj)) return { sadrzaj: null, tajna: true, poteza: redovi.length }
+  if (tajna || imaTajnu(sadrzaj)) return { sadrzaj: null, tajna: true, poteza: redovi.length }
   return { sadrzaj, tajna: false, poteza: redovi.length }
 }
 
