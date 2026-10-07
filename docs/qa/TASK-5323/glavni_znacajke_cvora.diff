@@ -1,0 +1,574 @@
+--- RegocDaemon.ts.bak-task5323-20261007_131913	2026-10-07 08:37:56.038839451 +0000
++++ RegocDaemon.ts	2026-10-07 13:21:43.493596156 +0000
+@@ -251,12 +251,16 @@
+ } from './ReviewCheckpoint'
+ // TASK-5029: in_progress tek kad proces krene, R2 lanac jednom, pauza bez obzira na status.
+ import {
+-  CEKA_MJESTO_TAG, tagsAfterSpawnAttempt, waitingSlotNote, helperChainDecision, pausedTrackedIds,
++  CEKA_MJESTO_TAG, tagsAfterSpawnAttempt, waitingSlotNote, helperChainDecision, timPoNaporu, pausedTrackedIds,
+   type SpawnStart,
+ } from './SpawnSlotRules'
+ // TASK-4895: singleton brava (A) i zabrana starta iz agentskog spawna (B).
+ import { acquireDaemonSingleton, spawnEnvRefusal, SPAWN_ENV_EXIT_CODE } from './DaemonSingleton'
+ import { homedir } from 'os'
++// TASK-5323 (prijenos s node-A, ADR-0004 §13.8): RAG prekidač po čvoru (TASK-5273, memory-config
++// rag.enabled) i izlazni kanal TaskManagerAI paketa (TASK-5285). Na glavnom oboje bez učinka.
++import { ragUkljucen } from '../skills/CORE/Tools/lib/rag-gate'
++import { tokenKanala, chatZaPoruku, createPaketKanalReader, ucitajKanalPaketa } from './PaketKanal'
+ 
+ // ============================================
+ // Configuration
+@@ -688,7 +692,15 @@
+ let lastUserFlushCheck = 0
+ let _telegramToken: string | null = null
+ 
+-function getTelegramToken(): string | null {
++/** TASK-5285 (node-A → glavni TASK-5323): kanal paketa, svježe najviše jednom u minuti (PaketKanal.ts). */
++const paketKanal = createPaketKanalReader({ ucitaj: () => ucitajKanalPaketa(HOME), log })
++
++/** TASK-5285: kanal paketa je izvor SAMO kad stroj nema vlastitu datoteku bota (~/.claude). */
++function kanalJePaketov(): boolean {
++  return !_telegramTokenIzDatoteke() && !!paketKanal()
++}
++
++function _telegramTokenIzDatoteke(): string | null {
+   if (_telegramToken) return _telegramToken
+   try {
+     const cfg = JSON.parse(readFileSync(join(HOME, '.claude', 'telegram.json'), 'utf-8'))
+@@ -697,6 +709,10 @@
+   return _telegramToken
+ }
+ 
++function getTelegramToken(): string | null {
++  return tokenKanala(_telegramTokenIzDatoteke(), paketKanal)
++}
++
+ /**
+  * Pošalji tekst u Telegram grupu. `ok:true` SAMO na HTTP 200 + ok:true (delivery-verified).
+  *
+@@ -1507,7 +1523,7 @@
+     refreshContextExport(totalWithBaseline, maxContext, currentContextPct)
+ 
+     // Check if we need to save to RAG
+-    if (currentContextPct >= CONTEXT_THRESHOLD_PCT && !contextAlreadySavedThisSession) {
++    if (currentContextPct >= CONTEXT_THRESHOLD_PCT && !contextAlreadySavedThisSession && ragUkljucen()) {
+       log(`⚠️ Context at ${currentContextPct}% (threshold: ${CONTEXT_THRESHOLD_PCT}%) - saving to RAG...`)
+ 
+       // Extract current work context for richer save
+@@ -1719,6 +1735,7 @@
+ const RAG_TOOL = join(HOME, '.claude/skills/CORE/Tools/rag-query.ts')
+ 
+ async function queryRAG(query: string, limit: number = 3): Promise<string> {
++  if (!ragUkljucen()) return '' // TASK-5273: čvor bez RAG-a — bez spawna i bez čekanja
+   try {
+     const proc = Bun.spawn(['bun', RAG_TOOL, '-c', 'pai_learning_system', '-q', query, '-n', String(limit)], {
+       stdout: 'pipe',
+@@ -2466,7 +2483,7 @@
+   // Iza istog flaga kao I2 (`agentIdentityBlock` = izračun/log, `…Live` = stvarno šalje).
+   let ownCollection: string | null = null
+   let memorySection = ''
+-  if (isEnabled('agentIdentityBlock')) {
++  if (isEnabled('agentIdentityBlock') && ragUkljucen()) {
+     try {
+       // R1c/TASK-4602: DVA razlicita pitanja, dva razlicita vratara.
+       //   ČITANJE  — `ownRagCollection`: ima li se STO citati? Kolekcija mora postojati,
+@@ -2499,7 +2516,7 @@
+   const effectiveHints = withSystemCollection(withOwnCollection(ragHints, ownCollection), originalContent, popisOk)
+ 
+   let ragSection = ''
+-  if (effectiveHints.length > 0) {
++  if (effectiveHints.length > 0 && ragUkljucen()) {
+     ragSection = `\n## RAG kolekcije za pretragu\n${effectiveHints.map(h => `- bun ~/.claude/skills/CORE/Tools/rag-query.ts -c ${h} -q "[relevantna tema]" -n 5`).join('\n')}\n`
+   }
+   ragSection += memorySection
+@@ -2675,7 +2692,7 @@
+ 1. KORISTI alate da STVARNO napraviš rezultat — write_file za datoteke, bash za naredbe. NE opisuj, NAPRAVI.
+ 2. Ako je zadana putanja/datoteka, spremi TOČNO na nju write_file alatom.
+ 2b. Ako zadatak traži SPECIFIČAN FORMAT (svg, pptx, docx…) ili SKIL/WORKFLOW: PRVO read_file ~/.claude/skills/<Skill>/SKILL.md, a ako postoji i ~/.claude/skills/<Skill>/Workflows/*.md (nađi ih s bash: ls ~/.claude/skills/<Skill>/Workflows/) — slijedi korake iz workflowa. Za excalidraw koristi make_diagram.
+-3. Za činjenice o sustavu pozovi rag_search (ili bash: bun ~/.claude/skills/CORE/Tools/rag-query.ts -c pai_learning_system -q "tema" -n 3). Inače ne izmišljaj.
++${ragUkljucen() ? '3. Za činjenice o sustavu pozovi rag_search (ili bash: bun ~/.claude/skills/CORE/Tools/rag-query.ts -c pai_learning_system -q "tema" -n 3). Inače ne izmišljaj.' : '3. Na ovom čvoru NEMA RAG-a: za činjenice o sustavu čitaj datoteke (read_file, grep). Inače ne izmišljaj.'}
+ 4. Kad je deliverable spremljen i zadatak GOTOV → vrati JEDNU kratku rečenicu potvrde, BEZ daljnjih poziva alata.${recipeSection}${projectTail}`
+   }
+ 
+@@ -2725,8 +2742,7 @@
+ ## Pravila
+ 1. Obavi zadatak temeljito i precizno
+ 2. Ispiši rezultat jasno i strukturirano
+-3. Ako trebaš dodatni kontekst, provjeri RAG:
+-   bun ~/.claude/skills/CORE/Tools/rag-query.ts -c pai_learning_system -q "[tema]" -n 5
++${ragUkljucen() ? '3. Ako trebaš dodatni kontekst, provjeri RAG:\n   bun ~/.claude/skills/CORE/Tools/rag-query.ts -c pai_learning_system -q "[tema]" -n 5' : '3. Ako trebaš dodatni kontekst, čitaj datoteke (read_file, grep) — na ovom čvoru NEMA RAG-a'}
+ 4. Koristi format:
+    📋 REZULTAT: [Što si napravio]
+    📊 STATUS: [Uspješno/Djelomično/Neuspješno]
+@@ -4683,7 +4699,7 @@
+ 
+ async function createSequentialHelpers(content: string, primaryAgent: string, primaryTaskId: string | null,
+                                        primaryProjectId?: string, chatTag?: string | null,
+-                                       primaryTags?: string[] | null): Promise<void> {
++                                       primaryTags?: string[] | null, primaryCreatedBy?: string | null): Promise<void> {
+   if (!primaryTaskId) return
+   try {
+     // Anti-kaskada: helper-taskovi nose sustavni opis + originalni sadržaj → ne smiju stvarati nove helpere.
+@@ -4696,6 +4712,7 @@
+         tags: primaryTags,
+         existingChildren: countChainChildren(primaryTaskId),
+         enabled: isEnabled('sequentialHelpers', true),
++        createdBy: primaryCreatedBy, // TASK-255: korak lanca se izvršava u mjestu
+       })
+       if (!d.allow) { log(`  [R2] ${primaryTaskId}: lanac se ne gradi — ${d.reason}`); return }
+     }
+@@ -4728,6 +4745,10 @@
+     if (!helpers.length && isEnabled('teamChain')) {
+       try {
+         const cls = getModeClassifier().classifyMessage(content)
++        // TASK-255 (uzrok #1 pre-eskalacija): E1/E2 NE postaje multi-agent tim (SpawnSlotRules.timPoNaporu).
++        if (!timPoNaporu(cls.effort)) {
++          log(`  [teamChain] ${primaryTaskId}: ${cls.effort} — trivijalno/jednostručno, bez tima`)
++        } else {
+         const live = isEnabled('teamChainLive')
+         const ordered = (cls.suggestedAgents || [])
+           .filter(id => id && id !== primaryAgent && TEAM_ROLE_BRIEF[id])
+@@ -4746,6 +4767,7 @@
+         const team = [...rest, ...qa]   // QA ostaje zadnji
+         log(`  [teamChain ${live ? 'LIVE' : 'SHADOW'}] ${cls.mode}/${cls.effort} primarni=${primaryAgent} tim=[${team.join(',')}]`)
+         if (live) { helpers = team; fromTeam = true }
++        }
+       } catch (e) { log(`  ⚠️ [teamChain] klasifikacija pala: ${e}`) }
+     }
+     if (!helpers.length) return
+@@ -6229,10 +6251,14 @@
+         if (isBacklog && backlogSentThisTick >= 1) continue      // throttle backlog ≈1/min
+       }
+ 
+-      const chatId = (typeof msg.chat_id === 'number') ? msg.chat_id : REGOC_GROUP_FALLBACK
++      // TASK-5285: na stroju čiji je kanal paketov, „fallback grupa” glavnog sustava nije naša —
++      // poruka bez chata (ili s tim fallbackom) ide u chat koji je vlasnik upisao na ploči.
++      const _pk = kanalJePaketov() ? paketKanal() : null
++      const chatId = chatZaPoruku(msg.chat_id, _pk, REGOC_GROUP_FALLBACK)
+       const datePart = String(msg.created_at).substring(0, 10)
+       const prefix = isBacklog ? `[ZAOSTALO od ${datePart}]\n` : ''
+-      let out = prefix + String(msg.content)
++      // TASK-5285: stil izlaza s ploče (telegram.stil; kratko = ishod + do 5 točaka, bez zida teksta).
++      let out = prefix + (_pk ? _pk.oblikuj(String(msg.content)) : String(msg.content))
+       if (out.length > USER_FLUSH_MAXLEN) out = out.substring(0, USER_FLUSH_MAXLEN) + '\n…(skraćeno)'
+ 
+       if (!live) {
+@@ -7771,7 +7797,7 @@
+       // Z2/TASK-3012: lanac nasljeđuje projekt zadatka-roditelja (uz zapis izvora).
+       // TASK-4761: chat: oznaka roditelja putuje niz cijeli lanac (v. createSequentialHelpers).
+       const parentChatTag = (Array.isArray(task.tags) ? task.tags : []).find((t: string) => /^chat:-?\d+$/.test(String(t)))
+-      await createSequentialHelpers(content, agentId, task.id, task.projectId || undefined, parentChatTag || null, task.tags)
++      await createSequentialHelpers(content, agentId, task.id, task.projectId || undefined, parentChatTag || null, task.tags, (task as any).createdBy)
+     }
+   } catch (e) { log(`⚠️ Auto-exec error: ${e}`) }
+ }
+@@ -8020,7 +8046,8 @@
+   // I6/TASK-3655: popis kolekcija iz ChromaDB-a se osvježi ODMAH pri startu, da prvi
+   // spawn ne radi iz praznog keša (`buildAgentPrompt` je sinkron pa mrežu ne smije dirati).
+   // Nedostupna Chroma → keš ostaje kakav je, a uputa se jednostavno ne doda.
+-  try {
++  if (!ragUkljucen()) log('📚 RAG isključen na ovom čvoru (memory-config rag.enabled=false) — ChromaDB se ne dira')
++  else try {
+     const kolekcije = await refreshCollectionsCache()
+     log(kolekcije
+       ? `📚 ChromaDB kolekcije osvježene: ${kolekcije.length} (vlastitih agentskih: ${kolekcije.filter(k => k.startsWith('agent_')).length})`
+--- SpawnSlotRules.ts.bak-task5323-20261007_131913	2026-10-02 08:54:11.189588947 +0000
++++ SpawnSlotRules.ts	2026-10-07 13:20:23.230699509 +0000
+@@ -36,6 +36,8 @@
+   existingChildren: number
+   /** Prekidač `sequentialHelpers` u features.json. */
+   enabled: boolean
++  /** Izvor zadatka (`createdBy`); `regoc-chain` = korak lanca (TASK-255). */
++  createdBy?: string | null
+ }
+ 
+ /**
+@@ -48,10 +50,22 @@
+   if (!i.enabled) return { allow: false, reason: 'prekidač sequentialHelpers je isključen' }
+   const tags = Array.isArray(i.tags) ? i.tags.map(t => String(t).toLowerCase()) : []
+   if (tags.includes('nalog')) return { allow: false, reason: 'zadatak je nalog — bez automatskog lanca' }
++  // TASK-255 (node-A, prijenos TASK-5323): korak lanca se izvršava u mjestu, ne gradi novi lanac.
++  // Dokaz: re-ingestiran tim-korak → „doradi rad" junk v1.2→v1.11 (kaskada regoc-chain na node-A).
++  if (String(i.createdBy || '') === 'regoc-chain' || tags.some(t => t.startsWith('parent:')))
++    return { allow: false, reason: 'član lanca (createdBy regoc-chain / parent:) — izvršava se u mjestu, bez novog lanca' }
+   if (i.existingChildren > 0) return { allow: false, reason: `lanac već postoji (${i.existingChildren} zadatak/a s parent oznakom) — ponovni spawn ga ne gradi opet` }
+   return { allow: true, reason: 'ok' }
+ }
+ 
++/**
++ * TASK-255 (uzrok #1 pre-eskalacija): trivijalan/jednostručan zahtjev (E1/E2) ne postaje
++ * multi-agent tim — „df -h" je na node-A dobio kosjenka+dora+jelena+potjeh. Tim tek od E3.
++ */
++export function timPoNaporu(effort: string | null | undefined): boolean {
++  return !(effort === 'E1' || effort === 'E2')
++}
++
+ /** Zadaci koji imaju živi spawn I zastavicu `paused` — status je nevažan. */
+ export function pausedTrackedIds(
+   rows: Array<{ id: string; paused?: number | boolean | null; status?: string }>,
+--- AgentRouting.ts.bak-task5323-20261007_131913	2026-10-02 20:51:35.697867181 +0000
++++ AgentRouting.ts	2026-10-07 13:20:23.230699509 +0000
+@@ -35,7 +35,9 @@
+ const HELPER_CUE = /pomo|poma[žz]|zajedno|asist|proslij|prosljed|predaj|preda\s|zatim|sljede|nastav|dorad/i
+ 
+ /** Tekstovi koje sustav sam generira za pomoćne taskove — ne smiju ponovno okinuti lanac (anti-kaskada). */
+-const HELPER_ECHO = /Sekvencijalni multi-agent|doradi rad \(/i
++// TASK-255 (node-A, prijenos TASK-5323): dodan T1 tim-oblik i marker „Originalni zahtjev korisnika:" —
++// prije je regex hvatao SAMO R2 oblik, pa je tim-opis proklizao i re-triggao lanac.
++const HELPER_ECHO = /Sekvencijalni multi-agent|Multi-agent lanac \(sustav je sam rasporedio tim\)|Originalni zahtjev korisnika:|doradi rad \(/i
+ 
+ const ALL_AGENTS = Object.keys(AGENT_FORMS)
+ 
+--- RagCollections.ts.bak-task5323-20261007_131913	2026-10-03 16:20:50.276286070 +0000
++++ RagCollections.ts	2026-10-07 13:21:54.872723307 +0000
+@@ -30,6 +30,7 @@
+ 
+ import { existsSync, readFileSync, writeFileSync, renameSync, mkdirSync } from 'fs'
+ import { dirname, join } from 'path'
++import { ragUkljucen } from '../skills/CORE/Tools/lib/rag-gate' // TASK-5273 (node-A → glavni TASK-5323)
+ 
+ const HOME = process.env.HOME || process.env.USERPROFILE || ''
+ 
+@@ -121,6 +122,7 @@
+ 
+ /** Dohvat + upis keša. Vraća popis ili `null` ako Chroma nije odgovorila. */
+ export async function refreshCollectionsCache(timeoutMs = FETCH_TIMEOUT_MS): Promise<string[] | null> {
++  if (!ragUkljucen()) return null // TASK-5273: čvor bez RAG-a ne dira ChromaDB
+   const imena = await fetchChromaCollections(timeoutMs)
+   if (!imena) return null
+   writeCollectionsCache(imena, chromaUrl())
+@@ -144,6 +146,7 @@
+  * Nema keša / neispravan keš → prazan skup (nijedna uputa se ne dodaje).
+  */
+ export function knownCollections(): Set<string> {
++  if (!ragUkljucen()) return new Set() // TASK-5273: bez RAG-a nema uputa za kolekcije
+   const kes = readCollectionsCache()
+   if (!kes) {
+     kickBackgroundRefresh()
+--- tests/agent-routing.test.ts.bak-task5323-20261007_131913	2026-07-21 09:02:25.808480953 +0000
++++ tests/agent-routing.test.ts	2026-10-07 13:20:02.638469531 +0000
+@@ -104,4 +104,12 @@
+     expect(isHelperEcho('gita: doradi rad (grga)')).toBe(true)
+     expect(isHelperEcho('napravi vizual REGOČ sustava')).toBe(false)
+   })
++
++  // TASK-255 (prijenos s node-A, TASK-5323): regex je prije hvatao SAMO R2 oblik; T1 tim-opis je proklizao i re-triggao lanac.
++  test('anti-kaskada: T1 tim-oblik i "Originalni zahtjev korisnika" se prepoznaju', () => {
++    expect(isHelperEcho('Multi-agent lanac (sustav je sam rasporedio tim). TVOJ DIO: QA: provjeri radi li isporučeno')).toBe(true)
++    expect(isHelperEcho('... neki tekst ...\n\nOriginalni zahtjev korisnika: Pretinac v1.4 · potjeh: qa')).toBe(true)
++    expect(isHelperEcho('Pretinac (zadatci bez projekta) v1.2 · jelena: doradi rad (potjeh)')).toBe(true)
++    expect(isHelperEcho('Šabane, neka Jelena napravi kratku provjeru slobodnog prostora na disku (df -h)')).toBe(false)
++  })
+ })
+--- tests/spawn-slot-rules.test.ts.bak-task5323-20261007_131913	2026-10-02 08:53:52.284380259 +0000
++++ tests/spawn-slot-rules.test.ts	2026-10-07 13:20:02.638469531 +0000
+@@ -14,6 +14,7 @@
+   tagsAfterSpawnAttempt,
+   waitingSlotNote,
+   helperChainDecision,
++  timPoNaporu,
+   pausedTrackedIds,
+ } from '../SpawnSlotRules'
+ 
+@@ -62,6 +63,27 @@
+   })
+ })
+ 
++describe('3b. anti-kaskada TASK-255 (prijenos s node-A, TASK-5323)', () => {
++  test('član lanca po izvoru (createdBy regoc-chain) → ne gradi novi lanac', () => {
++    const d = helperChainDecision({ tags: [], existingChildren: 0, enabled: true, createdBy: 'regoc-chain' })
++    expect(d.allow).toBe(false)
++    expect(d.reason).toContain('član lanca')
++  })
++  test('član lanca po oznaci parent:<ID> → ne gradi novi lanac', () => {
++    expect(helperChainDecision({ tags: ['parent:TASK-1'], existingChildren: 0, enabled: true }).allow).toBe(false)
++  })
++  test('izvorni zadatak (drugi izvor, bez parent) → smije', () => {
++    expect(helperChainDecision({ tags: ['chat:-1'], existingChildren: 0, enabled: true, createdBy: 'telegram' }).allow).toBe(true)
++  })
++  test('tim po naporu: E1/E2 bez tima, E3+ s timom', () => {
++    expect(timPoNaporu('E1')).toBe(false)
++    expect(timPoNaporu('E2')).toBe(false)
++    expect(timPoNaporu('E3')).toBe(true)
++    expect(timPoNaporu('E5')).toBe(true)
++    expect(timPoNaporu(undefined)).toBe(true)
++  })
++})
++
+ describe('4. pauza gasi spawn bez obzira na status', () => {
+   const tracked = new Set(['TASK-4999', 'TASK-5009'])
+   test('pauziran blocked zadatak sa živim spawnom ulazi u skup za gašenje', () => {
+--- /dev/null	2026-09-22 10:26:06.943656944 +0000
++++ PaketKanal.ts	2026-10-07 13:20:14.986607434 +0000
+@@ -0,0 +1,53 @@
++/**
++ * TASK-5285 (node-A) → glavni sustav TASK-5323: izlazni Telegram kanal TaskManagerAI paketa na
++ * istom stroju (Config → Telegram ploče). Izvor je SAMO kad stroj nema vlastitu datoteku bota
++ * (`~/.claude/telegram.json`) — glavni je ima, pa se ondje paket ni ne pita.
++ * Token ostaje u spremištu tajni paketa; ovdje živi samo u memoriji procesa, nikad u ispisu.
++ */
++import { join } from 'path'
++
++export type PaketKanal = { token: string; chatId: string; stil: string; oblikuj: (t: string, o?: any) => string }
++
++/** Token za slanje: datoteka stroja ima prednost; paket se pita tek kad datoteke nema. */
++export function tokenKanala(tokenDatoteke: string | null, paket: () => PaketKanal | null): string | null {
++  return tokenDatoteke || paket()?.token || null
++}
++
++/**
++ * Chat za poruku. Bez kanala paketa: chat poruke ili fallback grupa (staro ponašanje).
++ * S kanalom paketa: fallback grupa glavnog sustava nije naša — poruka bez chata (ili s tim
++ * fallbackom) ide u chat koji je vlasnik upisao na ploči.
++ */
++export function chatZaPoruku(msgChat: unknown, pk: PaketKanal | null, fallback: number): number {
++  if (typeof msgChat === 'number' && !(pk && msgChat === fallback)) return msgChat
++  if (pk && pk.chatId !== '' && Number.isFinite(Number(pk.chatId))) return Number(pk.chatId)
++  return fallback
++}
++
++/** Kanal paketa iz `<TM_PAKET_DIR|~/TaskManagerAI>/src/IzlazniKanal.ts` (kanalZaDaemon). */
++export function ucitajKanalPaketa(home: string, env: Record<string, string | undefined> = process.env): PaketKanal | null {
++  const dir = env.TM_PAKET_DIR || join(home, 'TaskManagerAI')
++  // eslint-disable-next-line @typescript-eslint/no-var-requires
++  return require(join(dir, 'src', 'IzlazniKanal.ts')).kanalZaDaemon() ?? null
++}
++
++/** Čita se svježe najviše jednom u minuti, pa isključenje/promjena na ploči vrijedi bez restarta. */
++export function createPaketKanalReader(o: {
++  ucitaj: () => PaketKanal | null
++  sada?: () => number
++  log?: (s: string) => void
++  ttlMs?: number
++}): () => PaketKanal | null {
++  const sada = o.sada ?? Date.now
++  const ttl = o.ttlMs ?? 60_000
++  let kes: { k: PaketKanal | null; t: number } | null = null
++  return () => {
++    if (kes && sada() - kes.t < ttl) return kes.k
++    let k: PaketKanal | null = null
++    try { k = o.ucitaj() ?? null } catch (e) {
++      o.log?.(`  ⚠️ [user-flush] kanal paketa nedostupan: ${String(e).substring(0, 120)}`)
++    }
++    kes = { k, t: sada() }
++    return k
++  }
++}
+--- /dev/null	2026-09-22 10:26:06.943656944 +0000
++++ tests/paket-kanal.test.ts	2026-10-07 13:19:50.005328456 +0000
+@@ -0,0 +1,62 @@
++/**
++ * TASK-5323 (prijenos s node-A, izvorno TASK-5285): Telegram kroz TaskManagerAI paket na stroju
++ * koji nema vlastitu datoteku bota. Glavni stroj ima datoteku → ponašanje nepromijenjeno.
++ */
++import { describe, test, expect } from 'bun:test'
++import { tokenKanala, chatZaPoruku, createPaketKanalReader, type PaketKanal } from '../PaketKanal'
++
++const PK: PaketKanal = { token: 't-paket', chatId: '-100', stil: 'kratko', oblikuj: (t) => `[k] ${t}` }
++const FALLBACK = -5
++
++describe('tokenKanala', () => {
++  test('datoteka stroja ima prednost pred paketom', () => {
++    expect(tokenKanala('t-datoteka', () => PK)).toBe('t-datoteka')
++  })
++  test('bez datoteke → token paketa', () => {
++    expect(tokenKanala(null, () => PK)).toBe('t-paket')
++  })
++  test('ni datoteke ni paketa → null (konzola)', () => {
++    expect(tokenKanala(null, () => null)).toBeNull()
++  })
++  test('paket se ne pita kad datoteka postoji (bez require na glavnom)', () => {
++    let pitan = 0
++    tokenKanala('t', () => { pitan++; return PK })
++    expect(pitan).toBe(0)
++  })
++})
++
++describe('chatZaPoruku', () => {
++  test('bez kanala paketa: chat poruke ili fallback (staro ponašanje)', () => {
++    expect(chatZaPoruku(42, null, FALLBACK)).toBe(42)
++    expect(chatZaPoruku(undefined, null, FALLBACK)).toBe(FALLBACK)
++  })
++  test('kanal paketa: poruka bez chata ide u chat s ploče', () => {
++    expect(chatZaPoruku(undefined, PK, FALLBACK)).toBe(-100)
++  })
++  test('kanal paketa: fallback grupa glavnog sustava nije naša → chat s ploče', () => {
++    expect(chatZaPoruku(FALLBACK, PK, FALLBACK)).toBe(-100)
++  })
++  test('kanal paketa: izričit chat poruke se poštuje', () => {
++    expect(chatZaPoruku(7, PK, FALLBACK)).toBe(7)
++  })
++  test('kanal paketa s nevaljanim chatId → fallback', () => {
++    expect(chatZaPoruku(undefined, { ...PK, chatId: 'nije-broj' }, FALLBACK)).toBe(FALLBACK)
++  })
++})
++
++describe('createPaketKanalReader', () => {
++  test('keš 60 s: učitavač se zove jednom unutar prozora, opet nakon', () => {
++    let t = 1000, pozvan = 0
++    const r = createPaketKanalReader({ ucitaj: () => { pozvan++; return PK }, sada: () => t })
++    expect(r()).toBe(PK); expect(r()).toBe(PK)
++    expect(pozvan).toBe(1)
++    t += 60_001
++    r(); expect(pozvan).toBe(2)
++  })
++  test('učitavač baci → null i zapis, bez iznimke', () => {
++    const zapisi: string[] = []
++    const r = createPaketKanalReader({ ucitaj: () => { throw new Error('nema paketa') }, log: (s) => zapisi.push(s) })
++    expect(r()).toBeNull()
++    expect(zapisi.join(' ')).toContain('nema paketa')
++  })
++})
+--- /dev/null	2026-09-22 10:26:06.943656944 +0000
++++ tests/cvor-znacajke.wiring.test.ts	2026-10-07 13:22:00.611787438 +0000
+@@ -0,0 +1,76 @@
++/**
++ * TASK-5323 — značajke koje su postojale samo na node-A (ADR-0004 §13.8) ožičene u ŽIVI izvor
++ * glavnog sustava, da puni komplet (deploy_node_a.sh) čvoru ništa ne oduzme:
++ *   ragUkljucen (TASK-5273), paketKanal (TASK-5285), anti-kaskada TASK-255.
++ * (provider@čvor:model je u glavnom već u models/AgentModel.ts — resolveAgentTarget.)
++ * Čista pravila su u paket-kanal / spawn-slot-rules / agent-routing testovima.
++ */
++import { describe, test, expect } from 'bun:test'
++import { readFileSync } from 'fs'
++import { join } from 'path'
++
++const R = join(process.env.HOME || '', '.claude/regoc')
++const daemon = readFileSync(join(R, 'RegocDaemon.ts'), 'utf8')
++const rag = readFileSync(join(R, 'RagCollections.ts'), 'utf8')
++const agentModel = readFileSync(join(R, 'models/AgentModel.ts'), 'utf8')
++
++function tijelo(src: string, potpis: string): string {
++  const i = src.indexOf(potpis)
++  expect(i).toBeGreaterThan(-1)
++  return src.slice(i, src.indexOf('\n}\n', i))
++}
++
++describe('ragUkljucen (TASK-5273)', () => {
++  test('daemon i RagCollections uvoze prekidač', () => {
++    expect(daemon).toContain("import { ragUkljucen } from '../skills/CORE/Tools/lib/rag-gate'")
++    expect(rag).toContain("import { ragUkljucen } from '../skills/CORE/Tools/lib/rag-gate'")
++  })
++  test('queryRAG ne spawna rag-query kad je RAG isključen', () => {
++    expect(tijelo(daemon, 'async function queryRAG(')).toMatch(/if \(!ragUkljucen\(\)\) return ''/)
++  })
++  test('spremanje konteksta u RAG, blok memorije i uputa kolekcija traže prekidač', () => {
++    expect(daemon).toMatch(/currentContextPct >= CONTEXT_THRESHOLD_PCT && !contextAlreadySavedThisSession && ragUkljucen\(\)/)
++    expect(daemon).toMatch(/if \(isEnabled\('agentIdentityBlock'\) && ragUkljucen\(\)\) \{\s*\n\s*try \{\s*\n\s*\/\/ R1c\/TASK-4602/)
++    expect(daemon).toMatch(/if \(effectiveHints\.length > 0 && ragUkljucen\(\)\)/)
++  })
++  test('upute u promptu bez RAG-a upućuju na datoteke', () => {
++    expect(daemon.match(/[Nn]a ovom čvoru NEMA RAG-a/g)?.length).toBeGreaterThanOrEqual(2)
++  })
++  test('start daemona ne dira ChromaDB bez RAG-a', () => {
++    expect(daemon).toContain("if (!ragUkljucen()) log('📚 RAG isključen na ovom čvoru")
++  })
++  test('RagCollections: dohvat i popis kolekcija preskaču mrežu', () => {
++    expect(rag.match(/if \(!ragUkljucen\(\)\) return/g)?.length).toBe(2)
++  })
++})
++
++describe('paketKanal (TASK-5285)', () => {
++  test('token: datoteka stroja pa paket', () => {
++    expect(tijelo(daemon, 'function getTelegramToken(')).toContain('tokenKanala(_telegramTokenIzDatoteke(), paketKanal)')
++  })
++  test('flush: chat i stil iz kanala paketa kad je paket izvor', () => {
++    expect(daemon).toContain('const _pk = kanalJePaketov() ? paketKanal() : null')
++    expect(daemon).toContain('chatZaPoruku(msg.chat_id, _pk, REGOC_GROUP_FALLBACK)')
++    expect(daemon).toContain('(_pk ? _pk.oblikuj(String(msg.content)) : String(msg.content))')
++  })
++})
++
++describe('anti-kaskada TASK-255', () => {
++  test('createSequentialHelpers predaje izvor zadatka pravilu lanca', () => {
++    const b = tijelo(daemon, 'async function createSequentialHelpers(')
++    expect(b).toContain('createdBy: primaryCreatedBy')
++  })
++  test('auto-exec predaje createdBy zadatka', () => {
++    expect(daemon).toMatch(/createSequentialHelpers\(content, agentId, task\.id, task\.projectId \|\| undefined, parentChatTag \|\| null, task\.tags, \(task as any\)\.createdBy\)/)
++  })
++  test('tim lanac: E1/E2 bez tima', () => {
++    expect(tijelo(daemon, 'async function createSequentialHelpers(')).toContain('timPoNaporu(cls.effort)')
++  })
++})
++
++describe('provider@čvor:model', () => {
++  test('glavni već razrješava provider[@node]:model', () => {
++    expect(agentModel).toContain("const at = head.indexOf('@')")
++    expect(daemon).toContain('providers?.ollama?.nodes?.[node]')
++  })
++})
+--- /dev/null	2026-09-22 10:26:06.943656944 +0000
++++ deploy/node-a-samostalnost/gradi_komplet.sh	2026-10-07 13:57:26.013606324 +0000
+@@ -0,0 +1,71 @@
++#!/usr/bin/env bash
++# gradi_komplet.sh — komplet izvornog sustava glavnog stroja za čvor (TASK-5323, ADR-0004 P5).
++#
++# Teret = (a) svi moduli u korijenu ~/.claude/regoc (*.ts, bez .bak) — to mjeri paritet.py,
++#         (b) zatvorenje uvoza ulaza daemona i alata koje daemon pokreće (bun build --metafile),
++#             uključivo tools/rag/lib (rag-gate; ~/.claude/skills/CORE/Tools/lib je poveznica na nju),
++#             models/, tools/hindsight …, i TaskManagerMD/src/IngestGateConfig.ts (jedini uvoz iz ploče),
++#         (c) poveznice tools/<ime>.ts → tools/<mapa>/<ime>.ts koje daemon zove po staroj putanji,
++#         (d) postavke config/*.json koje čvor NEMA (isporuka ih ne prepisuje — cp -n na čvoru),
++#         (e) mjerilo potrošnje session_usage.py (TASK-4777: bez njega su vrata autonomije fail-open).
++# NE ide: data/, features.json, ostatak TaskManagerMD/ (čvor vozi ploču paketa), *.bak*, daemon.env i
++# telegram-identity.json i postavke s putanjama glavnog stroja (/home/klaudio), node_modules.
++# Brana: datoteka s oblikom tajne ruši gradnju (exit 5).
++#   bash gradi_komplet.sh            # gradi payload/ + MANIFEST.sha256
++set -euo pipefail
++R="$HOME/.claude/regoc"
++OVDJE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
++TERET="$OVDJE/payload"
++RAD="$(mktemp -d "${TMPDIR:-$HOME/app/tmp}/komplet.XXXXXX")"
++trap 'rm -rf "$RAD"' EXIT
++export PATH="$HOME/.bun/bin:$PATH"
++
++ULAZI=(RegocDaemon.ts AgentDaemon.ts AgentWorker.ts StaleCodeCheck.ts
++       tools/modeli/ollama-agent.ts tools/modeli/openrouter-agent.ts tools/orkestracija/adversarial-provjeri.ts
++       tools/zadaci/checkpoint.ts tools/modeli/consult-potjeh.ts)
++POVEZNICE=(tools/ollama-agent.ts tools/openrouter-agent.ts tools/adversarial-provjeri.ts tools/checkpoint.ts tools/consult-potjeh.ts)
++CONFIG_IZUZETI='daemon.env|telegram-identity.json'
++
++popis="$RAD/popis.txt"; : > "$popis"
++cd "$R"
++for u in "${ULAZI[@]}"; do
++  bun build "$u" --target=bun --outdir="$RAD/out" --metafile="$RAD/meta.json" >/dev/null
++  python3 - "$RAD/meta.json" "$R" >> "$popis" <<'PY'
++import json, os, sys
++meta, R = sys.argv[1], sys.argv[2]
++home = os.path.dirname(os.path.dirname(R))          # ~
++for p in json.load(open(meta))['inputs']:
++    a = os.path.realpath(os.path.join(R, p))
++    if '/node_modules/' in a or not a.startswith(home + '/.claude/'):
++        continue
++    print(os.path.relpath(a, home))                  # .claude/regoc/… ili .claude/skills/…
++PY
++done
++ls *.ts | grep -v '\.bak' | sed 's|^|.claude/regoc/|' >> "$popis"
++sort -u "$popis" -o "$popis"
++
++rm -rf "$TERET"; mkdir -p "$TERET"
++while read -r f; do
++  mkdir -p "$TERET/$(dirname "$f")"; cp -p "$HOME/$f" "$TERET/$f"
++done < "$popis"
++for l in "${POVEZNICE[@]}"; do
++  mkdir -p "$TERET/.claude/regoc/$(dirname "$l")"
++  ln -sfn "$(readlink "$R/$l")" "$TERET/.claude/regoc/$l"
++done
++mkdir -p "$TERET/.claude/regoc/config.novo"
++for c in "$R"/config/*.json; do
++  b="$(basename "$c")"; echo "$b" | grep -qE "$CONFIG_IZUZETI" && continue
++  grep -q '/home/klaudio' "$c" && continue      # putanje/projekti glavnog stroja ne idu na čvor
++  cp -p "$c" "$TERET/.claude/regoc/config.novo/$b"
++done
++mkdir -p "$TERET/app/regoc_system/tools"
++cp -p "$HOME/app/regoc_system/tools/session_usage.py" "$TERET/app/regoc_system/tools/"
++
++# Brana tajni: oblik ključa/tokena u teretu ruši gradnju.
++if grep -rIlE 'sk-ant-[A-Za-z0-9_-]{20}|[0-9]{8,10}:AA[A-Za-z0-9_-]{30}|AKIA[0-9A-Z]{16}|-----BEGIN [A-Z ]*PRIVATE KEY' "$TERET"; then
++  echo "❌ oblik tajne u teretu — gradnja prekinuta" >&2; exit 5
++fi
++
++cd "$OVDJE"
++find payload -type f | LC_ALL=C sort | xargs sha256sum > MANIFEST.sha256
++echo "✅ komplet: $(find payload -type f | wc -l) datoteka, $(find payload -type l | wc -l) poveznica; MANIFEST.sha256 $(wc -l < MANIFEST.sha256) redaka"

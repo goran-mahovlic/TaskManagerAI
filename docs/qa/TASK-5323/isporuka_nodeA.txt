@@ -1,0 +1,54 @@
+
+── 0. Dostupnost čvora 192.168.10.20:22 ─────────────────────────────
+✅ dostupan; HOME na čvoru = /home/regoc
+
+── 1. Goranovo pravilo: restart je dopušten samo kad nema zadataka u radu ─────────────────────────────
+zadataka in_progress na čvoru: 0
+
+── 2. Raspon (što se mijenja) ─────────────────────────────
+  .ts na čvoru prije: 114
+  datoteka u paketu: 200
+
+── 3. Sigurnosna kopija na čvoru ─────────────────────────────
+total 14404
+drwxrwxr-x  2 regoc regoc     4096 Oct  7 09:57 .
+drwxrwxr-x 12 regoc regoc     4096 Oct  7 09:57 ..
+-rw-rw-r--  1 regoc regoc 14738774 Oct  7 09:57 prije.tgz
+
+── 4. Prijenos tereta (scp — git remote s čvora ne radi) ─────────────────────────────
+MANIFEST ✅
+teret raspakiran
+
+── 5. Normalizacija rezervne putanje HOME (čuva prilagodbu čvora) ─────────────────────────────
+normalizirano
+
+── 6. MJERILO POTROŠNJE — mora raditi PRIJE nego autonomija smije biti živa ─────────────────────────────
+✅ mjerilo radi i piše data/session_usage.jsonl
+
+── 7. Gradnja na čvoru (dokaz da se kod uopće razrješava) ─────────────────────────────
+Bundled 353 modules in 143ms
+
+  _rd.js  3.55 MB  (entry point)
+
+
+  _ad.js  0.29 MB  (entry point)
+
+
+── 8. Restart usluga (samo ako nema zadataka u radu) ─────────────────────────────
+active
+active
+
+── 9. Provjera u pogonu ─────────────────────────────
+GET /            → 200
+GET /stream      → 101
+GET /api/pause   → 200
+awk: line 1: syntax error at or near ,
+TaskWebUI PID    → nepoznat
+RegocDaemon PID  → 824941
+   izvor          : 116 datoteka iz RegocDaemon.ts
+   najnovija       : 2026-10-07 09:21:54  RagCollections.ts  [0;90m(37min prije starta)[0m
+[0;32m   ✅ kod na disku == kod u pogonu[0m
+StaleCodeCheck   → exit 0 (0=svjeze, 3=STALE, 2=greska)
+autonomyGate     → True
+
+── GOTOVO — sigurnosna kopija: ~/backup/task4777_20261007_135746/prije.tgz ─────────────────────────────
