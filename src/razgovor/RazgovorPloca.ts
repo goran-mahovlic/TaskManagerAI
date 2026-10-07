@@ -17,6 +17,8 @@ import { izvrsiteljRazgovora } from './Izvrsitelj'
 import { ucitajAgente, ucitajUpute } from './Identitet'
 import { loadMemoryConfig } from '../rag/memory-config'
 import { procitajPosiljatelje, zabiljeziPosiljatelja, type Posiljatelj } from './Posiljatelji'
+import { ciljRazgovora, SNIMKA_KLJUC, type CiljRazgovora } from '../core/models/PrebaciSve'
+import { procitajTajnu } from '../core/ConfigModul'
 import type { RazgovorUlaza } from '../TelegramPoller'
 import { MIN_TAJNA, cistaAdresa, stvoriBotKanal, type BotKanal, type Zahtjev } from './BotKanal'
 import {
@@ -79,6 +81,26 @@ export function zadnjiPosiljatelji(dataDir: string): Posiljatelj[] {
   return procitajPosiljatelje(posiljateljiPut(dataDir))
 }
 
+function citajModelConfig(putanja: string): any {
+  try { return existsSync(putanja) ? JSON.parse(readFileSync(putanja, 'utf-8')) : null } catch { return null }
+}
+
+/**
+ * TASK-5305: dok je uključen prekidač „prebaci sve" (snimka `_prebaciSvePrije`), razgovor vozi
+ * `agentOverrides.razgovor` i kad je `razgovor.model` postavljen — prekidač vrijedi za SVE.
+ */
+export function modelPrebacen(putanja: string): string | undefined {
+  const mc = citajModelConfig(putanja)
+  if (!mc?.[SNIMKA_KLJUC]) return undefined
+  const v = mc?.agentOverrides?.razgovor
+  return typeof v === 'string' && v.trim() ? v.trim() : undefined
+}
+
+/** TASK-5305: `provider:model` → `claude -p` (ANTHROPIC_BASE_URL za ne-Anthropic providere). */
+export function ciljModelaRazgovora(putanja: string, spec: string | undefined): CiljRazgovora {
+  return ciljRazgovora(spec, citajModelConfig(putanja)?.providers, ime => procitajTajnu(ime))
+}
+
 /** Model iz `model-config.json`: `agentOverrides.razgovor`, inače ništa (CLI bira sam). */
 export function modelIzKonfiguracije(putanja: string): string | undefined {
   try {
@@ -129,6 +151,8 @@ export function sklopiRazgovor(o: SklapanjeOpcije): RazgovorSloj {
     izvrsitelj: izvrsiteljRazgovora(),
     korijen: join(o.dataDir, 'razgovor'),
     modelZadano: () => modelIzKonfiguracije(o.modelConfigPath),
+    modelPrebacen: () => modelPrebacen(o.modelConfigPath),
+    ciljModela: spec => ciljModelaRazgovora(o.modelConfigPath, spec),
     agenti: () => ucitajAgente(o.agentiPut),
     upute: () => ucitajUpute(o.uputePut),
     botKanal: () => ({ jeZaustavljen: c => botKanal.jeZaustavljen(c), prenesi: u => botKanal.prenesi(u), ovlasti: () => bkPostavke().ovlasti }),

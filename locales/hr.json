@@ -75,6 +75,7 @@
   "cfg_int_uvod": "Spajanje na TVOJE servise. Postavke nose adrese i IMENA varijabli okoline — tajne idu u zasebnu datoteku s pravima 0600, nikad u JSON.",
   "cfg_kartica_dezurni": "Dežurni — rezervni model kad primarni padne",
   "cfg_kartica_integracije": "Integracije — Nextcloud, e-pošta, GitLab, GitHub",
+  "cfg_kartica_model_svi": "Model sustava — prebaci sve na jedan model",
   "cfg_kartica_klasifikator": "Klasifikacijski model — rutiranje poruka (odvojeno od izvršnog)",
   "cfg_kartica_modeli": "Podržani modeli & postavke providera",
   "cfg_kartica_orkestrator": "Orkestrator — sloj koji sam pokreće agente na zadatku",

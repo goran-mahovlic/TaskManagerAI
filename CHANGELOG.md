@@ -1,3 +1,15 @@
+## 2026-10-07 — „prebaci sve na model" i kvota samo za Anthropic razgovor (TASK-5305)
+
+- Novo: Config kartica „Model sustava — prebaci sve na jedan model" i `GET/PUT /api/models/svi`
+  (`{ model: "openrouter:z-ai/glm-5.2" }`, `""`/`"vrati"` = natrag). Prekidač samo PIŠE postojeća
+  polja `model-config.json` (`defaults`, `agentOverrides` + `razgovor`, `componentOverrides`); ne
+  dira `embeddings` ni `classifier`. Stanje prije prvog prebacivanja čuva se u `_prebaciSvePrije`.
+  Modul `src/core/models/PrebaciSve.ts`.
+- Razgovor: `provider:model` ide istim `claude -p` uz `ANTHROPIC_BASE_URL` (Anthropic-kompatibilni
+  `baseUrl` providera; OpenRouter `https://openrouter.ai/api`, ključ iz `credentials.env`), bez
+  prijave pretplate. Vrata kvote (Anthropic sesija) pitaju se samo kad razgovor ide preko Anthropica.
+  Dok je prekidač uključen, `agentOverrides.razgovor` ima prednost i pred `razgovor.model`.
+
 ## 2026-10-06 — glasovne poruke u razgovoru: lokalni STT i odgovor glasom (TASK-5294)
 
 - Novo: postavke `razgovor.glasPrepoznavanje` (zadano false), `razgovor.glas` = off |

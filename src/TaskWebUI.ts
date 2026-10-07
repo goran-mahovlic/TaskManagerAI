@@ -34,6 +34,7 @@ const AGENTS_REGISTRY_FILE = konfigPutanja('REGOC_AGENTS.json', 'TM_AGENTS_REGIS
 import { odlukaGuarda } from './core/SpawnFinalizer'
 // TASK-4894: model-config.json se mijenja SAMO atomno i uz revizijski trag (GAP F14).
 import { saveModelConfig } from './core/models/ModelConfigWriter'
+import { prebaciSve, vratiPrebacivanje, stanjePrebacivanja, IZUZETE_KOMPONENTE } from './core/models/PrebaciSve'
 // TASK-4967/4972: RAG s dva pozadinska sustava (ChromaDB / pgvector / dual), GAP F13.
 import { getRAGBackendService } from './RAGBackendService'
 // TASK-4815: jedan parser agentova izlaza za ploču i kanale (GAP F5).
@@ -2712,6 +2713,10 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
           <span class="info-skupina-broj">02</span>
           <h3 data-i18n="cfg_skupina_agenti">Agenti i modeli</h3>
           <p data-i18n="cfg_skupina_agenti_opis">Koji model pokre&#263;e kojeg agenta, kako se poruke rutiraju i &#353;to nude davatelji.</p>
+        </div>
+        <div class="info-card info-full info-card-istaknuta" id="info-modelsvi-card">
+          <div class="info-card-title"><span class="icon">&#8635;</span> <span data-i18n="cfg_kartica_model_svi">Model sustava &mdash; prebaci sve na jedan model</span></div>
+          <div id="info-modelsvi-content"><div class="empty" data-i18n="loading">Loading...</div></div>
         </div>
         <div class="info-card info-full" id="info-agents-card">
           <div class="info-card-title"><span class="icon">&#9733;</span> Agents &amp; Model Requirements</div>
@@ -8253,6 +8258,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         renderInfoProviders(d, agentsData);
         renderInfoAgents(d, modelsData);
         renderModelSetup(modelsData);
+        loadModelSvi(modelsData);
         loadClassifier();
         loadLoginProviders();
         loadDezurni();
@@ -9767,6 +9773,75 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         if(d && d.ok===false) alert(_T('cfg_login_odjava_neuspjela', 'Odjava nije uspjela — vjerodajnica je i dalje spremljena.'));
         fetchInfoData();
       }catch(e){}
+    }
+
+    // ── „Prebaci sve na model" (TASK-5305) ───────────────────────────────────────
+    // Jedan izbornik koji PIŠE postojeća polja model-configa (razine, agenti, komponente) na
+    // odabrani provider:model. Ugrađenja (embeddings) i klasifikator se ne diraju. „Vrati"
+    // vraća točno stanje prije prvog prebacivanja.
+    var _modelSviPonuda = null;
+    async function loadModelSvi(modelsData) {
+      var el = document.getElementById('info-modelsvi-content');
+      if (!el) return;
+      if (modelsData) _modelSviPonuda = modelsData;
+      try {
+        var d = await (await fetch('/api/models/svi')).json();
+        if (d.error) throw new Error(d.error);
+        el.innerHTML = renderModelSvi(d, _modelSviPonuda);
+      } catch(e) {
+        el.innerHTML = '<div class="empty">' + _T('cfg_msvi_greska', 'Greška pri čitanju') + ': ' + _esc(e.message) + '</div>';
+      }
+    }
+
+    function renderModelSvi(d, md) {
+      var h = '<div style="font-size:0.72rem;color:var(--text-secondary);margin-bottom:0.5rem">' +
+        _T('cfg_msvi_uvod', 'Jednim potezom cijeli sustav na odabrani model: sve razine (frontier/strong/good/basic), svi agenti, razgovor i komponente. ' +
+        'Ne mijenjaju se ugrađenja (embeddings) ni klasifikator. Vrata potrošnje Anthropic sesije koče samo poslove koji idu preko Anthropica — ' +
+        'OpenRouter, Ollama i ostali rade i kad je sesija potrošena. Zadatak koji je već u radu ne mijenja model.') + '</div>';
+      h += '<div style="display:flex;gap:0.6rem;flex-wrap:wrap;align-items:center;font-size:0.72rem">';
+      var grupe = {};
+      ((md && md.models) || []).forEach(function(m) {
+        if (!m || !m.spec || m.spawnable === false) return;
+        var p = m.provider || String(m.spec).split(':')[0];
+        (grupe[p] = grupe[p] || []).push(m);
+      });
+      var opts = '<option value="">— ' + _T('cfg_msvi_odaberi', 'odaberi model za cijeli sustav') + ' —</option>';
+      Object.keys(grupe).forEach(function(p) {
+        opts += '<optgroup label="' + _esc(p) + '">';
+        grupe[p].forEach(function(m) {
+          opts += '<option value="' + _esc(m.spec) + '"' + (d.aktivno && m.spec === d.cilj ? ' selected' : '') + '>' + _esc(m.label || m.spec) + '</option>';
+        });
+        opts += '</optgroup>';
+      });
+      h += '<select id="modelsvi-select" style="font-size:0.72rem;padding:3px 5px;border-radius:4px;background:var(--bg-primary,#111);color:var(--text-primary,#ddd);border:1px solid var(--border-color,#333)">' + opts + '</select>';
+      h += '<button class="btn" style="font-size:0.72rem;padding:3px 10px" onclick="setModelSvi(document.getElementById(\\'modelsvi-select\\').value, this)">' + _T('cfg_msvi_primijeni', 'Primijeni na sve') + '</button>';
+      if (d.aktivno) {
+        h += '<button class="btn" style="font-size:0.72rem;padding:3px 10px" onclick="setModelSvi(\\'vrati\\', this)">' + _T('cfg_msvi_vrati', 'Vrati na konfiguraciju') + '</button>';
+        h += '<span class="info-badge enabled">' + _Tv('cfg_msvi_aktivno', 'sustav vozi {cilj} (prebacio {tko}, {kada})', { cilj: _esc(d.cilj || '?'), tko: _esc(d.tko || '?'), kada: _esc(String(d.kada || '').replace('T', ' ').slice(0, 16)) }) + '</span>';
+      } else {
+        h += '<span class="info-badge disabled">' + _T('cfg_msvi_neaktivno', 'isključeno — vrijedi model po agentu') + '</span>';
+      }
+      h += '</div>';
+      return h;
+    }
+
+    async function setModelSvi(model, el) {
+      if (!model) { alert(_T('cfg_msvi_odaberi', 'odaberi model za cijeli sustav')); return; }
+      var pitanje = model === 'vrati'
+        ? _T('cfg_msvi_potvrda_vrati', 'Vratiti modele na stanje prije prebacivanja?')
+        : _Tv('cfg_msvi_potvrda', 'Prebaciti CIJELI sustav na {m}?', { m: model });
+      if (!confirm(pitanje)) return;
+      try {
+        if (el) el.disabled = true;
+        var r = await fetch('/api/models/svi', { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ model: model }) });
+        var d = await r.json();
+        if (!r.ok || d.error) throw new Error(d.error || 'save failed');
+        fetchInfoData();
+      } catch(e) {
+        alert(_T('cfg_msvi_greska_spremanje', 'Greška pri prebacivanju') + ': ' + e.message);
+        if (el) el.disabled = false;
+        loadModelSvi();
+      }
     }
 
     // ── Klasifikacijski model (TASK-2635) ────────────────────────────────────────
@@ -11911,6 +11986,70 @@ async function handleSetAgentModel(agentId: string, req: Request): Promise<Respo
 
     const spawnable = clearing ? null : (getEffectiveModels().find(m => m.spec === raw)?.spawnable ?? false)
     return json({ status: 'saved', agentId, model: clearing ? null : raw, spawnable })
+  } catch (err) {
+    return json({ error: String(err) }, 400)
+  }
+}
+
+// ── „Prebaci sve na model" (TASK-5305, uputa #189) ───────────────────────────────
+// GET /api/models/svi → je li prekidač uključen, na što, tko i kada.
+// PUT /api/models/svi { model: "openrouter:z-ai/glm-5.2" } → defaults + agentOverrides +
+//     componentOverrides (osim embeddings/classifier) na taj model; "" ili "vrati" → stanje prije.
+// Samo PIŠE postojeća polja model-configa — daemon i razgovor ih čitaju kao i prije.
+function handleGetModelSvi(): Response {
+  const json = (o: unknown, status = 200) =>
+    new Response(JSON.stringify(o), { status, headers: { 'Content-Type': 'application/json' } })
+  try {
+    const mc = existsSync(MODEL_CONFIG_PATH) ? JSON.parse(readFileSync(MODEL_CONFIG_PATH, 'utf-8')) : {}
+    return json({ ...stanjePrebacivanja(mc), izuzeto: IZUZETE_KOMPONENTE })
+  } catch (err) {
+    return json({ error: String(err) }, 500)
+  }
+}
+
+async function handleSetModelSvi(req: Request): Promise<Response> {
+  const json = (o: unknown, status = 200) =>
+    new Response(JSON.stringify(o), { status, headers: { 'Content-Type': 'application/json' } })
+  try {
+    const body = (await req.json()) as { model?: string | null; tko?: string }
+    const raw = (body.model ?? '').toString().trim()
+    const tko = String(body.tko || 'ploca').slice(0, 40)
+    if (!existsSync(MODEL_CONFIG_PATH)) return json({ error: 'model-config.json not found' }, 500)
+    if (raw === '' || raw === 'vrati' || raw === 'default' || raw === 'zadano') {
+      let vraceno = false
+      saveModelConfig(MODEL_CONFIG_PATH, mc => {
+        const v = vratiPrebacivanje(mc)
+        vraceno = v.vraceno
+        for (const k of Object.keys(mc)) delete mc[k]
+        Object.assign(mc, v.mc)
+      }, 'ploca:prebaci-sve-vrati')
+      console.log(`[MODEL-SVI] vraćeno na konfiguraciju prije prebacivanja (${vraceno ? 'snimka primijenjena' : 'nije bilo prebacivanja'})`)
+      return json({ status: vraceno ? 'vraceno' : 'nije-bilo', stanje: { aktivno: false } })
+    }
+    // Ista provjera kao za pojedinog agenta (F2 izbornik): statički + živi modeli.
+    let known = getEffectiveModels().some(m => m.spec === raw)
+    if (!known) {
+      try { known = (await buildModelsAvailable()).models.some((m: any) => m.spec === raw) } catch {}
+    }
+    if (!known) return json({ error: `Unknown model spec '${raw}'` }, 400)
+    let agenti: string[] = []
+    try {
+      if (existsSync(AGENTS_REGISTRY_FILE)) agenti = Object.keys(JSON.parse(readFileSync(AGENTS_REGISTRY_FILE, 'utf-8')).agents || {})
+    } catch { /* bez registra vrijede postojeći agentOverrides */ }
+    let promijenjeno: string[] = []
+    const kada = new Date().toISOString()
+    try {
+      saveModelConfig(MODEL_CONFIG_PATH, mc => {
+        const n = prebaciSve(mc, raw, { tko, kada, agenti })
+        promijenjeno = n.promijenjeno
+        for (const k of Object.keys(mc)) delete mc[k]
+        Object.assign(mc, n.mc)
+      }, 'ploca:prebaci-sve')
+    } catch (e: any) {
+      return json({ error: String(e?.message || e) }, 400)
+    }
+    console.log(`[MODEL-SVI] sve → ${raw} (${tko}): ${promijenjeno.length} polja`)
+    return json({ status: 'saved', model: raw, promijenjeno, stanje: { aktivno: true, cilj: raw, tko, kada } })
   } catch (err) {
     return json({ error: String(err) }, 400)
   }
@@ -16929,6 +17068,10 @@ async function obradiZahtjev(req: Request): Promise<Response | undefined> {
       const agentId = decodeURIComponent(url.pathname.split('/')[3])
       return handleSetAgentModel(agentId, req)
     }
+
+    // GET/PUT /api/models/svi — „prebaci sve na model" (TASK-5305)
+    if (url.pathname === '/api/models/svi' && req.method === 'GET') return handleGetModelSvi()
+    if (url.pathname === '/api/models/svi' && req.method === 'PUT') return handleSetModelSvi(req)
 
     // GET /api/models/available — providers + live models (Ollama /api/tags)
     if (url.pathname === '/api/models/available' && req.method === 'GET') {
