@@ -39,6 +39,11 @@ beforeAll(() => {
   dat('.claude/.credentials.json', '{"t":1}')
   dat('.ssh/id_ed25519', 'priv')
   dat('drugo/biljeska.txt', 'x')
+  dat('app/projekt/config/credentials.env', 'x')
+  dat('app/projekt/telegram.json', 'x')
+  dat('app/projekt/signal.json', 'x')
+  dat('app/paket/config/neka.json', 'x')
+  dat('app/tmhome/data/tasks.db', 'x')
   symlinkSync(join(home, '.ssh', 'id_ed25519'), join(home, 'app', 'projekt', 'docs', 'link.txt'))
   symlinkSync(join(home, '.claude'), join(home, 'app', 'projekt', 'cl'))
 })
@@ -83,7 +88,16 @@ describe('rijesiPreuzimanje — odbijeno (nalaz N4)', () => {
     ['~/app/tmp/../../.ssh/id_ed25519'],
     ['/etc/passwd'],
     ['app/tmp/TASK-1/izvjestaj.md'],
+    ['~/app/projekt/config/credentials.env'],
+    ['~/app/projekt/telegram.json'],
+    ['~/app/projekt/signal.json'],
   ])('%s → 403', (p) => { expect(status(p)).toBe(403) })
+  test('konfiguracija paketa i podaci ploče (TM_HOME) nisu preuzimljivi ni kad su pod korijenom', () => {
+    const e = { HOME: home, TM_HOME: join(home, 'app/tmhome') }
+    expect(rijesiPreuzimanje('~/app/tmhome/data/tasks.db', e)).toMatchObject({ ok: false, status: 403 })
+    expect(rijesiPreuzimanje('~/app/paket/config/neka.json', { HOME: home }, [join(home, 'app/paket/config')]))
+      .toMatchObject({ ok: false, status: 403 })
+  })
   test('nepostojeća datoteka u dopuštenom korijenu → 404, mapa → 404', () => {
     expect(status('~/app/tmp/nema.txt')).toBe(404)
     expect(status('~/app/projekt/docs')).toBe(404)
@@ -114,6 +128,10 @@ describe('corsOdluka', () => {
       expect(corsOdluka({ origin: 'https://zlo.example', host: 'localhost:17781', metoda, dopusteni }).dopusti).toBe(false)
     }
   })
+  test('WebSocket nadogradnja sa stranim Originom se odbija (CSWSH), s vlastitim prolazi', () => {
+    expect(corsOdluka({ origin: 'https://zlo.example', host: 'localhost:17781', metoda: 'GET', dopusteni, websocket: true }).dopusti).toBe(false)
+    expect(corsOdluka({ origin: 'http://localhost:17781', host: 'localhost:17781', metoda: 'GET', dopusteni, websocket: true }).dopusti).toBe(true)
+  })
   test('drugi port na istom imenu nije vlastiti; Origin "null" nije vlastiti', () => {
     expect(corsOdluka({ origin: 'http://localhost:8080', host: 'localhost:17781', metoda: 'POST', dopusteni }).dopusti).toBe(false)
     expect(corsOdluka({ origin: 'null', host: 'localhost:17781', metoda: 'POST', dopusteni }).dopusti).toBe(false)
@@ -142,6 +160,12 @@ describe('HTTP — živa ploča', () => {
       method: 'POST', headers: { Origin: 'https://zlo.example', 'Content-Type': 'application/json' },
       body: JSON.stringify({ title: 'x', description: 'y' }),
     })
+    expect(r.status).toBe(403)
+  })
+  test('WebSocket /stream sa stranim Originom → 403', async () => {
+    const r = await fetch(`${p!.url}/stream`, { headers: {
+      Origin: 'https://zlo.example', Upgrade: 'websocket', Connection: 'Upgrade',
+      'Sec-WebSocket-Key': 'dGhlIHNhbXBsZSBub25jZQ==', 'Sec-WebSocket-Version': '13' } })
     expect(r.status).toBe(403)
   })
   test('vlastiti Origin se odražava', async () => {

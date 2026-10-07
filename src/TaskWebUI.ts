@@ -17322,6 +17322,7 @@ async function obradiZahtjev(req: Request): Promise<Response | undefined> {
     const cors = corsOdluka({
       origin: req.headers.get('origin'), host: req.headers.get('host') || '',
       metoda: req.method, dopusteni: ALLOWED_HOSTS,
+      websocket: (req.headers.get('upgrade') || '').toLowerCase() === 'websocket',
     })
     if (!cors.dopusti) {
       console.warn(`[Security] Odbijen ${req.method} ${url.pathname} sa stranim Originom: ${req.headers.get('origin')}`)

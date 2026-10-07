@@ -15,14 +15,17 @@
  * Autorica: Jelena (Engineer), TASK-5333.
  */
 import { existsSync, realpathSync, statSync } from 'fs'
-import { join, relative, resolve, sep, isAbsolute } from 'path'
+import { dirname, join, relative, resolve, sep, isAbsolute } from 'path'
+import { PAKET_DIR } from './paths'
 
 type Okolina = Record<string, string | undefined>
 
 /** Dijelovi imena koji odaju tajnu — i u mapama i u datotekama. */
 const TAJNO_IME_RE = /(kljuc|ključ|secret|tajn|credential|passw|lozink|token|private|id_rsa|id_ed25519|id_ecdsa)/i
 /** Nastavci datoteka s ključevima i certifikatima. */
-const TAJNI_NASTAVAK_RE = /\.(key|pem|p12|pfx|crt|cer|der|jks|keystore|kdbx|gpg|asc|token)$/i
+const TAJNI_NASTAVAK_RE = /\.(key|pem|p12|pfx|crt|cer|der|jks|keystore|kdbx|gpg|asc|token|env)$/i
+/** Konfiguracije ulaza s tajnama (isti popis kao razgovor/SendDoc). */
+const ZABRANJENA_IMENA = new Set(['telegram.json', 'signal.json'])
 
 function prosiri(p: string, home: string): string {
   if (p === '~') return home
@@ -35,6 +38,18 @@ export function korijeniPreuzimanja(env: Okolina = process.env): string[] {
   const izEnv = (env.TM_DOWNLOAD_DIRS || '').split(',').map(s => s.trim()).filter(Boolean)
   const sirovi = izEnv.length ? izEnv : (home ? [join(home, 'app')] : [])
   return sirovi.map(s => prosiri(s, home)).filter(s => isAbsolute(s)).map(s => resolve(s))
+}
+
+/**
+ * Mape koje se ne služe ni kad leže pod dopuštenim korijenom: konfiguracija paketa
+ * (tajne ulaza) i korijen podataka ploče (baza, najmovi, ključ zatvarača).
+ */
+export function izuzeteMape(env: Okolina = process.env): string[] {
+  const home = env.HOME || ''
+  const out = [join(PAKET_DIR, 'config'), env.TM_HOME || join(home, '.taskmanager')]
+  if (env.TM_DB) out.push(dirname(env.TM_DB))
+  if (env.TM_IZVORNI_PODACI) out.push(env.TM_IZVORNI_PODACI)
+  return out.filter(p => isAbsolute(p)).map(p => resolve(p))
 }
 
 export type Preuzimanje =
@@ -58,6 +73,7 @@ function zabranjeniDio(dijelovi: string[]): string | null {
     if (TAJNO_IME_RE.test(d)) return `ime izgleda kao tajna (${d})`
   }
   const ime = dijelovi[dijelovi.length - 1]
+  if (ZABRANJENA_IMENA.has(ime.toLowerCase())) return `konfiguracija s tajnama (${ime})`
   if (TAJNI_NASTAVAK_RE.test(ime)) return `nastavak ključa/certifikata (${ime})`
   return null
 }
@@ -66,7 +82,7 @@ function zabranjeniDio(dijelovi: string[]): string | null {
  * Odluka za `?path=` s /api/files/download. Provjera se radi i nad zatraženim putem
  * (prije realpatha — `.git/`, `.env` u imenu) i nad stvarnim (simlinkovi).
  */
-export function rijesiPreuzimanje(sirovo: string, env: Okolina = process.env): Preuzimanje {
+export function rijesiPreuzimanje(sirovo: string, env: Okolina = process.env, izuzeti: string[] = izuzeteMape(env)): Preuzimanje {
   const raw = (sirovo || '').trim()
   if (!raw) return { ok: false, status: 400, razlog: 'Missing path' }
   const home = env.HOME || ''
@@ -96,6 +112,11 @@ export function rijesiPreuzimanje(sirovo: string, env: Okolina = process.env): P
   if (zabrana) return { ok: false, status: 403, razlog: `Forbidden path (${zabrana})` }
   if (d.length < 2) return { ok: false, status: 403, razlog: 'Forbidden path (datoteka izravno u korijenu)' }
 
+  const izuzeto = izuzeti.flatMap(m => [m, stvarna(m) || m])
+  if (izuzeto.some(m => dijeloviIspod(m, real) || dijeloviIspod(m, abs))) {
+    return { ok: false, status: 403, razlog: 'Forbidden path (konfiguracija/podaci ploče)' }
+  }
+
   let jeDatoteka = false
   try { jeDatoteka = statSync(real).isFile() } catch {}
   if (!jeDatoteka) return { ok: false, status: 404, razlog: 'Not found' }
@@ -110,6 +131,8 @@ export interface CorsUlaz {
   metoda: string
   /** ALLOWED_HOSTS ploče; za Origin vrijede samo unosi S PORTOM (točan host:port). */
   dopusteni: string[]
+  /** Zahtjev za WebSocket nadogradnju — preglednik ga šalje bez CORS-a, pa se brani ovdje. */
+  websocket?: boolean
 }
 
 /**
@@ -133,7 +156,7 @@ export function corsOdluka(ulaz: CorsUlaz): { dopusti: boolean; zaglavlja: Recor
   const { origin, host, metoda, dopusteni } = ulaz
   if (!origin) return { dopusti: true, zaglavlja: {} }
   if (!jeVlastitiOrigin(origin, host, dopusteni)) {
-    return { dopusti: !MUTACIJE.has(metoda.toUpperCase()), zaglavlja: {} }
+    return { dopusti: !ulaz.websocket && !MUTACIJE.has(metoda.toUpperCase()), zaglavlja: {} }
   }
   return {
     dopusti: true,
