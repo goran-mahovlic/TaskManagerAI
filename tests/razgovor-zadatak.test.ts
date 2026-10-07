@@ -103,7 +103,7 @@ function okolina(o: Partial<RazgovorPostavke> = {}, dodatno: Partial<RazgovorOvi
 
 let brojac = 0
 const por = (o: Partial<UlaznaPoruka> = {}): UlaznaPoruka => ({
-  kanal: 'telegram', chatId: '-511', porukaId: String(++brojac), posiljateljId: '42', posiljateljIme: 'Goran',
+  kanal: 'telegram', chatId: '-511', porukaId: String(++brojac), posiljateljId: '42', posiljateljIme: 'Korisnik',
   posiljateljJeBot: false, tekst: 'pitanje', ts: '2026-10-07T20:00:00Z', privatno: true, obracanjeBotu: true,
   ...o,
 })
@@ -188,7 +188,7 @@ describe('zadatak razgovora na ploči čvora', () => {
     expect(o.ploca.status(id)).toBe('completed')
     const b = z.biljeske.join('\n')
     expect(b).toContain('📥')
-    expect(b).toContain('Goran')
+    expect(b).toContain('Korisnik')
     expect(b).toContain('⚙️')
     expect(b).toContain('104 pina')
   })
@@ -231,7 +231,7 @@ describe('zadatak razgovora na ploči čvora', () => {
     const ploca = new LaznaPloca()
     let sada = 1_000_000
     const zr = stvoriZadatkeRazgovora({ ploca, korijen: join(mapa, 'r'), autor: () => 'Šaban', sat: () => sada, cekanjeBotaMs: 60_000 })
-    const id = zr.otvori('telegram:-511', { naslov: 'x', opis: 'y', primljeno: '📥 Goran: x' })!
+    const id = zr.otvori('telegram:-511', { naslov: 'x', opis: 'y', primljeno: '📥 Korisnik: x' })!
     zr.radi('telegram:-511')
     zr.cekaBota('telegram:-511', '📤 poslano')
     sada += 61_000
@@ -256,7 +256,7 @@ describe('zadatak razgovora na ploči čvora', () => {
 describe('konzola razgovora je trajna', () => {
   test('redak se upisuje u datoteku i čita natrag (tko otvori konzolu kasnije, vidi ga)', () => {
     const korijen = join(mapa, 'k')
-    zapisiKonzolu(korijen, '💬 ⇢ Goran: bok', 'info', Date.parse('2026-10-07T20:00:00Z'))
+    zapisiKonzolu(korijen, '💬 ⇢ Korisnik: bok', 'info', Date.parse('2026-10-07T20:00:00Z'))
     zapisiKonzolu(korijen, '💬 ⇠ Šaban: bok', 'ok', Date.parse('2026-10-07T20:00:05Z'))
     const r = citajKonzolu(korijen, 10)
     expect(r).toHaveLength(2)
@@ -296,7 +296,7 @@ describe('plocaIzTaskManagera nad stvarnom bazom', () => {
     createEmptyTaskDb(join(mapa, 'tasks.db'))
     const tm = new TaskManagerSQL(join(mapa, 'tasks.db'))
     const zr = stvoriZadatkeRazgovora({ ploca: plocaIzTaskManagera(tm as any), korijen: join(mapa, 'r'), autor: () => 'Šaban' })
-    const id = zr.otvori('telegram:-511', { naslov: '💬 Šaban · pinout', opis: 'trag', primljeno: '📥 od Goran: pinout' })!
+    const id = zr.otvori('telegram:-511', { naslov: '💬 Šaban · pinout', opis: 'trag', primljeno: '📥 od Korisnik: pinout' })!
     expect(tm.getTask(id)!.status).toBe('pending')
     expect(tm.getTask(id)!.assignee || '').toBe('')
     expect(tm.getTask(id)!.tags).toEqual(expect.arrayContaining(['razgovor', 'no-autonomy']))
@@ -306,7 +306,7 @@ describe('plocaIzTaskManagera nad stvarnom bazom', () => {
     zr.gotovo('telegram:-511', '✅ gotovo')
     const t = tm.getTask(id)!
     expect(t.status).toBe('completed')
-    expect(t.progressNotes.map(n => n.note).join('\n')).toContain('📥 od Goran')
+    expect(t.progressNotes.map(n => n.note).join('\n')).toContain('📥 od Korisnik')
     expect(t.progressNotes.map(n => n.note).join('\n')).toContain('📤 upit poslan')
     expect(t.progressNotes.map(n => n.agent)).toContain('Šaban')
   })
