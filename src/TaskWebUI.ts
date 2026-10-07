@@ -60,9 +60,12 @@ import {
   githubKonfigModul,
 } from './GitHubConfig'
 import { probajUlaz, stanjeUlaza, pokreniTelegramPoller, uskladiTelegramPoller, type RazgovorUlaza } from './TelegramPoller'
-import { razgovorGet, razgovorPut, razgovorPovijestGet, sklopiRazgovor, zadnjiPosiljatelji } from './razgovor/RazgovorPloca'
-import type { RazgovorJezgra } from './razgovor/Razgovor'
+import {
+  botKanalGet, botKanalPut, botKanalRucno, odBotaPost, razgovorGet, razgovorPut, razgovorPovijestGet, sklopiRazgovor,
+  zadnjiPosiljatelji, type RazgovorSloj,
+} from './razgovor/RazgovorPloca'
 import { ucitajAgente } from './razgovor/Identitet'
+import { MIN_TAJNA, PUT_RUTE, ZAGLAVLJE_POTPISA, potpisi, smijeTajnuNa, type Zahtjev } from './razgovor/BotKanal'
 import { jeDopustenAgent } from './core/AgentIds'
 import {
   loadOrchestratorConfig, validateOrchestratorPatch, saveOrchestratorConfig, stanjeOrkestratora,
@@ -9115,9 +9118,104 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       try {
         var d = await (await fetch('/api/config/razgovor')).json();
         if (d.error) throw new Error(d.error);
-        el.innerHTML = renderRazgovor(d);
+        el.innerHTML = renderRazgovor(d) + '<div id="info-botkanal-content" style="margin-top:14px"></div>';
+        loadBotKanal();
       } catch(e) {
         el.innerHTML = '<div class="empty">' + _T('cfg_razg_greska', 'Greška pri čitanju postavki razgovora') + ': ' + _esc(e.message) + '</div>';
+      }
+    }
+
+    // ── Bot↔bot preko LAN-a (ADR-0003, TASK-5290) — zadano isključeno; tajna samo na stroju ──
+    async function loadBotKanal() {
+      var el = document.getElementById('info-botkanal-content');
+      if (!el) return;
+      try {
+        var d = await (await fetch('/api/config/razgovor/bot-kanal')).json();
+        if (d.error) throw new Error(d.error);
+        el.innerHTML = renderBotKanal(d);
+      } catch(e) {
+        el.innerHTML = '<div class="empty">Bot↔bot: ' + _esc(e.message) + '</div>';
+      }
+    }
+
+    function _bkZastavice(z) {
+      var k = Object.keys(z || {});
+      if (!k.length) return '—';
+      return k.map(function(c) {
+        var x = z[c] || {};
+        return '<code>' + _esc(c) + '</code> ' + (x.zaustavljen
+          ? '⛔ ' + _T('cfg_bk_zaustavljeno', 'zaustavljeno') + ' ' + _esc(String(x.ts || '').slice(11, 16)) + ' (' + _esc(x.by || '') + ', ' + _esc(x.razlog || '') + ')'
+          : '🟢 ' + _T('cfg_bk_radi', 'radi'));
+      }).join('<br>');
+    }
+
+    function renderBotKanal(d) {
+      var p = d.postavke || {};
+      var drugi = (p.drugi || [])[0] || {};
+      var chatovi = p.chatovi || [];
+      var gumbi = chatovi.map(function(c) {
+        var z = (d.zastavice || {})[c] || {};
+        return z.zaustavljen
+          ? '<button class="cfg-btn" onclick="botKanalRucno(this, \\'' + _esc(c) + '\\', \\'nastavi\\')">▶ ' + _T('cfg_bk_nastavi', 'Nastavi bot↔bot') + ' (' + _esc(c) + ')</button> '
+          : '<button class="cfg-btn" onclick="botKanalRucno(this, \\'' + _esc(c) + '\\', \\'zaustavi\\')">⛔ ' + _T('cfg_bk_zaustavi', 'Zaustavi bot↔bot') + ' (' + _esc(c) + ')</button> ';
+      }).join('');
+      var drugiKraj = (d.drugiKraj || []).map(function(x) {
+        return _esc(x.ime) + ': ' + (x.greska ? '⚠️ ' + _esc(x.greska) : _bkZastavice(x.zastavice));
+      }).join('<br>') || '—';
+      var upoz = (d.upozorenja || []).map(function(u) { return '<div>⚠️ ' + _esc(u) + '</div>'; }).join('');
+      var csv = function(a) { return _esc((a || []).join(', ')); };
+      return '<b>' + _T('cfg_bk_naslov', 'Bot↔bot (LAN)') + '</b>' +
+        '<div class="cfg-napomena">' + _T('cfg_bk_opis', 'Telegram botu ne isporučuje poruke drugog bota, pa dva bota razgovaraju preko LAN-a (poruka u grupi ostaje za ljude). Odgovor koji spominje @drugog bota ide mu i LAN-om. „Prekini komunikaciju" od stop-korisnika odmah zaustavlja razmjenu; nastavak samo gumbom ili „Nastavi komunikaciju". Bot-poruka nikad ne otvara zadatak.') +
+          '<br>' + _T('cfg_bk_tajna', 'Tajne (TM_BOT_KANAL_TAJNA_SLANJE / _PRIMANJE u okolini stroja, HMAC potpis)') + ': <b>' + _esc(d.tajna ? ('slanje ' + d.tajna.slanje + ' · primanje ' + d.tajna.primanje) : '?') + '</b> · ' + _T('cfg_bk_ja', 'ime ovog kraja') + ': <code>' + _esc(d.ja || '?') + '</code>' +
+          '<br>' + _T('cfg_bk_ovdje', 'Ovaj kraj') + ': ' + _bkZastavice(d.zastavice) +
+          '<br>' + _T('cfg_bk_drugi_kraj', 'Drugi kraj') + ': ' + drugiKraj +
+        '</div>' + upoz +
+        _razgPolje('bk-ukljucen', _T('cfg_bk_ukljucen', 'Bot↔bot uključen'), '<input id="bk-ukljucen" type="checkbox"' + (p.ukljucen ? ' checked' : '') + '>') +
+        _razgPolje('bk-drugi-ime', _T('cfg_bk_drugi_ime', 'Drugi bot: ime u kanalu'), '<input id="bk-drugi-ime" type="text" value="' + _esc(drugi.ime || '') + '">') +
+        _razgPolje('bk-drugi-ki', _T('cfg_bk_drugi_ki', 'Drugi bot: korisničko ime (bez @)'), '<input id="bk-drugi-ki" type="text" value="' + _esc(drugi.korisnickoIme || '') + '">') +
+        _razgPolje('bk-drugi-url', _T('cfg_bk_drugi_url', 'Drugi bot: adresa ploče'), '<input id="bk-drugi-url" type="text" value="' + _esc(drugi.url || '') + '">') +
+        _razgPolje('bk-chatovi', _T('cfg_bk_chatovi', 'Chatovi (id, zarezom)'), '<input id="bk-chatovi" type="text" value="' + csv(p.chatovi) + '">') +
+        _razgPolje('bk-adrese', _T('cfg_bk_adrese', 'Dopuštene adrese drugog kraja (IP, zarezom)'), '<input id="bk-adrese" type="text" value="' + csv(p.adrese) + '">') +
+        _razgPolje('bk-ovlasti', _T('cfg_bk_ovlasti', 'Najviša razina za bot-poruke'), _razgIzbor('bk-ovlasti', p.ovlasti, ['citanje', 'rad'])) +
+        _razgPolje('bk-stop', _T('cfg_bk_stop', 'Stop-korisnici (brojčani id, zarezom; prazno = dopušteni)'), '<input id="bk-stop" type="text" value="' + csv(p.stopKorisnici) + '">') +
+        _razgPolje('bk-strop', _T('cfg_bk_strop', 'Strop prijenosa bez čovjeka (1–20)'), '<input id="bk-strop" type="number" min="1" max="20" value="' + p.strop + '">') +
+        _razgPolje('bk-prozor', _T('cfg_bk_prozor', 'Prozor stropa (min, 1–120)'), '<input id="bk-prozor" type="number" min="1" max="120" value="' + p.prozorMin + '">') +
+        '<div style="margin-top:8px"><button class="cfg-btn" onclick="spremiBotKanal(this)">' + _T('tel_spremi', 'Spremi') + '</button> ' + gumbi + '</div>';
+    }
+
+    async function spremiBotKanal(btn) {
+      var v = function(id) { return document.getElementById(id); };
+      var lista = function(id) { return v(id).value.split(',').map(function(x) { return x.trim(); }).filter(Boolean); };
+      var ime = v('bk-drugi-ime').value.trim();
+      var tijelo = {
+        ukljucen: v('bk-ukljucen').checked,
+        drugi: ime ? [{ ime: ime, korisnickoIme: v('bk-drugi-ki').value.trim(), url: v('bk-drugi-url').value.trim() }] : [],
+        chatovi: lista('bk-chatovi'), adrese: lista('bk-adrese'), ovlasti: v('bk-ovlasti').value,
+        stopKorisnici: lista('bk-stop'), strop: Number(v('bk-strop').value), prozorMin: Number(v('bk-prozor').value),
+        by: 'ploca'
+      };
+      if (btn) btn.disabled = true;
+      try {
+        var res = await fetch('/api/config/razgovor/bot-kanal', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(tijelo) });
+        var d = await res.json();
+        if (!res.ok || d.error) throw new Error(d.error || 'save failed');
+        await loadBotKanal();
+      } catch(e) {
+        alert('Bot↔bot: ' + e.message);
+        if (btn) btn.disabled = false;
+      }
+    }
+
+    async function botKanalRucno(btn, chatId, radnja) {
+      if (btn) btn.disabled = true;
+      try {
+        var res = await fetch('/api/config/razgovor/bot-kanal/rucno', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chatId: chatId, radnja: radnja, by: 'ploca' }) });
+        var d = await res.json();
+        if (!res.ok || d.error) throw new Error(d.error || 'failed');
+        await loadBotKanal();
+      } catch(e) {
+        alert('Bot↔bot: ' + e.message);
+        if (btn) btn.disabled = false;
       }
     }
 
@@ -10832,8 +10930,8 @@ function handleTelegramConfigGet(): Response {
 // ── Razgovorni način bota (ADR-0002, TASK-5277) ──────────────────────────────────────
 // Jedan razgovorni sloj po procesu ploče. Poller ga dobiva kroz `RazgovorUlaza`; uključuje
 // se postavkom `razgovor.ukljucen` (zadano off) — bez nje poller radi točno kao prije.
-let _razgovor: { ulaz: RazgovorUlaza; jezgra: RazgovorJezgra } | null = null
-function razgovorSloj(): { ulaz: RazgovorUlaza; jezgra: RazgovorJezgra } {
+let _razgovor: RazgovorSloj | null = null
+function razgovorSloj(): RazgovorSloj {
   if (_razgovor) return _razgovor
   _razgovor = sklopiRazgovor({
     dbPath: TM_DB,
@@ -10912,6 +11010,73 @@ async function handleRazgovorPut(req: Request): Promise<Response> {
       console.log(`[telegram-poller] uskladivanje nije uspjelo: ${String(e)}`)
     }
   }
+  return razgovorOdgovor(r)
+}
+
+// ── Kanal bot↔bot preko LAN-a (ADR-0003, TASK-5290) ─────────────────────────────────
+// Tajne (TM_BOT_KANAL_TAJNA_SLANJE / _PRIMANJE, TASK-5299) samo iz okoline stroja; ruta postoji samo uz
+// botKanal.ukljucen. Zahtjev nosi HMAC potpis u zaglavlju — jezgra ga provjerava nad SIROVIM tijelom.
+function ipZahtjeva(req: Request): string | null {
+  try { return server.requestIP(req)?.address || null } catch { return null }
+}
+
+async function handleOdBota(req: Request, put: string): Promise<Response> {
+  const tijelo = req.method === 'GET' ? '' : await req.text().catch(() => '')
+  if (tijelo.length > 64_000) return razgovorOdgovor({ status: 413, tijelo: { error: 'tijelo je predugačko' } })
+  const z: Zahtjev = { ip: ipZahtjeva(req), potpis: req.headers.get(ZAGLAVLJE_POTPISA), tijelo }
+  const sloj = razgovorSloj()
+  const r = put === '/stanje' ? sloj.botKanal.stanjeZaDrugog(z)
+    : put === '/stop' ? sloj.botKanal.primiStop(z)
+      : put === '/nastavi' ? sloj.botKanal.primiNastavak(z)
+        : odBotaPost(sloj, z)
+  // Dnevnik bez tijela (tekst je razgovor) i bez zaglavlja (potpis).
+  console.log(`[bot-kanal] ${req.method} od-bota${put} s ${z.ip || '?'} → ${r.status}${(r.tijelo as any)?.razlog ? ` (${(r.tijelo as any).razlog})` : ''}`)
+  return razgovorOdgovor(r)
+}
+
+async function handleBotKanalConfigGet(): Promise<Response> {
+  try {
+    const sloj = razgovorSloj()
+    const r = botKanalGet(TM_DB, sloj, process.env)
+    // Stanje drugog kraja (ADR-0003 §7) — kartica pokazuje oba; tajna ide samo u zaglavlje.
+    const tijelo = r.tijelo as any
+    const slanje = process.env.TM_BOT_KANAL_TAJNA_SLANJE || ''
+    tijelo.drugiKraj = await Promise.all((tijelo.postavke?.drugi || []).map(async (d: any) => {
+      if (slanje.length < MIN_TAJNA || !tijelo.postavke.ukljucen) return { ime: d.ime, greska: 'kanal isključen ili tajna slanja nedostaje' }
+      // TASK-5291 (N3): upit samo hostu s popisa adresa — `drugi.url` može promijeniti bilo tko s mreže.
+      if (!smijeTajnuNa(d.url, tijelo.postavke.adrese || [])) return { ime: d.ime, greska: 'host adrese ploče nije u popisu adresa — upit ne ide' }
+      try {
+        // TASK-5299: GET je potpisan (prazno tijelo); tajna ne ide na žicu.
+        const o = await fetch(`${d.url}${PUT_RUTE}/stanje`, {
+          headers: { [ZAGLAVLJE_POTPISA]: potpisi(slanje, 'GET', `${PUT_RUTE}/stanje`, '', Math.floor(Date.now() / 1000)) },
+          signal: AbortSignal.timeout(3000),
+        })
+        const j: any = await o.json().catch(() => ({}))
+        return o.ok ? { ime: d.ime, zastavice: j.zastavice || {} } : { ime: d.ime, greska: `HTTP ${o.status}${j?.error ? `: ${j.error}` : ''}` }
+      } catch (e: any) { return { ime: d.ime, greska: String(e?.message || e) } }
+    }))
+    return razgovorOdgovor(r)
+  } catch (e) {
+    return razgovorOdgovor({ status: 500, tijelo: { error: String(e) } })
+  }
+}
+
+async function handleBotKanalConfigPut(req: Request): Promise<Response> {
+  let tijelo: unknown
+  try { tijelo = await req.json() } catch { return razgovorOdgovor({ status: 400, tijelo: { error: 'Neispravan JSON' } }) }
+  const r = botKanalPut(TM_DB, tijelo, ipZahtjeva(req))
+  if (r.status === 200) {
+    const promjene = ((r.tijelo as any).promjene || []).filter((c: any) => c.changed).map((c: any) => c.kljuc)
+    console.log(`[bot-kanal] postavke promijenjene: ${promjene.join(', ') || '(bez promjene)'}`)
+  }
+  return razgovorOdgovor(r)
+}
+
+async function handleBotKanalRucno(req: Request): Promise<Response> {
+  let tijelo: unknown
+  try { tijelo = await req.json() } catch { return razgovorOdgovor({ status: 400, tijelo: { error: 'Neispravan JSON' } }) }
+  const r = await botKanalRucno(razgovorSloj(), tijelo, ipZahtjeva(req), TM_DB)
+  if (r.status === 200) console.log(`[bot-kanal] ručno: ${(tijelo as any)?.radnja} ${(tijelo as any)?.chatId}`)
   return razgovorOdgovor(r)
 }
 
@@ -16508,6 +16673,14 @@ async function obradiZahtjev(req: Request): Promise<Response | undefined> {
     if (url.pathname === '/api/config/razgovor' && req.method === 'GET') return handleRazgovorGet()
     if (url.pathname === '/api/config/razgovor' && req.method === 'PUT') return handleRazgovorPut(req)
     if (url.pathname === '/api/config/razgovor/povijest' && req.method === 'GET') return razgovorOdgovor(razgovorPovijestGet(TM_DB))
+    if (url.pathname === '/api/config/razgovor/bot-kanal' && req.method === 'GET') return handleBotKanalConfigGet()
+    if (url.pathname === '/api/config/razgovor/bot-kanal' && req.method === 'PUT') return handleBotKanalConfigPut(req)
+    if (url.pathname === '/api/config/razgovor/bot-kanal/rucno' && req.method === 'POST') return handleBotKanalRucno(req)
+    if (url.pathname === '/api/razgovor/od-bota' && req.method === 'POST') return handleOdBota(req, '')
+    if ((url.pathname === '/api/razgovor/od-bota/stop' || url.pathname === '/api/razgovor/od-bota/nastavi') && req.method === 'POST') {
+      return handleOdBota(req, url.pathname.slice('/api/razgovor/od-bota'.length))
+    }
+    if (url.pathname === '/api/razgovor/od-bota/stanje' && req.method === 'GET') return handleOdBota(req, '/stanje')
     if (url.pathname === '/api/config/concurrency' && req.method === 'GET') return handleConcurrencyGet()
     if (url.pathname === '/api/config/concurrency' && req.method === 'PUT') return handleConcurrencyPut(req)
     if (url.pathname === '/api/config/autonomy' && req.method === 'GET') return handleAutonomyGet()
