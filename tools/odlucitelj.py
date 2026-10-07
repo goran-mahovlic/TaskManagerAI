@@ -135,13 +135,16 @@ def _stvaran_pogodak(tekst: str, uzorak: str) -> bool:
     return False
 
 
-def rizik(z: dict) -> str | None:
-    """Vraća naziv rizika ili None. Gleda naslov i opis zajedno."""
+def rizici(z: dict) -> list:
+    """Svi nazivi rizika koje zadatak nosi (redom iz RIZIK). Gleda naslov i opis zajedno."""
     tekst = f"{z.get('title') or ''}\n{z.get('description') or ''}".lower()
-    for naziv, uzorak in RIZIK:
-        if _stvaran_pogodak(tekst, uzorak):
-            return naziv
-    return None
+    return [naziv for naziv, uzorak in RIZIK if _stvaran_pogodak(tekst, uzorak)]
+
+
+def rizik(z: dict) -> str | None:
+    """Vraća naziv (prvog) rizika ili None."""
+    r = rizici(z)
+    return r[0] if r else None
 
 
 # ── Vremenski uvjet ──────────────────────────────────────────────────────────────────────
@@ -667,7 +670,7 @@ def najava_tekst(z: dict, p: dict, rok_iso: str, sati: float) -> str:
 def rizicno_covjeku(p: dict) -> list:
     """Popis rizika koji uvijek idu čovjeku (§11). Neispravna vrijednost = prazan popis (zadano)."""
     v = p.get("rizicno_covjeku")
-    return [str(x) for x in v] if isinstance(v, list) else []
+    return [str(x).strip().lower() for x in v] if isinstance(v, list) else []
 
 
 def odluci(z: dict, p: dict) -> dict:
@@ -676,8 +679,11 @@ def odluci(z: dict, p: dict) -> dict:
 
     # TASK-5204 §11: rizik s vlasnikova popisa ne ide modelu ni u samostalnom načinu — ni najava
     # „model odlučuje za 1 h” nema smisla, pa ova provjera ide prije nje.
-    if r and r in rizicno_covjeku(p):
-        return _predaj_covjeku(z, f"{r} (na popisu rizicno_covjeku — model ga nikad ne odlučuje)", r)
+    # Gledaju se SVI rizici zadatka, ne samo prvi pogodak: „obriši i plati" uz popis [brisanje]
+    # inače bi prošao modelu jer je prvi pogodak „novac" (TASK-5311, sigurnosni pregled).
+    covjeku = [x for x in rizici(z) if x in rizicno_covjeku(p)]
+    if covjeku:
+        return _predaj_covjeku(z, f"{covjeku[0]} (na popisu rizicno_covjeku — model ga nikad ne odlučuje)", covjeku[0])
 
     # NAJAVA PRIJE ODLUKE (vlasnik, 05.09.2026.): „imate x vremena za <sto treba odluciti> odluku
     # inace model xx odlucuje za vas." Rok se daje JEDNOM po zadatku; dok traje, model ga ne

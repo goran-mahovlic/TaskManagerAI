@@ -77,4 +77,12 @@ print(json.dumps(o.odluci(z, p)))`)
     expect(r.rijec).not.toBe('najava')
     expect(r.razlog).toContain('rizicno_covjeku')
   })
+  test('zadatak s VIŠE rizika: dovoljan je bilo koji s popisa (ne samo prvi pogodak)', () => {
+    // „novac" je u RIZIK prije „brisanje" — prvi pogodak (novac) NIJE na popisu, drugi jest
+    const r = py(`p = {"ukljucen": True, "smije_rizicno": True, "rizicno_covjeku": [" Brisanje "]}
+z = {"id": "T-2", "title": "Obriši stari račun i plati novi", "description": "obriši pretplatu pa plati 20 EUR"}
+print(json.dumps({"rizici": o.rizici(z), "o": o.odluci(z, p)}))`)
+    expect(r.rizici).toEqual(['novac', 'brisanje'])
+    expect(r.o.razlog).toContain('rizicno_covjeku')
+  })
 })
