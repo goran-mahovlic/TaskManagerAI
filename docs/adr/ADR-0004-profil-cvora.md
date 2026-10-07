@@ -494,3 +494,58 @@ StaleCodeCheck ✅. Ista presuda nakon popravka: odsutnost 818 ms nakon stvaranj
   stvaran rad agenta u `regoc.log`: `⚙️ potjeh · TASK-268 · Bash: Run sleep 900 …`.
 - Testovi izvornog sustava na čvoru (`orphan-recovery`, `zombie-recovery`, `agent-routing`): 89 pass,
   0 fail (uz trag odluke `zombieRecoveryLive.liveBy` = Goran 07.10.).
+
+### 13.9 P5 komplet izvornog sustava na node-A i C6 (TASK-5323, 07.10.2026. 13:57 UTC)
+
+**Korak 1 — značajke čvora u glavni sustav (prije kompleta, da ga komplet ne obriše).** Od četiri
+značajke iz §13.8 tri su ožičene u `~/.claude/regoc` glavnog, a četvrta je ondje već postojala:
+
+| Značajka | U glavnom | Ispitano |
+|---|---|---|
+| `ragUkljucen` (TASK-5273) | `RegocDaemon.ts`: `queryRAG`, spremanje konteksta, blok memorije identiteta, uputa kolekcija, dva retka uputa u promptu („na ovom čvoru NEMA RAG-a"), osvježavanje kolekcija pri startu; `RagCollections.ts`: `refreshCollectionsCache`, `knownCollections` | `tests/cvor-znacajke.wiring.test.ts` |
+| `paketKanal` (TASK-5285) | novi `PaketKanal.ts` (`tokenKanala`, `chatZaPoruku`, `createPaketKanalReader`, keš 60 s); daemon: `getTelegramToken`, chat i stil u `flushUserMessages` | `tests/paket-kanal.test.ts` (11) |
+| anti-kaskada TASK-255 | `SpawnSlotRules.helperChainDecision` odbija člana lanca (`createdBy=regoc-chain` ili `parent:`), `timPoNaporu` (E1/E2 bez tima), `AgentRouting.HELPER_ECHO` hvata T1 tim-oblik i „Originalni zahtjev korisnika:" | `tests/spawn-slot-rules.test.ts`, `tests/agent-routing.test.ts` |
+| `provider@čvor:model` | već u glavnom: `models/AgentModel.ts` (`resolveAgentTarget`) i `providers.ollama.nodes[node]` | wiring test |
+
+Regresija glavnog: cijeli `tests/` prije/poslije uz isti `/tmp` daje 9 novih padova, svi `ENOSPC`
+(`/tmp` glavnog je tmpfs 100 MB, pun tuđih datoteka); s `TMPDIR` u radnoj mapi isti testovi
+110 pass / 0 fail. Glavni daemon vrti stari kod do restarta kroz `restart_kad_mirno.sh`
+(zakazan iz TASK-5323; ne smije se restartati iz spawna, TASK-5140).
+
+**Korak 2 — komplet.** Novi `deploy/node-a-samostalnost/gradi_komplet.sh` gradi teret iz izvora
+glavnog, umjesto ručno odabranih 84 datoteke iz 09.09.: svi moduli korijena (`*.ts`), zatvorenje
+uvoza ulaza daemona i alata koje on pokreće (`bun build --metafile`), poveznice
+`tools/<ime>.ts → tools/<mapa>/<ime>.ts`, postavke `config/*.json` koje čvor NEMA (`cp -n`, vrijednosti
+čvora se ne diraju; bez `daemon.env`, `telegram-identity.json` i postavki s putanjama glavnog) i
+`session_usage.py`. Brana tajni ruši gradnju (oblik ključa/tokena → exit 5). Svjež
+`MANIFEST.sha256`: 200 datoteka + 5 poveznica. `deploy_node_a.sh` sada provjerava MANIFEST na
+čvoru prije raspakiranja, raspakira `tar … -C ~ --no-overwrite-dir` (ne mijenja prava mape `~` —
+inače bi sshd odbio ključ) i sigurnosna kopija obuhvaća sve što komplet dira
+(`~/backup/task4777_20261007_135746/prije.tgz`, 14,7 MB).
+
+Isporuka uz `in_progress = 0`: MANIFEST ✅, gradnja na čvoru 353 modula, restart `regoc-daemon`
+824941 / `regoc-taskmanager` 824940 (13:57:51 UTC), StaleCodeCheck daemona exit 0, `TZ=UTC` zadržan
+(drop-in §13.8). Uključen je i TASK-5029 (ulaz u `in_progress` tek kad proces krene). Prvi redak
+novog daemona: „📚 RAG isključen na ovom čvoru" — prenesena značajka radi iz koda glavnog.
+
+**Korak 3 — C6.** `pozadinaPovrat`, `revizijaBlokiranih(+Live)`, `zatvaranjeKrozDaemon`,
+`r2IzricitaDodjela`, `sequentialHelpers` → ON na čvoru; iz instance (`ZNACAJKE_ISKLJUCI`) uklonjeni
+(profil `[znacajke] 75/75`). `config/stale-watchdog.json` čvora nije imao odjeljak `blocked`
+(cp -n ga ne prepisuje) → dodan iz glavnog, ali **`klaseUzivo = ["deploy"]`, bez `lanac`**: na čvoru
+stoji 10 `regoc-chain` zadataka TASK-252…262 koje TASK-255 §5 ne dira; klasa `lanac` uživo vratila bi
+ih u red i ponovno zapalila kaskadu. Prvi prolaz revizije (14:01:37 UTC): 14 blokiranih → Goranu 3,
+čeka 10, razina 2 jedan, 0 grešaka.
+
+**Mjerilo** `paritet.py`: 53 razlike → **20**, sve „van"/„uvjetno" po §13.2: 18 nespojenih kuka
+(tablica §13.2.2), `projectGitInit` (uvjetno, instanca), `klaudio.log` (bot glavnog ne radi na
+čvoru). Moduli 141/141, „prekidač bez koda" 0.
+
+**Korak 4 — ploča paketa (djelomično).** Značka živih spawnova i ⚠ BEZ PROCESA (commit `1f10ef4`):
+`/api/config/concurrency` broji žive najmove kad mapa najmova postoji — paketova ili
+`TM_IZVORNI_NAJMOVI` (na node-A drop-in `regoc-taskmanager.service.d/najmovi.conf`). Bez mape ostaje
+broj `in_progress` i oznake nema. Uživo na node-A: `active 1/1, activeSource najmovi`, TASK-255
+pid 826642. Revizija blokiranih (kartica, traka, rute, klasifikacija `blok:*` na PUT) i
+ZatvaranjeKrozDaemon traže `StaleWatchdog` (1240 r.) i `ZatvaranjeKrozDaemon` (279 r., token
+zatvaranja) u paketu — otvoreno kao zaseban zadatak uz Malikov pregled.
+
+**node-B**: 07.10. i dalje `No route to host` — komplet i paket čekaju povratak čvora.

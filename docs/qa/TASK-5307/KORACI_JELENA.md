@@ -35,8 +35,8 @@ Prije svake izmjene napravi kopiju `<datoteka>.bak-task5307-<vrijeme>`.
 | C2 | `hooks/RegocConsoleLog.hook.ts` u paket (putanja iz `HOME`, ne `/home/klaudio`); `RadBezZadatka` prenijeti kao uvjetnu kuku | J15 |
 | C3 | `config/features.example.json`: puni skup ključeva s odlukom iz §13.2.1 (sada ih je 6) i `note` s razlogom | `bun test` zelen; brana ADR-0001 §8 zelena |
 | C4 | modul `konzola`: drop-in `~/.config/systemd/user/<unit>.service.d/konzola.conf` s `StandardOutput=append:%h/.tmp/regoc_logs/<izvor>.log` za `regoc-taskmanager` i `regoc-voice`; ploča prikazuje izvor bez datoteke kao „nije u pogonu" | J17 |
-| C5 | (djelomično, ADR §13.8: kalem siroče-oporavka; puni komplet otvoren) **P5**: `tm-cvor-azuriraj.sh <čvor> --s-kompletom` (paket + komplet izvornog sustava po `MANIFEST.sha256`, uključivo popravak TASK-255). Na node-A tek kad je `in_progress = 0`, restart samo kroz `restart_kad_mirno` | `paritet.py` → „fale na čvoru (0)"; StaleCodeCheck exit 0 |
-| C6 | (djelomično, ADR §13.8: `siroceOporavak` ON kroz kalem) Nakon C5 na node-A: `siroceOporavak`, `pozadinaPovrat`, `revizijaBlokiranih(+Live)`, `zatvaranjeKrozDaemon`, `r2IzricitaDodjela`, `sequentialHelpers` → `true` | **P7**: ubijen proces agenta → zadatak natrag u redu ≤ 15 min bez `/reclaim` |
+| C5 | ✅ node-A (TASK-5323, ADR §13.9: komplet `gradi_komplet.sh` + `deploy_node_a.sh`, moduli 141/141; node-B čeka čvor) **P5**: `tm-cvor-azuriraj.sh <čvor> --s-kompletom` (paket + komplet izvornog sustava po `MANIFEST.sha256`, uključivo popravak TASK-255). Na node-A tek kad je `in_progress = 0`, restart samo kroz `restart_kad_mirno` | `paritet.py` → „fale na čvoru (0)"; StaleCodeCheck exit 0 |
+| C6 | ✅ node-A (TASK-5323, ADR §13.9; `klaseUzivo` bez `lanac`) Nakon C5 na node-A: `siroceOporavak`, `pozadinaPovrat`, `revizijaBlokiranih(+Live)`, `zatvaranjeKrozDaemon`, `r2IzricitaDodjela`, `sequentialHelpers` → `true` | **P7**: ubijen proces agenta → zadatak natrag u redu ≤ 15 min bez `/reclaim` |
 | C7 | `docs/INSTALL.md` „Novi čvor": zamijeniti 7 koraka s 5 + tajne (ADR §13.5) | pregled teksta |
 
 **Prije C5 odluči Goran:** P6, tj. pet nepredanih izmjena u `~/TaskManagerAI` na node-A
