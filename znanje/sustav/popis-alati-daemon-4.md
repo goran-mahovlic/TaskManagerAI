@@ -1,0 +1,32 @@
+# Alati domene daemon (dio 4)
+
+Kanonski alati domene daemon, dio 4. Prije pisanja nove skripte pokreni `katalog trazi <svrha>`; ako alat postoji, nadogradi ga.
+- `TaskInstructions.ts` (modul, vlasnik jelena): ─── TaskInstructions ────────────────────────────────────────────────────────. Poziv: `import iz ${SUSTAV_DIR}/TaskInstructions.ts`.
+- `TaskManager.ts` (modul, vlasnik jelena): ${SUSTAV_DIR}/TaskManager.ts. Poziv: `import iz ${SUSTAV_DIR}/TaskManager.ts`.
+- `TaskManagerSQL.ts` (cli, vlasnik jelena): TaskManagerSQL - SQL-Only Task Manager for REGOČ. Poziv: `bun ${SUSTAV_DIR}/TaskManagerSQL.ts`.
+- `TaskSchedulerIntegration.ts` (cli, vlasnik jelena): REGOČ Task Scheduler Integration. Poziv: `bun ${SUSTAV_DIR}/TaskSchedulerIntegration.ts`.
+- `TaskTier.ts` (cli, vlasnik jelena): TaskTier.ts — tier modela po ZADATKU umjesto po agentu (A6 /). Poziv: `bun ${SUSTAV_DIR}/TaskTier.ts`.
+- `TaskToolkit.ts` (modul, vlasnik kosjenka): Odabir 1–4 vještine i 3–8 alata po zadatku za blok identiteta pri spawnu, iza prekidača config/task-toolkit.json (ADR-0016). Poziv: `import { selectToolkit } from './TaskToolkit'`.
+- `TaskTriggerMonitor.ts` (cli, vlasnik jelena): Task Trigger Monitor. Poziv: `bun ${SUSTAV_DIR}/TaskTriggerMonitor.ts`.
+- `TeamWorkflow.ts` (cli, vlasnik jelena): REGOČ A7: Team Workflow Engine. Poziv: `bun ${SUSTAV_DIR}/TeamWorkflow.ts`.
+- `TelegramContextTail.ts` (modul, vlasnik jelena): TelegramContextTail — Opcija B iz istraživanja (08.09.2026). Poziv: `import iz ${SUSTAV_DIR}/TelegramContextTail.ts`.
+- `TelegramSessionIdentity.ts` (cli, vlasnik jelena): Stabilni identitet Telegram sesije. Poziv: `bun ${SUSTAV_DIR}/TelegramSessionIdentity.ts`.
+- `TelegramUputa.ts` (modul, vlasnik jelena): ${SUSTAV_DIR}/TelegramUputa.ts. Poziv: `import iz ${SUSTAV_DIR}/TelegramUputa.ts`.
+- `TierRecipes.ts` (cli, vlasnik jelena): TierRecipes.ts — recepti po tieru za slabe modele (P3 /, korak s1). Poziv: `bun ${SUSTAV_DIR}/TierRecipes.ts`.
+- `TjedniPregledBlokiranih.ts` (cli, vlasnik jelena): Tjedni pregled blokiranih vlasniku na Telegram: okidač pon 09:00 Zagreb otvara zadatak za Jelenu (idempotentno po tjednu, pričuva nakon 3 h), izvještaj iz StaleWatchdog presuda (brojke, zastarjelo, čeka vlasnika s opcijama, anomalije), naredbe iz grupe arhiviraj/pusti/<ID> <slovo> (Klaudio). Poziv: `bun ${SUSTAV_DIR}/TjedniPregledBlokiranih.ts okidac [--sada] | nacrt [--json] | posalji --datoteka F | stanje`.
+- `TokenBucket.ts` (modul, vlasnik jelena): ─── TokenBucket ─────────────────────────────────────────────────────. Poziv: `import iz ${SUSTAV_DIR}/TokenBucket.ts`.
+- `TrivialResponder.ts` (modul, vlasnik jelena): ─── TrivialResponder (P1-lite /) ──────────────────────────. Poziv: `import iz ${SUSTAV_DIR}/TrivialResponder.ts`.
+- `UnifiedSpawnPipeline.ts` (cli, vlasnik jelena): ⚠️ NAPUŠTENO (DEPRECATED) — ADR-0004, odluka O3, 3. 9. 2026. Poziv: `bun ${SUSTAV_DIR}/UnifiedSpawnPipeline.ts`.
+- `UnverifiedReport.ts` (cli, vlasnik jelena): UnverifiedReport — vratar koji NIJE ništa provjerio mora se javiti (T10 /). Poziv: `bun ${SUSTAV_DIR}/UnverifiedReport.ts`.
+- `UsageMeter.ts` (modul, vlasnik jelena): UsageMeter — zdravlje MJERILA potrošnje. Poziv: `import iz ${SUSTAV_DIR}/UsageMeter.ts`.
+- `VerificationGate.ts` (modul, vlasnik jelena): VerificationGate — strojni verifikacijski gate (skela za slabe modele). Poziv: `import iz ${SUSTAV_DIR}/VerificationGate.ts`.
+- `VerifiedComparison.ts` (cli, vlasnik jelena): VerifiedComparison - Automatsko prikupljanje dokaza za usporedbe. Poziv: `bun ${SUSTAV_DIR}/VerifiedComparison.ts <file_a> <file_b> [pattern]`.
+- `VoiceRelay.ts` (modul, vlasnik jelena): VoiceRelay — dogovor između RegocDaemona i `mumble_bridge`. Poziv: `import iz ${SUSTAV_DIR}/VoiceRelay.ts`.
+- `WeightScore.ts` (modul, vlasnik jelena): WeightScore — OCJENA TEŽINE 1–100 i odluka po pragovima A/B/C (U5 /). Poziv: `import iz ${SUSTAV_DIR}/WeightScore.ts`.
+- `WikilinkParser.ts` (cli, vlasnik jelena): REGOC WikilinkParser (F7.2). Poziv: `bun ${SUSTAV_DIR}/WikilinkParser.ts`.
+- `WorkflowGate.ts` (modul, vlasnik jelena): WorkflowGate — prekidač za tijekove rada, tri razine (W0 /). Poziv: `import iz ${SUSTAV_DIR}/WorkflowGate.ts`.
+- `WorkflowMaterializer.ts` (modul, vlasnik jelena): WorkflowMaterializer — W2/: odabrani TIJEK RADA postaje LANAC ZADATAKA NA PLOČI. Poziv: `import iz ${SUSTAV_DIR}/WorkflowMaterializer.ts`.
+- `WorkflowTemplate.ts` (modul, vlasnik jelena): WorkflowTemplate — PREDLOŽAK PRVOG ZADATKA (U4 /). Poziv: `import iz ${SUSTAV_DIR}/WorkflowTemplate.ts`.
+- `WorkStateJournal.ts` (cli, vlasnik jelena): WorkStateJournal — zastoj postaje DOGAĐAJ S RAZLOGOM, ne otkucaj u logu. Poziv: `bun ${SUSTAV_DIR}/WorkStateJournal.ts`.
+- `WorktreeIsolation.ts` (cli, vlasnik jelena): WorktreeIsolation — svaki paralelni spawn u vlastitom git worktreeju (A1 /). Poziv: `bun ${SUSTAV_DIR}/WorktreeIsolation.ts`.
+- `ZombieRecovery.ts` (cli, vlasnik jelena): ZombieRecovery — odluka „je li in_progress task ostao bez izvršitelja?" na JEDNOM mjestu. Poziv: `bun ${SUSTAV_DIR}/ZombieRecovery.ts`.

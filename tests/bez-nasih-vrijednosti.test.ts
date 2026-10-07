@@ -285,13 +285,17 @@ const OSNOVICA_POPISI: string[] = [
  * `OSNOVICA_POPISI` — zapor se i dalje mjeri nad kodom i ostatkom paketa. Tekstualna pravila
  * iz `PRAVILA` (adrese, putanje, e-pošta, chat id) NE izuzimaju `REGOC/`: opis tima smije
  * imenovati uloge, ali ne smije nositi ničiju adresu ni putanju.
+ *
+ * `znanje/sustav/` (TASK-5331, ADR-0006 §4–§5, mjerilo Z3) je isto: generirani OPĆI korpus o sustavu
+ * — agenti, tijekovi, alati — koji ide u banku memorije svakog čvora. Imena uloga su mu sadržaj;
+ * tekstualna pravila (adrese, putanje, chat id, naš raspored mapa) vrijede i za njega.
  */
-const IZUZETO_OD_POPISA_TIMA = 'REGOC/'
+const IZUZETO_OD_POPISA_TIMA = ['REGOC/', 'znanje/sustav/']
 
 function popisiTima(): string[] {
   const pogodjene: string[] = []
   for (const rel of POPIS) {
-    if (rel.startsWith(IZUZETO_OD_POPISA_TIMA)) continue
+    if (IZUZETO_OD_POPISA_TIMA.some(m => rel.startsWith(m))) continue
     let tekst: string
     try { tekst = readFileSync(join(KORIJEN, rel), 'utf-8').toLowerCase() } catch { continue }
     const nadena = NASA_IMENA.filter(ime => new RegExp(`\\b${ime}\\b`).test(tekst))
