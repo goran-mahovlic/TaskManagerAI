@@ -27,7 +27,18 @@ describe('odluci (čisto pravilo)', () => {
     ['GET', '/health', 'propusti'],
     ['GET', '/v1/default/banks', 'popis'],
     ['POST', '/v1/default/banks/banka_cvora/memories/recall', 'propusti'],
-    ['POST', '/v1/default/banks/banka_cvora/memories', 'retain'],
+    ['POST', '/v1/default/banks/banka_cvora/memories', 'llm'],
+    ['POST', '/v1/default/banks/banka_cvora/reflect', 'llm'],
+    ['GET', '/v1/default/banks/banka_cvora/memories/list', 'propusti'],
+    ['GET', '/v1/default/banks/banka_cvora/documents', 'propusti'],
+    ['POST', '/v1/default/banks/banka_cvora/webhooks', 'zabrani'],
+    ['POST', '/v1/default/banks/banka_cvora/clone', 'zabrani'],
+    ['PATCH', '/v1/default/banks/banka_cvora/config', 'zabrani'],
+    ['POST', '/v1/default/banks/banka_cvora/transfer/import', 'zabrani'],
+    ['DELETE', '/v1/default/banks/banka_cvora/memories', 'zabrani'],
+    ['GET', '/v1/default/banks/banka_cvora/documents/a%2F..%2F..%2Fnasa_glavna', 'zabrani'],
+    ['GET', '/v1/default/banks/banka_cvora/documents/a%5Cb', 'zabrani'],
+    ['GET', '/v1/default/banks/banka_cvora/memories%2Frecall', 'zabrani'],
     ['DELETE', '/v1/default/banks/banka_cvora/documents/sustav%2Fagenti', 'propusti'],
     ['PUT', '/v1/default/banks/banka_cvora', 'propusti'],
     ['DELETE', '/v1/default/banks/banka_cvora', 'zabrani'],
@@ -65,6 +76,20 @@ describe('Z6 — posrednik', () => {
     const p = createPosrednik({ cilj: CILJ, banke: ['banka_cvora'], fetchImpl: h.fetchImpl })
     const j: any = await (await p(zahtjev('GET', '/v1/default/banks'))).json()
     expect(j.banks.map((b: any) => b.bank_id)).toEqual(['banka_cvora'])
+  })
+
+  test('prosljeđuje kanonski URL: id dokumenta ponovo kodiran, upit sačuvan', async () => {
+    const h = lazniHindsight()
+    const p = createPosrednik({ cilj: CILJ, banke: ['banka_cvora'], fetchImpl: h.fetchImpl })
+    expect((await p(zahtjev('DELETE', '/v1/default/banks/banka_cvora/documents/sustav%2Fagenti?x=1'))).status).toBe(200)
+    expect(h.pozivi.at(-1)!.url).toBe(`${CILJ}/v1/default/banks/banka_cvora/documents/sustav%2Fagenti?x=1`)
+  })
+
+  test('reflect uz zatvorena vrata → 429', async () => {
+    const h = lazniHindsight()
+    const p = createPosrednik({ cilj: CILJ, banke: ['banka_cvora'], fetchImpl: h.fetchImpl, vrata: async () => ({ smije: false, razlog: 'tjedan' }) })
+    expect((await p(zahtjev('POST', '/v1/default/banks/banka_cvora/reflect', { query: 'x' }))).status).toBe(429)
+    expect(h.pozivi.length).toBe(0)
   })
 
   test('retain uz zatvorena vrata kvote → 429 s razlogom, bez poziva', async () => {
