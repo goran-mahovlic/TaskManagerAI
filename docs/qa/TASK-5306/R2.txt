@@ -1,0 +1,1 @@
+REZULTAT {"oznaka":"R2","sesijaSnimka":99,"prekidac":null,"razgovorOverride":null,"kvotaPitana":1,"pozivi":[],"odgovor":["Kvota je pri kraju — odgovaram kad se obnovi."],"zeton":"PONG-R2-a01y8","zetonUOdgovoru":false}

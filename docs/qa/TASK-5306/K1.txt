@@ -1,0 +1,1 @@
+REZULTAT {"oznaka":"K1","target":{"provider":"openrouter","model":"z-ai/glm-5.2"},"izvrsitelj":"bun /home/klaudio/.claude/regoc/tools/openrouter-agent.ts","provider":"openrouter","model":"z-ai/glm-5.2","exit":0,"ms":2608,"modelUsage":null,"odgovor":"PONG-K1-nsk40","zeton":"PONG-K1-nsk40","zetonUOdgovoru":true,"stderr":""}

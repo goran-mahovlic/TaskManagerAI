@@ -1,0 +1,1 @@
+REZULTAT {"oznaka":"R3","sesijaSnimka":14,"prekidac":null,"razgovorOverride":null,"kvotaPitana":1,"pozivi":[{"baseUrl":null,"exit":0,"ms":3093,"sid":"dea872a5-0032-459b-87bd-7057f60bfbca","modeliTranskripta":["claude-opus-4-8"],"greska":null}],"odgovor":["PONG-R3-oyl09"],"zeton":"PONG-R3-oyl09","zetonUOdgovoru":true}

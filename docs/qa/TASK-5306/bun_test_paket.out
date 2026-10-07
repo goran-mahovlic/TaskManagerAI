@@ -1,0 +1,15 @@
+[TaskManagerSQL] Postavka 'agents.max_concurrent' upisana: 3
+[TaskManagerSQL] Initialized. Next ID: TASK-001
+[TaskManagerSQL] WARN TASK-3009: pretinac PRJ-033 nedostaje/arhiviran. Zadatak TASK-001 nastaje s project_id=NULL. Popravi redak projekta pa napravi backfill.
+[TaskManagerSQL] Invalid status transition: pending -> completed
+[TaskManagerSQL] Postavka 'agents.max_concurrent' upisana: 3
+[TaskManagerSQL] Initialized. Next ID: TASK-001
+
+tests/spawn-finalizer.test.ts:
+[TaskManagerSQL] Postavka 'agents.max_concurrent' upisana: 3
+[TaskManagerSQL] Initialized. Next ID: TASK-001
+
+ 1545 pass
+ 0 fail
+ 4444 expect() calls
+Ran 1545 tests across 77 files. [25.83s]

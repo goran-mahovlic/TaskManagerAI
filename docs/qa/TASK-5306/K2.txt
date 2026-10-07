@@ -1,0 +1,1 @@
+REZULTAT {"oznaka":"K2","target":{"provider":"anthropic","model":"opus"},"izvrsitelj":"claude -p","provider":"anthropic","model":"opus","exit":0,"ms":10332,"modelUsage":["claude-opus-5-5"],"odgovor":"PONG-K2-ewqfd","zeton":"PONG-K2-ewqfd","zetonUOdgovoru":true,"stderr":""}
