@@ -370,3 +370,52 @@ dvije osi u istu tablicu i u isti `paritet.py`, ne zaseban alat: **znanje** (`su
 `znanje/MANIFEST.sha256` paketa; 0 `system-map/*`) i **izolacija memorije** (popis banaka kroz
 `memorija.url` = samo banka čvora). Kuka `AgentMemoryRead/Write` ostaje „uvjetno (modul `rag`)" iz
 §13.2.2 — sada uvjet čita `mogucnosti.json`.
+
+## 14. Izvedba (TASK-5331, Jelena, 07.10.2026.)
+
+| Korak | Gdje | Stanje |
+|---|---|---|
+| R1 | `docs/system-map/opseg.tsv` uz kartu (repo sustava, ne paket) — 58 odjeljaka + uzorci `popis/` | izvedeno |
+| R2 | nije rađeno na izvoru: `katalog.json` opisi ostaju; generator iz njih izbacuje retke s pogotkom (`+redigiraj`) | djelomično |
+| R3 | `scripts/znanje-sustav.ts` + `src/znanje/Korpus.ts`; izlaz `znanje/sustav/` (81 dok.) + `znanje/MANIFEST.sha256` | izvedeno, Z1–Z3 |
+| R4 | `src/znanje/Posrednik.ts` + `scripts/memorija-posrednik.ts`; na glavnom ga drži petlja tunela | u pogonu, Z6 |
+| R5 | `scripts/znanje-cvora.ts` + `src/znanje/Cvor.ts`; moduli `mogucnosti`, `znanje` (timer `regoc-znanje`), `memorija.izolacija`, polje `nikadNeNosi` | izvedeno, Z4; Z5 (blokovi `{{#rag}}`) nije |
+| R8 | zapor privatnog popisa nad kompletom | nije rađeno (zaseban posao) |
+
+**Odstupanja od teksta odluke (i zašto):**
+
+1. **Oznake opsega su u zasebnoj tablici `opseg.tsv` uz kartu, ne u retku ispod naslova.**
+   Datoteke ručnog sloja istodobno uređuju drugi zadaci (necommitane izmjene u tri datoteke u
+   trenutku izvedbe); tablica ne dira njihov tekst. Bijela lista ostaje: odjeljak bez retka u
+   tablici = privatno, pa i preimenovan odjeljak ispada dok ga netko ne upiše.
+2. **Uz opseg odjeljka postoji `+redigiraj`.** Opći odjeljak koji nosi pokoju privatnu rečenicu
+   (ime klijenta, chat id) ne mora se razdvajati na izvoru: generator izbaci redak/rečenicu s
+   pogotkom. Odjeljak `opce` BEZ `+redigiraj` je strog — pogodak = izlaz 5 (kanarinac Z2).
+3. **Uvjet po rečenici.** U općem odjeljku rečenica koja je UPUTA za mogućnost (RAG-FIRST,
+   `rag-query`, kolekcija `agent_*`, …) dobiva oznaku `<!--u:rag-->…<!--/u-->`; čvor bez mogućnosti
+   je ne vidi, a na njenom mjestu (jednom po dokumentu) stoji izričita činjenica iz §6.2. Usputni
+   spomen („ne ispisuj tajnu u RAG") ostaje.
+4. **Generator uz to briše stanje našeg pogona:** meta-redak `**Provjereno:**`, rečenice „Dana
+   <datum> …" (PID, brojevi, položaji prekidača) i oznake naših zadataka `TASK-n` (isti sudar kao
+   `PRJ-` u §1.4). Ime vlasnika postaje uloga preko kategorije `vlasnik` u privatnom popisu.
+5. **Posrednik sluša na 17795**, ne 17794: 17793 i 17794 već zauzima Hindsight. Na čvoru se ne
+   mijenja ništa (tunel i dalje daje `127.0.0.1:17792`). Posrednik je **bijela lista (metoda,
+   podput)** — recall, retain, reflect, popis/brisanje dokumenata, statistika; webhookovi,
+   kloniranje, prijenos, uvoz, postavke LLM-a i brisanje banke su 403. `PUT` banke propušta samo
+   ime, misije i narav. Vrata kvote i brava vrijede za retain i reflect.
+6. **Prekidač razgovora je `ZNANJE_RAZGOVOR` u instanci** (off | shadow | on), ne postavka ploče
+   `memorija.upis`: ploča paketa nema opći API postavki, a instanca je ionako mjesto vrijednosti
+   po čvoru (ponovljivo za node-B). U banku idu samo završeni dani; dan s oblikom tajne se ne upisuje.
+7. **Zadatak s oblikom tajne u punom tekstu rezultata** (npr. 64-znamenkasti heks) ne ide u banku —
+   provjera je nad punim tekstom prije skraćivanja i još jednom nad svakim dokumentom korpusa.
+8. **Upis ide po važnosti** (znanje čvora → ručni sloj → alati → tijekovi → vještine), jer vrata
+   kvote mogu prekinuti prvi upis; timer nastavlja kad se kvota obnovi.
+
+**Stara banka `regoc_opus_nodea`** nije obrisana: izvezena je u arhivu na glavnom stroju
+(`raid/hindsight/manifests/regoc_opus_nodea/arhiva_TASK-5331_20261007.json`, 0600; 14 dokumenata,
+374 činjenice), ime joj je `ARHIVA …`, a posrednik je čvoru više ne propušta. Briše se tek uz
+vlasnikovu potvrdu (§5.3).
+
+**Mjerenje curenja** (`docs/qa/TASK-5331/mjeri_curenje.ts`, izrazi s privatnog popisa bez ID-eva
+koje čvor ima i sam): stara banka 89/90 izraza vraća privatnu činjenicu; brojke nove banke su u
+`docs/qa/TASK-5331/README.md`.

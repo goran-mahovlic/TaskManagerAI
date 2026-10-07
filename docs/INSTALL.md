@@ -340,6 +340,7 @@ Redoslijed (ADR-0004 §13.5) — **5 koraka + tajne**:
 1. KOD       tm-cvor-azuriraj.sh <čvor> --s-kompletom      # paket + komplet izvornog sustava (P1, P5)
 2. INSTANCA  cp profili/<profil>/instanca.primjer.env $TM_HOME/config/profil.instanca.env  &&  uredi
 3. PRIMIJENI bun scripts/profil-cvora.ts primijeni --suho  →  pregled  →  primijeni --pisi
+3a. ZNANJE   bun scripts/profil-cvora.ts primijeni --pisi --modul mogucnosti,znanje   # banka čvora (ADR-0006 §9)
 4. RESTART   samo ako je alat javio „potreban restart: da" — kad je 0 zadataka in_progress
 5. PROVJERI  bun scripts/profil-cvora.ts provjeri  → izlaz 0 (ili 2 = samo ljudske stavke)
 ```
@@ -364,6 +365,14 @@ Redoslijed (ADR-0004 §13.5) — **5 koraka + tajne**:
    bun scripts/profil-cvora.ts primijeni --pisi              # upiše razlike
    bun scripts/profil-cvora.ts primijeni --pisi --modul znacajke,kuke   # samo dio
    ```
+   **3a. Znanje čvora** ([ADR-0006](adr/ADR-0006-znanje-cvora-opce-i-privatno.md)): modul
+   `mogucnosti` izmjeri što čvor ima (RAG, memorija, glas, Ollama, …) u
+   `$TM_HOME/config/mogucnosti.json`; modul `znanje` upiše u banku `MEMORIJA_BANKA` opći korpus iz
+   paketa (`znanje/sustav/`, prilagođen mogućnostima) i znanje čvora (`cvor/*`: projekti i zatvoreni
+   zadaci s NJEGOVE ploče, agenti, stanje, dnevni razgovori njegova Telegrama uz
+   `ZNANJE_RAZGOVOR=on`) te uključi timer `regoc-znanje.timer` (svakih 30 min upisuje samo
+   promijenjeno). Prvi upis troši LLM onoga tko drži Hindsight; vrata kvote ga mogu prekinuti — timer
+   nastavlja. Memorija čvora mora vidjeti SAMO svoju banku (modul `memorija`, stavka `izolacija`).
    `razgovor.ovlasti=puno` alat upisuje samo ako je `TM_RAZGOVOR_PUNO=1` već upisao čovjek (inače
    `citanje` + upozorenje); capguard sposobnost samo **zatraži** (`pending`), nikad ne odobrava.
 4. **Restart** ako je alat javio `potreban restart regoc-taskmanager: da` (promijenjen
