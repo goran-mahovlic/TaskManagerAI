@@ -1,0 +1,42 @@
+PRIMIJENJENO: 30 promjena · kopije u /home/regoc/.taskmanager/backup/profil-2026-10-07T20-33-00-352Z
+potreban restart regoc-taskmanager: ne
+drop-in (konzola, vrijeme): systemctl --user daemon-reload, pa restart regoc-voice, regoc-taskmanager, regoc-daemon, regoc-taskmanager (alat ga ne radi — kad je 0 zadataka in_progress)
+[znacajke] 75/75 OK
+[kuke] 5/7 OK
+  NEDOSTAJE PreToolUse[Bash|Edit|MultiEdit|Write|Read] SecurityValidator — nema datoteke /home/regoc/.claude/hooks/SecurityValidator.hook.ts — kuka se ne spaja (komplet izvornog sustava)
+  NEDOSTAJE UserPromptSubmit SecurityValidator — nema datoteke /home/regoc/.claude/hooks/SecurityValidator.hook.ts — kuka se ne spaja (komplet izvornog sustava)
+[konzola] 3/6 OK
+  NEDOSTAJE regoc — izvor konzole nije svjež (> 24 h) — puni ga kuka RegocConsoleLog (rad agenata)
+  NEDOSTAJE voiceserver — izvor konzole nije svjež (> 24 h) — puni ga regoc-voice; drop-in vrijedi tek nakon daemon-reload + restart servisa
+  NEDOSTAJE taskwebui — izvor konzole nije svjež (> 24 h) — puni ga regoc-taskmanager; drop-in vrijedi tek nakon daemon-reload + restart servisa
+[oporavak] 5/8 OK
+  NEDOSTAJE zombieRecoveryLive — isključen na čvoru — siroče se ne vraća samo
+  NEDOSTAJE deadAgentReaperLive — isključen na čvoru — siroče se ne vraća samo
+  NEDOSTAJE staleWatchdogLive — isključen na čvoru — siroče se ne vraća samo
+ZBROJ: OK 88 · RAZLIKA 0 · NEDOSTAJE 8 · TAJNA-NEDOSTAJE 0 · ČOVJEK 0 · PRESKOČENO 0 · PREDUVJET 0
+--- drugi prolaz
+[znacajke] 75/75 OK
+[kuke] 5/7 OK
+  NEDOSTAJE PreToolUse[Bash|Edit|MultiEdit|Write|Read] SecurityValidator — nema datoteke /home/regoc/.claude/hooks/SecurityValidator.hook.ts — kuka se ne spaja (komplet izvornog sustava)
+  NEDOSTAJE UserPromptSubmit SecurityValidator — nema datoteke /home/regoc/.claude/hooks/SecurityValidator.hook.ts — kuka se ne spaja (komplet izvornog sustava)
+[konzola] 3/6 OK
+  NEDOSTAJE regoc — izvor konzole nije svjež (> 24 h) — puni ga kuka RegocConsoleLog (rad agenata)
+  NEDOSTAJE voiceserver — izvor konzole nije svjež (> 24 h) — puni ga regoc-voice; drop-in vrijedi tek nakon daemon-reload + restart servisa
+  NEDOSTAJE taskwebui — izvor konzole nije svjež (> 24 h) — puni ga regoc-taskmanager; drop-in vrijedi tek nakon daemon-reload + restart servisa
+[oporavak] 5/8 OK
+  NEDOSTAJE zombieRecoveryLive — isključen na čvoru — siroče se ne vraća samo
+  NEDOSTAJE deadAgentReaperLive — isključen na čvoru — siroče se ne vraća samo
+  NEDOSTAJE staleWatchdogLive — isključen na čvoru — siroče se ne vraća samo
+ZBROJ: OK 88 · RAZLIKA 0 · NEDOSTAJE 8 · TAJNA-NEDOSTAJE 0 · ČOVJEK 0 · PRESKOČENO 0 · PREDUVJET 0
+SUHO: primijenilo bi se 0 stavki (ništa nije zapisano; za pisanje --pisi)
+PRIMIJENJENO: 2 promjena · kopije u /home/regoc/.taskmanager/backup/profil-2026-10-07T20-34-43-892Z
+potreban restart regoc-taskmanager: ne
+[kuke] 7/7 OK
+ZBROJ: OK 7 · RAZLIKA 0 · NEDOSTAJE 0 · TAJNA-NEDOSTAJE 0 · ČOVJEK 0 · PRESKOČENO 0 · PREDUVJET 0
+[znacajke] 75/75 OK
+[kuke] 7/7 OK
+[konzola] 5/6 OK
+[oporavak] 5/8 OK
+ZBROJ: OK 92 · RAZLIKA 0 · NEDOSTAJE 4 · TAJNA-NEDOSTAJE 0 · ČOVJEK 0 · PRESKOČENO 0 · PREDUVJET 0
+SUHO: primijenilo bi se 0 stavki (ništa nije zapisano; za pisanje --pisi)
+settings.json valjan

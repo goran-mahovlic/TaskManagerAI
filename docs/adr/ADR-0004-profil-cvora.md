@@ -548,4 +548,40 @@ pid 826642. Revizija blokiranih (kartica, traka, rute, klasifikacija `blok:*` na
 ZatvaranjeKrozDaemon traže `StaleWatchdog` (1240 r.) i `ZatvaranjeKrozDaemon` (279 r., token
 zatvaranja) u paketu — otvoreno kao zaseban zadatak uz Malikov pregled.
 
-**node-B**: 07.10. i dalje `No route to host` — komplet i paket čekaju povratak čvora.
+**node-B**: 07.10. i dalje `No route to host` — komplet i paket čekaju povratak čvora. → izvedeno u §13.10.
+
+### 13.10 node-B: paket, komplet P5, C6 i profil (TASK-5328, 07.10.2026. 20:21–20:35 UTC)
+
+Čvor se vratio u 20:15 UTC. Sve uz `in_progress = 0`; dokazi u `docs/qa/TASK-5328/`.
+
+1. **Paket** — `tm-cvor-azuriraj.sh node-B`: `8d52710 → 3e58905`, ploča 931 → 59240, StaleCodeCheck exit 0,
+   M1–M4 PASS, zadataka 21 = 21. Bundle je rađen iz čistog klona `main` (`TM_REPO=…`), jer je radna kopija
+   paketa na glavnom imala tuđe nepredane izmjene, a skripta s pravom odbija prljav paket.
+2. **Komplet** — `gradi_komplet.sh` (201 datoteka + 5 poveznica), `deploy_node_a.sh --cvor … --vrata 2222`.
+   **Kvar prve isporuke:** gradnja na čvoru je pala (`Could not resolve ../skills/CORE/Tools/lib/rag-gate`),
+   a skripta je svejedno restartala daemon, koji je zatim ušao u petlju restarta (NRestarts 28). Uzrok: na glavnom
+   je `skills/CORE/Tools/lib` poveznica na `regoc/tools/rag/lib`, a na čvorovima je to prava mapa iz 09.09.
+   (node-A je `rag-gate.ts` dobio ručno u TASK-5273). Poveznica kao na glavnom NIJE rješenje: kanonski
+   `rag-memory.ts` statički uvozi `pg` (pgvector), a čvorovi nemaju `node_modules/pg`. Popravak u
+   `deploy_node_a.sh`: (a) u pravu mapu `lib` ide samo što fali (`cp -n rag-gate.ts`), (b) **restart samo ako je
+   gradnja prošla** (`set -o pipefail` na čvoru i `GRADNJA_OK`). Ponovljena isporuka: 354 modula, daemon 60725,
+   StaleCodeCheck exit 0. Mjerilo potrošnje ne radi (`claude` na čvoru nije prijavljen), pa je skripta ugasila
+   `autonomyGate`. Sigurnosne kopije: `~/backup/task4777_20261007_202135/` (uključivo staru `skills/…/lib`).
+3. **C6** — kao na node-A: sedam prekidača ON, `config/stale-watchdog.json` dobio odjeljak `blocked` s
+   `klaseUzivo = ["deploy"]` (na čvoru stoji blokirani `regoc-chain` TASK-021 „doradi rad").
+4. **Drop-in** — `regoc-taskmanager.service.d/najmovi.conf` (`TM_IZVORNI_NAJMOVI`) i `revizija.conf`
+   (`TM_IZVORNI_PODACI`, `TM_STALE_WATCHDOG_CONFIG`, kao node-A, TASK-5327); `spawn_leases` stvorena unaprijed →
+   `/api/config/concurrency` `activeSource: najmovi`.
+5. **Profil** (node-B nikad nije prošao faze A/B iz TASK-5308): nova instanca
+   `~/.claude/regoc/deploy/profili/node-B.instanca.env` glavnog. `primijeni --modul znacajke,kuke,konzola,oporavak`
+   → 30 + 2 promjene, drugi prolaz 0: značajke 75/75, kuke 7/7, TZ=UTC drop-in (čvor je u EDT-u, isti kvar kao
+   node-A §13.8). Instanca isključuje reapere faze B (uvjet „čišćenje regoc-chain" nije ispunjen) i
+   `autonomyGate` (bez toga bi profil upisao `true` uz slijepo mjerilo — FAIL-OPEN). Šest obaveznih varijabli
+   modula telegram/razgovor/memorija za node-B nisu poznate; prolaz ih ne koristi (privremena kopija instance s
+   oznakom `NEPRIMIJENJENO`). SecurityValidator (izvorni sustav) prenesen s glavnog: kuka + `lib/paths.ts`,
+   `lib/secret-detect.ts`, `patterns*.yaml`, `node_modules/yaml`. Na čvoru: `ls` → exit 0, `rm -rf /` → exit 2.
+   Restart 20:33 UTC: daemon 62081, ploča 62079, voice 62077, `TZ=UTC` u `/proc/<pid>/environ`, StaleCodeCheck 0/0.
+
+**Mjerilo** `paritet.py`: 66 → **36**, sve „van"/„uvjetno" (`paritet_razvrstano.txt`, „izvan van/uvjetno: 0"):
+25 kuka (§13.2.2), 9 prekidača (7 reapera faze B, `autonomyGate`, `projectGitInit` instance), `regoc.log` (kuka
+spojena, puni je tek Claude sesija, a nema prijave), `klaudio.log`. Moduli: na čvoru ne fali nijedan.

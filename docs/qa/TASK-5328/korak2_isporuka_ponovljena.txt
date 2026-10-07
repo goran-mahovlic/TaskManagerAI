@@ -1,0 +1,55 @@
+
+── 0. Dostupnost čvora 192.168.10.11:2222 ─────────────────────────────
+✅ dostupan; HOME na čvoru = /home/regoc
+
+── 1. Goranovo pravilo: restart je dopušten samo kad nema zadataka u radu ─────────────────────────────
+zadataka in_progress na čvoru: 0
+
+── 2. Raspon (što se mijenja) ─────────────────────────────
+  .ts na čvoru prije: 143
+  datoteka u paketu: 201
+
+── 3. Sigurnosna kopija na čvoru ─────────────────────────────
+total 14080
+drwxrwxr-x 2 regoc regoc     4096 Oct  7 16:26 .
+drwxrwxr-x 9 regoc regoc     4096 Oct  7 16:26 ..
+-rw-rw-r-- 1 regoc regoc 14406893 Oct  7 16:26 prije.tgz
+
+── 4. Prijenos tereta (scp — git remote s čvora ne radi) ─────────────────────────────
+MANIFEST ✅
+teret raspakiran
+skills lib: rag-gate.ts osiguran (prava mapa)
+
+── 5. Normalizacija rezervne putanje HOME (čuva prilagodbu čvora) ─────────────────────────────
+normalizirano
+
+── 6. MJERILO POTROŠNJE — mora raditi PRIJE nego autonomija smije biti živa ─────────────────────────────
+❌ mjerilo NE daje rezultat → autonomija bi bila FAIL-OPEN. Gasim autonomyGate.
+autonomyGate = False
+
+── 7. Gradnja na čvoru (dokaz da se kod uopće razrješava) ─────────────────────────────
+Bundled 354 modules in 271ms
+
+  _rd.js  3.55 MB  (entry point)
+
+
+  _ad.js  0.29 MB  (entry point)
+
+
+── 8. Restart usluga (samo ako nema zadataka u radu) ─────────────────────────────
+active
+active
+
+── 9. Provjera u pogonu ─────────────────────────────
+GET /            → 200
+GET /stream      → 101
+GET /api/pause   → 200
+TaskWebUI PID    → 60724
+RegocDaemon PID  → 60725
+   izvor          : 117 datoteka iz RegocDaemon.ts
+   najnovija       : 2026-10-07 16:24:53  /home/regoc/.claude/skills/CORE/Tools/lib/rag-gate.ts  (2min prije starta)
+   ✅ kod na disku == kod u pogonu
+StaleCodeCheck   → exit 0 (0=svjeze, 3=STALE, 2=greska)
+autonomyGate     → False
+
+── GOTOVO — sigurnosna kopija: ~/backup/task4777_20261007_202629/prije.tgz ─────────────────────────────

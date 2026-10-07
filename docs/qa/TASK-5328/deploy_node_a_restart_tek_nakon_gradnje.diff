@@ -1,0 +1,27 @@
+--- /home/klaudio/app/tmp/TASK-5328/deploy_node_a.sh.prije	2026-10-07 20:26:23.511118622 +0000
++++ /home/klaudio/.claude/regoc/deploy/node-a-samostalnost/deploy_node_a.sh	2026-10-07 20:26:23.532118846 +0000
+@@ -125,17 +125,20 @@
+ fi
+ 
+ korak "7. Gradnja na čvoru (dokaz da se kod uopće razrješava)"
+-"${SSH[@]}" 'export PATH=$HOME/.bun/bin:$PATH; cd ~/.claude/regoc && \
++# TASK-5328: pad gradnje (node-B 07.10.) prije nije zaustavljao restart → daemon u petlji restarta.
++GRADNJA_OK=1
++"${SSH[@]}" 'set -o pipefail; export PATH=$HOME/.bun/bin:$PATH; cd ~/.claude/regoc && \
+   bun build RegocDaemon.ts --target=bun --outfile=/tmp/_rd.js 2>&1 | tail -4 && \
+-  bun build AgentDaemon.ts --target=bun --outfile=/tmp/_ad.js 2>&1 | tail -3'
++  bun build AgentDaemon.ts --target=bun --outfile=/tmp/_ad.js 2>&1 | tail -3' || GRADNJA_OK=0
++[ "$GRADNJA_OK" -eq 1 ] || recimo "❌ gradnja na čvoru PALA — restart se NE izvodi (u pogonu ostaje stari kod)."
+ 
+ korak "8. Restart usluga (samo ako nema zadataka u radu)"
+-if [ "$U_RADU" = "0" ]; then
++if [ "$U_RADU" = "0" ] && [ "$GRADNJA_OK" -eq 1 ]; then
+   "${SSH[@]}" 'export XDG_RUNTIME_DIR=/run/user/$(id -u); \
+     systemctl --user restart regoc-daemon regoc-taskmanager; sleep 6; \
+     systemctl --user is-active regoc-daemon regoc-taskmanager'
+ else
+-  recimo "⏭  preskačem restart (in_progress=$U_RADU). Kod je na disku, u pogonu je STARI."
++  recimo "⏭  preskačem restart (in_progress=$U_RADU, gradnja_ok=$GRADNJA_OK). Kod je na disku, u pogonu je STARI."
+ fi
+ 
+ korak "9. Provjera u pogonu"
