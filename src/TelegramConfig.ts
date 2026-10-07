@@ -389,6 +389,15 @@ export function odgovorTelegramPloci(cfg: TelegramPostavke, putanja: string) {
 }
 
 /**
+ * Baza Bot API-ja. `TM_TELEGRAM_API` postoji za testove kraj-do-kraja (lažni API koji broji
+ * sendMessage, TASK-5287) i lokalni Bot API poslužitelj; samo okolina, ne `telegram.json` —
+ * postavka s ploče ne smije preusmjeriti token na tuđu adresu.
+ */
+export function telegramApiBaza(): string {
+  return (process.env.TM_TELEGRAM_API || '').trim().replace(/\/+$/, '') || 'https://api.telegram.org'
+}
+
+/**
  * Pošalji tekstualnu poruku na Telegram koristeći Bot API.
  * NE koristi vanjske knjižnice — izravni `fetch` prema `api.telegram.org`.
  *
@@ -415,7 +424,7 @@ export async function posaljiTelegramPoruku(
   const poruka = `${prefix}${tekst}`
 
   try {
-    const url = `https://api.telegram.org/bot${token}/sendMessage`
+    const url = `${telegramApiBaza()}/bot${token}/sendMessage`
     const resp = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
