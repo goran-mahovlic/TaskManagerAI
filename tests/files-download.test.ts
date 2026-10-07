@@ -17,6 +17,7 @@
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'fs'
+import { tmpdir } from 'os'
 import { join } from 'path'
 
 import { korijeniPreuzimanja, rijesiPreuzimanje, corsOdluka } from '../src/core/PristupDatotekama'
@@ -24,10 +25,9 @@ import { podigni, spusti, type Posluzitelj } from './helpers/posluzitelj'
 
 let home: string
 beforeAll(() => {
-  // Ispod $HOME/.tmp, ne os.tmpdir(): /tmp je ovdje tmpfs od 100 MB i zna biti pun (TASK-5335).
-  const baza = join(process.env.HOME || '/home/klaudio', '.tmp')
-  mkdirSync(baza, { recursive: true })
-  home = mkdtempSync(join(baza, 'tm-5333-'))
+  // os.tmpdir() poštuje TMPDIR: gdje je /tmp malen tmpfs (TASK-5335), test se vrti s
+  // TMPDIR u radnoj mapi — bez tuđeg $HOME kao zadane vrijednosti (ADR-0001 O1.1).
+  home = mkdtempSync(join(tmpdir(), 'tm-5333-'))
   const dat = (rel: string, s = 'x') => { mkdirSync(join(home, rel, '..'), { recursive: true }); writeFileSync(join(home, rel), s) }
   dat('app/tmp/TASK-1/izvjestaj.md', 'isporuka')
   dat('app/projekt/docs/plan.pdf', 'plan')

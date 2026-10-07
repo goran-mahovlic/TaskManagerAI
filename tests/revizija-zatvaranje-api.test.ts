@@ -206,7 +206,9 @@ describe('uloge zatvaranja i povrata (TASK-5334)', () => {
     // ista ploča (Origin = vlastiti host) i dalje pušta, i to se bilježi
     const ok = await zovi(uzivo!, `/api/tasks/${a}/reclaim`, 'POST', { from: 'blocked', by: 'covjek', reason: 'Pusti sada (ploča)' }, { Origin: uzivo!.url })
     expect(ok.status).toBe(200)
-    expect(redci(join(podaciUzivo, 'povrat_uloge.jsonl')).filter(x => x.taskId === a).map(x => x.nacin)).toEqual(['odbijeno', 'covjek'])
+    // strani Origin zaustavlja već opća CORS brana (TASK-5333, `[Security]` u konzoli) prije
+    // rute, pa povrat_uloge vidi samo pušteni povrat — 'odbijeno' ostaje za zahtjev bez Origina
+    expect(redci(join(podaciUzivo, 'povrat_uloge.jsonl')).filter(x => x.taskId === a).map(x => x.nacin)).toEqual(['covjek'])
   })
 
   test('N3 sjena: revizija-blokiranih bez ključa pušta, ali se bilježi', async () => {
