@@ -57,6 +57,13 @@ function dvojnik(opcije: { bezZnacajke?: boolean; bezKodaZa?: string[] } = {}): 
   writeFileSync(join(paket, 'src/razgovor/RazgovorPostavke.ts'),
     readFileSync(join(paket, 'src/razgovor/RazgovorPostavke.ts'), 'utf-8') + '\n// glasPrepoznavanje\n')
   writeFileSync(join(paket, 'src/TaskWebUI.ts'), opcije.bezZnacajke ? '// stara ploča\n' : "// '/api/razgovor/od-bota'\n")
+  // Ostale grep-značajke profila (npr. TASK-5337 `dokumentiMapeChata`) — dvojnik ih nosi sve.
+  for (const z of profil.moduli.paket.paketSadrzi) {
+    if (!z.grep || ['od-bota', 'glasPrepoznavanje'].includes(z.grep[1])) continue
+    const put = join(paket, z.grep[0])
+    mkdirSync(join(put, '..'), { recursive: true })
+    writeFileSync(put, (existsSync(put) ? readFileSync(put, 'utf-8') : '') + `\n// ${z.grep[1]}\n`)
+  }
 
   const db = join(sustav, 'data', 'regoc.db')
   const b = new Database(db)
