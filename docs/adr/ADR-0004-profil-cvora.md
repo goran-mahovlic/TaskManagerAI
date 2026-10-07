@@ -243,3 +243,157 @@ postupak od 7 koraka umjesto sedam isporuka. Odstupanje čvora od profila postaj
 **Cijena:** profil mora pratiti paket — novi ključ u `razgovor.*` koji treba ponoviti mora ući i
 u profil, inače ga izvoz (bijela lista) neće vidjeti. To je namjerno: radije propušten ključ
 koji `provjeri` prijavi nego iscurjela tajna.
+
+---
+
+## 13. Dopuna (TASK-5307, 07.10.2026.) — paritet s glavnim sustavom: kuke, značajke, konzola, oporavak
+
+**Zahtjev** (Goran, 07.10., grupa node-A): „na node-A su ugašeni hookovi, izlazi u konzolu i
+značajke sustava; mora biti kao na glavnom sustavu i dio portabilnog TaskManagerAI-ja, novi nod
+u par koraka." Neposredan povod: TASK-212 (Jelena) bio je siroče 23:38 → 10:15 jer oporavak na
+čvoru nije radio, a uputa #2 nije stigla jer kuka `TaskInstructionsInject` nije spojena.
+
+### 13.1 Izmjereno (samo čitanje; ponovljivo: `python3 docs/qa/TASK-5307/paritet.py regoc@192.168.10.20 --tsv`)
+
+Izlaz: `docs/qa/TASK-5307/mjerenje_2026-10-07.txt` (izlazni kod 1, 99 razlika).
+
+| Os | Glavni | node-A | Razlika |
+|---|---|---|---|
+| kuke u `~/.claude/settings.json` | 32 (SessionStart 5, PreToolUse 4, UserPromptSubmit 10, Stop 7, SubagentStop 2, Notification 2, PostToolUse 2) | 2 (samo SecurityValidator ×2) | 30 nespojenih; od toga **3 datoteke kuka ni ne postoje** na čvoru: `TaskInstructionsInject`, `RadBezZadatka`, `KatalogCuvar` |
+| `features.json` | 75 ključeva, 53 ON | 39 ključeva, 24 ON | 37 različito uključenih (36 ključeva fali na čvoru → `isEnabled` = `false`) |
+| kod izvornog sustava `~/.claude/regoc/*.ts` | 139 modula, `RegocDaemon.ts` 8 339 redaka | 111 modula, 7 433 redaka | **28 modula fali** (među njima `OrphanRecovery`, `TaskInstructions`, `PozadinaPovrat`, `ZatvaranjeKrozDaemon`, `Sudac`, `TaskCloser`, `AutonomyThresholdSetting`, `DaemonSingleton`) |
+| prekidači s kodom samo na glavnom | — | — | 8: `siroceOporavak`, `pozadinaPovrat`, `revizijaBlokiranih(+Live)`, `zatvaranjeKrozDaemon(+Live)`, `sequentialHelpers`, `r2IzricitaDodjela` |
+| izvori konzole ploče | `regoc_daemon.log`, `regoc.log`, `klaudio.log`, `voiceserver.log`, `taskwebui.log` — svi svježi | samo `regoc_daemon.log` svjež; `regoc.log` i `voiceserver.log` **nema**, `klaudio.log` star 27 d | servisi na čvoru pišu u journal (`StandardOutput=journal`), kuka konzole nije spojena |
+| mjerilo potrošnje (`daemon.log`) | povremeni 401 (81 redak ukupno, zadnji 05.10.), samo-oporavak buđenjem CLI-a | 401 od ≈06:41 do 06:57 UTC 07.10., nakon buđenja CLI-a nema novog 401 | isti mehanizam na oba; nije kvar pariteta nego uvjet za `autonomyGate` (§13.2.1) |
+
+**Tri ispravka Goranove slike** (važno za odluke):
+
+1. Od 13 prekidača s popisa „OFF na node-A" njih **8 je OFF i na glavnom**, namjerno:
+   `verificationGate`, `modeClassifyLive`, `tierRouting`, `staleReaperLive`, `sendBreakerLive`,
+   `fileScopeGate(+Live)`, `reviewCheckpoint(+Live)`, `userFlushBacklog`. Paritet znači
+   „kao glavni", ne „sve upaljeno". Stvarno ugašeni samo na čvoru: `autonomyGate`,
+   `zombieRecoveryLive`, `deadAgentReaperLive`, `staleWatchdogLive`, `ollamaClassifier`.
+2. Čvor je u četiri prekidača **agresivniji** od glavnog: `staleReaper` ON (na glavnom
+   **TRAJNO ugašen** odlukom Gorana 02.09. — sudi suprotno od staleWatchdoga), `teamChainLive`,
+   `autoResumeLive`, `projectGitInit` ON. `teamChainLive` + nečuvani `createSequentialHelpers`
+   su put kojim je nastala kaskada `regoc-chain` (TASK-255).
+3. **Prekidač bez koda ne radi ništa.** `siroceOporavak` (oporavak koji bi spasio TASK-212) na
+   node-A nema `OrphanRecovery.ts`. Paritet se zato ne može postići samo kroz `features.json`:
+   kod izvornog sustava na čvoru je stariji od glavnog. To je **preduvjet P5** (§13.4).
+
+### 13.2 Odluka
+
+Paritet ima **četiri osi**, a profil čvora ih pokriva s **tri nova modula** i proširenjem dva
+postojeća. Načelo: **glavni sustav je mjerilo; čvor smije biti jednak ili oprezniji, nikad
+agresivniji.** Odstupanje od glavnog je dopušteno samo kao stavka u profilu s razlogom.
+
+| Modul profila | Vlasnik | Primjena | Provjera |
+|---|---|---|---|
+| `znacajke` (**novo**) | paket | spoji samo `enabled` ključeva koje profil imenuje u `~/.claude/regoc/features.json` (+ `config/features.json` paketa); `note`/`since` i nepoznati ključevi ostaju; kopija prije. **Bez restarta** — `FeatureFlags` čita datoteku uživo (TTL keš) | svaki ključ = profil; ključ ON bez koda na čvoru → `NEDOSTAJE kod <modul>` (izlaz 3) |
+| `kuke` (**novo**; zamjenjuje `claude.settingsJson.hooks`) | paket + izvorni-sustav | spoji kuke iz profila u `settings.json` (tuđe ostaju, J9); putanje `${HOME}`/`${TM_HOME}`, nikad `/home/klaudio` | kuka spojena **i** datoteka postoji; kuka izvornog sustava bez datoteke → `NEDOSTAJE` |
+| `konzola` (**novo**) | paket + stroj | user-unit drop-in `StandardOutput=append:%h/.tmp/regoc_logs/<izvor>.log` za `regoc-taskmanager`, `regoc-voice`; kuka `RegocConsoleLog` (modul `kuke`) | svaki izvor iz `logSources` ploče postoji i mlađi je od 24 h (ili servis ne radi) |
+| `paket` (prošireno) | paket | ne | + `izvorniSustavSadrzi`: popis modula `~/.claude/regoc` koje profil traži (iz tablice §13.3) → izlaz 3 ako fali |
+| `oporavak` (**novo**, samo provjera) | paket | ne (to su prekidači u `znacajke`) | zajednička provjera: `siroceOporavak`, `zombieRecoveryLive`, `deadAgentReaperLive`, `staleWatchdogLive` ON **i** kod postoji **i** u `daemon.log` u zadnjih 30 min ima redak njihova kruga; `staleReaper` OFF |
+
+#### 13.2.1 Značajke (75 ključeva glavnog) — odluka po stavci
+
+Pravilo zadanog: **u paket** = `enabled` kao na glavnom; **uvjetno** = profil ga drži OFF/sjena
+dok uvjet nije ispunjen (alat provjerava uvjet); **van** = OFF i u paketu, s razlogom.
+
+| Skupina | Ključevi | Glavni | node-A danas | Odluka | Razlog / uvjet |
+|---|---|---|---|---|---|
+| Isporuka korisniku | `userFlush`, `userFlushLive` | ON | ON | **u paket** | jednako |
+| | `userFlushBacklog` | off | off | **van** | Goranova potvrda za stare poruke |
+| Klasifikacija | `modeClassify` (sjena) | ON | ON | **u paket** | — |
+| | `modeClassifyLive`, `tierRouting` | off | off | **van** | čeka golden-set prag na glavnom |
+| | `ollamaClassifier` (sjena) | ON | off | **uvjetno** | Ollama dohvatljiva s čvora (`OLLAMA_URL/api/tags` → 200) |
+| | `ollamaClassifierLive`, `ollamaProjectDetect` | off | — | **van** | off na glavnom |
+| Verifikacija / kritičar | `criticGate(+Live)`, `criticUnverifiedAlert`, `verificationGateShadow`, `criticRepairLoop` (sjena), `spawnVerificationBlock(+Live)`, `agentIdentityBlock(+Live)`, `tierRecipesEnabled` | ON | criticGate ON, ostalo fali | **u paket** | jezgra „DONE samo s dokazom"; bez njih agent na čvoru ne dobiva blok identiteta ni verifikacije |
+| | `verificationGate`, `verificationGateLive`, `criticRepairLoopLive` | off | off/— | **van** | off na glavnom (Ollama advisory nije prošla mjerenje) |
+| | `zatvaranjeKrozDaemon` (sjena), `pozadinaPovrat`, `r2IzricitaDodjela` | ON | — (nema koda) | **u paket** | traži P5 (kod) |
+| | `zatvaranjeKrozDaemonLive`, `ponovnoOtvaranjeRutaLive` | off | — | **van** | off na glavnom |
+| | `ponovnoOtvaranjeRuta` (sjena) | ON | — | **u paket** | kao glavni |
+| Reaperi i oporavak | `staleWatchdog(+Live)`, `deadAgentReaper(+Live)`, `zombieRecovery(+Live)`, `siroceOporavak`, `revizijaBlokiranih(+Live)`, `failRequeue(+Live)`, `shutdownResume(+Live)`, `staleInboxGuard` | ON | Live svi off; `siroceOporavak`/`revizija` nema koda | **u paket — ali uvjetno do čišćenja** | uključiti **tek kad je kaskada TASK-255 deployana i 46 blokiranih smeće-zadataka zatvoreno**: reaper koji vrati smeće u red ponovno pali kaskadu. `siroceOporavak` i `revizijaBlokiranih` traže P5 |
+| | `staleReaper`, `staleReaperLive` | off | **ON**/off | **van — ispraviti na čvoru ODMAH** | TRAJNO ugašeno 02.09. (sudi suprotno od staleWatchdoga) |
+| Kočnice | `spawnBreaker(+Live)`, `taskCreateBreaker(+Live)`, `sendBreaker` (sjena), `earlyWorkGuard` (sjena), `spawnCloseGuard` | ON | fale | **u paket** | `taskCreateBreakerLive` je izravna kočnica kaskade (30/h po izvoru) — na čvoru koji je upravo imao kaskadu najvažniji pojedinačni prekidač |
+| | `sendBreakerLive`, `earlyWorkGuardLive`, `spawnCloseGuardLive` | off | — | **van** | canary na glavnom |
+| Tim i lanac | `teamChain`, `teamPilot`, `taskTier(+Live)`, `taskDecompose(+Live)`, `quotaWakeup`, `autoResume` (sjena) | ON | djelomično | **u paket** | — |
+| | `teamChainLive`, `autoResumeLive` | off | **ON** | **van — ugasiti na čvoru** | čvor ne smije biti agresivniji od glavnog; `teamChainLive` je dio puta kaskade TASK-255 |
+| | `sequentialHelpers` | ON | — (bez prekidača, uvijek uključeno) | **uvjetno** | ON tek s kodom koji ima anti-kaskadni čuvar TASK-255 (marker u `izvorniSustavSadrzi`) |
+| | `projectGitInit` | off | ON | **uvjetno (instanca)** | smije ostati ON na čvoru koji projekte drži u gitu; vrijednost ide u instancu, zadano off |
+| Izolacija i spajanje | `worktreeIsolation(+Live)`, `mergeGate(+Live)` | ON | ON | **u paket** | jednako |
+| | `fileScopeGate(+Live)`, `reviewCheckpoint(+Live)` | off | off | **van** | off na glavnom |
+| Autonomija | `autonomyGate` | ON | off | **uvjetno** | ON samo dok mjerilo potrošnje vraća 200 (uvjet alata: zadnji `[usage]` redak u `daemon.log` bez 401 u 30 min); inače sjena. Na slijepom mjerilu vrata stoje na zadnjoj razini |
+
+#### 13.2.2 Kuke (32 na glavnom) — odluka po stavci
+
+| Događaj : kuka | Odluka | Razlog |
+|---|---|---|
+| PreToolUse + UserPromptSubmit : `SecurityValidator` | **u paket** (već u profilu) | sigurnost; izvorni-sustav, sha256 provjera |
+| SessionStart + PostToolUse : `TaskInstructionsInject` | **u paket — `${TM_HOME}/hooks/`** | paket ga već ima (TASK-5013); daemon na čvoru već predaje `REGOC_TASK_ID` (3 mjesta u `RegocDaemon.ts` čvora) → spajanje odmah dostavlja upute. Ovo je kvar TASK-212 |
+| PostToolUse : `RegocConsoleLog` | **u paket — prenijeti u `${TM_HOME}/hooks/`** | izvor `regoc` konzole ploče; danas na čvoru prazan |
+| UserPromptSubmit + Stop : `session_usage.py --hook` | **u paket — `${TM_HOME}/tools/session_usage.py`** (već u paketu) | hrani mjerilo potrošnje → vrata autonomije |
+| PreToolUse : `RadBezZadatka` | **uvjetno** | radi samo uz `REGOC_SESIJA=telegram`; ulazi kad razgovorni modul paketa postavlja tu varijablu; datoteka prenijeti u paket (danas tvrda putanja `/home/klaudio`) |
+| PreToolUse Task + SubagentStop : `AgentMemoryRead/Write` | **uvjetno (modul `rag`)** | RAG je na čvoru isključen; uključuje se zajedno s `TM_CHROMA_*` |
+| SessionStart : `LoadContext` | **uvjetno** | samo ako je komplet `skills/CORE` na čvoru; upravitelj čvora identitet dobiva iz `~/CLAUDE.md` (`TM_RAZGOVOR_UPUTE`) |
+| Stop/Notification/SubagentStop/UPS : `ContextCapture`×2, `ContextExport`, `SessionSummary`, `WorkCompletionLearning`, `ImplicitSentimentCapture`, `ExplicitRatingCapture`, `AgentOutputCapture` | **uvjetno — paket „pai-ucenje"** | pišu u `~/.claude/MEMORY`, na čvoru nemaju potrošača; datoteke postoje na node-A, pa ih **instanca node-A uključuje** (Goran: „kao na glavnom"), zadano za novi čvor off |
+| SessionStart : `EnsureRegocDaemon` | **van** | na čvoru daemon drži systemd (`regoc-daemon.service`); kuka bi dizala drugi |
+| SessionStart : `StartupGreeting`, `CheckVersion`; UPS : `UpdateTabTitle`, `SetQuestionTab` | **van** | terminal/PAI kozmetika; čvor nema interaktivni terminal |
+| UPS : `CheckTelegramRelay`, `CheckVoiceRelay`, `CheckRegocQueue`, `LoadDomainContext`, `AutoWorkCreation` | **van** | releji interaktivne REGOČ sesije glavnog stroja; na čvoru Telegram ide razgovornim modulom (ADR-0002) |
+| Stop : `FormatEnforcer`, `QuestionAnswered` | **van** | format PAI odgovora sukobio bi se sa stilom `kratko` (ADR-0002) |
+| PreToolUse Write : `KatalogCuvar` | **van** | katalog alata je glavnog stroja |
+
+Zbroj: **u paket 7 kuka** (SecurityValidator ×2, TaskInstructionsInject ×2, RegocConsoleLog, session_usage ×2), **uvjetno 12**, **van 13**. Na node-A
+(s paketom „pai-ucenje") to je **15 spojenih kuka** umjesto 2.
+
+#### 13.2.3 Konzola i `daemon.log`
+
+| Izvor ploče | Danas na čvoru | Odluka |
+|---|---|---|
+| `daemon` (`~/.tmp/regoc_daemon.log` → `daemon.log`) | svjež | u paket (jednako) |
+| `regoc` (`regoc_logs/regoc.log`) | nema | u paket — kuka `RegocConsoleLog` |
+| `voiceserver` | nema (journal) | u paket kad je modul `glas` ON — drop-in `StandardOutput=append:` |
+| `taskwebui` | nema (journal) | u paket — drop-in na `regoc-taskmanager` |
+| `klaudio` | star 27 d | **van na čvoru** — Klaudio (bot glavnog stroja) ne radi na čvoru; razgovorni modul piše u `daemon`/`taskwebui`. Ploča treba izvor bez datoteke prikazati kao „nije u pogonu", ne kao tišinu |
+
+### 13.3 `izvorniSustavSadrzi` (preduvjet koda za `znacajke`)
+
+`OrphanRecovery.ts`, `PozadinaPovrat.ts`, `ZatvaranjeKrozDaemon.ts`, `TaskInstructions.ts`,
+`TaskCloser.ts`, `Sudac.ts`, `AutonomyThresholdSetting.ts`, `DaemonSingleton.ts`,
+`SpawnFinalizer.ts`, `SpawnSlotRules.ts`, `TaskDorada.ts`, `RadBezZadatka.ts` + marker
+anti-kaskade TASK-255 u `AgentRouting.ts`. Puni popis 28 modula: `mjerenje_2026-10-07.txt`.
+
+### 13.4 Novi preduvjet
+
+| # | Preduvjet | Zašto | Tko |
+|---|---|---|---|
+| P5 | Komplet izvornog sustava na čvoru = isti graf kao glavni (`deploy_node_a.sh` s `MANIFEST.sha256`, ponovno izmjeren), uključivo popravak TASK-255 | 8 prekidača i 28 modula nemaju koda; paljenje bez koda je lažni paritet | Jelena (komplet) + Malik (pregled) |
+| P6 | Na node-A u `~/TaskManagerAI` 5 izmijenjenih, nepredanih datoteka (`src/razgovor/*`, `tests/razgovor-dijelovi.test.ts`) preuzeti ili odbaciti | isti kvar kao P2: `checkout -f` bi ih brisao | Goran odlučuje |
+
+### 13.5 Novi čvor u 5 koraka + tajne (zamjenjuje §6)
+
+```
+0. TAJNE  (čovjek, PROFIL_CVORA_TAJNE.md): bot token, tajna kanala, `claude auth login`, capguard odobrenja
+1. KOD    tm-cvor-azuriraj.sh <čvor> --s-kompletom      # paket + komplet izvornog sustava po MANIFEST-u (P1, P5)
+2. INSTANCA  cp profili/<profil>/instanca.primjer.env $TM_HOME/config/profil.instanca.env  &&  uredi
+3. PRIMIJENI bun scripts/profil-cvora.ts primijeni --suho  →  pregled  →  --pisi        # okolina…kuke, znacajke, konzola
+4. RESTART   restart_kad_mirno (čvor: in_progress = 0) — samo ako je alat javio „potreban restart: da"
+5. PROVJERI  bun scripts/profil-cvora.ts provjeri  → izlaz 0 (ili 2 = samo ljudske stavke)
+            + python3 docs/qa/TASK-5307/paritet.py <čvor> → razlike samo one s odlukom „van/uvjetno"
+```
+
+Koraci 3 i 5 nose sve tri nove osi (kuke, značajke, konzola), pa paritet više nije zaseban
+posao nego dio istog `primijeni`/`provjeri`.
+
+### 13.6 Mjerila (dodatak §10)
+
+| # | Mjerilo |
+|---|---|
+| J13 | modul `znacajke`: `primijeni --pisi` mijenja samo `enabled` imenovanih ključeva; `note`/`since` i nepoznati ključevi bajt-jednaki; drugi `--pisi` → 0 promjena |
+| J14 | ključ ON u profilu, a čvor nema modul iz `izvorniSustavSadrzi` → `provjeri` izlaz 3 s imenom modula |
+| J15 | modul `kuke`: nijedna spojena naredba ne sadrži `/home/klaudio`; tuđe kuke ostaju; kuka bez datoteke → `NEDOSTAJE` |
+| J16 | `staleReaper` ON na čvoru → `provjeri` javlja `RAZLIKA` (profil off) čak i kad je `staleReaperLive` off |
+| J17 | modul `konzola`: drop-in postoji, svi izvori iz `logSources` svježi < 24 h; `klaudio` na čvoru bez Klaudija = `PRESKOČENO` |
+| P5 | Potjeh: na node-A nakon koraka 1–5 `paritet.py` → razlike = samo stavke „van/uvjetno" iz §13.2 (nijedna „u paket") |
+| P6 | Potjeh: E2E uputa — zadatak na čvoru, `POST /api/tasks/<id>/upute` dok agent radi → agent je potvrdi u sljedećem koraku |
+| P7 | Potjeh: siroče — ubijen proces agenta → zadatak se vrati u red (`siroceOporavak`) u ≤ 15 min, bez ručnog `/reclaim` |
