@@ -333,35 +333,60 @@ se rukom nego iz **profila** — [ADR-0004](adr/ADR-0004-profil-cvora.md). Tri s
 (`changedBy=profil-cvora`), a prije svake izmjene datoteke spremi kopiju u
 `$TM_HOME/backup/profil-<vrijeme>/`.
 
-Redoslijed (ADR-0004 §6):
+Redoslijed (ADR-0004 §13.5) — **5 koraka + tajne**:
 
+```
+0. TAJNE     (čovjek, PROFIL_CVORA_TAJNE.md): bot token, tajna kanala, `claude auth login`, capguard odobrenja
+1. KOD       tm-cvor-azuriraj.sh <čvor> --s-kompletom      # paket + komplet izvornog sustava (P1, P5)
+2. INSTANCA  cp profili/<profil>/instanca.primjer.env $TM_HOME/config/profil.instanca.env  &&  uredi
+3. PRIMIJENI bun scripts/profil-cvora.ts primijeni --suho  →  pregled  →  primijeni --pisi
+4. RESTART   samo ako je alat javio „potreban restart: da" — kad je 0 zadataka in_progress
+5. PROVJERI  bun scripts/profil-cvora.ts provjeri  → izlaz 0 (ili 2 = samo ljudske stavke)
+```
+
+0. **Tajne i ljudske stavke** redom iz [PROFIL_CVORA_TAJNE.md](PROFIL_CVORA_TAJNE.md): bot token,
+   bot u grupi, Claude prijava, `TM_RAZGOVOR_PUNO=1` (samo vlasnik, ručno), tajna kanala
+   bot↔bot, odobrenje Tier-2 sposobnosti, tunel memorije. Za tajnu alat javlja samo `postoji`/`nema`.
 1. **Kod.** Ažuriraj paket na čvoru na commit koji sadrži sve značajke iz `paket.paketSadrzi`
    (sa stroja s kojeg se čvorovi postavljaju: `tm-cvor-azuriraj.sh <čvor>`). Kod bez značajke
-   alat javlja izlazom `3` (preduvjet) i ništa ne piše.
+   alat javlja izlazom `3` (preduvjet) i ništa ne piše. Uz `--s-kompletom` dolazi i kod izvornog
+   sustava (`paket.izvorniSustavSadrzi`); prekidač bez koda ne radi ništa (§13.1).
 2. **Instanca.** Kopiraj primjer i upiši vrijednosti čvora (ID grupe, dopušteni korisnici, banka
    memorije, …):
    ```bash
    cp profili/upravitelj-cvora/instanca.primjer.env ~/.taskmanager/config/profil.instanca.env
    ```
    (uz `TM_HOME` u `config/postavke.env` putanja je `$TM_HOME/config/profil.instanca.env`.)
-3. **Provjera.** `bun scripts/profil-cvora.ts provjeri` — popis razlika po modulu (`OK`,
-   `RAZLIKA`, `NEDOSTAJE`, `TAJNA-NEDOSTAJE`, `ČOVJEK`, `PRESKOČENO`). Ne mijenja ništa (baza
-   se otvara samo za čitanje). `--json` daje isto strojno.
-4. **Tajne i ljudske stavke** redom iz [PROFIL_CVORA_TAJNE.md](PROFIL_CVORA_TAJNE.md): bot token,
-   bot u grupi, Claude prijava, `TM_RAZGOVOR_PUNO=1` (samo vlasnik, ručno), tajna kanala
-   bot↔bot, odobrenje Tier-2 sposobnosti, tunel memorije. Za tajnu alat javlja samo `postoji`/`nema`.
-5. **Primjena.** Prvo pregled, pa upis (uz odobrenje vlasnika čvora):
+3. **Primjena.** Prvo pregled (`bun scripts/profil-cvora.ts provjeri` ili `--suho`), pa upis uz
+   odobrenje vlasnika čvora:
    ```bash
    bun scripts/profil-cvora.ts primijeni --suho              # zadano: samo pokaže što bi napravio
    bun scripts/profil-cvora.ts primijeni --pisi              # upiše razlike
-   bun scripts/profil-cvora.ts primijeni --pisi --modul telegram,razgovor   # samo dio
+   bun scripts/profil-cvora.ts primijeni --pisi --modul znacajke,kuke   # samo dio
    ```
    `razgovor.ovlasti=puno` alat upisuje samo ako je `TM_RAZGOVOR_PUNO=1` već upisao čovjek (inače
    `citanje` + upozorenje); capguard sposobnost samo **zatraži** (`pending`), nikad ne odobrava.
-6. **Restart ploče** ako je alat javio `potreban restart regoc-taskmanager: da` (promijenjen
-   `config/postavke.env`) — kad je 0 zadataka `in_progress`. Alat ga sam ne radi.
-7. **Ponovna provjera** → izlazni kod `0` (ili `2` dok ljudske stavke čekaju); drugi
+4. **Restart** ako je alat javio `potreban restart regoc-taskmanager: da` (promijenjen
+   `config/postavke.env`) ili `drop-in konzole: systemctl --user daemon-reload …` — kad je 0
+   zadataka `in_progress`. Alat ga sam ne radi. Značajke i kuke restart **ne** traže.
+5. **Ponovna provjera** → izlazni kod `0` (ili `2` dok ljudske stavke čekaju); drugi
    `primijeni --pisi` mora javiti `0 promjena`.
+
+**Paritet s glavnim sustavom** (ADR-0004 §13). Isti `primijeni`/`provjeri` nosi i četiri osi koje
+su na prvom čvoru bile ugašene:
+
+| Modul | Što | Restart |
+|---|---|---|
+| `znacajke` | `enabled` prekidača u `${SUSTAV_DIR}/features.json` po odluci „u paket / uvjetno / van"; ostalo u datoteci ostaje | ne (čita se uživo, 30 s) |
+| `kuke` | kuke u `~/.claude/settings.json`: paket `jezgra` (SecurityValidator, upute agentu `TaskInstructionsInject`, konzola `RegocConsoleLog`, mjerilo potrošnje) + paketi iz instance; kuka bez datoteke se ne spaja | ne (vrijedi za svaku novu sesiju agenta) |
+| `konzola` | drop-in `~/.config/systemd/user/<unit>.service.d/konzola.conf` (izlaz servisa u datoteku koju čita konzola ploče) + svježina izvora | da (daemon-reload + servis) |
+| `oporavak` | samo provjera: oporavak siročadi i reaperi uključeni, kod ih zna, `staleReaper` isključen | — |
+
+Instanca smije čvor učiniti **opreznijim**, nikad agresivnijim od glavnog:
+`ZNACAJKE_ISKLJUCI=["staleWatchdogLive",…]` (npr. dok se ne očisti red), `ZNACAJKE_UKLJUCI=[…]`
+samo za prekidače s odlukom „uvjetno", `KUKE_PAKETI=jezgra,pai-ucenje`. Prekidač uključen u
+profilu, a nepoznat kodu čvora, alat javlja izlazom `3` s imenom (P5 ili odgoda u instanci).
+Usporedba s glavnim strojem: `python3 docs/qa/TASK-5307/paritet.py <korisnik@čvor>`.
 
 Izlazni kodovi: `0` sve OK · `1` razlike koje alat zna primijeniti · `2` nedostaju tajne ili
 ljudske stavke · `3` preduvjet (kod bez značajke, nema baze, profil/instanca neispravni) ·

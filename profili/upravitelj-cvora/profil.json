@@ -4,13 +4,28 @@
   "verzija": 1,
   "instanca": {
     "obavezno": [
-      "CVOR_IME", "CVOR_DOPUSTENI_HOSTOVI", "TG_CHAT_ID", "TG_DOPUSTENI_CHATOVI",
-      "RAZGOVOR_IME", "RAZGOVOR_DOPUSTENI_KORISNICI", "MEMORIJA_BANKA", "ZADANI_IZVRSITELJ"
+      "CVOR_IME",
+      "CVOR_DOPUSTENI_HOSTOVI",
+      "TG_CHAT_ID",
+      "TG_DOPUSTENI_CHATOVI",
+      "RAZGOVOR_IME",
+      "RAZGOVOR_DOPUSTENI_KORISNICI",
+      "MEMORIJA_BANKA",
+      "ZADANI_IZVRSITELJ"
     ],
     "neobavezno": [
-      "RAZGOVOR_PRESKOCI_AKO_SADRZI", "RAZGOVOR_RADNI_DIR",
-      "BOTKANAL_ADRESE", "BOTKANAL_CHATOVI", "BOTKANAL_DRUGI", "BOTKANAL_STOP_KORISNICI",
-      "SUSTAV_DIR", "TUDI_HOME", "SECURITYVALIDATOR_SHA256"
+      "RAZGOVOR_PRESKOCI_AKO_SADRZI",
+      "RAZGOVOR_RADNI_DIR",
+      "BOTKANAL_ADRESE",
+      "BOTKANAL_CHATOVI",
+      "BOTKANAL_DRUGI",
+      "BOTKANAL_STOP_KORISNICI",
+      "SUSTAV_DIR",
+      "TUDI_HOME",
+      "SECURITYVALIDATOR_SHA256",
+      "ZNACAJKE_UKLJUCI",
+      "ZNACAJKE_ISKLJUCI",
+      "KUKE_PAKETI"
     ]
   },
   "moduli": {
@@ -18,15 +33,72 @@
       "vlasnik": "paket",
       "opis": "Kod ploče na čvoru mora sadržavati sve značajke koje profil koristi.",
       "paketSadrzi": [
-        { "znacajka": "razgovorni način (ADR-0002)", "datoteka": "src/razgovor/Razgovor.ts" },
-        { "znacajka": "kratki stil izlaza (TASK-5285)", "datoteka": "src/Stil.ts" },
-        { "znacajka": "privitci u oba smjera (TASK-5282)", "datoteka": "src/TelegramPrivitci.ts" },
-        { "znacajka": "kanal bot↔bot i „Prekini komunikaciju\" (ADR-0003)", "grep": ["src/TaskWebUI.ts", "od-bota"] },
-        { "znacajka": "glas u razgovoru (TASK-5294)", "grep": ["src/razgovor/RazgovorPostavke.ts", "glasPrepoznavanje"] },
-        { "znacajka": "kartica Sigurnost / capguard (TASK-5270)", "datoteka": "src/Capguard.ts" }
+        {
+          "znacajka": "razgovorni način (ADR-0002)",
+          "datoteka": "src/razgovor/Razgovor.ts"
+        },
+        {
+          "znacajka": "kratki stil izlaza (TASK-5285)",
+          "datoteka": "src/Stil.ts"
+        },
+        {
+          "znacajka": "privitci u oba smjera (TASK-5282)",
+          "datoteka": "src/TelegramPrivitci.ts"
+        },
+        {
+          "znacajka": "kanal bot↔bot i „Prekini komunikaciju\" (ADR-0003)",
+          "grep": [
+            "src/TaskWebUI.ts",
+            "od-bota"
+          ]
+        },
+        {
+          "znacajka": "glas u razgovoru (TASK-5294)",
+          "grep": [
+            "src/razgovor/RazgovorPostavke.ts",
+            "glasPrepoznavanje"
+          ]
+        },
+        {
+          "znacajka": "kartica Sigurnost / capguard (TASK-5270)",
+          "datoteka": "src/Capguard.ts"
+        }
       ],
-      "alati": { "bun": ">=1.3.0", "claude": ">=2.1.215", "python3": ">=3.8" },
-      "unit": { "ime": "regoc-taskmanager", "aktivan": true, "environmentFile": "config/postavke.env" }
+      "alati": {
+        "bun": ">=1.3.0",
+        "claude": ">=2.1.215",
+        "python3": ">=3.8"
+      },
+      "unit": {
+        "ime": "regoc-taskmanager",
+        "aktivan": true,
+        "environmentFile": "config/postavke.env"
+      },
+      "izvorniSustavSadrzi": {
+        "mapa": "${SUSTAV_DIR}",
+        "opis": "Kod izvornog sustava koji profil traži (ADR-0004 §13.3). Bez njega prekidač ne radi ništa; nedostatak je NEDOSTAJE (P5), a PREDUVJET tek kad ga uključena značajka treba (modul znacajke).",
+        "datoteke": [
+          "OrphanRecovery.ts",
+          "PozadinaPovrat.ts",
+          "ZatvaranjeKrozDaemon.ts",
+          "TaskInstructions.ts",
+          "TaskCloser.ts",
+          "Sudac.ts",
+          "AutonomyThresholdSetting.ts",
+          "DaemonSingleton.ts",
+          "SpawnFinalizer.ts",
+          "SpawnSlotRules.ts",
+          "TaskDorada.ts",
+          "RadBezZadatka.ts"
+        ],
+        "grep": [
+          {
+            "znacajka": "anti-kaskada regoc-chain (TASK-255)",
+            "datoteka": "AgentRouting.ts",
+            "sadrzi": "TASK-255"
+          }
+        ]
+      }
     },
     "okolina": {
       "vlasnik": "paket",
@@ -41,10 +113,17 @@
         "TM_ODLUCITELJ_CONFIG": "${SUSTAV_DIR}/config/odlucitelj.json",
         "TM_DEZURNI_CONFIG": "${SUSTAV_DIR}/config/dezurni.json",
         "TM_UPUTE_PO_TIPU": "${SUSTAV_DIR}/config/upute-po-tipu.json",
-        "TM_RAZGOVOR_UPUTE": "${HOME}/CLAUDE.md"
+        "TM_RAZGOVOR_UPUTE": "${HOME}/CLAUDE.md",
+        "TM_FEATURES_FILE": "${SUSTAV_DIR}/features.json"
       },
-      "nesmijeBiti": ["TM_CHROMA_HOST", "TM_CHROMA_PORT"],
-      "tajneImenom": ["TM_CREDENTIALS", "TM_BOT_KANAL_TOKEN"]
+      "nesmijeBiti": [
+        "TM_CHROMA_HOST",
+        "TM_CHROMA_PORT"
+      ],
+      "tajneImenom": [
+        "TM_CREDENTIALS",
+        "TM_BOT_KANAL_TOKEN"
+      ]
     },
     "telegram": {
       "vlasnik": "paket",
@@ -58,19 +137,37 @@
         "prefix": "📋",
         "stil": "kratko",
         "ulaz": {
-          "ukljucen": true, "intervalSek": 3, "timeoutSek": 25,
+          "ukljucen": true,
+          "intervalSek": 3,
+          "timeoutSek": 25,
           "dopusteniChatovi": "${TG_DOPUSTENI_CHATOVI:json}",
-          "dopusteniKorisnici": [], "okidac": "", "sameSpomeni": false,
-          "potvrdaUChat": true, "maxDuljina": 4000,
+          "dopusteniKorisnici": [],
+          "okidac": "",
+          "sameSpomeni": false,
+          "potvrdaUChat": true,
+          "maxDuljina": 4000,
           "zadaniIzvrsitelj": "${ZADANI_IZVRSITELJ}"
         },
         "privitci": {
-          "ukljucen": true, "mapa": "", "maxMB": 20,
-          "vrste": ["photo", "document", "voice", "audio", "video", "video_note"]
+          "ukljucen": true,
+          "mapa": "",
+          "maxMB": 20,
+          "vrste": [
+            "photo",
+            "document",
+            "voice",
+            "audio",
+            "video",
+            "video_note"
+          ]
         }
       },
-      "nikadNeIzvozi": ["botToken"],
-      "tajneImenom": ["TELEGRAM_BOT_TOKEN"],
+      "nikadNeIzvozi": [
+        "botToken"
+      ],
+      "tajneImenom": [
+        "TELEGRAM_BOT_TOKEN"
+      ],
       "provjeraUzivo": "getMe preko tokena iz TM_CREDENTIALS — ispisuje samo username bota, nikad token"
     },
     "razgovor": {
@@ -97,8 +194,18 @@
     },
     "glas": {
       "vlasnik": "paket + izvorni-sustav",
-      "settings": { "razgovor.glas": "na-glasovno", "razgovor.glasPrepoznavanje": true },
-      "servis": { "unit": "regoc-voice", "vrata": 8899, "okolina": { "WHISPER_MODEL": "small", "ESPEAK_VOICE": "hr" } },
+      "settings": {
+        "razgovor.glas": "na-glasovno",
+        "razgovor.glasPrepoznavanje": true
+      },
+      "servis": {
+        "unit": "regoc-voice",
+        "vrata": 8899,
+        "okolina": {
+          "WHISPER_MODEL": "small",
+          "ESPEAK_VOICE": "hr"
+        }
+      },
       "napomena": "Servis glasa (TTS/STT) nije u paketu; dolazi s kompletom izvornog sustava. Alat ga samo provjerava."
     },
     "memorija": {
@@ -112,13 +219,19 @@
         "memorija.rokMs": 20000,
         "memorija.oznakaUspjeha": false
       },
-      "ovisiO": ["tunel-memorije"],
+      "ovisiO": [
+        "tunel-memorije"
+      ],
       "napomena": "Bez memorije u načinu on odgovor počinje s „🧠🚫 bez memorije: <razlog>\" (ADR-0002 §16) — namjerno vidljivo."
     },
     "tunel-memorije": {
       "vlasnik": "glavni-stroj",
       "opis": "Obrnuti SSH tunel s glavnog stroja: Hindsight je na čvoru 127.0.0.1:17792 (samo loopback). Na čvoru se ništa ne instalira.",
-      "provjeraNaCvoru": { "vrata": 17792, "adresa": "127.0.0.1", "http": "/health" },
+      "provjeraNaCvoru": {
+        "vrata": 17792,
+        "adresa": "127.0.0.1",
+        "http": "/health"
+      },
       "postupak": "Na glavnom stroju: tunel-<čvor> petlja pod nadzornikom (obrazac tools/petlje/tunel-nodea.sh, parametar REGOC_TUNEL_CILJ). Ključ za SSH je tajna glavnog stroja."
     },
     "bot-kanal": {
@@ -134,16 +247,26 @@
         "razgovor.botKanal.strop": 6,
         "razgovor.botKanal.stopKorisnici": "${BOTKANAL_STOP_KORISNICI:json}"
       },
-      "nikadNeIzvozi": ["razgovor.botKanal.stanje"],
-      "tajneImenom": ["TM_BOT_KANAL_TOKEN"],
+      "nikadNeIzvozi": [
+        "razgovor.botKanal.stanje"
+      ],
+      "tajneImenom": [
+        "TM_BOT_KANAL_TOKEN"
+      ],
       "uvjet": "ukljucuje se samo ako je BOTKANAL_ADRESE zadan u instanci; inače modul ostaje isključen"
     },
     "capguard": {
       "vlasnik": "stroj-root",
       "opis": "Kartica Sigurnost čita /etc/regoc/capabilities.state; ploča smije samo upisati NAMJERU (capability_requests, pending). Primjenu radi capguard, Tier-2 tek uz ljudsko odobrenje.",
       "zeljeno": {
-        "plan_mode": true, "allow_spawn": true, "allow_messaging": true, "allow_fs_write": false,
-        "allow_lan": true, "allow_internet": true, "allow_root": true, "allow_mesh": false
+        "plan_mode": true,
+        "allow_spawn": true,
+        "allow_messaging": true,
+        "allow_fs_write": false,
+        "allow_lan": true,
+        "allow_internet": true,
+        "allow_root": true,
+        "allow_mesh": false
       },
       "primjena": "za svaku razliku alat upisuje zahtjev (pending) kroz API ploče; Tier-1 primijeni capguard sam, Tier-2 (internet, root, lan, mesh) odobrava čovjek — v. docs/PROFIL_CVORA_TAJNE.md"
     },
@@ -153,13 +276,16 @@
       "prijava": "čovjek: `claude auth login` kao korisnik usluge na čvoru (tajna, nikad se ne izvozi)",
       "settingsJson": {
         "datoteka": "${HOME}/.claude/settings.json",
-        "hooks": {
-          "PreToolUse": [{ "matcher": "Bash|Edit|MultiEdit|Write|Read", "hooks": [{ "type": "command", "command": "${HOME}/.bun/bin/bun run ${HOME}/.claude/hooks/SecurityValidator.hook.ts", "timeout": 15 }] }],
-          "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "${HOME}/.bun/bin/bun run ${HOME}/.claude/hooks/SecurityValidator.hook.ts", "timeout": 15 }] }]
-        }
+        "hooks": {}
       },
-      "kuke": [{ "datoteka": "${HOME}/.claude/hooks/SecurityValidator.hook.ts", "izvor": "komplet izvornog sustava", "sha256": "${SECURITYVALIDATOR_SHA256}" }],
-      "napomena": "Razgovorna sesija ionako radi uz --setting-sources '' (ADR-0002 §7); settings.json štiti agente daemona i ručni rad na čvoru."
+      "kuke": [
+        {
+          "datoteka": "${HOME}/.claude/hooks/SecurityValidator.hook.ts",
+          "izvor": "komplet izvornog sustava",
+          "sha256": "${SECURITYVALIDATOR_SHA256}"
+        }
+      ],
+      "napomena": "Kuke u settings.json vodi modul `kuke` (ADR-0004 §13.2.2); ovdje ostaje prijava i sha256 SecurityValidatora. Razgovorna sesija radi uz --setting-sources '' (ADR-0002 §7)."
     },
     "upravitelj": {
       "vlasnik": "paket",
@@ -171,12 +297,558 @@
     "home": {
       "vlasnik": "izvorni-sustav",
       "opis": "Datoteke izvornog sustava na čvoru ne smiju nositi tuđi HOME kao zadanu putanju.",
-      "grepNema": { "uzorak": "${TUDI_HOME}", "u": ["${SUSTAV_DIR}/RegocDaemon.ts"] }
+      "grepNema": {
+        "uzorak": "${TUDI_HOME}",
+        "u": [
+          "${SUSTAV_DIR}/RegocDaemon.ts"
+        ]
+      }
     },
     "rag": {
       "vlasnik": "paket",
       "ukljucen": false,
       "opis": "RAG isključen: nijedan TM_CHROMA_* u okolini (v. modul okolina.nesmijeBiti)."
+    },
+    "kuke": {
+      "vlasnik": "paket + izvorni-sustav",
+      "opis": "Kuke Claude Codea u settings.json (ADR-0004 §13.2.2). Spoj, ne zamjena: tuđe kuke ostaju (J9). Kuka čija datoteka ne postoji se NE spaja (NEDOSTAJE). Paketi: jezgra uvijek; ostali po instanci (KUKE_PAKETI=jezgra,pai-ucenje).",
+      "datoteka": "${HOME}/.claude/settings.json",
+      "paketi": "${KUKE_PAKETI}",
+      "zadaniPaketi": [
+        "jezgra"
+      ],
+      "popis": [
+        {
+          "paket": "jezgra",
+          "dogadjaj": "PreToolUse",
+          "ime": "SecurityValidator",
+          "matcher": "Bash|Edit|MultiEdit|Write|Read",
+          "naredba": "${HOME}/.bun/bin/bun run ${HOME}/.claude/hooks/SecurityValidator.hook.ts",
+          "datoteka": "${HOME}/.claude/hooks/SecurityValidator.hook.ts",
+          "timeout": 15,
+          "razlog": "sigurnost (izvorni sustav, sha256 u modulu claude)"
+        },
+        {
+          "paket": "jezgra",
+          "dogadjaj": "UserPromptSubmit",
+          "ime": "SecurityValidator",
+          "naredba": "${HOME}/.bun/bin/bun run ${HOME}/.claude/hooks/SecurityValidator.hook.ts",
+          "datoteka": "${HOME}/.claude/hooks/SecurityValidator.hook.ts",
+          "timeout": 15,
+          "razlog": "sigurnost"
+        },
+        {
+          "paket": "jezgra",
+          "dogadjaj": "SessionStart",
+          "ime": "TaskInstructionsInject",
+          "naredba": "${HOME}/.bun/bin/bun run ${TM_PAKET}/hooks/TaskInstructionsInject.hook.ts",
+          "datoteka": "${TM_PAKET}/hooks/TaskInstructionsInject.hook.ts",
+          "timeout": 5,
+          "razlog": "upute agentu dok radi (TASK-5013) — kvar TASK-212"
+        },
+        {
+          "paket": "jezgra",
+          "dogadjaj": "PostToolUse",
+          "ime": "TaskInstructionsInject",
+          "naredba": "${HOME}/.bun/bin/bun run ${TM_PAKET}/hooks/TaskInstructionsInject.hook.ts",
+          "datoteka": "${TM_PAKET}/hooks/TaskInstructionsInject.hook.ts",
+          "timeout": 5,
+          "razlog": "upute stižu uz sljedeći alat"
+        },
+        {
+          "paket": "jezgra",
+          "dogadjaj": "PostToolUse",
+          "ime": "RegocConsoleLog",
+          "matcher": "Bash|Edit|MultiEdit|Write|NotebookEdit|Task",
+          "naredba": "${HOME}/.bun/bin/bun run ${TM_PAKET}/hooks/RegocConsoleLog.hook.ts",
+          "datoteka": "${TM_PAKET}/hooks/RegocConsoleLog.hook.ts",
+          "timeout": 5,
+          "razlog": "izvor `regoc` konzole ploče: rad agenata"
+        },
+        {
+          "paket": "jezgra",
+          "dogadjaj": "UserPromptSubmit",
+          "ime": "session_usage",
+          "naredba": "python3 ${TM_PAKET}/tools/session_usage.py --hook prompt",
+          "datoteka": "${TM_PAKET}/tools/session_usage.py",
+          "timeout": 20,
+          "razlog": "mjerilo potrošnje → vrata autonomije"
+        },
+        {
+          "paket": "jezgra",
+          "dogadjaj": "Stop",
+          "ime": "session_usage",
+          "naredba": "python3 ${TM_PAKET}/tools/session_usage.py --hook stop",
+          "datoteka": "${TM_PAKET}/tools/session_usage.py",
+          "timeout": 20,
+          "razlog": "mjerilo potrošnje"
+        },
+        {
+          "paket": "pai-ucenje",
+          "dogadjaj": "Stop",
+          "ime": "ContextCapture",
+          "naredba": "${HOME}/.bun/bin/bun run ${HOME}/.claude/hooks/ContextCapture.hook.ts",
+          "datoteka": "${HOME}/.claude/hooks/ContextCapture.hook.ts",
+          "razlog": "PAI učenje (~/.claude/MEMORY) — kao na glavnom"
+        },
+        {
+          "paket": "pai-ucenje",
+          "dogadjaj": "Notification",
+          "ime": "ContextCapture",
+          "naredba": "${HOME}/.bun/bin/bun run ${HOME}/.claude/hooks/ContextCapture.hook.ts",
+          "datoteka": "${HOME}/.claude/hooks/ContextCapture.hook.ts",
+          "razlog": "PAI učenje (~/.claude/MEMORY) — kao na glavnom"
+        },
+        {
+          "paket": "pai-ucenje",
+          "dogadjaj": "Notification",
+          "ime": "ContextExport",
+          "naredba": "${HOME}/.bun/bin/bun run ${HOME}/.claude/hooks/ContextExport.hook.ts",
+          "datoteka": "${HOME}/.claude/hooks/ContextExport.hook.ts",
+          "razlog": "PAI učenje (~/.claude/MEMORY) — kao na glavnom"
+        },
+        {
+          "paket": "pai-ucenje",
+          "dogadjaj": "Stop",
+          "ime": "SessionSummary",
+          "naredba": "${HOME}/.bun/bin/bun run ${HOME}/.claude/hooks/SessionSummary.hook.ts",
+          "datoteka": "${HOME}/.claude/hooks/SessionSummary.hook.ts",
+          "razlog": "PAI učenje (~/.claude/MEMORY) — kao na glavnom"
+        },
+        {
+          "paket": "pai-ucenje",
+          "dogadjaj": "Stop",
+          "ime": "WorkCompletionLearning",
+          "naredba": "${HOME}/.bun/bin/bun run ${HOME}/.claude/hooks/WorkCompletionLearning.hook.ts",
+          "datoteka": "${HOME}/.claude/hooks/WorkCompletionLearning.hook.ts",
+          "razlog": "PAI učenje (~/.claude/MEMORY) — kao na glavnom"
+        },
+        {
+          "paket": "pai-ucenje",
+          "dogadjaj": "Stop",
+          "ime": "ImplicitSentimentCapture",
+          "naredba": "${HOME}/.bun/bin/bun run ${HOME}/.claude/hooks/ImplicitSentimentCapture.hook.ts",
+          "datoteka": "${HOME}/.claude/hooks/ImplicitSentimentCapture.hook.ts",
+          "razlog": "PAI učenje (~/.claude/MEMORY) — kao na glavnom"
+        },
+        {
+          "paket": "pai-ucenje",
+          "dogadjaj": "SubagentStop",
+          "ime": "AgentOutputCapture",
+          "naredba": "${HOME}/.bun/bin/bun run ${HOME}/.claude/hooks/AgentOutputCapture.hook.ts",
+          "datoteka": "${HOME}/.claude/hooks/AgentOutputCapture.hook.ts",
+          "razlog": "PAI učenje (~/.claude/MEMORY) — kao na glavnom"
+        }
+      ],
+      "van": {
+        "ExplicitRatingCapture": "na čvoru uvozi ~/.claude/skills/CORE iz tuđeg HOME-a (izmjereno node-A 07.10.: rc=1) — ulazi kad hook bude prenosiv",
+        "RadBezZadatka": "uvjetno: samo uz REGOC_SESIJA=telegram (razgovorni modul paketa je ne postavlja)",
+        "AgentMemoryRead/Write": "uvjetno: modul rag (na čvoru isključen)",
+        "LoadContext": "uvjetno: traži komplet skills/CORE",
+        "EnsureRegocDaemon": "daemon na čvoru drži systemd",
+        "StartupGreeting, CheckVersion, UpdateTabTitle, SetQuestionTab": "kozmetika interaktivnog terminala",
+        "CheckTelegramRelay, CheckVoiceRelay, CheckRegocQueue, LoadDomainContext, AutoWorkCreation": "releji REGOČ sesije glavnog stroja",
+        "FormatEnforcer, QuestionAnswered": "sukob sa stilom kratko (ADR-0002)",
+        "KatalogCuvar": "katalog alata je glavnog stroja"
+      }
+    },
+    "konzola": {
+      "vlasnik": "paket + stroj",
+      "opis": "Izvori konzole ploče (logSources u src/TaskWebUI.ts). Servis piše u datoteku kroz user-unit drop-in (StandardOutput=append:), ne u journal. Promjena drop-ina traži `systemctl --user daemon-reload` i restart servisa — alat ga ne radi. Izvor bota glavnog stroja namjerno nije na popisu: taj bot ne radi na čvoru (razgovorni modul piše u daemon/taskwebui), pa ga alat ne traži (ADR-0004 §13.2.3).",
+      "maxSati": 24,
+      "izvori": [
+        {
+          "ime": "daemon",
+          "datoteka": "${HOME}/.tmp/regoc_daemon.log",
+          "puni": "RegocDaemon"
+        },
+        {
+          "ime": "regoc",
+          "datoteka": "${HOME}/.tmp/regoc_logs/regoc.log",
+          "puni": "kuka RegocConsoleLog (rad agenata)"
+        },
+        {
+          "ime": "voiceserver",
+          "datoteka": "${HOME}/.tmp/regoc_logs/voiceserver.log",
+          "unit": "regoc-voice"
+        },
+        {
+          "ime": "taskwebui",
+          "datoteka": "${HOME}/.tmp/regoc_logs/taskwebui.log",
+          "unit": "regoc-taskmanager"
+        }
+      ]
+    },
+    "znacajke": {
+      "vlasnik": "paket",
+      "opis": "Prekidači features.json (ADR-0004 §13.2.1). Glavni sustav je mjerilo: čvor jednak ili oprezniji, nikad agresivniji. Primjena mijenja SAMO `enabled` imenovanih ključeva (note/since i nepoznati ključevi ostaju) i ne traži restart (FeatureFlags čita uživo, TTL 30 s). Instanca smije ISKLJUČITI bilo što (ZNACAJKE_ISKLJUCI) i UKLJUČITI samo `uvjetno` (ZNACAJKE_UKLJUCI); `van` se ne uključuje kroz profil.",
+      "datoteka": "${SUSTAV_DIR}/features.json",
+      "kodU": [
+        "${SUSTAV_DIR}",
+        "${TM_PAKET}/src",
+        "${TM_PAKET}/src/core"
+      ],
+      "instanca": {
+        "ukljuci": "${ZNACAJKE_UKLJUCI:json}",
+        "iskljuci": "${ZNACAJKE_ISKLJUCI:json}"
+      },
+      "kljucevi": {
+        "agentIdentityBlock": {
+          "on": true,
+          "odluka": "paket"
+        },
+        "agentIdentityBlockLive": {
+          "on": true,
+          "odluka": "paket"
+        },
+        "autoResume": {
+          "on": true,
+          "odluka": "paket"
+        },
+        "autoResumeLive": {
+          "on": false,
+          "odluka": "van",
+          "razlog": "off na glavnom"
+        },
+        "autonomyGate": {
+          "on": true,
+          "odluka": "uvjetno",
+          "razlog": "ON dok mjerilo potrošnje vraća 200 (daemon.log bez 401 u 30 min); inače sjena"
+        },
+        "criticGate": {
+          "on": true,
+          "odluka": "paket"
+        },
+        "criticGateLive": {
+          "on": true,
+          "odluka": "paket"
+        },
+        "criticRepairLoop": {
+          "on": true,
+          "odluka": "paket"
+        },
+        "criticRepairLoopLive": {
+          "on": false,
+          "odluka": "van",
+          "razlog": "off na glavnom"
+        },
+        "criticUnverifiedAlert": {
+          "on": true,
+          "odluka": "paket"
+        },
+        "deadAgentReaper": {
+          "on": true,
+          "odluka": "paket"
+        },
+        "deadAgentReaperLive": {
+          "on": true,
+          "odluka": "uvjetno",
+          "razlog": "kao staleWatchdogLive"
+        },
+        "earlyWorkGuard": {
+          "on": true,
+          "odluka": "paket"
+        },
+        "earlyWorkGuardLive": {
+          "on": false,
+          "odluka": "van",
+          "razlog": "canary na glavnom"
+        },
+        "failRequeue": {
+          "on": true,
+          "odluka": "uvjetno",
+          "razlog": "kao staleWatchdogLive"
+        },
+        "failRequeueLive": {
+          "on": true,
+          "odluka": "uvjetno",
+          "razlog": "kao staleWatchdogLive"
+        },
+        "fileScopeGate": {
+          "on": false,
+          "odluka": "van",
+          "razlog": "off na glavnom"
+        },
+        "fileScopeGateLive": {
+          "on": false,
+          "odluka": "van",
+          "razlog": "off na glavnom"
+        },
+        "mergeGate": {
+          "on": true,
+          "odluka": "paket"
+        },
+        "mergeGateLive": {
+          "on": true,
+          "odluka": "paket"
+        },
+        "modeClassify": {
+          "on": true,
+          "odluka": "paket"
+        },
+        "modeClassifyLive": {
+          "on": false,
+          "odluka": "van",
+          "razlog": "čeka golden-set prag na glavnom"
+        },
+        "ollamaClassifier": {
+          "on": true,
+          "odluka": "uvjetno",
+          "razlog": "Ollama dohvatljiva s čvora (OLLAMA_URL/api/tags → 200)"
+        },
+        "ollamaClassifierLive": {
+          "on": false,
+          "odluka": "van",
+          "razlog": "off na glavnom"
+        },
+        "ollamaProjectDetect": {
+          "on": false,
+          "odluka": "van",
+          "razlog": "off na glavnom"
+        },
+        "ponovnoOtvaranjeRuta": {
+          "on": true,
+          "odluka": "paket",
+          "bezKoda": true
+        },
+        "ponovnoOtvaranjeRutaLive": {
+          "on": false,
+          "odluka": "van",
+          "razlog": "off na glavnom",
+          "bezKoda": true
+        },
+        "pozadinaPovrat": {
+          "on": true,
+          "odluka": "uvjetno",
+          "razlog": "kod PozadinaPovrat (P5)"
+        },
+        "projectGitInit": {
+          "on": false,
+          "odluka": "uvjetno",
+          "razlog": "vrijednost instance: ON na čvoru koji projekte drži u gitu"
+        },
+        "quotaWakeup": {
+          "on": true,
+          "odluka": "paket"
+        },
+        "r2IzricitaDodjela": {
+          "on": true,
+          "odluka": "uvjetno",
+          "razlog": "kod (P5)"
+        },
+        "reviewCheckpoint": {
+          "on": false,
+          "odluka": "van",
+          "razlog": "off na glavnom"
+        },
+        "reviewCheckpointLive": {
+          "on": false,
+          "odluka": "van",
+          "razlog": "off na glavnom"
+        },
+        "revizijaBlokiranih": {
+          "on": true,
+          "odluka": "uvjetno",
+          "razlog": "kao staleWatchdogLive + kod (P5)"
+        },
+        "revizijaBlokiranihLive": {
+          "on": true,
+          "odluka": "uvjetno",
+          "razlog": "kao revizijaBlokiranih"
+        },
+        "sendBreaker": {
+          "on": true,
+          "odluka": "paket"
+        },
+        "sendBreakerLive": {
+          "on": false,
+          "odluka": "van",
+          "razlog": "canary na glavnom"
+        },
+        "sequentialHelpers": {
+          "on": true,
+          "odluka": "uvjetno",
+          "razlog": "tek s kodom koji ima anti-kaskadni čuvar TASK-255 (paket.izvorniSustavSadrzi)"
+        },
+        "shutdownResume": {
+          "on": true,
+          "odluka": "paket"
+        },
+        "shutdownResumeLive": {
+          "on": true,
+          "odluka": "paket"
+        },
+        "siroceOporavak": {
+          "on": true,
+          "odluka": "uvjetno",
+          "razlog": "kao staleWatchdogLive + kod OrphanRecovery (P5)"
+        },
+        "spawnBreaker": {
+          "on": true,
+          "odluka": "paket"
+        },
+        "spawnBreakerLive": {
+          "on": true,
+          "odluka": "paket"
+        },
+        "spawnCloseGuard": {
+          "on": true,
+          "odluka": "paket"
+        },
+        "spawnCloseGuardLive": {
+          "on": false,
+          "odluka": "van",
+          "razlog": "canary na glavnom"
+        },
+        "spawnVerificationBlock": {
+          "on": true,
+          "odluka": "paket"
+        },
+        "spawnVerificationBlockLive": {
+          "on": true,
+          "odluka": "paket"
+        },
+        "staleInboxGuard": {
+          "on": true,
+          "odluka": "paket"
+        },
+        "staleReaper": {
+          "on": false,
+          "odluka": "van",
+          "razlog": "TRAJNO ugašen (vlasnik, 02.09.) — sudi suprotno od staleWatchdoga"
+        },
+        "staleReaperLive": {
+          "on": false,
+          "odluka": "van",
+          "razlog": "TRAJNO ugašen 02.09."
+        },
+        "staleWatchdog": {
+          "on": true,
+          "odluka": "paket"
+        },
+        "staleWatchdogLive": {
+          "on": true,
+          "odluka": "uvjetno",
+          "razlog": "tek kad je kaskada TASK-255 deployana i smeće-zadaci zatvoreni (reaper bi ih vratio u red)"
+        },
+        "taskCreateBreaker": {
+          "on": true,
+          "odluka": "paket"
+        },
+        "taskCreateBreakerLive": {
+          "on": true,
+          "odluka": "paket"
+        },
+        "taskDecompose": {
+          "on": true,
+          "odluka": "uvjetno",
+          "razlog": "kao staleWatchdogLive"
+        },
+        "taskDecomposeLive": {
+          "on": true,
+          "odluka": "uvjetno",
+          "razlog": "kao staleWatchdogLive"
+        },
+        "taskTier": {
+          "on": true,
+          "odluka": "paket"
+        },
+        "taskTierLive": {
+          "on": true,
+          "odluka": "paket"
+        },
+        "teamChain": {
+          "on": true,
+          "odluka": "paket"
+        },
+        "teamChainLive": {
+          "on": false,
+          "odluka": "van",
+          "razlog": "čvor ne smije biti agresivniji od glavnog; dio puta kaskade TASK-255"
+        },
+        "teamPilot": {
+          "on": true,
+          "odluka": "paket"
+        },
+        "tierRecipesEnabled": {
+          "on": true,
+          "odluka": "paket"
+        },
+        "tierRouting": {
+          "on": false,
+          "odluka": "van",
+          "razlog": "čeka golden-set prag na glavnom"
+        },
+        "userFlush": {
+          "on": true,
+          "odluka": "paket"
+        },
+        "userFlushBacklog": {
+          "on": false,
+          "odluka": "van",
+          "razlog": "potvrda vlasnika za stare poruke"
+        },
+        "userFlushLive": {
+          "on": true,
+          "odluka": "paket"
+        },
+        "verificationGate": {
+          "on": false,
+          "odluka": "van",
+          "razlog": "off na glavnom (Ollama advisory nije prošla mjerenje)"
+        },
+        "verificationGateLive": {
+          "on": false,
+          "odluka": "van",
+          "razlog": "off na glavnom"
+        },
+        "verificationGateShadow": {
+          "on": true,
+          "odluka": "paket"
+        },
+        "worktreeIsolation": {
+          "on": true,
+          "odluka": "paket"
+        },
+        "worktreeIsolationLive": {
+          "on": true,
+          "odluka": "paket"
+        },
+        "zatvaranjeKrozDaemon": {
+          "on": true,
+          "odluka": "uvjetno",
+          "razlog": "kod ZatvaranjeKrozDaemon (P5)"
+        },
+        "zatvaranjeKrozDaemonLive": {
+          "on": false,
+          "odluka": "van",
+          "razlog": "off na glavnom"
+        },
+        "zombieRecovery": {
+          "on": true,
+          "odluka": "paket"
+        },
+        "zombieRecoveryLive": {
+          "on": true,
+          "odluka": "uvjetno",
+          "razlog": "kao staleWatchdogLive"
+        }
+      }
+    },
+    "oporavak": {
+      "vlasnik": "paket",
+      "opis": "Samo provjera (ADR-0004 §13.2): oporavak siročadi i reaperi uključeni, kod ih zna, staleReaper isključen i daemon.log svjež (daemon radi). Krugovi oporavka u daemon.log pišu samo kad nešto vrate, pa se njihov redak ne traži.",
+      "ukljuceni": [
+        "siroceOporavak",
+        "zombieRecoveryLive",
+        "deadAgentReaperLive",
+        "staleWatchdogLive"
+      ],
+      "iskljuceni": [
+        "staleReaper"
+      ],
+      "dnevnik": "${HOME}/.tmp/regoc_daemon.log",
+      "dnevnikMaxMin": 30
     }
   }
 }

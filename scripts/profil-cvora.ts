@@ -37,6 +37,26 @@ const Postavke = z.record(z.string().regex(/^[a-zA-Z][\w.]*$/, 'ključ postavke'
 const Imena = z.array(z.string().min(1))
 const s = z.object({ vlasnik: z.string().min(1) }).passthrough()
 
+export const Znacajka = z.object({
+  on: z.boolean(),
+  odluka: z.enum(['paket', 'uvjetno', 'van']),
+  razlog: z.string().optional(),
+  /** Prekidač koji ni glavni sustav nema u kodu (sjena bez potrošača) — ne traži se u kodu čvora. */
+  bezKoda: z.boolean().optional(),
+}).refine(x => x.odluka !== 'van' || !x.on, 'odluka „van" traži on=false')
+
+const Kuka = z.object({
+  paket: z.string().min(1),
+  dogadjaj: z.string().min(1),
+  ime: z.string().min(1),
+  matcher: z.string().min(1).optional(),
+  naredba: z.string().min(1),
+  /** Datoteka koju naredba pokreće — bez nje se kuka ne spaja (NEDOSTAJE). */
+  datoteka: z.string().min(1),
+  timeout: z.number().int().positive().optional(),
+  razlog: z.string().optional(),
+})
+
 export const ProfilShema = z.object({
   profil: z.string().min(1),
   verzija: z.number().int().positive(),
@@ -50,6 +70,11 @@ export const ProfilShema = z.object({
       }).refine(z0 => !!z0.datoteka !== !!z0.grep, 'treba točno jedno: datoteka ili grep')),
       alati: z.record(z.string(), z.string().regex(/^>=\d+(\.\d+)*$/)).optional(),
       unit: z.object({ ime: z.string().min(1), aktivan: z.boolean() }).passthrough().optional(),
+      izvorniSustavSadrzi: z.object({
+        mapa: z.string().min(1),
+        datoteke: Imena,
+        grep: z.array(z.object({ znacajka: z.string().min(1), datoteka: z.string().min(1), sadrzi: z.string().min(1) })).default([]),
+      }).passthrough().optional(),
     }).optional(),
     okolina: s.extend({
       postavkeEnv: z.record(z.string().regex(/^[A-Z][A-Z0-9_]*$/), z.string()),
@@ -80,6 +105,29 @@ export const ProfilShema = z.object({
     upravitelj: s.extend({ predlozak: z.string().min(1), cilj: z.string().min(1), najvise: z.number().int().positive() }).optional(),
     home: s.extend({ grepNema: z.object({ uzorak: z.string(), u: Imena }) }).optional(),
     rag: s.extend({ ukljucen: z.boolean() }).optional(),
+    znacajke: s.extend({
+      datoteka: z.string().min(1),
+      kodU: Imena,
+      instanca: z.object({ ukljuci: z.string(), iskljuci: z.string() }).optional(),
+      kljucevi: z.record(z.string().regex(/^[a-zA-Z]\w*$/, 'ime prekidača'), Znacajka),
+    }).optional(),
+    kuke: s.extend({
+      datoteka: z.string().min(1),
+      paketi: z.string(),
+      zadaniPaketi: Imena,
+      popis: z.array(Kuka),
+      van: z.record(z.string(), z.string()).optional(),
+    }).optional(),
+    konzola: s.extend({
+      maxSati: z.number().positive(),
+      izvori: z.array(z.object({
+        ime: z.string().min(1), datoteka: z.string().min(1), unit: z.string().min(1).optional(),
+        preskoci: z.string().optional(), puni: z.string().optional(),
+      })),
+    }).optional(),
+    oporavak: s.extend({
+      ukljuceni: Imena, iskljuceni: Imena, dnevnik: z.string().min(1), dnevnikMaxMin: z.number().positive(),
+    }).optional(),
   }).strict(),
 }).passthrough()
 
@@ -104,8 +152,8 @@ export function ucitajProfil(put: string): Profil {
 // ─── Instanca i supstitucija (J2) ────────────────────────────────────────────
 
 const VAR = /\$\{(\w+)(:json)?\}/g
-/** Varijable koje daje sam čvor, ne instanca. */
-const UGRADENE = ['HOME']
+/** Varijable koje daje sam čvor, ne instanca (`TM_PAKET` = mapa paketa na čvoru). */
+const UGRADENE = ['HOME', 'TM_PAKET']
 
 export function varijableProfila(v: unknown, skup = new Set<string>()): Set<string> {
   if (typeof v === 'string') for (const m of v.matchAll(VAR)) skup.add(m[1])
@@ -163,6 +211,8 @@ export type Primjena =
   | { vrsta: 'capguard'; ime: string; desired: boolean }
   | { vrsta: 'hooks'; dogadjaj: string; unos: unknown }
   | { vrsta: 'upravitelj'; cilj: string; sadrzaj: string }
+  | { vrsta: 'znacajka'; kljuc: string; enabled: boolean; razlog: string }
+  | { vrsta: 'konzola'; unit: string; datoteka: string; sadrzaj: string; log: string }
 
 export interface Stavka {
   modul: string
@@ -244,7 +294,7 @@ function barem(imam: string, treba: string): boolean {
 /** Sve stavke profila prema stanju čvora — bez ikakvog pisanja. */
 export function usporedi(k: Kontekst): Stavka[] {
   const { profil, stanje } = k
-  const inst = { ...k.inst, HOME: stanje.home }
+  const inst = { ...k.inst, HOME: stanje.home, TM_PAKET: stanje.paket }
   const M = profil.moduli
   const out: Stavka[] = []
   const dodaj = (s0: Stavka) => out.push(s0)
@@ -257,6 +307,25 @@ export function usporedi(k: Kontekst): Stavka[] {
       const ima = stanje.znacajke[z0.znacajka]
       dodaj({ modul: 'paket', kljuc: z0.znacajka, vrsta: ima ? 'OK' : 'PREDUVJET',
         poruka: ima ? undefined : `kod čvora (${stanje.git || '?'}) nema značajku — ažuriraj kod (tm-cvor-azuriraj.sh) na commit koji je sadrži` })
+    }
+    const izv = M.paket.izvorniSustavSadrzi
+    if (izv) {
+      if (zamijeni(izv.mapa, inst) === PRESKOCI || !(zamijeni(izv.mapa, inst) as string)) {
+        dodaj({ modul: 'paket', kljuc: 'izvorniSustavSadrzi', vrsta: 'PRESKOČENO', poruka: 'SUSTAV_DIR nije zadan' })
+      } else {
+        // NEDOSTAJE, ne PREDUVJET: PREDUVJET bi zaustavio i --pisi ostalih modula. Kod koji uključena
+        // značajka treba javlja modul `znacajke` kao PREDUVJET (J14).
+        for (const f of izv.datoteke) {
+          const ima = stanje.izvorni[f]
+          dodaj({ modul: 'paket', kljuc: `izvorni.${f}`, vrsta: ima ? 'OK' : 'NEDOSTAJE',
+            poruka: ima ? undefined : 'nema u kodu izvornog sustava — P5: tm-cvor-azuriraj.sh <čvor> --s-kompletom' })
+        }
+        for (const g of izv.grep) {
+          const ima = stanje.izvorni[`${g.datoteka}:${g.sadrzi}`]
+          dodaj({ modul: 'paket', kljuc: g.znacajka, vrsta: ima ? 'OK' : 'NEDOSTAJE',
+            poruka: ima ? undefined : `${g.datoteka} nema „${g.sadrzi}" — P5` })
+        }
+      }
     }
     if (!stanje.baza.postoji || stanje.baza.greska) {
       dodaj({ modul: 'paket', kljuc: 'baza', vrsta: 'PREDUVJET', poruka: `${stanje.baza.putanja}: ${stanje.baza.greska || 'ne postoji'} (scripts/init-db.ts)` })
@@ -439,7 +508,170 @@ export function usporedi(k: Kontekst): Stavka[] {
     const ima = Object.values(stanje.envNesmije).some(Boolean)
     dodaj({ modul: 'rag', kljuc: 'isključen', vrsta: ima ? 'UPOZORENJE' : 'OK', poruka: ima ? 'TM_CHROMA_* postoji — v. modul okolina' : undefined })
   }
+
+  usporediZnacajke(k, inst, dodaj)
+  usporediKuke(k, inst, dodaj)
+  usporediKonzolu(k, inst, dodaj)
+  usporediOporavak(k, inst, dodaj)
   return out
+}
+
+// ─── Paritet s glavnim sustavom: značajke, kuke, konzola, oporavak (ADR-0004 §13) ──
+
+type Dodaj = (s0: Stavka) => void
+
+/** Popis iz instance (`${IME:json}`); prazno ili neispravno → []. */
+function popisInstance(tpl: string | undefined, inst: Record<string, string>): string[] {
+  if (!tpl) return []
+  const v = zamijeni(tpl, inst)
+  return Array.isArray(v) ? v.map(String) : []
+}
+
+/**
+ * Vrijednost svakog prekidača nakon instance: ZNACAJKE_ISKLJUCI smije sve (oprezniji čvor),
+ * ZNACAJKE_UKLJUCI samo `uvjetno` (`van` je odluka paketa, ne čvora). Isključenje pobjeđuje.
+ */
+export function ucinakZnacajki(p: Profil, inst: Record<string, string>): { ucinak: Record<string, boolean>; upozorenja: string[] } {
+  const mod = p.moduli.znacajke
+  const ucinak: Record<string, boolean> = {}
+  const upozorenja: string[] = []
+  if (!mod) return { ucinak, upozorenja }
+  for (const [k0, z0] of Object.entries(mod.kljucevi)) ucinak[k0] = z0.on
+  for (const k0 of popisInstance(mod.instanca?.ukljuci, inst)) {
+    const z0 = mod.kljucevi[k0]
+    if (!z0) upozorenja.push(`ZNACAJKE_UKLJUCI: nepoznat prekidač ${k0}`)
+    else if (z0.odluka === 'van') upozorenja.push(`ZNACAJKE_UKLJUCI: ${k0} je „van" (${z0.razlog || 'odluka paketa'}) — instanca ga ne uključuje`)
+    else ucinak[k0] = true
+  }
+  for (const k0 of popisInstance(mod.instanca?.iskljuci, inst)) {
+    if (!(k0 in mod.kljucevi)) upozorenja.push(`ZNACAJKE_ISKLJUCI: nepoznat prekidač ${k0}`)
+    else ucinak[k0] = false
+  }
+  return { ucinak, upozorenja }
+}
+
+function usporediZnacajke(k: Kontekst, inst: Record<string, string>, dodaj: Dodaj): void {
+  const mod = k.profil.moduli.znacajke
+  if (!mod) return
+  const cv = k.stanje.znacajkeCvor
+  if (zamijeni(mod.datoteka, inst) === PRESKOCI || !cv) {
+    dodaj({ modul: 'znacajke', kljuc: '(modul)', vrsta: 'PRESKOČENO', poruka: 'SUSTAV_DIR nije zadan' })
+    return
+  }
+  const { ucinak, upozorenja } = ucinakZnacajki(k.profil, inst)
+  upozorenja.forEach(u => dodaj({ modul: 'znacajke', kljuc: '(instanca)', vrsta: 'UPOZORENJE', poruka: u }))
+  for (const [kljuc, z0] of Object.entries(mod.kljucevi)) {
+    const zelim = ucinak[kljuc]
+    const sirovo = cv.vrijednosti[kljuc] ?? null
+    const imam = sirovo === true
+    if (zelim && !z0.bezKoda && !cv.kodZna[kljuc]) {
+      dodaj({ modul: 'znacajke', kljuc, vrsta: 'PREDUVJET', profil: true, cvor: sirovo,
+        poruka: `kod čvora ne zna prekidač „${kljuc}" — uključen ne bi radio ništa. P5 (tm-cvor-azuriraj.sh --s-kompletom) ili ga instanca odgodi (ZNACAJKE_ISKLJUCI)` })
+      continue
+    }
+    if (zelim === imam) { dodaj({ modul: 'znacajke', kljuc, vrsta: 'OK' }); continue }
+    dodaj({ modul: 'znacajke', kljuc, vrsta: 'RAZLIKA', profil: zelim, cvor: sirovo === null ? '(nema)' : sirovo,
+      poruka: z0.razlog, primjena: { vrsta: 'znacajka', kljuc, enabled: zelim, razlog: z0.razlog || `odluka ${z0.odluka}` } })
+  }
+}
+
+/** Paketi kuka koje instanca uključuje; `jezgra` uvijek. */
+export function paketiKuka(p: Profil, inst: Record<string, string>): string[] {
+  const mod = p.moduli.kuke
+  if (!mod) return []
+  const v = zamijeni(mod.paketi, inst)
+  const iz = typeof v === 'string' && v.trim() ? v.split(',').map(x => x.trim()).filter(Boolean) : mod.zadaniPaketi
+  return [...new Set(['jezgra', ...iz])]
+}
+
+function usporediKuke(k: Kontekst, inst: Record<string, string>, dodaj: Dodaj): void {
+  const mod = k.profil.moduli.kuke
+  if (!mod) return
+  const paketi = paketiKuka(k.profil, inst)
+  const poznati = new Set(mod.popis.map(x => x.paket))
+  for (const p0 of paketi) if (!poznati.has(p0)) dodaj({ modul: 'kuke', kljuc: `paket ${p0}`, vrsta: 'UPOZORENJE', poruka: 'KUKE_PAKETI: nepoznat paket kuka' })
+  const cvorHooks = (k.stanje.settingsJson.hooks || {}) as Record<string, any[]>
+  for (const kuka of mod.popis) {
+    if (!paketi.includes(kuka.paket)) continue
+    const naredba = zamijeni(kuka.naredba, inst) as string
+    const kljuc = `${kuka.dogadjaj}${kuka.matcher ? `[${kuka.matcher}]` : ''} ${kuka.ime}`
+    if (!k.stanje.kuke[kuka.datoteka]) {
+      dodaj({ modul: 'kuke', kljuc, vrsta: 'NEDOSTAJE', poruka: `nema datoteke ${zamijeni(kuka.datoteka, inst)} — kuka se ne spaja (${kuka.paket === 'jezgra' && kuka.datoteka.includes('${TM_PAKET}') ? 'ažuriraj paket' : 'komplet izvornog sustava'})` })
+      continue
+    }
+    const spojena = (cvorHooks[kuka.dogadjaj] || []).some(e =>
+      (e?.matcher || undefined) === kuka.matcher && Array.isArray(e?.hooks) && e.hooks.some((h: any) => h?.command === naredba))
+    if (spojena) { dodaj({ modul: 'kuke', kljuc, vrsta: 'OK' }); continue }
+    const hook: Record<string, unknown> = { type: 'command', command: naredba }
+    if (kuka.timeout) hook.timeout = kuka.timeout
+    const unos: Record<string, unknown> = kuka.matcher ? { matcher: kuka.matcher, hooks: [hook] } : { hooks: [hook] }
+    dodaj({ modul: 'kuke', kljuc, vrsta: 'RAZLIKA', profil: naredba, cvor: '(nije spojena)', poruka: kuka.razlog,
+      primjena: { vrsta: 'hooks', dogadjaj: kuka.dogadjaj, unos } })
+  }
+}
+
+/** Drop-in user-unita: izlaz servisa u datoteku koju čita konzola ploče (ne u journal). */
+export function konzolaDropIn(log: string): string {
+  return [
+    `# ${AUTOR} (ADR-0004 §13.2.3): izlaz servisa u datoteku koju prati konzola ploče.`,
+    '[Service]', `StandardOutput=append:${log}`, `StandardError=append:${log}`, '',
+  ].join('\n')
+}
+
+export const dropInPut = (unit: string) => `\${HOME}/.config/systemd/user/${unit}.service.d/konzola.conf`
+
+function usporediKonzolu(k: Kontekst, inst: Record<string, string>, dodaj: Dodaj): void {
+  const mod = k.profil.moduli.konzola
+  if (!mod) return
+  const { stanje } = k
+  for (const iz of mod.izvori) {
+    if (iz.preskoci) { dodaj({ modul: 'konzola', kljuc: iz.ime, vrsta: 'PRESKOČENO', poruka: iz.preskoci }); continue }
+    const log = zamijeni(iz.datoteka, inst) as string
+    if (iz.unit) {
+      const tpl = dropInPut(iz.unit)
+      const sadrzaj = konzolaDropIn(log)
+      dodaj(stanje.konzola.dropIni[tpl] === sadrzaj
+        ? { modul: 'konzola', kljuc: `${iz.ime}.drop-in`, vrsta: 'OK' }
+        : { modul: 'konzola', kljuc: `${iz.ime}.drop-in`, vrsta: 'RAZLIKA', profil: `StandardOutput=append:${log}`,
+            cvor: stanje.konzola.dropIni[tpl] === null || stanje.konzola.dropIni[tpl] === undefined ? '(journal)' : '(drugačiji drop-in)',
+            primjena: { vrsta: 'konzola', unit: iz.unit, datoteka: zamijeni(tpl, inst) as string, sadrzaj, log } })
+    }
+    const min = stanje.konzola.starostMin[iz.datoteka]
+    if (min !== null && min !== undefined && min <= mod.maxSati * 60) { dodaj({ modul: 'konzola', kljuc: iz.ime, vrsta: 'OK' }); continue }
+    const unitStanje = iz.unit && stanje.sustav ? stanje.sustav.unitovi[iz.unit] : undefined
+    if (unitStanje !== undefined && unitStanje !== 'active') {
+      dodaj({ modul: 'konzola', kljuc: iz.ime, vrsta: 'PRESKOČENO', poruka: `servis ${iz.unit} ne radi (${unitStanje})` })
+      continue
+    }
+    dodaj({ modul: 'konzola', kljuc: iz.ime, vrsta: 'NEDOSTAJE', cvor: min === null || min === undefined ? '(nema datoteke)' : `${min} min`,
+      poruka: `izvor konzole nije svjež (> ${mod.maxSati} h) — puni ga ${iz.puni || iz.unit || '?'}${iz.unit ? '; drop-in vrijedi tek nakon daemon-reload + restart servisa' : ''}` })
+  }
+}
+
+function usporediOporavak(k: Kontekst, inst: Record<string, string>, dodaj: Dodaj): void {
+  const mod = k.profil.moduli.oporavak
+  const cv = k.stanje.znacajkeCvor
+  if (!mod) return
+  if (!cv || !k.profil.moduli.znacajke || zamijeni(k.profil.moduli.znacajke.datoteka, inst) === PRESKOCI) {
+    dodaj({ modul: 'oporavak', kljuc: '(modul)', vrsta: 'PRESKOČENO', poruka: 'nema modula znacajke / SUSTAV_DIR' })
+    return
+  }
+  for (const kljuc of mod.ukljuceni) {
+    const on = cv.vrijednosti[kljuc] === true
+    const kod = cv.kodZna[kljuc] === true
+    dodaj(on && kod
+      ? { modul: 'oporavak', kljuc, vrsta: 'OK' }
+      : { modul: 'oporavak', kljuc, vrsta: 'NEDOSTAJE', poruka: `${on ? '' : 'isključen na čvoru'}${!on && !kod ? '; ' : ''}${kod ? '' : 'kod čvora ga ne zna (P5)'} — siroče se ne vraća samo` })
+  }
+  for (const kljuc of mod.iskljuceni) {
+    dodaj(cv.vrijednosti[kljuc] === true
+      ? { modul: 'oporavak', kljuc, vrsta: 'NEDOSTAJE', poruka: 'mora biti isključen (v. modul znacajke)' }
+      : { modul: 'oporavak', kljuc: `${kljuc}=off`, vrsta: 'OK' })
+  }
+  const min = k.stanje.konzola.starostMin[mod.dnevnik]
+  dodaj(min !== null && min !== undefined && min <= mod.dnevnikMaxMin
+    ? { modul: 'oporavak', kljuc: 'daemon.log', vrsta: 'OK' }
+    : { modul: 'oporavak', kljuc: 'daemon.log', vrsta: 'NEDOSTAJE', cvor: min ?? '(nema)', poruka: `daemon ne piše zadnjih ${mod.dnevnikMaxMin} min` })
 }
 
 // ─── Predložak upravitelja (J11) ─────────────────────────────────────────────
@@ -551,10 +783,10 @@ export function plocaHttp(baza: string): Ploca {
   return { put: zovi('PUT'), post: zovi('POST') }
 }
 
-function kopija(datoteka: string, mapaKopija: string, kopirano: Set<string>): void {
+function kopija(datoteka: string, mapaKopija: string, kopirano: Set<string>, ime = basename(datoteka)): void {
   if (kopirano.has(datoteka) || !existsSync(datoteka)) return
   mkdirSync(mapaKopija, { recursive: true, mode: 0o700 })
-  const cilj = join(mapaKopija, basename(datoteka))
+  const cilj = join(mapaKopija, ime)
   copyFileSync(datoteka, cilj)
   chmodSync(cilj, statSync(datoteka).mode & 0o777)
   kopirano.add(datoteka)
@@ -568,10 +800,15 @@ function upisi(datoteka: string, sadrzaj: string): void {
   chmodSync(datoteka, prava)
 }
 
-export interface IshodPrimjene { promjena: number; greske: string[]; restart: boolean; kopije: string | null }
+export interface IshodPrimjene {
+  promjena: number; greske: string[]; restart: boolean; kopije: string | null
+  /** User-unitovi kojima je promijenjen drop-in: daemon-reload + restart (alat ga ne radi). */
+  unitovi: string[]
+}
 
 export async function primijeni(stavke: Stavka[], k: Kontekst, ploca: Ploca, sat: Date): Promise<IshodPrimjene> {
-  const ishod: IshodPrimjene = { promjena: 0, greske: [], restart: false, kopije: null }
+  const ishod: IshodPrimjene = { promjena: 0, greske: [], restart: false, kopije: null, unitovi: [] }
+  const inst = { ...k.inst, HOME: k.stanje.home, TM_PAKET: k.stanje.paket }
   const mapaKopija = join(k.stanje.tmHome, 'backup', `profil-${sat.toISOString().replace(/[:.]/g, '-')}`)
   const kopirano = new Set<string>()
   const po = (v: Primjena['vrsta']) => stavke.filter(s0 => s0.primjena?.vrsta === v).map(s0 => s0.primjena as any)
@@ -635,8 +872,9 @@ export async function primijeni(stavke: Stavka[], k: Kontekst, ploca: Ploca, sat
   }
 
   const hk = po('hooks') as Extract<Primjena, { vrsta: 'hooks' }>[]
-  if (hk.length && k.profil.moduli.claude) {
-    const dat = putanja(k.profil.moduli.claude.settingsJson.datoteka, { HOME: k.stanje.home })
+  const sjDat = k.profil.moduli.kuke?.datoteka || k.profil.moduli.claude?.settingsJson.datoteka
+  if (hk.length && sjDat) {
+    const dat = putanja(sjDat, { HOME: k.stanje.home })
     kopija(dat, mapaKopija, kopirano)
     let j: any = {}
     try { j = JSON.parse(readFileSync(dat, 'utf-8')) } catch { /* nova */ }
@@ -646,6 +884,33 @@ export async function primijeni(stavke: Stavka[], k: Kontekst, ploca: Ploca, sat
       if (!j.hooks[h.dogadjaj].some((x: unknown) => jednako(x, h.unos))) { j.hooks[h.dogadjaj].push(h.unos); ishod.promjena++ }
     }
     upisi(dat, JSON.stringify(j, null, 2) + '\n')
+  }
+
+  // Značajke: SAMO `enabled` imenovanih ključeva; note/since i tuđi ključevi ostaju (J13). Bez restarta.
+  const zn = po('znacajka') as Extract<Primjena, { vrsta: 'znacajka' }>[]
+  if (zn.length && k.profil.moduli.znacajke) {
+    const dat = zamijeni(k.profil.moduli.znacajke.datoteka, inst) as string
+    kopija(dat, mapaKopija, kopirano)
+    let j: any = {}
+    try { j = JSON.parse(readFileSync(dat, 'utf-8')) } catch (e: any) {
+      if (existsSync(dat)) { ishod.greske.push(`${dat}: nije čitljiv JSON — ne prepisujem (${e?.message || e})`); j = null }
+    }
+    if (j) {
+      for (const z0 of zn) {
+        if (j[z0.kljuc] && typeof j[z0.kljuc] === 'object') j[z0.kljuc].enabled = z0.enabled
+        else j[z0.kljuc] = { enabled: z0.enabled, since: sat.toISOString().slice(0, 10), note: `${AUTOR}: ${z0.razlog}` }
+        ishod.promjena++
+      }
+      upisi(dat, JSON.stringify(j, null, 2) + '\n')
+    }
+  }
+
+  for (const c of po('konzola') as Extract<Primjena, { vrsta: 'konzola' }>[]) {
+    mkdirSync(dirname(c.log), { recursive: true })
+    kopija(c.datoteka, mapaKopija, kopirano, `${c.unit}.konzola.conf`)
+    upisi(c.datoteka, c.sadrzaj)
+    ishod.unitovi.push(c.unit)
+    ishod.promjena++
   }
 
   for (const u of po('upravitelj') as Extract<Primjena, { vrsta: 'upravitelj' }>[]) {
@@ -763,14 +1028,23 @@ export function specZaProfil(p: Profil, inst: Record<string, string>, paket: str
     settingsKljucevi: kljucevi,
     settingsNikad: nikad,
     capguardKljucevi: Object.keys(M.capguard?.zeljeno || {}),
-    settingsJson: M.claude?.settingsJson.datoteka,
-    kuke: (M.claude?.kuke || []).map(k0 => k0.datoteka),
+    settingsJson: M.kuke?.datoteka || M.claude?.settingsJson.datoteka,
+    kuke: [...new Set([...(M.claude?.kuke || []).map(k0 => k0.datoteka), ...(M.kuke?.popis || []).map(k0 => k0.datoteka)])],
     upravitelj: M.upravitelj?.cilj,
     grepNema: M.home ? { uzorak: putanja(M.home.grepNema.uzorak, inst), u: M.home.grepNema.u } : undefined,
     paketSadrzi: M.paket?.paketSadrzi || [],
     apiDatoteke: ['src/razgovor/RazgovorPostavke.ts', 'src/razgovor/BotKanalPostavke.ts'],
+    znacajke: M.znacajke && zamijeni(M.znacajke.datoteka, inst) !== PRESKOCI
+      ? { datoteka: M.znacajke.datoteka, kljucevi: Object.keys(M.znacajke.kljucevi), kodU: M.znacajke.kodU } : undefined,
+    izvorni: M.paket?.izvorniSustavSadrzi && zamijeni(M.paket.izvorniSustavSadrzi.mapa, inst) !== PRESKOCI
+      ? { mapa: M.paket.izvorniSustavSadrzi.mapa, datoteke: M.paket.izvorniSustavSadrzi.datoteke,
+          grep: M.paket.izvorniSustavSadrzi.grep.map(g => ({ datoteka: g.datoteka, sadrzi: g.sadrzi })) } : undefined,
+    konzola: {
+      datoteke: [...(M.konzola?.izvori || []).filter(x => !x.preskoci).map(x => x.datoteka), ...(M.oporavak ? [M.oporavak.dnevnik] : [])],
+      dropIni: (M.konzola?.izvori || []).filter(x => x.unit && !x.preskoci).map(x => dropInPut(x.unit!)),
+    },
     sustav: sustav ? {
-      unitovi: [M.paket?.unit?.ime, M.glas?.servis?.unit].filter(Boolean) as string[],
+      unitovi: [...new Set([M.paket?.unit?.ime, M.glas?.servis?.unit, ...(M.konzola?.izvori || []).map(x => x.unit)].filter(Boolean))] as string[],
       vrata: [M.glas?.servis?.vrata, M['tunel-memorije']?.provjeraNaCvoru.vrata].filter(x => typeof x === 'number') as number[],
       alati: Object.keys(M.paket?.alati || {}),
     } : undefined,
@@ -862,6 +1136,7 @@ export async function glavna(argv: string[], d: Partial<Ovisnosti> = {}): Promis
       pisi(`PRIMIJENJENO: ${ishod.promjena} promjena${ishod.kopije ? ` · kopije u ${ishod.kopije}` : ''}`)
       ishod.greske.forEach(g => pisi(`GREŠKA ${g}`))
       pisi(`potreban restart regoc-taskmanager: ${ishod.restart ? 'da (alat ga ne radi — kad je 0 zadataka in_progress)' : 'ne'}`)
+      if (ishod.unitovi.length) pisi(`drop-in konzole: systemctl --user daemon-reload, pa restart ${ishod.unitovi.join(', ')} (alat ga ne radi — kad je 0 zadataka in_progress)`)
       ispisStavki(poslije).forEach(pisi)
     }
     return kod

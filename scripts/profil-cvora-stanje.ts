@@ -13,7 +13,7 @@
  */
 import { Database } from 'bun:sqlite'
 import { createHash } from 'crypto'
-import { existsSync, readFileSync, statSync } from 'fs'
+import { existsSync, readdirSync, readFileSync, statSync } from 'fs'
 import { connect } from 'net'
 import { homedir } from 'os'
 import { join } from 'path'
@@ -45,6 +45,12 @@ export interface SpecStanja {
   apiDatoteke?: string[]
   /** Provjere sustava (systemd, vrata, verzije alata). Testovi ih gase. */
   sustav?: { unitovi: string[]; vrata: number[]; alati: string[] }
+  /** features.json (samo imenovani ključevi) i zna li kod čvora za ključ (doslovno 'ime' u *.ts mapa kodU). */
+  znacajke?: { datoteka: string; kljucevi: string[]; kodU: string[] }
+  /** Datoteke izvornog sustava koje profil traži + oznake u kodu (TASK-255). */
+  izvorni?: { mapa: string; datoteke: string[]; grep: Array<{ datoteka: string; sadrzi: string }> }
+  /** Starost datoteka konzole (min) i sadržaj drop-ina user-unita. */
+  konzola?: { datoteke: string[]; dropIni: string[] }
 }
 
 export interface StanjeCvora {
@@ -70,6 +76,10 @@ export interface StanjeCvora {
   apiKljucevi: string[]
   git: string | null
   sustav: null | { unitovi: Record<string, string>; vrata: Record<string, boolean>; alati: Record<string, string | null> }
+  /** `null` = profil nema modul; vrijednost `null` = ključa (ili datoteke) nema → isEnabled = false. */
+  znacajkeCvor: null | { vrijednosti: Record<string, boolean | null>; kodZna: Record<string, boolean> }
+  izvorni: Record<string, boolean>
+  konzola: { starostMin: Record<string, number | null>; dropIni: Record<string, string | null> }
 }
 
 /** `${HOME}` i ostale varijable u putanji; nepoznata ostaje doslovno (pa se ne nađe). */
@@ -132,6 +142,7 @@ function naredba(argv: string[]): string | null {
 export async function prikupiStanje(spec: SpecStanja, home = process.env.HOME || homedir()): Promise<StanjeCvora> {
   const v: Record<string, string> = { ...(spec.varijable || {}), HOME: home }
   const paket = putanja(spec.paket || '${HOME}/TaskManagerAI', v)
+  v.TM_PAKET = paket
   const sveEnv = citajEnv(join(paket, 'config', 'postavke.env'))
   const tmHome = sveEnv.TM_HOME || join(home, '.taskmanager')
 
@@ -239,6 +250,46 @@ export async function prikupiStanje(spec: SpecStanja, home = process.env.HOME ||
     sustav = { unitovi, vrata, alati }
   }
 
+  let znacajkeCvor: StanjeCvora['znacajkeCvor'] = null
+  if (spec.znacajke) {
+    let f: Record<string, any> | null = null
+    try { f = JSON.parse(readFileSync(putanja(spec.znacajke.datoteka, v), 'utf-8')) } catch { /* nema */ }
+    let kod = ''
+    for (const m of spec.znacajke.kodU) {
+      const mapa = putanja(m, v)
+      let imena: string[] = []
+      try { imena = readdirSync(mapa).filter(x => x.endsWith('.ts')) } catch { continue }
+      for (const ime of imena) { try { kod += readFileSync(join(mapa, ime), 'utf-8') } catch { /* nečitljivo */ } }
+    }
+    const vrijednosti: Record<string, boolean | null> = {}
+    const kodZna: Record<string, boolean> = {}
+    for (const k of spec.znacajke.kljucevi) {
+      const x = f?.[k]
+      vrijednosti[k] = x && typeof x === 'object' ? x.enabled === true : x === undefined ? null : x === true
+      kodZna[k] = kod.includes(`'${k}'`) || kod.includes(`"${k}"`)
+    }
+    // Bez datoteke svaki ključ je `null` (isEnabled → false) — primjena je tada stvara.
+    znacajkeCvor = { vrijednosti, kodZna }
+  }
+
+  const izvorni: Record<string, boolean> = {}
+  if (spec.izvorni) {
+    const mapa = putanja(spec.izvorni.mapa, v)
+    for (const f of spec.izvorni.datoteke) izvorni[f] = existsSync(join(mapa, f))
+    for (const g of spec.izvorni.grep) {
+      try { izvorni[`${g.datoteka}:${g.sadrzi}`] = readFileSync(join(mapa, g.datoteka), 'utf-8').includes(g.sadrzi) } catch { izvorni[`${g.datoteka}:${g.sadrzi}`] = false }
+    }
+  }
+
+  const konzola: StanjeCvora['konzola'] = { starostMin: {}, dropIni: {} }
+  const sad = Date.now()
+  for (const f of spec.konzola?.datoteke || []) {
+    try { konzola.starostMin[f] = Math.floor((sad - statSync(putanja(f, v)).mtimeMs) / 60_000) } catch { konzola.starostMin[f] = null }
+  }
+  for (const f of spec.konzola?.dropIni || []) {
+    try { konzola.dropIni[f] = readFileSync(putanja(f, v), 'utf-8') } catch { konzola.dropIni[f] = null }
+  }
+
   return {
     home, paket, tmHome, env, envTajne, envNesmije,
     punoDopusteno: sveEnv.TM_RAZGOVOR_PUNO === '1',
@@ -246,7 +297,7 @@ export async function prikupiStanje(spec: SpecStanja, home = process.env.HOME ||
     claudePrijava: neprazno(join(home, '.claude', '.credentials.json')),
     upravitelj, grepNema, znacajke, apiKljucevi,
     git: naredba(['git', '-C', paket, 'rev-parse', '--short', 'HEAD']),
-    sustav,
+    sustav, znacajkeCvor, izvorni, konzola,
   }
 }
 

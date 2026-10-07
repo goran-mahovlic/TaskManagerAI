@@ -14,8 +14,8 @@ import { zatraziSposobnost } from '../src/Capguard'
 import { razgovorPut } from '../src/razgovor/RazgovorPloca'
 import { ensureSettingsSchema } from '../src/core/ConcurrencySetting'
 import {
-  GreskaPreduvjeta, KOD, KORIJEN, glavna, izvediInstancu, provjeriVarijable, specZaProfil, ucitajProfil, zamijeni,
-  type Ploca,
+  GreskaPreduvjeta, KOD, KORIJEN, glavna, izvediInstancu, konzolaDropIn, paketiKuka, provjeriVarijable, specZaProfil,
+  ucinakZnacajki, ucitajProfil, zamijeni, type Ploca,
 } from '../scripts/profil-cvora'
 import { prikupiStanje } from '../scripts/profil-cvora-stanje'
 
@@ -38,7 +38,7 @@ interface Dvojnik {
 
 let d: Dvojnik
 
-function dvojnik(opcije: { bezZnacajke?: boolean } = {}): Dvojnik {
+function dvojnik(opcije: { bezZnacajke?: boolean; bezKodaZa?: string[] } = {}): Dvojnik {
   const root = mkdtempSync(join(tmpdir(), 'tmai-profil-'))
   const home = join(root, 'home')
   const paket = join(home, 'TaskManagerAI')
@@ -95,6 +95,22 @@ function dvojnik(opcije: { bezZnacajke?: boolean } = {}): Dvojnik {
   writeFileSync(join(home, '.claude', '.credentials.json'), JSON.stringify({ t: KAN.prijava }))
   writeFileSync(join(sustav, 'REGOC_AGENTS.json'), JSON.stringify({ agents: { inzenjer: {}, istrazivac: {} } }))
   writeFileSync(join(sustav, 'RegocDaemon.ts'), '// bez tuđeg doma\n')
+  // Kod izvornog sustava „zna" svaki prekidač profila (doslovno 'ime'), osim onih iz bezKodaZa (J14).
+  const kljucevi = Object.keys(profil.moduli.znacajke.kljucevi).filter(k => !(opcije.bezKodaZa || []).includes(k))
+  writeFileSync(join(sustav, 'Prekidaci.ts'), kljucevi.map(k => `isEnabled('${k}')`).join('\n') + '\n')
+  for (const f of profil.moduli.paket.izvorniSustavSadrzi.datoteke) writeFileSync(join(sustav, f), '// x\n')
+  writeFileSync(join(sustav, 'AgentRouting.ts'), '// TASK-255 anti-kaskada\n')
+  writeFileSync(join(sustav, 'features.json'), JSON.stringify({
+    staleReaper: { enabled: true, since: '2026-08-01', note: 'čvor: agresivnije od glavnog' },
+    tudjiPrekidac: { enabled: true, note: 'nije u profilu — ostaje' },
+  }, null, 2) + '\n')
+  // Kuke paketa (TM_PAKET) i izvornog sustava (HOME) — datoteke postoje, kuke nisu spojene.
+  mkdirSync(join(paket, 'hooks'), { recursive: true })
+  mkdirSync(join(paket, 'tools'), { recursive: true })
+  for (const f of ['hooks/TaskInstructionsInject.hook.ts', 'hooks/RegocConsoleLog.hook.ts', 'tools/session_usage.py']) writeFileSync(join(paket, f), '// x\n')
+  for (const h of profil.moduli.kuke.popis) {
+    if (h.paket === 'pai-ucenje') writeFileSync(join(home, '.claude', 'hooks', `${h.ime}.hook.ts`), '// pai\n')
+  }
 
   const inst = join(tmHome, 'config', 'profil.instanca.env')
   writeFileSync(inst, [
@@ -167,7 +183,8 @@ describe('J1 — shema profila (zod)', () => {
   test('predani profil upravitelj-cvora prolazi shemu', () => {
     const p = ucitajProfil(PROFIL)
     expect(p.profil).toBe('upravitelj-cvora')
-    expect(Object.keys(p.moduli).length).toBe(13)
+    // 13 iz TASK-5295 + znacajke, kuke, konzola, oporavak (ADR-0004 §13.2)
+    expect(Object.keys(p.moduli).length).toBe(17)
   })
 
   test('neispravan profil → izlaz 3 s porukom koja imenuje polje', async () => {
@@ -304,7 +321,7 @@ describe('J6 — idempotentno', () => {
     expect(tg.stil).toBe('kratko')
     const kopije = readdirSync(join(d.tmHome, 'backup'))
     expect(kopije.length).toBe(1)
-    expect(readdirSync(join(d.tmHome, 'backup', kopije[0])).sort()).toEqual(['postavke.env', 'settings.json', 'telegram.json'])
+    expect(readdirSync(join(d.tmHome, 'backup', kopije[0])).sort()).toEqual(['features.json', 'postavke.env', 'settings.json', 'telegram.json'])
   })
 })
 
@@ -356,12 +373,13 @@ describe('J8 — capguard: samo zahtjev pending', () => {
 describe('J9 — settings.json: spoj hooks, tuđe ostaje, kopija prije', () => {
   test('tuđi ključ i tuđa kuka ostaju, dodaju se samo kuke profila', async () => {
     const prije = readFileSync(join(d.home, '.claude', 'settings.json'), 'utf-8')
-    await d.pokreni(['primijeni', '--pisi', '--modul', 'claude'])
+    await d.pokreni(['primijeni', '--pisi', '--modul', 'kuke'])
     const j = JSON.parse(readFileSync(join(d.home, '.claude', 'settings.json'), 'utf-8'))
     expect(j.model).toBe('tudi-kljuc')
     expect(j.hooks.Stop[0].hooks[0].command).toBe('tudja-kuka')
     expect(j.hooks.PreToolUse[0].hooks[0].command).toBe(`${d.home}/.bun/bin/bun run ${d.home}/.claude/hooks/SecurityValidator.hook.ts`)
-    expect(j.hooks.UserPromptSubmit.length).toBe(1)
+    // jezgra: SecurityValidator + session_usage --hook prompt
+    expect(j.hooks.UserPromptSubmit.length).toBe(2)
     const kop = readdirSync(join(d.tmHome, 'backup'))
     expect(readFileSync(join(d.tmHome, 'backup', kop[0], 'settings.json'), 'utf-8')).toBe(prije)
     // --modul claude: ništa izvan modula nije dirano
@@ -466,5 +484,162 @@ describe('preduvjet P1 i odbijanja (izlazi 3 i 4)', () => {
     expect((await d.pokreni(['primijeni', '--pisi', '--ssh', 'netko@cvor'])).kod).toBe(KOD.ODBIJENO)
     expect((await d.pokreni(['obrisi'])).kod).toBe(KOD.ODBIJENO)
     expect((await d.pokreni(['izvezi'])).kod).toBe(KOD.ODBIJENO)
+  })
+})
+
+// ─── ADR-0004 §13.6: paritet s glavnim (TASK-5308) ───────────────────────────
+
+/** Dopiše retke u instancu dvojnika (ZNACAJKE_*, KUKE_PAKETI). */
+function instanca(retci: string[]): void {
+  writeFileSync(d.inst, readFileSync(d.inst, 'utf-8') + retci.join('\n') + '\n')
+}
+const features = () => JSON.parse(readFileSync(join(d.sustav, 'features.json'), 'utf-8'))
+const settingsJson = () => JSON.parse(readFileSync(join(d.home, '.claude', 'settings.json'), 'utf-8'))
+
+describe('J13 — modul znacajke: samo `enabled` imenovanih ključeva, idempotentno, bez restarta', () => {
+  test('profil = glavni: 53 ON; note/since i tuđi ključ ostaju; drugi --pisi → 0 promjena', async () => {
+    const r = await d.pokreni(['primijeni', '--pisi', '--modul', 'znacajke'])
+    expect(r.izlaz).toContain('potreban restart regoc-taskmanager: ne')
+    const f = features()
+    const p = ucitajProfil(PROFIL).moduli.znacajke!
+    for (const [k, z] of Object.entries(p.kljucevi)) expect(f[k]?.enabled === true).toBe(z.on)
+    expect(Object.values(p.kljucevi).filter(z => z.on).length).toBe(53)
+    expect(f.staleReaper).toEqual({ enabled: false, since: '2026-08-01', note: 'čvor: agresivnije od glavnog' })
+    expect(f.tudjiPrekidac).toEqual({ enabled: true, note: 'nije u profilu — ostaje' })
+    expect(f.userFlush.note).toContain('profil-cvora')
+    const prije = readFileSync(join(d.sustav, 'features.json'), 'utf-8')
+    const r2 = await d.pokreni(['primijeni', '--pisi', '--modul', 'znacajke'])
+    expect(r2.izlaz).toContain('PRIMIJENJENO: 0 promjena')
+    expect(readFileSync(join(d.sustav, 'features.json'), 'utf-8')).toBe(prije)
+    expect(r2.kod).toBe(KOD.OK)
+  })
+
+  test('instanca: ISKLJUCI smije sve, UKLJUCI samo „uvjetno" (van ostaje off uz upozorenje)', async () => {
+    instanca(['ZNACAJKE_ISKLJUCI=["staleWatchdogLive","siroceOporavak"]', 'ZNACAJKE_UKLJUCI=["projectGitInit","teamChainLive"]'])
+    const r = await d.pokreni(['primijeni', '--pisi', '--modul', 'znacajke'])
+    const f = features()
+    expect(f.staleWatchdogLive?.enabled ?? false).toBe(false)     // ključa nema = isEnabled false, ne piše se
+    expect(f.siroceOporavak?.enabled ?? false).toBe(false)
+    expect(f.projectGitInit.enabled).toBe(true)
+    expect(f.teamChainLive?.enabled ?? false).toBe(false)
+    expect(r.izlaz).toContain('teamChainLive je „van"')
+  })
+
+  test('ucinakZnacajki: isključenje pobjeđuje uključenje', () => {
+    const p = ucitajProfil(PROFIL)
+    const { ucinak } = ucinakZnacajki(p, { ZNACAJKE_UKLJUCI: '["projectGitInit"]', ZNACAJKE_ISKLJUCI: '["projectGitInit"]' })
+    expect(ucinak.projectGitInit).toBe(false)
+  })
+})
+
+describe('J14 — prekidač ON bez koda na čvoru → izlaz 3 s imenom', () => {
+  test('kod ne zna siroceOporavak → PREDUVJET, --pisi ništa ne piše; odgoda u instanci ga skida', async () => {
+    rmSync(d.root, { recursive: true, force: true })
+    d = dvojnik({ bezKodaZa: ['siroceOporavak'] })
+    const r = await d.pokreni(['provjeri', '--modul', 'znacajke'])
+    expect(r.kod).toBe(KOD.PREDUVJET)
+    expect(r.izlaz).toContain('PREDUVJET siroceOporavak')
+    const prije = otisak(d.root)
+    expect((await d.pokreni(['primijeni', '--pisi'])).kod).toBe(KOD.PREDUVJET)
+    expect(otisak(d.root)).toBe(prije)
+    instanca(['ZNACAJKE_ISKLJUCI=["siroceOporavak"]'])
+    expect((await d.pokreni(['provjeri', '--modul', 'znacajke'])).kod).toBe(KOD.RAZLIKA)
+  })
+
+  test('izvorniSustavSadrzi: nedostaje modul ili oznaka TASK-255 → NEDOSTAJE (ne blokira --pisi)', async () => {
+    rmSync(join(d.sustav, 'OrphanRecovery.ts'))
+    writeFileSync(join(d.sustav, 'AgentRouting.ts'), '// stari\n')
+    const r = await d.pokreni(['provjeri', '--modul', 'paket'])
+    expect(r.izlaz).toContain('NEDOSTAJE izvorni.OrphanRecovery.ts')
+    expect(r.izlaz).toContain('NEDOSTAJE anti-kaskada regoc-chain (TASK-255)')
+  })
+})
+
+describe('J15 — modul kuke: putanje iz HOME/TM_PAKET, tuđe ostaju, kuka bez datoteke se ne spaja', () => {
+  test('jezgra = 7 kuka; svaka naredba je iz HOME/TM_PAKET čvora; drugi --pisi → 0 promjena', async () => {
+    const r = await d.pokreni(['primijeni', '--pisi', '--modul', 'kuke'])
+    expect(r.kod).toBe(KOD.OK)
+    const j = settingsJson()
+    const naredbe = Object.values(j.hooks).flat().flatMap((e: any) => e.hooks.map((h: any) => h.command)) as string[]
+    expect(naredbe.length).toBe(1 + 7)                     // tuđa + jezgra
+    expect(naredbe.filter(n => n !== 'tudja-kuka').every(n => n.includes(d.home))).toBe(true)
+    expect(naredbe).toContain(`${d.home}/.bun/bin/bun run ${d.paket}/hooks/TaskInstructionsInject.hook.ts`)
+    expect(j.hooks.SessionStart.length).toBe(1)
+    expect(j.hooks.PostToolUse.map((e: any) => e.matcher)).toEqual([undefined, 'Bash|Edit|MultiEdit|Write|NotebookEdit|Task'])
+    expect((await d.pokreni(['primijeni', '--pisi', '--modul', 'kuke'])).izlaz).toContain('PRIMIJENJENO: 0 promjena')
+    expect(readFileSync(PROFIL, 'utf-8')).not.toMatch(/"\/home\//)          // nijedna apsolutna putanja doma u profilu
+  })
+
+  test('KUKE_PAKETI=jezgra,pai-ucenje → 14 kuka; nepoznat paket → upozorenje', async () => {
+    instanca(['KUKE_PAKETI=jezgra,pai-ucenje,nepostojeci'])
+    const r = await d.pokreni(['primijeni', '--pisi', '--modul', 'kuke'])
+    expect(r.izlaz).toContain('paket nepostojeci')
+    const n = Object.values(settingsJson().hooks).flat().flatMap((e: any) => e.hooks).length
+    expect(n).toBe(1 + 14)
+    expect(paketiKuka(ucitajProfil(PROFIL), { KUKE_PAKETI: 'pai-ucenje' })).toEqual(['jezgra', 'pai-ucenje'])
+  })
+
+  test('kuka bez datoteke → NEDOSTAJE i nije spojena; postojeća SecurityValidator kuka čvora se ne duplicira', async () => {
+    rmSync(join(d.paket, 'hooks', 'RegocConsoleLog.hook.ts'))
+    await d.pokreni(['primijeni', '--pisi', '--modul', 'kuke'])
+    const r = await d.pokreni(['provjeri', '--modul', 'kuke'])
+    expect(r.kod).toBe(KOD.LJUDI)
+    expect(r.izlaz).toContain('NEDOSTAJE PostToolUse[Bash|Edit|MultiEdit|Write|NotebookEdit|Task] RegocConsoleLog')
+    expect(JSON.stringify(settingsJson())).not.toContain('RegocConsoleLog')
+    expect(settingsJson().hooks.PreToolUse.length).toBe(1)
+  })
+})
+
+describe('J16 — staleReaper ON na čvoru → RAZLIKA i kad je staleReaperLive off', () => {
+  test('provjeri javlja RAZLIKA staleReaper, a oporavak NEDOSTAJE dok je upaljen', async () => {
+    const r = await d.pokreni(['provjeri', '--modul', 'znacajke,oporavak'])
+    expect(r.izlaz).toContain('RAZLIKA staleReaper: profil=false čvor=true')
+    expect(r.izlaz).toContain('NEDOSTAJE staleReaper — mora biti isključen')
+  })
+})
+
+describe('J17 — modul konzola: drop-in u datoteku, svježi izvori', () => {
+  test('drop-in za oba user-unita; drugi --pisi 0; traži daemon-reload', async () => {
+    const r = await d.pokreni(['primijeni', '--pisi', '--modul', 'konzola'])
+    expect(r.izlaz).toContain('daemon-reload')
+    for (const [unit, ime] of [['regoc-taskmanager', 'taskwebui'], ['regoc-voice', 'voiceserver']]) {
+      const dropIn = join(d.home, '.config', 'systemd', 'user', `${unit}.service.d`, 'konzola.conf')
+      const log = join(d.home, '.tmp', 'regoc_logs', `${ime}.log`)
+      expect(readFileSync(dropIn, 'utf-8')).toBe(konzolaDropIn(log))
+      expect(readFileSync(dropIn, 'utf-8')).toContain(`StandardOutput=append:${log}`)
+      expect(existsSync(join(d.home, '.tmp', 'regoc_logs'))).toBe(true)
+    }
+    expect((await d.pokreni(['primijeni', '--pisi', '--modul', 'konzola'])).izlaz).toContain('PRIMIJENJENO: 0 promjena')
+  })
+
+  test('svjež izvor = OK, nepostojeći = NEDOSTAJE s imenom punitelja', async () => {
+    mkdirSync(join(d.home, '.tmp', 'regoc_logs'), { recursive: true })
+    writeFileSync(join(d.home, '.tmp', 'regoc_logs', 'regoc.log'), '[x] agent · TASK-1 · Bash: test\n')
+    const r = await d.pokreni(['provjeri', '--modul', 'konzola'])
+    expect(r.izlaz).not.toContain('NEDOSTAJE regoc ')
+    expect(r.izlaz).toContain('NEDOSTAJE daemon — izvor konzole nije svjež')
+  })
+})
+
+describe('oporavak — samo provjera', () => {
+  test('nakon primjene profila: uključeno + kod + svjež daemon.log → OK', async () => {
+    await d.pokreni(['primijeni', '--pisi', '--modul', 'znacajke'])
+    mkdirSync(join(d.home, '.tmp'), { recursive: true })
+    writeFileSync(join(d.home, '.tmp', 'regoc_daemon.log'), '[x] daemon\n')
+    const r = await d.pokreni(['provjeri', '--modul', 'oporavak'])
+    expect(r.kod).toBe(KOD.OK)
+  })
+})
+
+describe('C3 — config/features.example.json = modul znacajke profila', () => {
+  test('isti 75 ključeva i iste vrijednosti; svaki note nosi odluku', () => {
+    const pr = ucitajProfil(PROFIL).moduli.znacajke!.kljucevi
+    const ex = JSON.parse(readFileSync(join(KORIJEN, 'config', 'features.example.json'), 'utf-8'))
+    const kljucevi = Object.keys(ex).filter(k => k !== '_opis')
+    expect(kljucevi.sort()).toEqual(Object.keys(pr).sort())
+    for (const k of kljucevi) {
+      expect(ex[k].enabled).toBe(pr[k].on)
+      expect(ex[k].note.startsWith(pr[k].odluka)).toBe(true)
+    }
   })
 })
