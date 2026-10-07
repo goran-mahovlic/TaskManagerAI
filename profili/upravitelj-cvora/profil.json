@@ -46,6 +46,17 @@
           "datoteka": "src/TelegramPrivitci.ts"
         },
         {
+          "znacajka": "SEND_DOC iz privitaka chata + razlog neuspjeha u chat (TASK-5337)",
+          "grep": [
+            "src/razgovor/Razgovor.ts",
+            "dokumentiMapeChata"
+          ]
+        },
+        {
+          "znacajka": "trag razgovora (i bot↔bot) kao zadatak na ploči čvora (TASK-5337)",
+          "datoteka": "src/razgovor/ZadatakRazgovora.ts"
+        },
+        {
           "znacajka": "kanal bot↔bot i „Prekini komunikaciju\" (ADR-0003)",
           "grep": [
             "src/TaskWebUI.ts",
