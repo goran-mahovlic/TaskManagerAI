@@ -403,7 +403,7 @@ dvije osi u istu tablicu i u isti `paritet.py`, ne zaseban alat: **znanje** (`su
    podput)** — recall, retain, reflect, popis/brisanje dokumenata, statistika; webhookovi,
    kloniranje, prijenos, uvoz, postavke LLM-a i brisanje banke su 403. `PUT` banke propušta samo
    ime, misije i narav. Vrata kvote i brava vrijede za retain i reflect.
-6. **Prekidač razgovora je `ZNANJE_RAZGOVOR` u instanci** (off | shadow | on), ne postavka ploče
+6. **Prekidač razgovora je `ZNANJE_RAZGOVOR` u instanci** (off | shadow | on; uz `ZNANJE_RAZGOVOR_OD` = prvi dan — razgovori prije čiste banke ponavljaju činjenice stare), ne postavka ploče
    `memorija.upis`: ploča paketa nema opći API postavki, a instanca je ionako mjesto vrijednosti
    po čvoru (ponovljivo za node-B). U banku idu samo završeni dani; dan s oblikom tajne se ne upisuje.
 7. **Zadatak s oblikom tajne u punom tekstu rezultata** (npr. 64-znamenkasti heks) ne ide u banku —
