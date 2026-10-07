@@ -8,13 +8,30 @@ const KORIJEN = join(import.meta.dir, '..', '..')
 
 export interface Posluzitelj { url: string; proc: ReturnType<typeof Bun.spawn>; dom: string; najmovi: string }
 
+/** TM_HOME s config/features.json; kad je /tmp pun (ENOSPC — tmpfs od 100 MB), ide pod $HOME/.tmp. */
+function napraviDom(features: Record<string, { enabled: boolean }>): string {
+  const baze = [tmpdir(), join(process.env.HOME || tmpdir(), '.tmp')]
+  for (const [i, baza] of baze.entries()) {
+    let dom = ''
+    try {
+      mkdirSync(baza, { recursive: true })
+      dom = mkdtempSync(join(baza, 'tm-e2e-'))
+      mkdirSync(join(dom, 'config'), { recursive: true })
+      writeFileSync(join(dom, 'config', 'features.json'), JSON.stringify(features))
+      return dom
+    } catch (e: any) {
+      if (dom) rmSync(dom, { recursive: true, force: true })
+      if (e?.code !== 'ENOSPC' || i === baze.length - 1) throw e
+    }
+  }
+  throw new Error('nedostižno')
+}
+
 export async function podigni(zastavice: Record<string, boolean> = {}, dodatnaOkolina: Record<string, string> = {}): Promise<Posluzitelj> {
-  const dom = mkdtempSync(join(tmpdir(), 'tm-e2e-'))
-  const najmovi = join(dom, 'najmovi')
-  mkdirSync(join(dom, 'config'), { recursive: true })
   const features: Record<string, { enabled: boolean }> = {}
   for (const [k, v] of Object.entries(zastavice)) features[k] = { enabled: v }
-  writeFileSync(join(dom, 'config', 'features.json'), JSON.stringify(features))
+  const dom = napraviDom(features)
+  const najmovi = join(dom, 'najmovi')
   const env = {
     ...process.env, TM_HOME: dom, REGOC_SPAWN_LEASE_DIR: najmovi,
     NODE_ENV: 'production', BUN_TEST: '', ...dodatnaOkolina,
