@@ -228,6 +228,32 @@ describe('J11 — memorija (Hindsight, fail-open)', () => {
     expect(r.greska).toMatch(/rok/)
   })
 
+  // TASK-5286: Bun na node-A odbije fetch tek ~13 s nakon abort-a — rok mora vrijediti sam.
+  test('rok je tvrda granica i kad fetch ignorira signal', async () => {
+    let gotovo = false
+    const gluh = (() => new Promise<Response>(res => {
+      setTimeout(() => { gotovo = true; res(new Response(JSON.stringify({ results: [{ text: 'kasno' }] }))) }, 1500)
+    })) as any
+    const t0 = Date.now()
+    const r = await dohvatiMemoriju(zahtjev({ rokMs: 200, fetchImpl: gluh }))
+    expect(Date.now() - t0).toBeLessThan(500)
+    expect(gotovo).toBe(false)
+    expect(r.blok).toBeNull()
+    expect(r.cinjenica).toBe(0)
+    expect(r.noviKljucevi).toEqual([])
+    expect(r.greska).toMatch(/rok 200 ms istekao/)
+    expect(r.ms).toBeLessThan(500)
+  })
+
+  test('rok vrijedi i kad zaglavi čitanje tijela (json)', async () => {
+    const tijeloVisi = (async () => ({ ok: true, status: 200, json: () => new Promise(() => {}) })) as any
+    const t0 = Date.now()
+    const r = await dohvatiMemoriju(zahtjev({ rokMs: 200, fetchImpl: tijeloVisi }))
+    expect(Date.now() - t0).toBeLessThan(500)
+    expect(r.blok).toBeNull()
+    expect(r.greska).toMatch(/rok/)
+  })
+
   test('on → omeđen blok; ista činjenica se ne šalje dvaput u sesiji; ovlasti iz memorije ispadaju', async () => {
     let url = ''
     const f = (async (u: string) => {
