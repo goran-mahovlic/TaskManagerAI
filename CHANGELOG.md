@@ -1,3 +1,14 @@
+## 2026-10-07 — značka živih spawnova i „BEZ PROCESA” na ploči (TASK-5323)
+
+- Novo: `GET /api/config/concurrency` → `active` broji ŽIVE spawnove po najmovima (pid provjeren
+  kroz `/proc`), `activeSource: "najmovi"` i `liveSpawns` (taskId, agent, pid, startedAt), kad
+  bar jedna mapa najmova postoji: paketova (`stanje/spawn_leases`) i/ili `TM_IZVORNI_NAJMOVI`
+  (daemon sustava domaćina — komplet izvornog sustava na čvoru). Bez ijedne mape ostaje
+  `activeSource: "in_progress"` (kao prije).
+- Ploča: stupac „In Progress” nosi značku `(aktivno/strop aktivna)`, a zadatak `in_progress` bez
+  živog najma oznaku ⚠ BEZ PROCESA — samo uz izvor „najmovi” (inače bi bila lažna uzbuna).
+  Modul `src/core/TaskCloser.ts` (`izvoriNajmova`, `ziviNajmovi`, `stanjeSpawnova`).
+
 ## 2026-10-07 — „prebaci sve na model" i kvota samo za Anthropic razgovor (TASK-5305)
 
 - Novo: Config kartica „Model sustava — prebaci sve na jedan model" i `GET/PUT /api/models/svi`

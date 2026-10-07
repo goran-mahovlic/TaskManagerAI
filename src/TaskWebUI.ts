@@ -41,7 +41,7 @@ import { getRAGBackendService } from './RAGBackendService'
 import { parseAgentOutput, renderFull } from './core/AgentOutputParser'
 // TASK-5184: promet ploče — projekcija/since/straničenje za /api/tasks?view=board i br/gzip.
 import { izborZaPlocu, parsirajOpcijePloce, komprimirajOdgovor, saziProjekteDashboarda } from './PlocaPromet'
-import { najamAktivan } from './core/TaskCloser'
+import { najamAktivan, stanjeSpawnova } from './core/TaskCloser'
 import { isEnabled as jeUkljuceno } from './core/FeatureFlags'
 // Integracije (TASK-4800): četiri modula po istom obrascu + orkestrator + ulazni Telegram.
 import {
@@ -1754,6 +1754,12 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     .uputa-item { border-left: 3px solid var(--accent-green, #22c55e); padding: 4px 8px; margin-bottom: 6px; }
     .uputa-item.ceka { border-left-color: var(--accent-yellow, #eab308); }
     .uputa-item .uputa-meta { font-size: 0.75rem; opacity: .75; }
+    .live-spawns-badge { font-size: 0.75rem; font-weight: 600; opacity: .85; margin-left: 6px; }
+    .live-spawns-badge.puno { color: var(--accent-yellow, #eab308); }
+    .bez-procesa-badge {
+      font-size: 0.68rem; border-radius: 3px; padding: 1px 5px; margin-left: 6px; font-weight: 600;
+      background: var(--accent-red, #ef4444); color: #fff;
+    }
     .paused-badge {
       font-size: 0.68rem;
       background: var(--accent-yellow, #eab308);
@@ -2431,7 +2437,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
 
       <div class="grid">
         <div class="column in-progress">
-          <h2 data-i18n="in_progress">In Progress</h2>
+          <h2><span data-i18n="in_progress">In Progress</span> <span id="live-spawns-badge" class="live-spawns-badge" data-i18n-title="zivi_spawnovi_naslov" title="Live spawns / concurrency cap"></span></h2>
           <div id="in-progress-tasks"></div>
         </div>
         <div class="column pending">
@@ -3657,6 +3663,43 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       return { cekaNa: cekaNa, otkljucava: vidjeni.size };
     }
 
+    // TASK-5323 (TASK-5029 glavnog): živi spawnovi iz /api/config/concurrency. liveSpawnState
+    // postoji SAMO kad je izvor „najmovi" — inače ploča broji status kao prije i ne javlja BEZ PROCESA.
+    var liveSpawnState = null;  // var: renderTasks ga čita, a bez TDZ-a
+    function renderLiveSpawns() {
+      const statusCount = tasks.filter(t => t.status === 'in_progress').length;
+      const pc = document.getElementById('progress-count');
+      const badge = document.getElementById('live-spawns-badge');
+      if (!liveSpawnState) {
+        if (pc) pc.textContent = statusCount;
+        if (badge) badge.textContent = '';
+        return;
+      }
+      const txt = liveSpawnState.active + '/' + liveSpawnState.max;
+      if (pc) {
+        pc.textContent = txt;
+        pc.title = _T('zivi_spawnovi_naslov', 'Live spawns / cap') + ' · in_progress: ' + statusCount;
+      }
+      if (badge) {
+        badge.textContent = '(' + txt + ' ' + _T('aktivna', 'active') + ')';
+        badge.classList.toggle('puno', liveSpawnState.active >= liveSpawnState.max);
+      }
+    }
+    async function fetchLiveSpawns() {
+      try {
+        const d = await (await fetch('/api/config/concurrency')).json();
+        if (typeof d.active !== 'number' || typeof d.maxConcurrent !== 'number') return;
+        const prije = liveSpawnState ? Array.from(liveSpawnState.ids).sort().join(',') : null;
+        liveSpawnState = d.activeSource === 'najmovi'
+          ? { active: d.active, max: d.maxConcurrent, ids: new Set((d.liveSpawns || []).map(function (x) { return x.taskId; })) }
+          : null;
+        renderLiveSpawns();
+        // Oznaka „bez procesa" ovisi o skupu živih — iscrtaj ploču samo kad se skup promijeni.
+        const sada = liveSpawnState ? Array.from(liveSpawnState.ids).sort().join(',') : null;
+        if (prije !== sada) renderTasks();
+      } catch (e) { /* ploča bez izvora najmova ostaje na brojanju statusa */ }
+    }
+
     function renderTasks() {
       const filtered = currentFilter === 'all' ? tasks : tasks.filter(t => t.assignee === currentFilter);
       const poId = new Map(tasks.map(function (t) { return [t.id, t]; }));
@@ -3735,7 +3778,11 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         // TASK-3047: pauza je zastavica uz status, pa pauzirani zadatak ostaje u svom
         // stupcu (Pending/In Progress) — samo je vizualno prigušen i nosi gumb „Nastavi".
         if (task.paused) card.classList.add('paused');
-        const pausedBadge = task.paused ? '<span class="paused-badge">&#9208; PAUZA</span>' : '';
+        const pausedBadge = (task.paused ? '<span class="paused-badge">&#9208; PAUZA</span>' : '')
+          // TASK-5323 (TASK-5029 glavnog): status kaže „u radu", a nijedan živi spawn ga ne drži.
+          // Samo kad ploča zna najmove (liveSpawnState) — bez njih bi svaki zadatak bio lažna uzbuna.
+          + (task.status === 'in_progress' && liveSpawnState && !liveSpawnState.ids.has(task.id)
+              ? '<span class="bez-procesa-badge" title="' + escapeAttr(_T('tsk_bez_procesa_naslov', 'in_progress without a live process')) + '">&#9888; ' + _T('tsk_bez_procesa', 'NO PROCESS') + '</span>' : '');
 
         // T10/TASK-3575: rezultat koji vratar NIJE mogao provjeriti. Tiho propustanje je
         // upravo ono sto ova oznaka zatvara — na ploci se „proslo" i „nisam imao cime
@@ -3856,7 +3903,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       if (cc) cc.textContent = brojac('cancelled');
       const uc = document.getElementById('unverified-count');
       if (uc) uc.textContent = unverifiedCache.todayCount;
-      document.getElementById('progress-count').textContent = tasks.filter(t => t.status === 'in_progress').length;
+      renderLiveSpawns();
       document.getElementById('pending-count').textContent = brojac('pending');
       document.getElementById('blocked-count').textContent = brojac('blocked');
       document.getElementById('completed-count').textContent = brojac('completed');
@@ -10558,6 +10605,8 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     // Radi i bez WebSocketa. TASK-5184: inkrementalno (since) i ne dok je stranica skrivena —
     // visibilitychange odmah osvježi kad se mobitel probudi.
     setInterval(function () { if (!document.hidden) fetchTasks(); }, 30000);
+    fetchLiveSpawns();
+    setInterval(function () { if (!document.hidden) fetchLiveSpawns(); }, 15000); // TASK-5323: živi spawnovi (najmovi), ne status
 
     // Zadatci koji čekaju odluku: uz isti ritam kao ploča. Prekidač „prikaži" pamti stanje
     // unutar sjednice, pa se otvoreni popis ne zatvara sam pri osvježavanju.
@@ -14382,7 +14431,8 @@ function handleGetPause(): Response {
 
 // ─── Strop usporednih agenata ────────────────────────────────────────────────
 // Izvor istine: tablica `settings` (core/ConcurrencySetting.ts). Orkestrator ga čita uživo
-// (keš ≤5 s), pa PUT ne traži restart. `active` = broj zadataka `in_progress`.
+// (keš ≤5 s), pa PUT ne traži restart. `active` = ŽIVI spawnovi po najmovima (pid provjeren
+// kroz /proc) kad ih neki daemon na stroju piše; inače broj zadataka `in_progress` (TASK-5323).
 function concurrencyPayload() {
   const cur = taskManager.getConcurrencySetting()
   const inProgress = taskManager.getTasks({ status: 'in_progress' } as any).length
@@ -14390,7 +14440,7 @@ function concurrencyPayload() {
   return {
     maxConcurrent: cur.value, min: CONCURRENCY_MIN, max: CONCURRENCY_MAX, default: CONCURRENCY_DEFAULT,
     updatedBy: cur.updatedBy, updatedAt: cur.updatedAt, source: cur.source,
-    active: inProgress, activeSource: 'in_progress', inProgress,
+    ...stanjeSpawnova(inProgress), inProgress,
     history: taskManager.getConcurrencyHistory(10),
     envDeprecated: env ? `${CONCURRENCY_ENV}=${env} u okolini se ignorira (zastarjelo) — vrijedi postavka` : null,
   }

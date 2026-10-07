@@ -977,5 +977,9 @@
   "tel_priv_v_voice": "glas",
   "tel_priv_v_audio": "zvuk",
   "tel_priv_v_video": "video",
-  "tel_priv_v_video_note": "video-krug"
+  "tel_priv_v_video_note": "video-krug",
+  "aktivna": "aktivna",
+  "tsk_bez_procesa": "BEZ PROCESA",
+  "tsk_bez_procesa_naslov": "Status je „u radu”, ali za zadatak ne radi nijedan proces (nema živog najma)",
+  "zivi_spawnovi_naslov": "Živi spawnovi (najmovi s provjerenim pidom) / strop usporednih agenata"
 }

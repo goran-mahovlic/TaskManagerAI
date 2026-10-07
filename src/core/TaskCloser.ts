@@ -239,6 +239,54 @@ export function najamAktivan(taskId: string, sad: number = Date.now()): boolean 
   return pidZiv(n.pid)
 }
 
+/**
+ * Mape najmova koje POSTOJE na ovom stroju: paketova (`najmoviDir`) i, ako je zadana, mapa
+ * daemona sustava domaćina (`TM_IZVORNI_NAJMOVI` — komplet izvornog sustava na čvoru, TASK-5323).
+ * Mapa nastaje kad daemon uzme prvi najam, pa prazan popis znači: nijedan daemon ovdje ne piše najmove.
+ */
+export function izvoriNajmova(izvorni: string = (process.env.TM_IZVORNI_NAJMOVI || '').trim()): string[] {
+  const kandidati = [najmoviDir(), ...(izvorni ? [izvorni] : [])]
+  return kandidati.filter((d, i) => kandidati.indexOf(d) === i && existsSync(d))
+}
+
+/** Živi najmovi iz zadanih mapa (pid živ, mlađi od NAJAM_MAX_MS), jedan po zadatku. */
+export function ziviNajmovi(sad: number = Date.now(), mape: string[] = izvoriNajmova()): Najam[] {
+  const po = new Map<string, Najam>()
+  for (const dir of mape) {
+    try {
+      if (!existsSync(dir)) continue
+      for (const f of readdirSync(dir)) {
+        if (!f.endsWith('.json')) continue
+        try {
+          const n = JSON.parse(readFileSync(join(dir, f), 'utf-8')) as Najam
+          if (!n || typeof n.pid !== 'number' || !n.startedAt) continue
+          const t = Date.parse(n.startedAt)
+          if (!Number.isFinite(t) || sad - t > NAJAM_MAX_MS || !pidZiv(n.pid)) continue
+          if (!po.has(String(n.taskId))) po.set(String(n.taskId), n)
+        } catch { /* pokvaren zapis se ne broji */ }
+      }
+    } catch { /* mapa nečitljiva → nitko ne radi dokazivo */ }
+  }
+  return [...po.values()].sort((a, b) => String(a.taskId).localeCompare(String(b.taskId)))
+}
+
+/**
+ * „Aktivno" za značku ploče (TASK-5029 glavnog). Bez ijedne mape najmova ostaje broj
+ * `in_progress` i nema popisa — ploča tada ne smije javljati „BEZ PROCESA" (lažna uzbuna).
+ */
+export function stanjeSpawnova(
+  inProgress: number,
+  mape: string[] = izvoriNajmova(),
+  zivi: (mape: string[]) => Najam[] = (m) => ziviNajmovi(Date.now(), m),
+): { active: number; activeSource: 'najmovi' | 'in_progress'; liveSpawns?: Najam[] } {
+  if (!mape.length) return { active: inProgress, activeSource: 'in_progress' }
+  const n = zivi(mape)
+  return {
+    active: n.length, activeSource: 'najmovi',
+    liveSpawns: n.map(x => ({ taskId: x.taskId, agent: x.agent, pid: x.pid, startedAt: x.startedAt })),
+  }
+}
+
 /** Počisti najmove čiji je proces mrtav ili koji su prestari (za daemonov prolaz). */
 export function pocistiNajmove(sad: number = Date.now()): string[] {
   const ocisceni: string[] = []

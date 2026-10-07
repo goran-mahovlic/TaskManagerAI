@@ -977,5 +977,9 @@
   "tel_priv_v_voice": "voice",
   "tel_priv_v_audio": "audio",
   "tel_priv_v_video": "video",
-  "tel_priv_v_video_note": "video note"
+  "tel_priv_v_video_note": "video note",
+  "aktivna": "active",
+  "tsk_bez_procesa": "NO PROCESS",
+  "tsk_bez_procesa_naslov": "Status is in progress, but no process runs for this task (no live lease)",
+  "zivi_spawnovi_naslov": "Live spawns (leases with a verified pid) / concurrency cap"
 }

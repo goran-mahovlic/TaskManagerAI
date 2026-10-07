@@ -90,8 +90,8 @@ describe('dorada — naslov, opis, oznake', () => {
   const izvorni = {
     id: 'TASK-5142', title: 'PDF izvještaja', status: 'completed',
     description: 'Napravi PDF.\n[PROVJERA] cmd: bun test tests/pdf.test.ts\nostalo',
-    resultSummary: 'PDF je u docs/x.pdf', tags: ['chat:-5161938429', 'lanac', 'dizajn'],
-    projectId: 'REGOC_SYSTEM', assignee: 'grga', priority: 2,
+    resultSummary: 'PDF je u docs/x.pdf', tags: ['chat:-1001234567890', 'lanac', 'dizajn'],
+    projectId: 'PRJ-PRIMJER', assignee: 'grga', priority: 2,
   }
   test('naslov nosi izvorni naslov, bez dvostrukog prefiksa', () => {
     expect(naslovDorade('PDF')).toBe('Dorada: PDF')
@@ -109,7 +109,7 @@ describe('dorada — naslov, opis, oznake', () => {
     expect(o).toContain('goran')
   })
   test('oznake: nasljeđuje se samo chat:, dodaju se dorada i dorada-od', () => {
-    expect(oznakeDorade(izvorni.tags, 'TASK-5142')).toEqual(['chat:-5161938429', 'dorada', 'dorada-od:TASK-5142'])
+    expect(oznakeDorade(izvorni.tags, 'TASK-5142')).toEqual(['chat:-1001234567890', 'dorada', 'dorada-od:TASK-5142'])
   })
   test('dodatne oznake (npr. sesija) se pridodaju bez duplikata', () => {
     expect(oznakeDorade(['chat:1'], 'TASK-1', ['no-watchdog', 'dorada'])).toEqual(['chat:1', 'dorada', 'dorada-od:TASK-1', 'no-watchdog'])

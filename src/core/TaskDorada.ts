@@ -1,7 +1,7 @@
 /**
  * TaskDorada — dorada zatvorenog zadatka, bilješke i poruke o pogrešci (TASK-5164).
  *
- * Dizajn: `~/app/regoc_system/docs/DIZAJN-nesukladnosti-BCD.md` §4 (nesukladnost D).
+ * Dizajn: DIZAJN-nesukladnosti-BCD.md §4 (nesukladnost D) u repozitoriju sustava domaćina.
  *
  * Zašto zaseban modul: ploča (TaskWebUI.ts, 15 000+ redaka) ovo samo spaja s bazom, a pravila
  * (koja ruta postoji, što 409 savjetuje, što dorada nasljeđuje) moraju se dati ispitati bez
