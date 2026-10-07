@@ -132,6 +132,19 @@ export function dokumentRazgovor(cvor: string, ime: string, chat: string, datum:
   return { sadrzaj, tajna: false, poteza: redovi.length }
 }
 
+/**
+ * Redoslijed upisa po važnosti: vrata kvote mogu prekinuti upis usred korpusa, pa prvo ide ono bez
+ * čega čvor ne zna sebe ni pravila — znanje čvora, ručni sloj (pravila, tijekovi, ovlasti), alati,
+ * tijekovi s koracima, pa tek onda opisi vještina.
+ */
+export function vaznost(id: string): number {
+  if (id.startsWith('cvor/')) return id.startsWith('cvor/razgovor/') ? 1 : 0
+  if (!id.startsWith('sustav/popis-')) return 2
+  if (id.startsWith('sustav/popis-alati-')) return 3
+  if (id.startsWith('sustav/popis-tijek')) return 4
+  return 5
+}
+
 export interface Plan { novi: string[]; promijenjeni: string[]; nestali: string[]; isti: number }
 
 /** Što upisati: id → sha korpusa prema id → sha zadnjeg upisa. Nestali `sustav/*` se brišu (Z4). */
@@ -147,5 +160,6 @@ export function planUpisa(korpus: Record<string, string>, stanje: Record<string,
     else isti++
   }
   const nestali = Object.keys(stanje).filter(id => !(id in korpus) && briseSe(id)).sort()
-  return { novi, promijenjeni, nestali, isti }
+  const poVaznosti = (a: string, b: string) => vaznost(a) - vaznost(b) || a.localeCompare(b)
+  return { novi: novi.sort(poVaznosti), promijenjeni: promijenjeni.sort(poVaznosti), nestali, isti }
 }

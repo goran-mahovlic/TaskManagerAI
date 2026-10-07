@@ -28,7 +28,7 @@ import { dirname, join } from 'path'
 import { branaKorpusa, renderZaCvor, type Mogucnost } from '../src/znanje/Korpus'
 import {
   dokumentAgenti, dokumentProjekti, dokumentRazgovor, dokumentStanje, dokumentZadatak, imaTajnu,
-  planUpisa, sha, type PotezRazgovora,
+  planUpisa, sha, vaznost, type PotezRazgovora,
 } from '../src/znanje/Cvor'
 
 const KORIJEN = join(import.meta.dir, '..')
@@ -184,7 +184,8 @@ async function sastavi(o: Okolina, mem: { banka: string }, mog: Record<string, b
   try {
     const reg = JSON.parse(readFileSync(o.postavke.TM_AGENTS_REGISTRY || join(sustavDir, 'REGOC_AGENTS.json'), 'utf-8'))
     const lista = (Array.isArray(reg?.agents) ? reg.agents : Object.entries(reg?.agents || {}).map(([id, a]: any) => ({ id, ...a })))
-      .filter((a: any) => a && !a.hidden && !/tajni/i.test(String(a.vidljivost || a.visibility || '')))
+      // Tajni agent (registar: visibility=secret) ne ide u banku koju čita razgovor (isto pravilo kao popis karte).
+      .filter((a: any) => a && !a.hidden && !/tajn|secret|private|hidden/i.test(String(a.vidljivost || a.visibility || '')))
       .map((a: any) => ({ id: a.id, name: a.name, fullName: a.fullName || a.full_name, role: a.role || a.uloga, description: a.description || a.opis, skills: a.skills || a.vjestine }))
     if (lista.length) korpus.set('cvor/agenti', { sadrzaj: dokumentAgenti(cvor, lista), kontekst: `Agenti čvora ${cvor}`, oznake: ['cvor', 'agenti'] })
   } catch { preskoceno.push('cvor/agenti (registar nečitljiv)') }
@@ -282,7 +283,7 @@ async function upisi(o: Okolina, mem: { url: string; banka: string }, korpus: Ko
   const hashevi = Object.fromEntries([...korpus].filter(([id]) => !a.samo || id.startsWith(a.samo + '/')).map(([id, d]) => [id, sha(d.sadrzaj)]))
   const stanjeOpsega = a.samo ? Object.fromEntries(Object.entries(st.dokumenti).filter(([id]) => id.startsWith(a.samo + '/'))) : st.dokumenti
   const plan = planUpisa(hashevi, stanjeOpsega)
-  const zaUpis = [...plan.novi, ...plan.promijenjeni].slice(0, a.najvise ?? Infinity)
+  const zaUpis = [...plan.novi, ...plan.promijenjeni].sort((x, y) => vaznost(x) - vaznost(y)).slice(0, a.najvise ?? Infinity)
   ispis(`banka ${mem.banka}: novo ${plan.novi.length}, promijenjeno ${plan.promijenjeni.length}, nestalo ${plan.nestali.length}, isto ${plan.isti}`
     + (zaUpis.length < plan.novi.length + plan.promijenjeni.length ? ` (ovaj prolaz: ${zaUpis.length})` : ''))
   if (!a.pisi) { ispis('SUHO: ništa nije upisano (za upis --pisi)'); return 0 }

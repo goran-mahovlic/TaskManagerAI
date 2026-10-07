@@ -14,6 +14,10 @@ describe('Z4 — plan upisa', () => {
     expect(p.novi).toEqual(['sustav/b'])
     expect(p.nestali).toEqual(['cvor/projekti', 'sustav/c'])
   })
+  test('upis ide po važnosti: čvor, ručni sloj, alati, tijekovi, vještine', () => {
+    const p = planUpisa({ 'sustav/popis-vjestina-A': '1', 'sustav/popis-alati-x': '1', 'sustav/pravila': '1', 'cvor/projekti': '1', 'sustav/popis-tijek-y': '1' }, {})
+    expect(p.novi).toEqual(['cvor/projekti', 'sustav/pravila', 'sustav/popis-alati-x', 'sustav/popis-tijek-y', 'sustav/popis-vjestina-A'])
+  })
   test('razgovor se ne briše kad dnevni zapis istekne; tuđi id (stara karta) se ne dira', () => {
     const p = planUpisa({}, { 'cvor/razgovor/x/2026-10-01': '1', 'system-map/agenti.md': '2' })
     expect(p.nestali).toEqual([])
