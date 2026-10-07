@@ -81,7 +81,7 @@ describe('Z6 — posrednik', () => {
   test('prosljeđuje kanonski URL: id dokumenta ponovo kodiran, upit sačuvan', async () => {
     const h = lazniHindsight()
     const p = createPosrednik({ cilj: CILJ, banke: ['banka_cvora'], fetchImpl: h.fetchImpl })
-    expect((await p(zahtjev('DELETE', '/v1/default/banks/banka_cvora/documents/sustav%2Fagenti?x=1'))).status).toBe(200)
+    expect((await p(zahtjev('GET', '/v1/default/banks/banka_cvora/documents/sustav%2Fagenti?x=1'))).status).toBe(200)
     expect(h.pozivi.at(-1)!.url).toBe(`${CILJ}/v1/default/banks/banka_cvora/documents/sustav%2Fagenti?x=1`)
   })
 
