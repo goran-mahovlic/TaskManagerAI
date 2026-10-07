@@ -41,7 +41,7 @@ import { getRAGBackendService } from './RAGBackendService'
 import { parseAgentOutput, renderFull } from './core/AgentOutputParser'
 // TASK-5184: promet ploče — projekcija/since/straničenje za /api/tasks?view=board i br/gzip.
 import { izborZaPlocu, parsirajOpcijePloce, komprimirajOdgovor, saziProjekteDashboarda } from './PlocaPromet'
-import { najamAktivan, stanjeSpawnova } from './core/TaskCloser'
+import { najamAktivan, stanjeSpawnova, ziviNajmovi } from './core/TaskCloser'
 import { isEnabled as jeUkljuceno } from './core/FeatureFlags'
 import { reloadFlags, putanjaZnacajki } from './core/FeatureFlags'
 // TASK-5327 (prijenos TASK-5204/5164 glavnog): revizija blokiranih i zatvaranje kroz daemon.
@@ -52,6 +52,7 @@ import {
 } from './core/RevizijaBlokiranih'
 import {
   procitajToken, pozivateljZatvaranja, odlukaZatvaranja, tijelo202, zapisiZahtjev, OZNAKA_CEKA,
+  ovlastPovrata, zapisiPovrat,
 } from './core/ZatvaranjeKrozDaemon'
 // Integracije (TASK-4800): četiri modula po istom obrascu + orkestrator + ulazni Telegram.
 import {
@@ -13567,15 +13568,24 @@ async function handleUpdateTask(taskId: string, req: Request): Promise<Response>
     if (updates.status === 'completed') {
       try {
         const postojeci = taskManager.getTask(taskId)
-        const pozivatelj = pozivateljZatvaranja(req.headers, procitajToken())
+        // TASK-5334 (N1): covjek bez ključa ne vrijedi dok spawn radi na zadatku — najam paketa
+        // ili daemona kompleta (TM_IZVORNI_NAJMOVI).
+        const najam = najamAktivan(taskId) || ziviNajmovi().some(n => String(n.taskId) === taskId)
+        const pozivatelj = pozivateljZatvaranja(req.headers, procitajToken(), najam)
         const odl = odlukaZatvaranja({
           status: 'completed', trenutni: postojeci?.status ?? '', pozivatelj,
           ukljuceno: jeUkljuceno('zatvaranjeKrozDaemon'), live: jeUkljuceno('zatvaranjeKrozDaemonLive'),
         })
         if (odl.zahtjev && postojeci) {
           zapisiZahtjev({ taskId, nacin: odl.provedi ? 'live' : 'shadow', assignee: postojeci.assignee ?? null,
-            startedAt: postojeci.startedAt ?? null, uloga: req.headers.get('X-REGOC-Zatvara') || null })
+            startedAt: postojeci.startedAt ?? null, uloga: req.headers.get('X-REGOC-Zatvara') || null, najam })
           console.warn(`[API] zatvaranje-kroz-daemon: ${taskId} completed od '${req.headers.get('X-REGOC-Zatvara') || 'bez uloge'}' — ${odl.provedi ? 'ZAHTJEV (202)' : 'SJENA'}`)
+        }
+        if (pozivatelj === 'covjek' && postojeci) {
+          // Uloga bez ključa: svako takvo zatvaranje mora ostaviti trag (TASK-5334, N1).
+          zapisiZahtjev({ taskId, nacin: 'covjek', assignee: postojeci.assignee ?? null, trenutni: postojeci.status,
+            startedAt: postojeci.startedAt ?? null, uloga: 'covjek', origin: req.headers.get('origin') || null })
+          console.warn(`[API] zatvaranje-kroz-daemon: ${taskId} completed kao covjek (bez ključa) — zapisano`)
         }
         if (odl.provedi && postojeci) {
           const oznake = Array.from(new Set([...(validatedData.tags ?? postojeci.tags ?? []), OZNAKA_CEKA]))
@@ -13903,6 +13913,16 @@ async function handleReclaimTask(taskId: string, req: Request): Promise<Response
         details: `Puštanje iz 'blocked' smiju samo ${RECLAIM_IZ_BLOCKED_SMIJU.join(' i ')} (TASK-5204), ne '${by}'.`,
         currentStatus: existing.status,
       }, 409)
+    }
+    // TASK-5334 (N3): `by` je samo tvrdnja. Daemonske uloge dokazuju se ključem zatvarača
+    // (sjena: zapis; `povratKljucLive`: 403), covjek s tuđe stranice (Origin) dobiva 403.
+    if (from === 'blocked') {
+      const ovlast = ovlastPovrata({ by, zaglavlja: req.headers, token: procitajToken(), live: jeUkljuceno('povratKljucLive') })
+      if (ovlast.zapis) zapisiPovrat({ taskId, ...ovlast.zapis, ...(ovlast.dopusti ? {} : { odbijeno: true }) })
+      if (!ovlast.dopusti) {
+        console.warn(`[API] Reclaim ${taskId}: '${by}' odbijen — ${ovlast.razlog}`)
+        return json({ error: 'Forbidden', details: ovlast.razlog, currentStatus: existing.status }, ovlast.status ?? 403)
+      }
     }
     if (existing.status !== from) {
       return json({

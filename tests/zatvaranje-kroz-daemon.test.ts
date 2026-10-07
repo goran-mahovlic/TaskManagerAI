@@ -6,14 +6,14 @@
  * Prijenos s glavnog u paket: TASK-5327 (+ putanja ključa iz `TM_IZVORNI_PODACI`).
  */
 import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
-import { mkdtempSync, rmSync, statSync, readFileSync, existsSync, writeFileSync } from 'fs'
+import { mkdtempSync, rmSync, statSync, readFileSync, existsSync, writeFileSync, chmodSync, mkdirSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import {
   osigurajToken, procitajToken, pozivateljZatvaranja, odlukaZatvaranja, tijelo202,
   obradiZahtjeveZatvaranja, obradiSjenuZatvaranja, zaglavljaZatvaraca, OZNAKA_CEKA,
   presudaZahtjeva, type ZahtjevZadatak,
-  putTokena, putZahtjeva, zapisiZahtjev,
+  putTokena, putZahtjeva, zapisiZahtjev, ovlastPovrata, tudiIzvor,
 } from '../src/core/ZatvaranjeKrozDaemon'
 
 const TMP = process.env.TMPDIR || tmpdir()
@@ -285,5 +285,76 @@ describe('putanje (TASK-5327): ploča paketa i daemon domaćina dijele ključ i 
   })
   test('usporedba ključa je stalnog trajanja (timingSafeEqual) — različita duljina ne baca', () => {
     expect(pozivateljZatvaranja(zag({ 'X-REGOC-Zatvara': 'daemon', 'X-REGOC-Zatvarac': 'kratko' }), 'a'.repeat(48))).toBe('ostali')
+  })
+})
+
+describe('TASK-5334 (nalaz TASK-5329) — uloge zatvaranja i povrata', () => {
+  test('N1: covjek dok spawn radi na zadatku (najam) = ostali; bez najma ostaje covjek', () => {
+    expect(pozivateljZatvaranja(zag({ 'X-REGOC-Zatvara': 'covjek' }), 'abc', true)).toBe('ostali')
+    expect(pozivateljZatvaranja(zag({ 'X-REGOC-Zatvara': 'covjek' }), 'abc', false)).toBe('covjek')
+    // daemon s ključem ostaje daemon i uz najam
+    expect(pozivateljZatvaranja(zag({ 'X-REGOC-Zatvara': 'daemon', 'X-REGOC-Zatvarac': 'abc' }), 'abc', true)).toBe('daemon')
+  })
+
+  test('N5: procitajToken odbija ključ s pravima za grupu/ostale', () => {
+    const p = join(dir, 'zatvarac.token')
+    writeFileSync(p, 'a'.repeat(48) + '\n', { mode: 0o600 })
+    expect(procitajToken(p)).toBe('a'.repeat(48))
+    chmodSync(p, 0o640)
+    expect(procitajToken(p)).toBeNull()
+    chmodSync(p, 0o604)
+    expect(procitajToken(p)).toBeNull()
+  })
+  test('N5: procitajToken odbija ključ tuđeg vlasnika', () => {
+    const p = join(dir, 'zatvarac.token')
+    writeFileSync(p, 'a'.repeat(48) + '\n', { mode: 0o600 })
+    expect(procitajToken(p, (process.getuid?.() ?? 0) + 1)).toBeNull()
+  })
+  test('N5: osigurajToken popravlja ključ s krivim pravima i stavlja mapu ključa na 700', () => {
+    const m = join(dir, 'podaci')
+    mkdirSync(m, { mode: 0o775 }); chmodSync(m, 0o775)
+    const p = join(m, 'zatvarac.token')
+    writeFileSync(p, 'b'.repeat(48) + '\n'); chmodSync(p, 0o664)
+    const t = osigurajToken(p)
+    expect(statSync(p).mode & 0o777).toBe(0o600)
+    expect(procitajToken(p)).toBe(t)
+    expect(statSync(m).mode & 0o777).toBe(0o700)
+  })
+
+  const h = (x: Record<string, string>) => zag(x)
+  test('N3: tuđi Origin / cross-site = tuđi izvor; isti host ili bez Origina nije', () => {
+    expect(tudiIzvor(h({ host: '127.0.0.1:17781', origin: 'https://zlo.example' }))).toBe(true)
+    expect(tudiIzvor(h({ host: '127.0.0.1:17781', 'sec-fetch-site': 'cross-site' }))).toBe(true)
+    expect(tudiIzvor(h({ host: '127.0.0.1:17781', origin: 'http://127.0.0.1:17781' }))).toBe(false)
+    expect(tudiIzvor(h({ host: '127.0.0.1:17781' }))).toBe(false)
+    expect(tudiIzvor(h({ host: '127.0.0.1:17781', origin: 'null' }))).toBe(true)
+    expect(tudiIzvor(h({ host: '127.0.0.1:17781', origin: 'nije-url' }))).toBe(true)
+  })
+  test('N3: by covjek s tuđeg Origina → 403; s ploče → dopusti i zapiši', () => {
+    const k = 'k'.repeat(48)
+    const zlo = ovlastPovrata({ by: 'covjek', zaglavlja: h({ host: 'a:1', origin: 'https://zlo.example' }), token: k, live: false })
+    expect(zlo).toMatchObject({ dopusti: false, status: 403 })
+    const ok = ovlastPovrata({ by: 'covjek', zaglavlja: h({ host: 'a:1', origin: 'http://a:1' }), token: k, live: false })
+    expect(ok.dopusti).toBe(true)
+    expect(ok.zapis).toMatchObject({ by: 'covjek', nacin: 'covjek' })
+  })
+  test('N3: daemonski by bez ključa — sjena dopušta i bilježi, provedba odbija 403', () => {
+    const k = 'k'.repeat(48)
+    for (const by of ['revizija-blokiranih', 'pozadina-gotova']) {
+      const s = ovlastPovrata({ by, zaglavlja: h({}), token: k, live: false })
+      expect(s.dopusti).toBe(true)
+      expect(s.zapis).toMatchObject({ by, nacin: 'shadow', kljuc: false })
+      const l = ovlastPovrata({ by, zaglavlja: h({}), token: k, live: true })
+      expect(l).toMatchObject({ dopusti: false, status: 403 })
+      expect(l.zapis).toMatchObject({ by, nacin: 'live', kljuc: false })
+    }
+  })
+  test('N3: daemonski by s ključem prolazi i u provedbi, bez zapisa', () => {
+    const k = 'k'.repeat(48)
+    const r = ovlastPovrata({ by: 'revizija-blokiranih', zaglavlja: h({ 'X-REGOC-Zatvara': 'daemon', 'X-REGOC-Zatvarac': k }), token: k, live: true })
+    expect(r).toEqual({ dopusti: true })
+  })
+  test('N3: ostali by (stale-watchdog, orchestrator) nisu dirani', () => {
+    expect(ovlastPovrata({ by: 'stale-watchdog', zaglavlja: h({ origin: 'https://zlo.example', host: 'a' }), token: null, live: true })).toEqual({ dopusti: true })
   })
 })
