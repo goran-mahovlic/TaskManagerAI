@@ -70,3 +70,11 @@ describe('dokumenti čvora', () => {
     expect(d).toContain('Hindsight banka `b`')
   })
 })
+
+describe('znanje-cvora.ts pod systemd (PATH bez bun-a)', () => {
+  test('podproces bun-a ide preko process.execPath, ne preko PATH-a', () => {
+    const izvor = require('fs').readFileSync(require('path').join(import.meta.dir, '..', 'scripts', 'znanje-cvora.ts'), 'utf-8')
+    expect(izvor).not.toMatch(/spawnSync\(\['bun'/)
+    expect(izvor).toContain('process.execPath')
+  })
+})

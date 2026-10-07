@@ -100,7 +100,7 @@ async function izmjeriMogucnosti(o: Okolina, mem: { url: string }): Promise<Reco
   const gate = join(HOME, '.claude', 'skills', 'CORE', 'Tools', 'lib', 'rag-gate.ts')
   let rag = false
   if (existsSync(gate)) {
-    const p = Bun.spawnSync(['bun', '-e', `import { ragUkljucen } from ${JSON.stringify(gate)}; console.log(ragUkljucen())`], { stdout: 'pipe', stderr: 'pipe' })
+    const p = Bun.spawnSync([process.execPath, '-e', `import { ragUkljucen } from ${JSON.stringify(gate)}; console.log(ragUkljucen())`], { stdout: 'pipe', stderr: 'pipe' })
     rag = p.stdout.toString().trim() === 'true'
   }
   m.rag = rag || !!o.postavke.TM_CHROMA_HOST
@@ -211,12 +211,14 @@ async function sastavi(o: Okolina, mem: { banka: string }, mog: Record<string, b
     const chatovi = new Set(jsonPopis(o.inst.TG_DOPUSTENI_CHATOVI).filter(c => c.startsWith('-')))
     const korijen = join(o.tmHome, 'data', 'razgovor', 'telegram')
     const danas = new Date().toISOString().slice(0, 10)
+    // Razgovori prije čiste banke ponavljaju činjenice stare (propusne) banke — ne ulaze (ADR-0006 §14).
+    const od = (o.inst.ZNANJE_RAZGOVOR_OD || '').trim()
     const ime = o.inst.RAZGOVOR_IME || 'bot'
     for (const chat of existsSync(korijen) ? readdirSync(korijen) : []) {
       if (!chatovi.has(chat)) continue
       for (const f of readdirSync(join(korijen, chat)).filter(x => /^\d{4}-\d{2}-\d{2}\.jsonl$/.test(x)).sort()) {
         const datum = f.slice(0, 10)
-        if (datum >= danas) continue
+        if (datum >= danas || (od && datum < od)) continue
         const r = dokumentRazgovor(cvor, ime, chat, datum, citajZapis(join(korijen, chat, f)))
         if (r.tajna) { preskoceno.push(`cvor/razgovor/${chat}/${datum} (oblik tajne — dan se ne upisuje)`); continue }
         if (!r.sadrzaj) continue

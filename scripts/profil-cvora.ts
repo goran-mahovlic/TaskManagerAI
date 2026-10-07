@@ -539,7 +539,8 @@ export function jediniceZnanja(m: { naredba: string[]; timer: { unit: string; mi
   return {
     service: ['[Unit]', 'Description=REGOČ znanje čvora — korpus i ploča/Telegram čvora u banku memorije (ADR-0006)', '',
       '[Service]', 'Type=oneshot', `WorkingDirectory=${paket}`, `ExecStart=${bun} ${join(paket, skripta)} ${arg.join(' ')}`,
-      'Nice=10', ''].join('\n'),
+      // systemd korisnička okolina nema ~/.bun/bin u PATH-u (alati paketa zovu bun/git/systemctl)
+      `Environment=PATH=${dirname(bun)}:/usr/local/bin:/usr/bin:/bin`, 'Nice=10', ''].join('\n'),
     timer: ['[Unit]', `Description=REGOČ znanje čvora svakih ${m.timer.minuta} min`, '', '[Timer]', 'OnBootSec=10min',
       `OnUnitActiveSec=${m.timer.minuta}min`, 'Persistent=true', '', '[Install]', 'WantedBy=timers.target', ''].join('\n'),
   }
