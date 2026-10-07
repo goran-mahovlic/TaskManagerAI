@@ -92,7 +92,16 @@ export const ProfilShema = z.object({
       settings: Postavke,
       servis: z.object({ unit: z.string().min(1), vrata: z.number().int() }).passthrough().optional(),
     }).optional(),
-    memorija: s.extend({ settings: Postavke }).optional(),
+    memorija: s.extend({
+      settings: Postavke,
+      izolacija: z.object({ zabranjeniDokumenti: Imena }).passthrough().optional(),
+    }).optional(),
+    // TASK-5331 (ADR-0006 §9): mogućnosti čvora i znanje u banci; putanje su relativne na $TM_HOME, naredbe na paket.
+    mogucnosti: s.extend({ datoteka: z.string().min(1), maxStarostSati: z.number().positive(), naredba: Imena }).optional(),
+    znanje: s.extend({
+      korpus: z.string().min(1), stanje: z.string().min(1), maxStarostSati: z.number().positive(), naredba: Imena,
+      timer: z.object({ unit: z.string().regex(/^[\w-]+$/), minuta: z.number().int().positive() }),
+    }).optional(),
     'tunel-memorije': s.extend({ provjeraNaCvoru: z.object({ vrata: z.number().int() }).passthrough() }).optional(),
     'bot-kanal': s.extend({
       settings: Postavke, nikadNeIzvozi: Imena.default([]), tajneImenom: Imena.default([]),
@@ -216,6 +225,8 @@ export type Primjena =
   | { vrsta: 'znacajka'; kljuc: string; enabled: boolean; razlog: string }
   | { vrsta: 'konzola'; unit: string; datoteka: string; sadrzaj: string; log: string }
   | { vrsta: 'dropin'; unit: string; datoteka: string; sadrzaj: string }
+  | { vrsta: 'naredba'; argv: string[] }
+  | { vrsta: 'timer'; unit: string; service: string; timer: string }
 
 export interface Stavka {
   modul: string
@@ -512,11 +523,76 @@ export function usporedi(k: Kontekst): Stavka[] {
     dodaj({ modul: 'rag', kljuc: 'isključen', vrsta: ima ? 'UPOZORENJE' : 'OK', poruka: ima ? 'TM_CHROMA_* postoji — v. modul okolina' : undefined })
   }
 
+  usporediZnanje(k, dodaj)
   usporediZnacajke(k, inst, dodaj)
   usporediKuke(k, inst, dodaj)
   usporediKonzolu(k, inst, dodaj)
   usporediOporavak(k, inst, dodaj)
   return out
+}
+
+// ─── Znanje čvora (ADR-0006 §9, TASK-5331) ────────────────────────────────────
+
+/** Jedinice timera dotoka znanja: `osvjezi --pisi` iz paketa svakih N minuta (bez tajni u jedinici). */
+export function jediniceZnanja(m: { naredba: string[]; timer: { unit: string; minuta: number } }, paket: string, bun: string): { service: string; timer: string } {
+  const [skripta, ...arg] = m.naredba
+  return {
+    service: ['[Unit]', 'Description=REGOČ znanje čvora — korpus i ploča/Telegram čvora u banku memorije (ADR-0006)', '',
+      '[Service]', 'Type=oneshot', `WorkingDirectory=${paket}`, `ExecStart=${bun} ${join(paket, skripta)} ${arg.join(' ')}`,
+      // systemd korisnička okolina nema ~/.bun/bin u PATH-u (alati paketa zovu bun/git/systemctl)
+      `Environment=PATH=${dirname(bun)}:/usr/local/bin:/usr/bin:/bin`, 'Nice=10', ''].join('\n'),
+    timer: ['[Unit]', `Description=REGOČ znanje čvora svakih ${m.timer.minuta} min`, '', '[Timer]', 'OnBootSec=10min',
+      `OnUnitActiveSec=${m.timer.minuta}min`, 'Persistent=true', '', '[Install]', 'WantedBy=timers.target', ''].join('\n'),
+  }
+}
+
+function usporediZnanje(k: Kontekst, dodaj: Dodaj): void {
+  const M = k.profil.moduli
+  const zn = k.stanje.znanje
+  const inst = { ...k.inst, HOME: k.stanje.home }
+  if (!M.mogucnosti && !M.znanje && !M.memorija?.izolacija) return
+  if (!zn) {
+    for (const m of ['mogucnosti', 'znanje'] as const) if (M[m]) dodaj({ modul: m, kljuc: '(stanje)', vrsta: 'PRESKOČENO', poruka: 'provjera sustava isključena ili sakupljač bez znanja' })
+    return
+  }
+  if (M.mogucnosti) {
+    const st = zn.mogucnosti
+    const svjeze = st.postoji && st.starostSati !== null && st.starostSati <= M.mogucnosti.maxStarostSati
+    dodaj(svjeze
+      ? { modul: 'mogucnosti', kljuc: M.mogucnosti.datoteka, vrsta: 'OK' }
+      : { modul: 'mogucnosti', kljuc: M.mogucnosti.datoteka, vrsta: 'RAZLIKA', profil: `izmjereno ≤ ${M.mogucnosti.maxStarostSati} h`,
+          cvor: st.postoji ? `${st.starostSati} h` : '(nema)', primjena: { vrsta: 'naredba', argv: M.mogucnosti.naredba } })
+  }
+  if (M.znanje) {
+    const u = zn.upis
+    const banka = inst.MEMORIJA_BANKA
+    const razlog = !u.postoji ? 'nema upisa' : u.banka !== banka ? `upis je za banku ${u.banka}` : u.sustav < zn.korpusPaketa ? `u banci ${u.sustav}/${zn.korpusPaketa} sustav/*`
+      : (u.starostSati === null || u.starostSati > M.znanje.maxStarostSati) ? `zadnji upis prije ${u.starostSati ?? '?'} h` : ''
+    dodaj(!razlog
+      ? { modul: 'znanje', kljuc: 'banka', vrsta: 'OK' }
+      : { modul: 'znanje', kljuc: 'banka', vrsta: 'RAZLIKA', profil: `${banka}: ${zn.korpusPaketa} sustav/*, upis ≤ ${M.znanje.maxStarostSati} h`, cvor: razlog,
+          primjena: { vrsta: 'naredba', argv: M.znanje.naredba } })
+    const t = zn.timer
+    if (t.datoteka && t.aktivan === 'active') dodaj({ modul: 'znanje', kljuc: 'timer', vrsta: 'OK' })
+    else {
+      const j = jediniceZnanja(M.znanje, k.stanje.paket, join(k.stanje.home, '.bun', 'bin', 'bun'))
+      dodaj({ modul: 'znanje', kljuc: 'timer', vrsta: 'RAZLIKA', profil: `${M.znanje.timer.unit}.timer aktivan`, cvor: t.datoteka ? t.aktivan : '(nema jedinice)',
+        primjena: { vrsta: 'timer', unit: M.znanje.timer.unit, service: j.service, timer: j.timer } })
+    }
+  }
+  if (M.memorija?.izolacija) {
+    const banka = inst.MEMORIJA_BANKA
+    if (zn.banke === null) dodaj({ modul: 'memorija', kljuc: 'izolacija', vrsta: 'PRESKOČENO', poruka: 'memorija ne odgovara' })
+    else dodaj(zn.banke.length === 1 && zn.banke[0] === banka
+      ? { modul: 'memorija', kljuc: 'izolacija', vrsta: 'OK' }
+      : { modul: 'memorija', kljuc: 'izolacija', vrsta: 'NEDOSTAJE', profil: [banka], cvor: zn.banke,
+          poruka: 'čvor vidi i tuđe banke — tunel mora pokazivati na posrednika memorije (glavni stroj, ADR-0006 §8 B) ili na lokalni Hindsight' })
+    if (zn.tudjiDokumenti === null) dodaj({ modul: 'memorija', kljuc: 'nikadNeNosi', vrsta: 'PRESKOČENO', poruka: 'banka nečitljiva' })
+    else dodaj(zn.tudjiDokumenti === 0
+      ? { modul: 'memorija', kljuc: 'nikadNeNosi', vrsta: 'OK' }
+      : { modul: 'memorija', kljuc: 'nikadNeNosi', vrsta: 'NEDOSTAJE', cvor: zn.tudjiDokumenti,
+          poruka: `u banci ${banka} ima dokumenata s glavnog stroja (${M.memorija.izolacija.zabranjeniDokumenti.join(', ')}) — nova banka iz čistog korpusa (ADR-0006 §5.3)` })
+  }
 }
 
 // ─── Paritet s glavnim sustavom: značajke, kuke, konzola, oporavak (ADR-0004 §13) ──
@@ -949,6 +1025,26 @@ export async function primijeni(stavke: Stavka[], k: Kontekst, ploca: Ploca, sat
     ishod.promjena++
   }
 
+  // TASK-5331: naredbe paketa (mjerenje mogućnosti, upis znanja) i timer dotoka znanja.
+  for (const n of po('naredba') as Extract<Primjena, { vrsta: 'naredba' }>[]) {
+    const bun = join(k.stanje.home, '.bun', 'bin', 'bun')
+    const r = Bun.spawnSync([existsSync(bun) ? bun : 'bun', join(k.stanje.paket, n.argv[0]), ...n.argv.slice(1)], { cwd: k.stanje.paket, stdout: 'pipe', stderr: 'pipe' })
+    if (r.exitCode === 0) ishod.promjena++
+    else ishod.greske.push(`${n.argv.join(' ')} → izlaz ${r.exitCode}: ${(r.stdout.toString() + r.stderr.toString()).trim().split('\n').slice(-2).join(' | ').slice(0, 300)}`)
+  }
+  for (const t of po('timer') as Extract<Primjena, { vrsta: 'timer' }>[]) {
+    const mapa = join(k.stanje.home, '.config', 'systemd', 'user')
+    for (const [nast, sadrzaj] of [['service', t.service], ['timer', t.timer]] as const) {
+      const dat = join(mapa, `${t.unit}.${nast}`)
+      kopija(dat, mapaKopija, kopirano)
+      upisi(dat, sadrzaj)
+    }
+    // Novi timer nije restart ploče ni daemona — smije se uključiti odmah.
+    const r = Bun.spawnSync(['bash', '-c', `systemctl --user daemon-reload && systemctl --user enable --now ${t.unit}.timer`], { stdout: 'pipe', stderr: 'pipe' })
+    if (r.exitCode === 0) ishod.promjena++
+    else ishod.greske.push(`timer ${t.unit}: ${r.stderr.toString().trim().slice(0, 200)}`)
+  }
+
   for (const u of po('upravitelj') as Extract<Primjena, { vrsta: 'upravitelj' }>[]) {
     kopija(u.cilj, mapaKopija, kopirano)
     upisi(u.cilj, u.sadrzaj)
@@ -1075,6 +1171,11 @@ export function specZaProfil(p: Profil, inst: Record<string, string>, paket: str
     izvorni: M.paket?.izvorniSustavSadrzi && zamijeni(M.paket.izvorniSustavSadrzi.mapa, inst) !== PRESKOCI
       ? { mapa: M.paket.izvorniSustavSadrzi.mapa, datoteke: M.paket.izvorniSustavSadrzi.datoteke,
           grep: M.paket.izvorniSustavSadrzi.grep.map(g => ({ datoteka: g.datoteka, sadrzi: g.sadrzi })) } : undefined,
+    znanje: sustav && (M.znanje || M.mogucnosti || M.memorija?.izolacija) ? {
+      mogucnosti: M.mogucnosti?.datoteka, stanje: M.znanje?.stanje, korpus: M.znanje?.korpus, timer: M.znanje?.timer.unit,
+      memorijaUrl: String(M.memorija?.settings['memorija.url'] || ''), banka: inst.MEMORIJA_BANKA || '',
+      zabranjeniDokumenti: M.memorija?.izolacija?.zabranjeniDokumenti || [],
+    } : undefined,
     konzola: {
       datoteke: [...(M.konzola?.izvori || []).filter(x => !x.preskoci).map(x => x.datoteka), ...(M.oporavak ? [M.oporavak.dnevnik] : [])],
       dropIni: [...(M.konzola?.izvori || []).filter(x => x.unit && !x.preskoci).map(x => dropInPut(x.unit!)),

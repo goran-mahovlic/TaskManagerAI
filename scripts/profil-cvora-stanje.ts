@@ -51,6 +51,19 @@ export interface SpecStanja {
   izvorni?: { mapa: string; datoteke: string[]; grep: Array<{ datoteka: string; sadrzi: string }> }
   /** Starost datoteka konzole (min) i sadržaj drop-ina user-unita. */
   konzola?: { datoteke: string[]; dropIni: string[] }
+  /** TASK-5331: mogućnosti, stanje upisa znanja, timer, banke i dokumenti kroz memorija.url. */
+  znanje?: { mogucnosti?: string; stanje?: string; korpus?: string; timer?: string; memorijaUrl: string; banka: string; zabranjeniDokumenti: string[] }
+}
+
+export interface StanjeZnanja {
+  mogucnosti: { postoji: boolean; starostSati: number | null; vrijednosti: Record<string, boolean> }
+  upis: { postoji: boolean; banka: string; sustav: number; cvor: number; starostSati: number | null }
+  korpusPaketa: number
+  timer: { datoteka: boolean; aktivan: string }
+  /** Banke koje čvor vidi kroz memorija.url (null = memorija ne odgovara). */
+  banke: string[] | null
+  /** Dokumenti u banci čiji id počinje zabranjenim prefiksom (null = nečitljivo). */
+  tudjiDokumenti: number | null
 }
 
 export interface StanjeCvora {
@@ -80,6 +93,7 @@ export interface StanjeCvora {
   znacajkeCvor: null | { vrijednosti: Record<string, boolean | null>; kodZna: Record<string, boolean> }
   izvorni: Record<string, boolean>
   konzola: { starostMin: Record<string, number | null>; dropIni: Record<string, string | null> }
+  znanje?: StanjeZnanja | null
 }
 
 /** `${HOME}` i ostale varijable u putanji; nepoznata ostaje doslovno (pa se ne nađe). */
@@ -290,7 +304,62 @@ export async function prikupiStanje(spec: SpecStanja, home = process.env.HOME ||
     try { konzola.dropIni[f] = readFileSync(putanja(f, v), 'utf-8') } catch { konzola.dropIni[f] = null }
   }
 
+  // TASK-5331: znanje čvora — samo brojevi, imena banaka i id-evi dokumenata (nikad sadržaj).
+  let znanje: StanjeZnanja | null = null
+  if (spec.znanje) {
+    const z = spec.znanje
+    const sati = (p: string) => { try { return Math.round((sad - statSync(p).mtimeMs) / 36e5 * 10) / 10 } catch { return null } }
+    const mog = { postoji: false, starostSati: null as number | null, vrijednosti: {} as Record<string, boolean> }
+    if (z.mogucnosti) {
+      const p = join(tmHome, z.mogucnosti)
+      try {
+        const j = JSON.parse(readFileSync(p, 'utf-8'))
+        mog.postoji = true
+        mog.starostSati = sati(p)
+        for (const [k, x] of Object.entries(j)) if (typeof x === 'boolean') mog.vrijednosti[k] = x
+      } catch { /* nema */ }
+    }
+    const upis = { postoji: false, banka: '', sustav: 0, cvor: 0, starostSati: null as number | null }
+    if (z.stanje) {
+      try {
+        const j = JSON.parse(readFileSync(join(tmHome, z.stanje), 'utf-8'))
+        const ids = Object.keys(j.dokumenti || {})
+        upis.postoji = true
+        upis.banka = String(j.banka || '')
+        upis.sustav = ids.filter(i => i.startsWith('sustav/')).length
+        upis.cvor = ids.filter(i => i.startsWith('cvor/')).length
+        upis.starostSati = j.zadnjiUpis ? Math.round((sad - Date.parse(j.zadnjiUpis)) / 36e5 * 10) / 10 : null
+      } catch { /* nema */ }
+    }
+    let korpusPaketa = 0
+    try { korpusPaketa = readdirSync(join(paket, z.korpus || 'znanje/sustav')).filter(f => f.endsWith('.md')).length } catch { /* nema */ }
+    const timer = { datoteka: false, aktivan: 'nepoznato' }
+    if (z.timer) {
+      timer.datoteka = existsSync(join(home, '.config', 'systemd', 'user', `${z.timer}.timer`))
+      timer.aktivan = naredba(['systemctl', '--user', 'is-active', `${z.timer}.timer`]) || 'nepoznato'
+    }
+    let banke: string[] | null = null
+    let tudjiDokumenti: number | null = null
+    if (z.memorijaUrl) {
+      try {
+        const r = await fetch(`${z.memorijaUrl}/v1/default/banks`, { signal: AbortSignal.timeout(8000) })
+        banke = r.ok ? (((await r.json()) as any).banks || []).map((b: any) => String(b.bank_id)) : null
+      } catch { banke = null }
+      if (z.banka) {
+        try {
+          const r = await fetch(`${z.memorijaUrl}/v1/default/banks/${encodeURIComponent(z.banka)}/documents?limit=1000`, { signal: AbortSignal.timeout(15000) })
+          if (r.ok) {
+            const ids: string[] = (((await r.json()) as any).items || []).map((d: any) => String(d.id || d.document_id || ''))
+            tudjiDokumenti = ids.filter(i => z.zabranjeniDokumenti.some(p => i.startsWith(p))).length
+          }
+        } catch { /* nečitljivo */ }
+      }
+    }
+    znanje = { mogucnosti: mog, upis, korpusPaketa, timer, banke, tudjiDokumenti }
+  }
+
   return {
+    znanje,
     home, paket, tmHome, env, envTajne, envNesmije,
     punoDopusteno: sveEnv.TM_RAZGOVOR_PUNO === '1',
     telegram, telegramTajne, baza, settings, capguard, settingsJson, kuke,

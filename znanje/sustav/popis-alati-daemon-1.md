@@ -1,0 +1,35 @@
+# Alati domene daemon (dio 1)
+
+Kanonski alati domene daemon, dio 1. Prije pisanja nove skripte pokreni `katalog trazi <svrha>`; ako alat postoji, nadogradi ga.
+- `001_sql_only.ts` (cli, vlasnik jelena): Migration 001: SQL-Only TaskManager. Poziv: `bun ${SUSTAV_DIR}/migrations/001_sql_only.ts`.
+- `AdversarialVerify.ts` (modul, vlasnik jelena): AdversarialVerify — adversarijalna provjera nalaza na skupim odlukama (W5 /). Poziv: `import iz ${SUSTAV_DIR}/AdversarialVerify.ts`.
+- `AgentCheckpoint.ts` (cli, vlasnik jelena): REGOČ Agent Checkpoint (F6.2). Poziv: `bun ${SUSTAV_DIR}/AgentCheckpoint.ts`.
+- `AgentCommunicationBridge.ts` (cli, vlasnik jelena): REGOC Agent Communication Bridge (A5: Agent-to-Agent Live Communication). Poziv: `bun ${SUSTAV_DIR}/AgentCommunicationBridge.ts`.
+- `AgentConcurrency.ts` (modul, vlasnik jelena): ─── AgentConcurrency ────────────────────────────────────────────────────────. Poziv: `import iz ${SUSTAV_DIR}/AgentConcurrency.ts`.
+- `AgentDaemon.ts` (cli, vlasnik jelena): AgentDaemon.ts — Persistent agent process. Poziv: `bun ${SUSTAV_DIR}/AgentDaemon.ts --agent jelena [--model opus]`.
+- `AgentHeartbeat.ts` (modul, vlasnik jelena): AgentHeartbeat.ts — čiste funkcije za heartbeat i higijenu inboxa. Poziv: `import iz ${SUSTAV_DIR}/AgentHeartbeat.ts`.
+- `AgentLogger.ts` (cli, vlasnik jelena): REGOC AgentLogger (A4) — Unified Agent Logging. Poziv: `bun ${SUSTAV_DIR}/AgentLogger.ts`.
+- `AgentMonitor.ts` (cli, vlasnik jelena): REGOC AgentMonitor (A6) — Real-time Agent Monitor. Poziv: `bun ${SUSTAV_DIR}/AgentMonitor.ts`.
+- `AgentOutputParser.ts` (modul, vlasnik jelena): AgentOutputParser — JEDAN parser agentova izlaza i JEDAN prekidač prikaza po kanalu. Poziv: `import iz ${SUSTAV_DIR}/AgentOutputParser.ts`.
+- `AgentPool.ts` (cli, vlasnik jelena): REGOČ Warm Agent Pool (F6.3). Poziv: `bun ${SUSTAV_DIR}/AgentPool.ts`.
+- `AgentResume.ts` (modul, vlasnik jelena): AgentResume — čista logika izbora checkpointa za nastavak (`tryResume`). Poziv: `import iz ${SUSTAV_DIR}/AgentResume.ts`.
+- `AgentRouting.ts` (modul, vlasnik jelena): AgentRouting — prepoznavanje imena agenata u hrvatskoj rečenici. Poziv: `import iz ${SUSTAV_DIR}/AgentRouting.ts`.
+- `AgentSignals.ts` (cli, vlasnik jelena): REGOČ Agent Signals (A3: BTW/Interrupt System). Poziv: `bun ${SUSTAV_DIR}/AgentSignals.ts send <agentId> <type> <message>`.
+- `AgentWorker.ts` (cli, vlasnik jelena): REGOČ AgentWorker - Persistent daemon for specialist agents. Poziv: `bun ${SUSTAV_DIR}/AgentWorker.ts              # Run in foreground`.
+- `AutonomyQueue.ts` (modul, vlasnik jelena): AutonomyQueue — red čekanja autonomije (A7 /, DIO 3). Poziv: `import iz ${SUSTAV_DIR}/AutonomyQueue.ts`.
+- `Backoff.ts` (modul, vlasnik jelena): ─── Backoff ─────────────────────────────────────────────────────────────────. Poziv: `import iz ${SUSTAV_DIR}/Backoff.ts`.
+- `ChainCost.ts` (modul, vlasnik jelena): ChainCost — UKUPAN TROŠAK LANCA, zapisan na roditeljskom zadatku (U5 /). Poziv: `import iz ${SUSTAV_DIR}/ChainCost.ts`.
+- `ChronoOrder.ts` (modul, vlasnik jelena): ChronoOrder — jedno pravilo poretka za cijeli TaskManager: NAJNOVIJE NA VRHU. Poziv: `import iz ${SUSTAV_DIR}/ChronoOrder.ts`.
+- `CompletionGuard.ts` (modul, vlasnik jelena): CompletionGuard — tvrdo pravilo za zatvaranje zadatka. Poziv: `import iz ${SUSTAV_DIR}/CompletionGuard.ts`.
+- `ConcurrencySetting.ts` (modul, vlasnik jelena): ─── ConcurrencySetting ──────────────────────────────────────────────────────. Poziv: `import iz ${SUSTAV_DIR}/ConcurrencySetting.ts`.
+- `ContextPacker.ts` (modul, vlasnik jelena): ─── ContextPacker ───────────────────────────────────────────────────. Poziv: `import iz ${SUSTAV_DIR}/ContextPacker.ts`.
+- `CostTracker.ts` (cli, vlasnik jelena): REGOC CostTracker (F5.2, prošireno K7/). Poziv: `bun ${SUSTAV_DIR}/CostTracker.ts`.
+- `CriticGate.ts` (cli, vlasnik jelena): CriticGate — nezavisni kritičar, odvojen od izvođača (A2 /). Poziv: `bun ${SUSTAV_DIR}/CriticGate.ts`.
+- `CriticRepairLoop.ts` (cli, vlasnik jelena): CriticRepairLoop — W4 „vratar dobiva povratnu petlju". Poziv: `bun ${SUSTAV_DIR}/CriticRepairLoop.ts`.
+- `DeadAgentReaper.ts` (cli, vlasnik jelena): DeadAgentReaper — odluka "je li agent mrtav?" na JEDNOM mjestu. Poziv: `bun ${SUSTAV_DIR}/DeadAgentReaper.ts`.
+- `DispatchGuard.ts` (modul, vlasnik jelena): DispatchGuard — pre-delegation guard for the REGOČ dispatcher (RegocDaemon). Poziv: `import iz ${SUSTAV_DIR}/DispatchGuard.ts`.
+- `EarlyWorkGuard.ts` (cli, vlasnik jelena): EarlyWorkGuard — M6 „rana provjera: ima li uopće posla". Poziv: `bun ${SUSTAV_DIR}/EarlyWorkGuard.ts`.
+- `FailRequeue.ts` (cli, vlasnik jelena): FailRequeue — R7 „kraj tihih odustajanja". Poziv: `bun ${SUSTAV_DIR}/FailRequeue.ts`.
+- `FeatureFlags.ts` (modul, vlasnik jelena): ─── Feature Flags (runtime, hot-reload) ─────────────────────────────. Poziv: `import iz ${SUSTAV_DIR}/FeatureFlags.ts`.
+- `FileScopeGate.ts` (cli, vlasnik jelena): FileScopeGate — disjunktan opseg datoteka po zadatku (A3 /). Poziv: `bun ${SUSTAV_DIR}/FileScopeGate.ts`.
+- `GitCommitGate.ts` (modul, vlasnik jelena): GitCommitGate — zadatak bez ijednog commita ne prolazi u `completed` (U4 /). Poziv: `import iz ${SUSTAV_DIR}/GitCommitGate.ts`.

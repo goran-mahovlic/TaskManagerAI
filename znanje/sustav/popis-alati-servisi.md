@@ -1,0 +1,11 @@
+# Alati domene servisi
+
+Kanonski alati domene servisi. Prije pisanja nove skripte pokreni `katalog trazi <svrha>`; ako alat postoji, nadogradi ga.
+- `bootcheck-pull.sh` (cli, vlasnik jelena): — pokupi izvjestaje automatske provjere reboota s oba cvora. Poziv: `bash ${SUSTAV_DIR}/tools/servisi/bootcheck-pull.sh [--samo-boot]`. Stare putanje: `${SUSTAV_DIR}/tools/bootcheck-pull.sh`.
+- `daemon-keeper.sh` (cli, vlasnik jelena): REGOČ Daemon Keeper — nadzornik procesa (K1 /, ADR-0001). Poziv: `bash ${SUSTAV_DIR}/tools/servisi/daemon-keeper.sh status`. Stare putanje: `${SUSTAV_DIR}/tools/daemon-keeper.sh`.
+- `home-normaliziraj.ts` (cli, vlasnik jelena): home-normaliziraj.ts — codemod: dom glavnog čvora → process.env.HOME/homedir() u .ts (R1 rezerva, R2 apsolutni import → relativni, R3 tvrda konstanta → join(homedir())); ostatak za ručni pregled. Poziv: `bun ${SUSTAV_DIR}/tools/servisi/home-normaliziraj.ts [--pisi] <datoteka.ts>...`.
+- `isporuka_home_nodea.sh` (cli, vlasnik jelena): isporuka_home_nodea.sh — isporuka HOME-normaliziranih datoteka koje daemon na node-A koristi (suhi hod/--pisi/--restart, backup, sha MANIFEST, gradnja na čvoru, restart samo uz 0 in_progress). Poziv: `bash ${SUSTAV_DIR}/deploy/node-a-home/isporuka_home_nodea.sh [--pisi] [--restart]`.
+- `manage.sh` (cli, vlasnik jelena): REGOČ Daemon Management Script. Poziv: `bash ${SUSTAV_DIR}/manage.sh start`.
+- `regoc-services.sh` (cli, vlasnik jelena): Upravitelj tima AgentDaemona i restart-service regoc|daemon|taskwebui|klaudio|team|AGENT; taskwebui/klaudio preko mastera + StaleCodeCheck nad točnim PID-om. Isto ime kao master — ADR-0015 O2. Poziv: `bash ${SUSTAV_DIR}/regoc-services.sh`.
+- `restart_kad_mirno.sh` (cli, vlasnik regoc): Odgođeni restart daemona, TaskWebUI-ja i Klaudija tek kad nema zadatka in_progress ni spawna; red zadataka, --cekaj/--stanje za ulančane čekače (umjesto pgrep -f); StaleCodeCheck, zatvara zadatke, javlja u grupu. Poziv: `setsid nohup bash ${SUSTAV_DIR}/tools/servisi/restart_kad_mirno.sh TASK-XXXX [sati] >/dev/null 2>&1 &`.
+- `StaleCodeCheck.ts` (cli, vlasnik jelena): StaleCodeCheck — „popravak na disku ≠ popravak u pogonu". Poziv: `bun ${SUSTAV_DIR}/StaleCodeCheck.ts --entry <fajl.ts> --pid <pid>`.
