@@ -14,7 +14,7 @@ import { zatraziSposobnost } from '../src/Capguard'
 import { razgovorPut } from '../src/razgovor/RazgovorPloca'
 import { ensureSettingsSchema } from '../src/core/ConcurrencySetting'
 import {
-  GreskaPreduvjeta, KOD, KORIJEN, glavna, izvediInstancu, konzolaDropIn, paketiKuka, provjeriVarijable, specZaProfil,
+  GreskaPreduvjeta, KOD, KORIJEN, glavna, izvediInstancu, konzolaDropIn, paketiKuka, provjeriVarijable, specZaProfil, vrijemeDropIn,
   ucinakZnacajki, ucitajProfil, zamijeni, type Ploca,
 } from '../scripts/profil-cvora'
 import { prikupiStanje } from '../scripts/profil-cvora-stanje'
@@ -634,9 +634,28 @@ describe('J17 — modul konzola: drop-in u datoteku, svježi izvori', () => {
   })
 })
 
+// TASK-5308 (izmjereno na node-A, EDT): ploča vraća vrijeme bez zone („2026-10-07 09:07:56", UTC), a
+// `Date.parse` ga čita kao LOKALNO → na čvoru izvan UTC-a zadatak je „u budućnosti" i siroče/zombie
+// ne vide odsutnost (TASK-267: 16 min in_progress bez procesa, presuda „čeka, 0 min").
+describe('oporavak — vrijeme izvornog sustava je UTC (drop-in TZ)', () => {
+  test('bez drop-ina → RAZLIKA za daemon i ploču; --pisi upiše Environment=TZ=UTC; drugi --pisi 0', async () => {
+    const r = await d.pokreni(['provjeri', '--modul', 'oporavak'])
+    expect(r.izlaz).toContain('RAZLIKA regoc-daemon.TZ')
+    expect(r.izlaz).toContain('RAZLIKA regoc-taskmanager.TZ')
+    const p = await d.pokreni(['primijeni', '--pisi', '--modul', 'oporavak'])
+    expect(p.izlaz).toContain('daemon-reload')
+    for (const unit of ['regoc-daemon', 'regoc-taskmanager']) {
+      const f = join(d.home, '.config', 'systemd', 'user', `${unit}.service.d`, 'vrijeme.conf')
+      expect(readFileSync(f, 'utf-8')).toBe(vrijemeDropIn('UTC'))
+      expect(readFileSync(f, 'utf-8')).toContain('Environment=TZ=UTC')
+    }
+    expect((await d.pokreni(['primijeni', '--pisi', '--modul', 'oporavak'])).izlaz).toContain('PRIMIJENJENO: 0 promjena')
+  })
+})
+
 describe('oporavak — samo provjera', () => {
   test('nakon primjene profila: uključeno + kod + svjež daemon.log → OK', async () => {
-    await d.pokreni(['primijeni', '--pisi', '--modul', 'znacajke'])
+    await d.pokreni(['primijeni', '--pisi', '--modul', 'znacajke,oporavak'])
     mkdirSync(join(d.home, '.tmp'), { recursive: true })
     writeFileSync(join(d.home, '.tmp', 'regoc_daemon.log'), '[x] daemon\n')
     const r = await d.pokreni(['provjeri', '--modul', 'oporavak'])

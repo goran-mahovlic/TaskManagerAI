@@ -470,3 +470,27 @@ kad agent upadne u backoff (`⏳ … u backoff-u … preskačem spawn`), zadatak
 procesa — viđeno uživo na TASK-268 u 09:07:56. Glavni to ima riješeno (TASK-5029: „ULAZ u
 `in_progress` tek kad proces STVARNO krene”). Kalem siroče-oporavka takav zadatak vraća nakon praga;
 pravi popravak dolazi s kompletom (P5).
+
+**Nalaz 2 — zona vremena (uzrok zašto ni oporavak ni zombie na node-A nisu vraćali siročad):** ploča vraća
+`updatedAt` bez zone (`"2026-10-07 09:07:56"`, UTC iz SQLite `datetime('now')`). `Date.parse` takav zapis
+čita kao LOKALNO vrijeme; node-A radi u EDT (UTC−4), pa je svaki zadatak „4 h u budućnosti” i odsutnost
+je 0 (izmjereno: TASK-267 16 min `in_progress` bez procesa → presuda `ceka`, „0 min”; `Date.parse` na
+čvoru = 13:07:56Z za 09:07:56). Isto pogađa `ZombieRecovery` (`new Date(lastActivity)`) i
+`StaleWatchdog`. Glavni radi u UTC-u, pa ga nikad nije vidio. Popravak je u profilu, ne u kodu:
+modul `oporavak.tz` — drop-in `~/.config/systemd/user/<unit>.service.d/vrijeme.conf` s
+`Environment=TZ=UTC` za `regoc-daemon` i `regoc-taskmanager` (svaki čvor izvan UTC-a dobiva ga iz
+profila). node-A: `primijeni --modul oporavak --pisi` → 2 promjene, `[oporavak] 8/8`; restart uz
+`in_progress = 0` (09:26:28 UTC): daemon 768884, ploča 768883, oba `TZ=UTC` u `/proc/<pid>/environ`,
+StaleCodeCheck ✅. Ista presuda nakon popravka: odsutnost 818 ms nakon stvaranja (prije: 0).
+
+**P7 uživo na node-A (07.10.):**
+- P7a — `kill -9` živog agenta (TASK-268, 09:07:50): `FailRequeue` vraća zadatak u red za 6 s
+  (`pokusaj:1`), auto-exec ga ponovno uzima.
+- P7b — zadatak `in_progress` bez procesa, daemon za njega ne zna (kao TASK-212): TASK-269 09:26:51 →
+  `♻️ [siroče] … → pending (HTTP 200)` u 09:36:58 (10 min 7 s, okidač `prag`, pokušaj 1/3), bez
+  `/reclaim`. Zombie ga je prepustio siroče-oporavku. Ponovno pokretanje drže vrata autonomije
+  (sesija 78 % ≥ 75 %) — tako je zamišljeno, pa je testni zadatak zatvoren.
+- Konzola: ploča 768883 šalje redak izvora `regoc` (`⚙️ jelena · TASK-5308 · Bash: …`) WebSocketom;
+  stvaran rad agenta u `regoc.log`: `⚙️ potjeh · TASK-268 · Bash: Run sleep 900 …`.
+- Testovi izvornog sustava na čvoru (`orphan-recovery`, `zombie-recovery`, `agent-routing`): 89 pass,
+  0 fail (uz trag odluke `zombieRecoveryLive.liveBy` = Goran 07.10.).

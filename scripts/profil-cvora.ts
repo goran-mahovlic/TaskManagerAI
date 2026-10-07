@@ -127,6 +127,8 @@ export const ProfilShema = z.object({
     }).optional(),
     oporavak: s.extend({
       ukljuceni: Imena, iskljuceni: Imena, dnevnik: z.string().min(1), dnevnikMaxMin: z.number().positive(),
+      // TASK-5308: zona procesa izvornog sustava (drop-in Environment=TZ=…) — v. vrijemeDropIn.
+      tz: z.object({ vrijednost: z.string().min(1), unitovi: z.array(z.string().min(1)).min(1) }).optional(),
     }).optional(),
   }).strict(),
 }).passthrough()
@@ -213,6 +215,7 @@ export type Primjena =
   | { vrsta: 'upravitelj'; cilj: string; sadrzaj: string }
   | { vrsta: 'znacajka'; kljuc: string; enabled: boolean; razlog: string }
   | { vrsta: 'konzola'; unit: string; datoteka: string; sadrzaj: string; log: string }
+  | { vrsta: 'dropin'; unit: string; datoteka: string; sadrzaj: string }
 
 export interface Stavka {
   modul: string
@@ -620,6 +623,21 @@ export function konzolaDropIn(log: string): string {
 
 export const dropInPut = (unit: string) => `\${HOME}/.config/systemd/user/${unit}.service.d/konzola.conf`
 
+/**
+ * Drop-in zone procesa (TASK-5308). Ploča vraća vrijeme bez zone („2026-10-07 09:07:56", UTC iz
+ * SQLite `datetime('now')`), a `Date.parse` takav zapis čita kao LOKALNO vrijeme. Na čvoru izvan
+ * UTC-a (node-A: EDT) zadatak je tada „u budućnosti" i siroče/zombie ne vide odsutnost. Glavni
+ * sustav radi u UTC-u, pa je TZ=UTC i paritet i ispravak.
+ */
+export function vrijemeDropIn(tz: string): string {
+  return [
+    `# ${AUTOR} (ADR-0004 §13.8): naivna vremena ploče su UTC — proces ih mora čitati u istoj zoni.`,
+    '[Service]', `Environment=TZ=${tz}`, '',
+  ].join('\n')
+}
+
+export const vrijemeDropInPut = (unit: string) => `\${HOME}/.config/systemd/user/${unit}.service.d/vrijeme.conf`
+
 function usporediKonzolu(k: Kontekst, inst: Record<string, string>, dodaj: Dodaj): void {
   const mod = k.profil.moduli.konzola
   if (!mod) return
@@ -667,6 +685,17 @@ function usporediOporavak(k: Kontekst, inst: Record<string, string>, dodaj: Doda
     dodaj(cv.vrijednosti[kljuc] === true
       ? { modul: 'oporavak', kljuc, vrsta: 'NEDOSTAJE', poruka: 'mora biti isključen (v. modul znacajke)' }
       : { modul: 'oporavak', kljuc: `${kljuc}=off`, vrsta: 'OK' })
+  }
+  for (const unit of mod.tz?.unitovi || []) {
+    const tpl = vrijemeDropInPut(unit)
+    const sadrzaj = vrijemeDropIn(mod.tz!.vrijednost)
+    const cvor = k.stanje.konzola.dropIni[tpl]
+    dodaj(cvor === sadrzaj
+      ? { modul: 'oporavak', kljuc: `${unit}.TZ`, vrsta: 'OK' }
+      : { modul: 'oporavak', kljuc: `${unit}.TZ`, vrsta: 'RAZLIKA', profil: `TZ=${mod.tz!.vrijednost}`,
+          cvor: cvor === null || cvor === undefined ? '(zona stroja)' : '(drugačiji drop-in)',
+          poruka: 'bez toga se vrijeme ploče (UTC bez zone) čita kao lokalno — siroče i zombie kasne za pomak zone',
+          primjena: { vrsta: 'dropin', unit, datoteka: zamijeni(tpl, inst) as string, sadrzaj } })
   }
   const min = k.stanje.konzola.starostMin[mod.dnevnik]
   dodaj(min !== null && min !== undefined && min <= mod.dnevnikMaxMin
@@ -913,6 +942,13 @@ export async function primijeni(stavke: Stavka[], k: Kontekst, ploca: Ploca, sat
     ishod.promjena++
   }
 
+  for (const c of po('dropin') as Extract<Primjena, { vrsta: 'dropin' }>[]) {
+    kopija(c.datoteka, mapaKopija, kopirano, `${c.unit}.${basename(c.datoteka)}`)
+    upisi(c.datoteka, c.sadrzaj)
+    ishod.unitovi.push(c.unit)
+    ishod.promjena++
+  }
+
   for (const u of po('upravitelj') as Extract<Primjena, { vrsta: 'upravitelj' }>[]) {
     kopija(u.cilj, mapaKopija, kopirano)
     upisi(u.cilj, u.sadrzaj)
@@ -1041,7 +1077,8 @@ export function specZaProfil(p: Profil, inst: Record<string, string>, paket: str
           grep: M.paket.izvorniSustavSadrzi.grep.map(g => ({ datoteka: g.datoteka, sadrzi: g.sadrzi })) } : undefined,
     konzola: {
       datoteke: [...(M.konzola?.izvori || []).filter(x => !x.preskoci).map(x => x.datoteka), ...(M.oporavak ? [M.oporavak.dnevnik] : [])],
-      dropIni: (M.konzola?.izvori || []).filter(x => x.unit && !x.preskoci).map(x => dropInPut(x.unit!)),
+      dropIni: [...(M.konzola?.izvori || []).filter(x => x.unit && !x.preskoci).map(x => dropInPut(x.unit!)),
+        ...(M.oporavak?.tz?.unitovi || []).map(vrijemeDropInPut)],
     },
     sustav: sustav ? {
       unitovi: [...new Set([M.paket?.unit?.ime, M.glas?.servis?.unit, ...(M.konzola?.izvori || []).map(x => x.unit)].filter(Boolean))] as string[],
@@ -1136,7 +1173,7 @@ export async function glavna(argv: string[], d: Partial<Ovisnosti> = {}): Promis
       pisi(`PRIMIJENJENO: ${ishod.promjena} promjena${ishod.kopije ? ` · kopije u ${ishod.kopije}` : ''}`)
       ishod.greske.forEach(g => pisi(`GREŠKA ${g}`))
       pisi(`potreban restart regoc-taskmanager: ${ishod.restart ? 'da (alat ga ne radi — kad je 0 zadataka in_progress)' : 'ne'}`)
-      if (ishod.unitovi.length) pisi(`drop-in konzole: systemctl --user daemon-reload, pa restart ${ishod.unitovi.join(', ')} (alat ga ne radi — kad je 0 zadataka in_progress)`)
+      if (ishod.unitovi.length) pisi(`drop-in (konzola, vrijeme): systemctl --user daemon-reload, pa restart ${ishod.unitovi.join(', ')} (alat ga ne radi — kad je 0 zadataka in_progress)`)
       ispisStavki(poslije).forEach(pisi)
     }
     return kod
