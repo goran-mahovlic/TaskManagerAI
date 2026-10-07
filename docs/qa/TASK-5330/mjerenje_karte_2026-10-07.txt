@@ -1,0 +1,31 @@
+datoteka                                          OPĆE    MJESNO   UVJETNO  PRIVATNO   B priv/ukupno   rečenica priv/ukupno
+NESUKLADNOSTI.md                                     3         0         1         5    13123/17130      10/209 
+README.md                                            1         0         1         1     1961/3777        1/29  
+agenti.md                                            2         0         2         1     2282/4020        3/46  
+alati-i-vjestine.md                                  5         0         0         1     2293/4474        2/39  
+direktoriji-i-datoteke.md                            1         0         1         3     4447/4909        5/47  
+korisnici-i-grupe.md                                 1         0         1         2     2769/3565       27/46  
+mogucnosti-i-ovlasti.md                              0         0         1         6     4056/4788       14/53  
+pravila-i-zamke.md                                   1         0         1         2     4985/5953        6/72  
+projekti.md                                          0         0         0         7     4135/4135       47/50  
+servisi-i-portovi.md                                 1         0         2         2     5807/7780        7/97  
+telegram-sesija.md                                   5         0         2         3     2788/5607        6/59  
+tijekovi-mehanizmi.md                               14         0         0         2     4638/11369       6/104 
+tijekovi-pravilo-uporabe.md                          4         0         0         2      729/4085        2/43  
+tijekovi-rada.md                                     5         0         1         4     1844/6441        7/68  
+popis/agent-stribor.md                               3         0         3         1      293/2607        1/25  
+popis/alati-daemon-1.md                              0         0         0         1     6224/6224        2/69  
+popis/alati-daemon-3.md                              0         0         0         1     6205/6205        2/69  
+popis/alati-daemon-4.md                              0         0         0         1     5784/5784        1/65  
+popis/alati-mail.md                                  0         0         0         1      772/772         2/9   
+popis/alati-nextcloud.md                             0         0         0         1     1237/1237        1/8   
+popis/alati-orkestracija.md                          0         0         0         1     4750/4750        1/51  
+popis/alati-petlje.md                                0         0         0         1     3421/3421        1/30  
+popis/alati-servisi.md                               0         0         0         1     3835/3835        1/38  
+popis/alati-telemetrija.md                           0         0         0         1     1734/1734        1/21  
+popis/alati-zadaci.md                                0         0         0         1     2230/2230        1/23  
+popis/prekidaci.md                                   3         0         1         1     8071/15471       3/156 
+popis/tijek-izrada-dokumenta.md                      3         0         0         1     2058/4512        1/46  
+popis/vjestina-ULX5M-GS-ETH.md                       0         0         0         2     1165/1165        6/14  
+UKUPNO (103 datoteka, odjeljaka 317)               205         0        56        56   103636/289465
+popis/: 89 datoteka, s barem jednim PRIVATNIM odjeljkom 14 (ispisane gore)
