@@ -1,3 +1,24 @@
+## 2026-10-07 — razgovor: SEND_DOC iz privitaka chata, trag na ploči, trajna konzola (TASK-5337)
+
+- Popravak (node-A 07.10.): oznaka `[[SEND_DOC: /put | opis]]` smije slati i iz mape privitaka
+  TOG chata (`privitci/<chatId>`, nova ovisnost `dokumentiMapeChata`); prije je jedina dopuštena
+  bila radna mapa pa je xlsx koji je bot izradio uz privitke odbijen („izvan dopuštene mape").
+  Identitet sada navodi STVARNE mape i kaže da oznaka nije primjer (svaka oznaka je slanje).
+- Popravak: neuspjelo slanje dokumenta javlja razlog u chat (`📎 dokument X nije poslan: Telegram
+  sendDocument HTTP 400: …`, bez tokena) — novi `Kanal.posaljiDokumentIshod`.
+- Novo: trag razgovora na ploči (`src/razgovor/ZadatakRazgovora.ts`). Potez s drugim botom (od
+  njega ili upit prema njemu) odmah, a ljudski potez dulji od 20 s, otvara zadatak niti
+  (bez nositelja, oznake `razgovor` + `no-autonomy` + `chat:<kanal:id>`) s bilješkama 📥 primljeno →
+  ⚙️ radi → 💬 odgovor / 📤 upit drugom botu → ✅ gotovo; poruke upućene drugome dok je nit
+  otvorena upisuju se kao 👁 pročitano. Upit drugom botu drži nit u radu najviše 30 min, zatim
+  ⌛ zatvaranje. Stanje niti u `data/razgovor/zadaci.json`. Zadatak se zatvara izravno kroz
+  jezgru ploče (trag, ne posao agenta — ne ide kroz kritičara).
+- Novo: retci Konzole razgovora upisuju se i u `data/razgovor/konzola.log`; `GET
+  /api/konzola/logs?source=razgovor`, naredba `logs razgovor N`, a Konzola pri otvaranju pokaže
+  zadnjih 30 redaka.
+- Novo: `bun scripts/posalji-dokument.ts --chat <id> --datoteka </put> [--opis …] [--suho]` —
+  slanje tokenom bota OVE instalacije iz konfiguracije čvora, samo u chat iz postavki.
+
 ## 2026-10-07 — revizija blokiranih i zatvaranje kroz daemon na ploči (TASK-5327)
 
 - Novo: naknadna revizija blokiranih (prijenos TASK-5204 izvornog sustava). `PUT status=blocked`

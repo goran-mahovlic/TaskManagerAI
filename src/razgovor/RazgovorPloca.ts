@@ -16,6 +16,7 @@ import { stvoriRazgovor, type RazgovorJezgra, type RazgovorOvisnosti } from './R
 import { izvrsiteljRazgovora } from './Izvrsitelj'
 import { ucitajAgente, ucitajUpute } from './Identitet'
 import { loadMemoryConfig } from '../rag/memory-config'
+import { stvoriZadatkeRazgovora, type PlocaRazgovora } from './ZadatakRazgovora'
 import { procitajPosiljatelje, zabiljeziPosiljatelja, type Posiljatelj } from './Posiljatelji'
 import { ciljRazgovora, SNIMKA_KLJUC, type CiljRazgovora } from '../core/models/PrebaciSve'
 import { procitajTajnu } from '../core/ConfigModul'
@@ -111,7 +112,9 @@ export function modelIzKonfiguracije(putanja: string): string | undefined {
   } catch { return undefined }
 }
 
-export interface SklapanjeOpcije extends Omit<RazgovorOvisnosti, 'postavke' | 'izvrsitelj' | 'korijen' | 'agenti' | 'upute' | 'ragUkljucen'> {
+export interface SklapanjeOpcije extends Omit<RazgovorOvisnosti, 'postavke' | 'izvrsitelj' | 'korijen' | 'agenti' | 'upute' | 'ragUkljucen' | 'zadaci'> {
+  /** Ploča čvora za trag razgovora (TASK-5337); bez nje razgovor ne otvara zadatke. */
+  ploca?: PlocaRazgovora
   dbPath: string
   dataDir: string
   modelConfigPath: string
@@ -145,6 +148,14 @@ export function sklopiRazgovor(o: SklapanjeOpcije): RazgovorSloj {
     naStop: chatId => { jezgra.prekiniBotPoteze('telegram', chatId) },
     log: o.log,
   })
+  // TASK-5337: trag razgovora na ploči; rok čekanja drugog bota provjerava se i bez novih poruka.
+  const zadaci = o.ploca ? stvoriZadatkeRazgovora({
+    ploca: o.ploca, korijen: join(o.dataDir, 'razgovor'), autor: () => postavke().ime || 'bot', log: o.log,
+  }) : undefined
+  if (zadaci) {
+    const t = setInterval(() => { try { zadaci.provjeriRokove() } catch { /* sljedeći krug */ } }, 60_000)
+    if (typeof (t as any)?.unref === 'function') (t as any).unref()
+  }
   jezgra = stvoriRazgovor({
     ...o,
     postavke,
@@ -157,6 +168,7 @@ export function sklopiRazgovor(o: SklapanjeOpcije): RazgovorSloj {
     upute: () => ucitajUpute(o.uputePut),
     botKanal: () => ({ jeZaustavljen: c => botKanal.jeZaustavljen(c), prenesi: u => botKanal.prenesi(u), ovlasti: () => bkPostavke().ovlasti }),
     ragUkljucen: () => { try { return loadMemoryConfig().rag.enabled } catch { return null } },
+    zadaci,
   })
   const put = posiljateljiPut(o.dataDir)
   ulaz = { razgovor: jezgra, postavke, zabiljezi: p => zabiljeziPosiljatelja(put, p), konzola: o.konzola, botKanal }
@@ -242,4 +254,24 @@ export async function botKanalRucno(sloj: RazgovorSloj, raw: unknown, ip?: strin
   else if (t.radnja === 'zaustavi') await sloj.botKanal.zaustavi(chatId, by, 'rucno')
   else return { status: 400, tijelo: { error: 'radnja: nastavi ili zaustavi' } }
   return { status: 200, tijelo: { ok: true, zastavice: sloj.botKanal.stanje().zastavice } }
+}
+
+// ─── Trag razgovora: ploča iz TaskManagera (TASK-5337) ───────────────────────
+
+/** Ono što adapter treba od `TaskManagerSQL` (podskup — test ga daje stvarnom bazom). */
+export interface TaskManagerZaRazgovor {
+  createTask(i: { title: string; description?: string; tags?: string[]; createdBy: string; priority?: number }): { id: string }
+  getTask(id: string): { status: string } | null
+  updateTask(id: string, u: { status?: any; resultSummary?: string }): unknown
+  addProgressNote(id: string, agent: string, note: string): void
+}
+
+/** Zadatak razgovora: bez nositelja, prioritet 3, oznake iz `ZadatakRazgovora`. */
+export function plocaIzTaskManagera(tm: TaskManagerZaRazgovor): PlocaRazgovora {
+  return {
+    stvori: o => tm.createTask({ title: o.naslov.slice(0, 200), description: o.opis, tags: o.oznake, createdBy: o.autor, priority: 3 } as any).id,
+    status: id => tm.getTask(id)?.status ?? null,
+    postaviStatus: (id, status, rezultat) => !!tm.updateTask(id, { status, ...(rezultat ? { resultSummary: rezultat } : {}) }),
+    biljeska: (id, autor, tekst) => tm.addProgressNote(id, autor, tekst),
+  }
 }

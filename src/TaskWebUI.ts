@@ -73,8 +73,10 @@ import {
 import { probajUlaz, stanjeUlaza, pokreniTelegramPoller, uskladiTelegramPoller, type RazgovorUlaza } from './TelegramPoller'
 import {
   botKanalGet, botKanalPut, botKanalRucno, odBotaPost, razgovorGet, razgovorPut, razgovorPovijestGet, sklopiRazgovor,
-  zadnjiPosiljatelji, type RazgovorSloj,
+  zadnjiPosiljatelji, plocaIzTaskManagera, type RazgovorSloj,
 } from './razgovor/RazgovorPloca'
+import { citajKonzolu, zapisiKonzolu } from './razgovor/Zapis'
+import { ZADANI_PRIVITCI as ZADANI_PRIVITCI_RAZG, mapaPrivitaka as mapaPrivitakaRazg } from './TelegramPrivitci'
 import { GLAS_ZADANI_URL, stanjeGlasa, type StanjeGlasa } from './razgovor/Glas'
 import { ucitajAgente } from './razgovor/Identitet'
 import { MIN_TAJNA, PUT_RUTE, ZAGLAVLJE_POTPISA, potpisi, smijeTajnuNa, type Zahtjev } from './razgovor/BotKanal'
@@ -8056,7 +8058,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         appendToKonzolaLog('  clear                   Clear console', 'log-system');
         appendToKonzolaLog('  mode [plan|work]        Switch mode', 'log-system');
         appendToKonzolaLog('  services [cmd]          Service management', 'log-system');
-        appendToKonzolaLog('  logs [source] [lines]   Tail log (daemon|klaudio|voiceserver)', 'log-system');
+        appendToKonzolaLog('  logs [source] [lines]   Tail log (daemon|klaudio|voiceserver|razgovor)', 'log-system');
         appendToKonzolaLog('  history                 Command history', 'log-system');
         appendToKonzolaLog('  ls, cat, head, tail     File reading', 'log-system');
         appendToKonzolaLog('  git status/log/diff     Git operations', 'log-system');
@@ -8296,6 +8298,17 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     function initKonzola() {
       initKonzolaInput();
       fetchKonzolaStatus();
+      // TASK-5337: zadnji redovi razgovora (ljudi i bot↔bot) — inače se vidi samo ono što stigne dok je Konzola otvorena.
+      if (!window._razgovorPovijestUcitana) {
+        window._razgovorPovijestUcitana = true;
+        fetch('/api/konzola/logs?source=razgovor&lines=30').then(r => r.json()).then(d => {
+          const r = (d && d.lines) || [];
+          if (r.length) {
+            appendToKonzolaLog('── razgovor: zadnjih ' + r.length + ' redaka (logs razgovor N za više) ──', 'log-system');
+            r.forEach(l => appendToKonzolaLog(l, detectLogLevel(l) || 'log-text'));
+          }
+        }).catch(() => {});
+      }
       if (konzolaStatusInterval) clearInterval(konzolaStatusInterval);
       konzolaStatusInterval = setInterval(fetchKonzolaStatus, 30000);
       fetchSessionUsage();                                 // potrošnja sesije: odmah…
@@ -11365,14 +11378,24 @@ function razgovorSloj(): RazgovorSloj {
     instalacija: process.env.TM_NAZIV || osHostname(),
     env: process.env,
     dokumentiMape: [join(TM_DATA, 'izvjestaji')],
+    // TASK-5337: datoteke primljene u chat i one koje bot izradi uz njih (privitci/<chatId>).
+    dokumentiMapeChata: (kanal: string, chatId: string) => {
+      if (kanal !== 'telegram') return []
+      try { return [mapaPrivitakaRazg({ ...ZADANI_PRIVITCI_RAZG, ...(loadTelegramConfig().privitci || {}) }, chatId)] } catch { return [] }
+    },
+    // TASK-5337: trag razgovora (i bot↔bot) kao zadatak na ovoj ploči.
+    ploca: plocaIzTaskManagera(taskManager as any),
     // TASK-5293: identitet upravitelja — agenti iz registra, vodič vlasnika samo iz okoline stroja.
     agentiPut: AGENTS_REGISTRY_FILE,
     uputePut: process.env.TM_RAZGOVOR_UPUTE || undefined,
     log: (r: string) => console.log(r),
     // TASK-5285: razgovor se vidi u Konzoli (ulaz, odluka, izlaz), oblik odgovora iz
     // `telegram.stil`, a uz `rad` sesija smije čitati dnevnik ulaza.
-    konzola: (r: string, razina: 'info' | 'ok' | 'greska') =>
-      broadcastKonzola(r, razina === 'ok' ? 'log-success' : razina === 'greska' ? 'log-error' : 'log-info', 'razgovor'),
+    // TASK-5337: i u `data/razgovor/konzola.log` — tko otvori Konzolu kasnije vidi razgovor („logs razgovor").
+    konzola: (r: string, razina: 'info' | 'ok' | 'greska') => {
+      zapisiKonzolu(join(TM_DATA, 'razgovor'), r, razina)
+      broadcastKonzola(r, razina === 'ok' ? 'log-success' : razina === 'greska' ? 'log-error' : 'log-info', 'razgovor')
+    },
     stil: () => loadTelegramConfig().stil,
     ingestLog: INGEST_LOG_PATH,
   })
@@ -16035,6 +16058,12 @@ async function handleKonzolaMode(req: Request): Promise<Response> {
 async function handleKonzolaLogs(url: URL): Promise<Response> {
   const source = url.searchParams.get('source') || 'daemon'
   const lines = parseInt(url.searchParams.get('lines') || '50')
+  // TASK-5337: razgovor (ljudi i bot↔bot) iz vlastitog zapisa paketa.
+  if (source === 'razgovor') {
+    return new Response(JSON.stringify({ source, lines: citajKonzolu(join(TM_DATA, 'razgovor'), Math.min(lines, 200)), timestamp: new Date().toISOString() }), {
+      headers: { 'Content-Type': 'application/json' }
+    })
+  }
   let logFile: string
   switch (source) {
     case 'voiceserver': logFile = join(process.env.HOME || homedir(), '.tmp/regoc_logs/voiceserver.log'); break

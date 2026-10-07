@@ -32,6 +32,8 @@ export interface IdentitetOpcije {
   port: number
   dokumenti: boolean
   radniDir: string
+  /** Mape iz kojih SEND_DOC smije slati uz radnu mapu (npr. privitci ovog chata) — TASK-5337. */
+  dokumentiMape?: string[]
   /** Oblik odgovora (TASK-5285); zadano `kratko`. */
   stil?: Stil
   /** Zapisi koje smije čitati uz `rad` (TASK-5285). */
@@ -144,7 +146,9 @@ export function sastaviIdentitet(o: IdentitetOpcije): string {
   }
   if ((o.stil ?? 'kratko') === 'kratko') r.push(UPUTA_KRATKO)
   if (o.dokumenti) {
-    r.push('Datoteku iz radne mape šalješ tako da u odgovor staviš zaseban redak [[SEND_DOC: /apsolutna/putanja | kratak opis]]. Šalju se samo datoteke iz radne mape.')
+    // TASK-5337: model mora znati STVARNE mape — inače spremi datoteku drugdje i oznaka se odbije.
+    const mape = [o.radniDir, ...(o.dokumentiMape || [])].filter(Boolean)
+    r.push(`Datoteku u ovaj chat šalješ ovako: u odgovor staviš zaseban redak [[SEND_DOC: /apsolutna/putanja | kratak opis]] — kanal je pošalje tokenom ovog bota, a oznaku ukloni iz teksta. Šalju se samo datoteke iz ovih mapa: ${mape.join(', ')} (datoteku koju izradiš spremi u jednu od njih). Ne piši oznaku u objašnjenjima ni kao primjer — svaka oznaka u odgovoru je stvarno slanje. Ako slanje ne uspije, kanal u chat dopiše razlog (📎 … nije poslan: …).`)
   }
   if (o.agenti?.length) {
     r.push(`Agenti ove instalacije (id — ime, uloga (vještine)):\n${o.agenti.map(a =>

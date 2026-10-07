@@ -4,7 +4,7 @@
 //
 // Autorica: Jelena (Engineer), TASK-5277.
 
-import { appendFileSync, mkdirSync, readdirSync, rmSync, statSync } from 'fs'
+import { appendFileSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync } from 'fs'
 import { join } from 'path'
 
 /** Ime mape iz id-a chata — nikad `..` ni kosa crta. */
@@ -43,4 +43,34 @@ export function ocistiStareZapise(korijen: string, dana: number, sada = Date.now
     }
   }
   return n
+}
+
+// ─── Konzola razgovora (TASK-5337) ───────────────────────────────────────────
+// Redak Konzole išao je samo živim WebSocketom: tko je otvorio konzolu kasnije, nije vidio
+// ništa od razgovora. Sada se svaki redak upisuje i u `<korijen>/konzola.log`
+// („logs razgovor" u Konzoli). Datoteka se reže na pola kad prijeđe ~2 MB.
+
+const KONZOLA_MAX_BAJTA = 2 * 1024 * 1024
+
+export function zapisiKonzolu(korijen: string, redak: string, razina: string, sada = Date.now()): void {
+  try {
+    mkdirSync(korijen, { recursive: true })
+    const put = join(korijen, 'konzola.log')
+    const jedan = `[${new Date(sada).toISOString()}] ${razina === 'greska' ? '⚠️ ' : ''}${redak.replace(/\s*\n\s*/g, ' ')}\n`
+    appendFileSync(put, jedan, 'utf-8')
+    if (statSync(put).size > KONZOLA_MAX_BAJTA) {
+      const sve = readFileSync(put, 'utf-8')
+      const pola = sve.slice(Math.floor(sve.length / 2))
+      const tmp = `${put}.tmp-${process.pid}`
+      appendFileSync(tmp, pola.slice(pola.indexOf('\n') + 1), 'utf-8')
+      renameSync(tmp, put)
+    }
+  } catch { /* konzola je prikaz, ne uvjet */ }
+}
+
+export function citajKonzolu(korijen: string, redaka: number): string[] {
+  try {
+    const r = readFileSync(join(korijen, 'konzola.log'), 'utf-8').split('\n').filter(Boolean)
+    return r.slice(-Math.max(1, redaka))
+  } catch { return [] }
 }

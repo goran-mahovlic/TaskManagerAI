@@ -26,6 +26,7 @@ import type { CiljRazgovora } from '../core/models/PrebaciSve'
 import { izvuciDokumente, provjeriDokument } from './SendDoc'
 import { GLAS_ZADANI_URL, OZNAKA_TTS_KVAR, sintetizirajGovor, tekstZaGovor, trebaGlasovniOdgovor } from './Glas'
 import { ocistiStareZapise, zapisiPotez } from './Zapis'
+import type { ZadaciRazgovora } from './ZadatakRazgovora'
 import type { PrijenosIshod, PrijenosUlaz } from './BotKanal'
 
 /** Što jezgra treba od kanala bot↔bot (ADR-0003) — bez njega razgovor radi kao prije. */
@@ -71,6 +72,10 @@ export interface RazgovorOvisnosti {
   ragUkljucen?: () => boolean | null
   /** Dodatne mape iz kojih SEND_DOC smije slati (uz radniDir). */
   dokumentiMape?: string[]
+  /** Mape za SEND_DOC vezane uz chat (npr. `privitci/<chatId>`) — TASK-5337. */
+  dokumentiMapeChata?: (kanal: string, chatId: string) => string[]
+  /** Trag razgovora na ploči čvora (TASK-5337); bez njega razgovor ne otvara zadatke. */
+  zadaci?: ZadaciRazgovora
   sat?: () => number
   log?: (r: string) => void
   fetchImpl?: typeof fetch
@@ -338,6 +343,36 @@ export function stvoriRazgovor(d: RazgovorOvisnosti): RazgovorJezgra {
     })
     konzola(`💬 ⇢ ${oznakaPosiljatelja(p)} [${p.kanal}:${p.chatId}]: „${zaKonzolu(cistiTekst)}" → odgovor${stavke.length > 1 ? ` (${stavke.length} poruke)` : ''}`)
 
+    // TASK-5337: trag na ploči — potez s drugim botom odmah, ljudski tek kad traje dulje od praga.
+    const zr = d.zadaci
+    const primljeno = stavke.map(x => `📥 primljeno ${x.p.izvor === 'bot' ? `od bota ${neutralizirajIme(x.p.posiljateljIme)}` : `od ${oznakaPosiljatelja(x.p)}`}: „${zaKonzolu(x.p.tekst, 1500)}"`).join('\n')
+    const otvoriNit = (): string | null => {
+      if (!zr) return null
+      const id = zr.otvori(c.kljuc, {
+        naslov: `💬 ${s.ime || 'bot'} · ${zaKonzolu(cistiTekst, 90)}`,
+        opis: `Trag razgovora u chatu ${p.kanal}:${p.chatId} (razgovorni način, ${s.ime || 'bot'}). ` +
+          'Zadatak otvara i zatvara razgovor sam — nema nositelja i nije posao za agenta (no-autonomy). ' +
+          `Bilješke: primljeno → radi → odgovor / upit drugom botu → gotovo.\n\nPrvi nalog:\n${zaKonzolu(cistiTekst, 2000)}`,
+        primljeno,
+      })
+      if (id) {
+        zr.radi(c.kljuc, `⚙️ radi (${s.ime || 'bot'})`)
+        konzola(`📋 ${s.ime || 'bot'} [${p.kanal}:${p.chatId}] → zadatak razgovora ${id}`)
+      }
+      return id
+    }
+    let zadatakId: string | null = null
+    let zadatakTajmer: ReturnType<typeof setTimeout> | null = null
+    if (zr) {
+      zr.provjeriRokove()
+      if (stavke.some(x => x.p.izvor === 'bot') || zr.aktivni(c.kljuc)) zadatakId = otvoriNit()
+      else {
+        zadatakTajmer = setTimeout(() => { zadatakTajmer = null; zadatakId = otvoriNit() }, zr.pragMs)
+        if (typeof (zadatakTajmer as any)?.unref === 'function') (zadatakTajmer as any).unref()
+      }
+    }
+    const zaustaviTajmer = () => { if (zadatakTajmer) { clearTimeout(zadatakTajmer); zadatakTajmer = null } }
+
     const sesije = ucitajSesije(sesijePut)
     let ses: SesijaChata | undefined = sesije[c.kljuc]
     let prethodne: string[] = []
@@ -366,6 +401,7 @@ export function stvoriRazgovor(d: RazgovorOvisnosti): RazgovorJezgra {
       procitano.length ? `[PROČITANO U CHATU — nije bilo upućeno tebi, ne odgovaraj na to izravno]\n${procitano.map(x => `[OD: ${oznakaPosiljatelja(x.p)}] ${neutralizirajTekst(x.tekst)}`).join('\n')}\n[/PROČITANO]` : '',
       prethodne.length ? `[PRETHODNI KONTEKST: teme prethodnog razgovora u ovom chatu]\n${prethodne.map(t => `• ${neutralizirajTekst(t)}`).join('\n')}\n[/PRETHODNI KONTEKST]` : '',
       mem?.blok || '',
+      zadatakId ? `[ZADATAK RAZGOVORA: ${zadatakId} — ploča ovog čvora; bilješke primljeno/radi/odgovor upisuje sustav, ne otvaraj novi zadatak za isti razgovor]` : '',
       tekst,
     ].filter(Boolean).join('\n\n')
 
@@ -403,6 +439,7 @@ export function stvoriRazgovor(d: RazgovorOvisnosti): RazgovorJezgra {
       systemPrompt: resume ? undefined : sastaviIdentitet({
         ime: s.ime, instalacija: d.instalacija, ovlasti, plocaUrl: d.plocaUrl, port: d.port,
         dokumenti: s.dokumenti, radniDir, stil: d.stil?.(),
+        dokumentiMape: [...(d.dokumentiMape || []), ...(d.dokumentiMapeChata?.(p.kanal, p.chatId) || [])],
         zapisi: { korijen: d.korijen, ingestLog: d.ingestLog },
         agenti: d.agenti?.() || [], upute: d.upute?.() || null,
         memorija: {
@@ -457,6 +494,8 @@ export function stvoriRazgovor(d: RazgovorOvisnosti): RazgovorJezgra {
     // „Prekini komunikaciju" za vrijeme bot-poteza: odgovor ne ide ni u grupu ni drugom botu.
     if (botPotez && (kontrola?.signal.aborted || bk?.jeZaustavljen(p.chatId))) {
       log(`[razgovor] ${c.kljuc}: bot-potez prekinut (komunikacija bot↔bot zaustavljena)`)
+      zaustaviTajmer()
+      zr?.gotovo(c.kljuc, '⛔ razgovor bot↔bot zaustavljen (stop) — odgovor nije poslan')
       zapisiPotez(d.korijen, p.kanal, p.chatId, {
         ts: new Date(sat()).toISOString(), smjer: 'izlaz', tekst: '', vrata: 'bot-stop', trajanjeMs: sat() - t0,
       })
@@ -480,6 +519,8 @@ export function stvoriRazgovor(d: RazgovorOvisnosti): RazgovorJezgra {
         greska: (res.greska || `exit ${res.exitCode}`).slice(0, 300), vrata: rok ? 'rok' : 'kvar',
       })
       konzola(`⚠ ⇠ ${s.ime || 'bot'} [${p.kanal}:${p.chatId}] ${opisPoteza(zajednicko)}: ${rok ? 'istekao rok' : 'kvar izvršitelja'} — ${zaKonzolu(res.greska || `exit ${res.exitCode}`, 160)}`, 'greska')
+      zaustaviTajmer()
+      zr?.gotovo(c.kljuc, `⚠ ${rok ? 'istekao rok' : 'kvar izvršitelja'} — ${zaKonzolu(res.greska || `exit ${res.exitCode}`, 300)}`)
       return
     }
 
@@ -500,7 +541,7 @@ export function stvoriRazgovor(d: RazgovorOvisnosti): RazgovorJezgra {
     if (s.dokumenti) {
       const iz = izvuciDokumente(odgovor)
       odgovor = iz.tekst
-      const mape = [radniDir, ...(d.dokumentiMape || [])]
+      const mape = [radniDir, ...(d.dokumentiMape || []), ...(d.dokumentiMapeChata?.(p.kanal, p.chatId) || [])]
       for (const m of iz.markeri) {
         const pr = provjeriDokument(m.putanja, { dopusteneMape: mape, maxBajta: k.maxDokumentBajta, home: d.home })
         if (pr.ok) zaSlanje.push({ putanja: pr.putanja, opis: m.opis })
@@ -527,7 +568,23 @@ export function stvoriRazgovor(d: RazgovorOvisnosti): RazgovorJezgra {
       if (i === 0 && k.posaljiTekstId) prviId = await k.posaljiTekstId(p.chatId, dijelovi[i]!, replyTo)
       else await k.posaljiTekst(p.chatId, dijelovi[i]!, replyTo)
     }
-    for (const dok of zaSlanje) await k.posaljiDokument(p.chatId, dok.putanja, dok.opis)
+    // TASK-5337: neuspjelo slanje se javlja u chat s razlogom — ne tišina.
+    const neposlano: string[] = []
+    for (const dok of zaSlanje) {
+      const ime = dok.putanja.split('/').pop() || 'dokument'
+      let ishod: { ok: boolean; razlog?: string }
+      try {
+        ishod = k.posaljiDokumentIshod
+          ? await k.posaljiDokumentIshod(p.chatId, dok.putanja, dok.opis)
+          : { ok: await k.posaljiDokument(p.chatId, dok.putanja, dok.opis) }
+      } catch (e: any) { ishod = { ok: false, razlog: String(e?.message || e) } }
+      if (!ishod.ok) {
+        const razlog = zaKonzolu(ishod.razlog || 'kanal je odbio slanje', 300)
+        neposlano.push(`${ime}: ${razlog}`)
+        log(`[razgovor] ${c.kljuc}: dokument ${ime} nije poslan — ${razlog}`)
+        await k.posaljiTekst(p.chatId, `📎 dokument ${ime} nije poslan: ${razlog}`).catch(() => false)
+      }
+    }
 
     // ADR-0003 §5: odgovor koji spominje drugog bota ide mu i LAN-om (brave su u BotKanal).
     let prijenos: PrijenosIshod | null = null
@@ -563,6 +620,21 @@ export function stvoriRazgovor(d: RazgovorOvisnosti): RazgovorJezgra {
       ...(prijenos && prijenos !== 'bez-spomena' && prijenos !== 'iskljuceno' ? { prijenos } : {}),
     })
     konzola(`💬 ⇠ ${s.ime || 'bot'} [${p.kanal}:${p.chatId}] ${opisPoteza(zajednicko)}: „${zaKonzolu(odgovor)}"${zaSlanje.length ? ` · 📎 ${zaSlanje.length}` : ''}`, 'ok')
+
+    zaustaviTajmer()
+    if (zr) {
+      // Upit drugom botu otvara nit i kad je potez bio kratak.
+      if (prijenos === 'poslano' && !zr.aktivni(c.kljuc)) zadatakId = otvoriNit()
+      if (zr.aktivni(c.kljuc)) {
+        const poslano = zaSlanje.length - neposlano.length
+        zr.biljeska(c.kljuc, `💬 odgovor ${opisPoteza(zajednicko)}: „${zaKonzolu(odgovor, 1500)}"` +
+          (poslano > 0 ? `\n📎 poslano dokumenata: ${poslano}` : '') +
+          (neposlano.length ? `\n📎 nije poslano: ${neposlano.join('; ')}` : ''))
+        if (prijenos === 'poslano') zr.cekaBota(c.kljuc, '📤 upit poslan drugom botu (LAN kanal) — čeka odgovor')
+        else if (prijenos && prijenos !== 'bez-spomena' && prijenos !== 'iskljuceno') zr.gotovo(c.kljuc, `✅ gotovo (prijenos drugom botu: ${prijenos})`)
+        else zr.gotovo(c.kljuc, '✅ gotovo')
+      }
+    }
   }
 
   return {
@@ -579,6 +651,7 @@ export function stvoriRazgovor(d: RazgovorOvisnosti): RazgovorJezgra {
         }
         if (zaDrugog) {
           const c = chat(`${p.kanal}:${p.chatId}`)
+          d.zadaci?.biljeska(c.kljuc, `👁 pročitano (upućeno drugome — ${zaDrugog}) od ${oznakaPosiljatelja(p)}: „${zaKonzolu(p.tekst, 1000)}"`)
           c.procitano.push({ ms: sat(), ime: p.posiljateljIme, tekst: p.tekst.slice(0, 1000), p })
           if (c.procitano.length > MAX_PROCITANO) c.procitano.splice(0, c.procitano.length - MAX_PROCITANO)
           zapisiPotez(d.korijen, p.kanal, p.chatId, {

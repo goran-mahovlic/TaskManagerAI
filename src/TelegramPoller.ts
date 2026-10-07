@@ -33,7 +33,7 @@ import { jeDopusten, jeZaDrugog, pocinjeImenom, trebaOdgovoriti } from './razgov
 import { zaKonzolu } from './razgovor/Razgovor'
 import { GLAS_ZADANI_URL, OZNAKA_STT_KVAR, prepoznajGovor, vrstaZvuka, type IshodStt } from './razgovor/Glas'
 import {
-  GOVORNE_VRSTE, ZADANI_PRIVITCI, arhivirajPoslano, dopustenoPreuzeti, imaPrivitak, neutralizirajOznakuPrivitka, odaberiPrivitak, spremiPrivitak, telegramPreuzmi,
+  GOVORNE_VRSTE, ZADANI_PRIVITCI, arhivirajPoslano, bezTajne, dopustenoPreuzeti, imaPrivitak, neutralizirajOznakuPrivitka, odaberiPrivitak, spremiPrivitak, telegramPreuzmi,
   type PorukaSPrivitkom, type Preuzeto, type TelegramPrivitci,
 } from './TelegramPrivitci'
 
@@ -593,6 +593,30 @@ export function telegramKanal(
       return r.ok
     } catch { return false }
   }
+  // TASK-5337: razlog neuspjeha (opis Bot API-ja) ide u chat — prije je neuspjeh bio tih.
+  const dokumentIshod = async (chatId: string, putanja: string, opis: string): Promise<{ ok: boolean; razlog?: string; poruka?: number }> => {
+    try {
+      const fd = new FormData()
+      fd.append('chat_id', chatId)
+      if (opis) fd.append('caption', opis.slice(0, 1024))
+      const f = Bun.file(putanja)
+      fd.append('document', f, putanja.split('/').pop() || 'dokument')
+      const r = await fetch(`${base}/sendDocument`, { method: 'POST', body: fd })
+      const j: any = await r.json().catch(() => ({}))
+      if (!r.ok) {
+        return { ok: false, razlog: bezTajne(`Telegram sendDocument HTTP ${r.status}${j?.description ? `: ${j.description}` : ''}`, botToken) }
+      }
+      if (privitci) {
+        try {
+          const p = privitci()
+          if (p.ukljucen) arhivirajPoslano(p, String(chatId), putanja, Number(j?.result?.message_id) || 0, ja?.() || null)
+        } catch { /* arhiv nije vrijedan neuspjeha slanja */ }
+      }
+      return { ok: true, ...(Number(j?.result?.message_id) ? { poruka: Number(j.result.message_id) } : {}) }
+    } catch (e: any) {
+      return { ok: false, razlog: bezTajne(`Telegram sendDocument: ${String(e?.message || e)}`, botToken) }
+    }
+  }
   return {
     ime: 'telegram',
     maxDuljinaPoruke: 4096,
@@ -625,25 +649,9 @@ export function telegramKanal(
       return id !== null || !replyTo ? id : jedan(false)
     },
     async posaljiDokument(chatId, putanja, opis) {
-      try {
-        const fd = new FormData()
-        fd.append('chat_id', chatId)
-        if (opis) fd.append('caption', opis.slice(0, 1024))
-        const f = Bun.file(putanja)
-        fd.append('document', f, putanja.split('/').pop() || 'dokument')
-        const r = await fetch(`${base}/sendDocument`, { method: 'POST', body: fd })
-        if (r.ok && privitci) {
-          try {
-            const p = privitci()
-            if (p.ukljucen) {
-              const j: any = await r.json().catch(() => ({}))
-              arhivirajPoslano(p, String(chatId), putanja, Number(j?.result?.message_id) || 0, ja?.() || null)
-            }
-          } catch { /* arhiv nije vrijedan neuspjeha slanja */ }
-        }
-        return r.ok
-      } catch { return false }
+      return (await dokumentIshod(chatId, putanja, opis)).ok
     },
+    posaljiDokumentIshod: dokumentIshod,
     async posaljiGlas(chatId, ogg, replyTo) {
       try {
         const fd = new FormData()

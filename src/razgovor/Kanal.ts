@@ -59,6 +59,8 @@ export interface Kanal {
   /** Kao `posaljiTekst`, ali vraća id poslane poruke (`null` = nije poslano) — za kanal bot↔bot. */
   posaljiTekstId?(chatId: string, tekst: string, replyTo?: string): Promise<string | null>
   posaljiDokument(chatId: string, putanja: string, opis: string): Promise<boolean>
+  /** Kao `posaljiDokument`, ali s razlogom neuspjeha (opis greške kanala) — razlog ide u chat (TASK-5337). */
+  posaljiDokumentIshod?(chatId: string, putanja: string, opis: string): Promise<{ ok: boolean; razlog?: string; poruka?: number }>
   /** Glasovna poruka (ogg/opus) — TASK-5294. Kanal bez glasa je ne mora imati. */
   posaljiGlas?(chatId: string, ogg: Uint8Array, replyTo?: string): Promise<boolean>
   /** „tipka…" dok model radi. */
