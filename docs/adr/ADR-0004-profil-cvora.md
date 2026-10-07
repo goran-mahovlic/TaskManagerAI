@@ -248,6 +248,10 @@ koji `provjeri` prijavi nego iscurjela tajna.
 
 ## 13. Dopuna (TASK-5307, 07.10.2026.) — paritet s glavnim sustavom: kuke, značajke, konzola, oporavak
 
+> Osi **znanje** (opći korpus u paketu, banka čvora bez naših podataka) i **izolacija memorije**
+> dodaje [ADR-0006](ADR-0006-znanje-cvora-opce-i-privatno.md) (TASK-5330), s modulima `mogucnosti`,
+> `znanje`, `znanje-cvora` i poljem `nikadNeNosi`.
+
 **Zahtjev** (Goran, 07.10., grupa node-A): „na node-A su ugašeni hookovi, izlazi u konzolu i
 značajke sustava; mora biti kao na glavnom sustavu i dio portabilnog TaskManagerAI-ja, novi nod
 u par koraka." Neposredan povod: TASK-212 (Jelena) bio je siroče 23:38 → 10:15 jer oporavak na
