@@ -20,7 +20,7 @@ Prije svake izmjene napravi kopiju `<datoteka>.bak-task5307-<vrijeme>`.
 | A3 | Kočnice i blokovi koje kod čvora već ima → `true`: `taskCreateBreaker`, `taskCreateBreakerLive`, `spawnBreaker`, `spawnBreakerLive`, `agentIdentityBlock(+Live)`, `spawnVerificationBlock(+Live)`, `criticUnverifiedAlert`, `verificationGateShadow`, `tierRecipesEnabled`, `earlyWorkGuard`, `criticRepairLoop`, `shutdownResume(+Live)` | `features.json` | `daemon.log` bez iznimki 10 min; `paritet.py` |
 | A4 | `ollamaClassifier` → `true` **ako** `curl -s -o /dev/null -w '%{http_code}' $OLLAMA_URL/api/tags` = 200 s čvora | `features.json` | redak `[ollama]`/`LocalOffload` u `daemon.log` |
 
-## Faza B — node-A nakon što je TASK-255 deployan i 46 smeće-zadataka zatvoreno
+## Faza B — node-A nakon što je TASK-255 deployan i 46 smeće-zadataka zatvoreno — ✅ IZVEDENO TASK-5308 (07.10. 09:04 UTC, ADR §13.8; B2 `autonomyGate` već ON)
 
 | # | Što | Uvjet |
 |---|---|---|
@@ -35,8 +35,8 @@ Prije svake izmjene napravi kopiju `<datoteka>.bak-task5307-<vrijeme>`.
 | C2 | `hooks/RegocConsoleLog.hook.ts` u paket (putanja iz `HOME`, ne `/home/klaudio`); `RadBezZadatka` prenijeti kao uvjetnu kuku | J15 |
 | C3 | `config/features.example.json`: puni skup ključeva s odlukom iz §13.2.1 (sada ih je 6) i `note` s razlogom | `bun test` zelen; brana ADR-0001 §8 zelena |
 | C4 | modul `konzola`: drop-in `~/.config/systemd/user/<unit>.service.d/konzola.conf` s `StandardOutput=append:%h/.tmp/regoc_logs/<izvor>.log` za `regoc-taskmanager` i `regoc-voice`; ploča prikazuje izvor bez datoteke kao „nije u pogonu" | J17 |
-| C5 | **P5**: `tm-cvor-azuriraj.sh <čvor> --s-kompletom` (paket + komplet izvornog sustava po `MANIFEST.sha256`, uključivo popravak TASK-255). Na node-A tek kad je `in_progress = 0`, restart samo kroz `restart_kad_mirno` | `paritet.py` → „fale na čvoru (0)"; StaleCodeCheck exit 0 |
-| C6 | Nakon C5 na node-A: `siroceOporavak`, `pozadinaPovrat`, `revizijaBlokiranih(+Live)`, `zatvaranjeKrozDaemon`, `r2IzricitaDodjela`, `sequentialHelpers` → `true` | **P7**: ubijen proces agenta → zadatak natrag u redu ≤ 15 min bez `/reclaim` |
+| C5 | (djelomično, ADR §13.8: kalem siroče-oporavka; puni komplet otvoren) **P5**: `tm-cvor-azuriraj.sh <čvor> --s-kompletom` (paket + komplet izvornog sustava po `MANIFEST.sha256`, uključivo popravak TASK-255). Na node-A tek kad je `in_progress = 0`, restart samo kroz `restart_kad_mirno` | `paritet.py` → „fale na čvoru (0)"; StaleCodeCheck exit 0 |
+| C6 | (djelomično, ADR §13.8: `siroceOporavak` ON kroz kalem) Nakon C5 na node-A: `siroceOporavak`, `pozadinaPovrat`, `revizijaBlokiranih(+Live)`, `zatvaranjeKrozDaemon`, `r2IzricitaDodjela`, `sequentialHelpers` → `true` | **P7**: ubijen proces agenta → zadatak natrag u redu ≤ 15 min bez `/reclaim` |
 | C7 | `docs/INSTALL.md` „Novi čvor": zamijeniti 7 koraka s 5 + tajne (ADR §13.5) | pregled teksta |
 
 **Prije C5 odluči Goran:** P6, tj. pet nepredanih izmjena u `~/TaskManagerAI` na node-A

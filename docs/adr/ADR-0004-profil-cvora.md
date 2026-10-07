@@ -428,4 +428,45 @@ spawna (sesija d2b4bef7), agent odgovorio `UPUTA-E2E-PRIMLJENA`; konzola ploče 
 
 **Otvoreno:** drop-in konzole i `TM_FEATURES_FILE` čekaju restart ploče (in_progress na node-A =
 2 smeće-zadatka TASK-255); faza B (reaperi) čeka TASK-255; P5/P6-Goran (prijenos koda,
-`OrphanRecovery`) uvjet su za P7 („siroče se samo vraća").
+`OrphanRecovery`) uvjet su za P7 („siroče se samo vraća"). → Zatvoreno u §13.8.
+
+### 13.8 Faza B i kalem siroče-oporavka na node-A (TASK-5308, 07.10.2026. 09:04 UTC)
+
+**Odluka (Goran 07.10.):** P5/P6 = DA — „uskladi sve verzije na najnovije sa svim featureima”,
+prenesi i `OrphanRecovery` u paket i na node-A; dovrši fazu B (TASK-255) i restart ploče.
+
+**Zašto kalem, a ne puni komplet (izmjereno 07.10.):** `~/.claude/regoc` na node-A nije git i nema
+zajedničku bazu s glavnim. 27 modula glavnog fali, 58 zajedničkih datoteka je različito, a
+**348 redaka postoji samo na node-A** i nisu stari kod glavnog nego značajke čvora: `ragUkljucen`
+(TASK-5273, čvor bez RAG-a), `paketKanal` (TASK-5285, Telegram kroz paket kad stroj nema vlastitu
+datoteku bota), anti-kaskada TASK-255 (`RegocDaemon` E1/E2 vrata, izvođenje `regoc-chain` u
+mjestu), `provider@čvor:model`. Puni komplet glavnog (`deploy_node_a.sh`) bi ih obrisao. Komplet
+ostaje otvoren (P5): prvo se te četiri značajke prenose u glavni sustav, tek onda komplet ide na čvor.
+
+**Kalem (u pogonu):** `OrphanRecovery.ts` i `ZombieRecovery.ts` glavnog (drugi je nadskup:
+`delegated` + `homedir()`), `config/siroce-oporavak.json` (prag 10 min, strop 3, ≤ 5 radnji po
+prolazu), `tests/orphan-recovery.test.ts` + `tests/zombie-recovery.test.ts`. U `RegocDaemon.ts`
+čvora: `oporaviSirocad` prije `recoverZombieTasks` (zombie preuzete ne dira). Čvor nema najmova
+(`TaskCloser`), pa radi samo okidač `prag`. Razlika: `docs/qa/TASK-5308/kalem_siroce_nodeA_*.diff`.
+Sigurnosna kopija na čvoru: `~/backup/task5308_kalem_<vrijeme>/`. Profil sada traži i ožičenje
+(`RegocDaemon.ts` sadrži `oporaviSirocad`) i postavke (`config/siroce-oporavak.json`) — sama
+datoteka modula bez poziva je lažni paritet.
+
+**Faza B:** 43 smeće-zadatka `regoc-chain` s popisa TASK-255 HANDOFF §4 → `cancelled` (43 × HTTP 200;
+TASK-252…262 iz PRJ-001 nisu dirani, TASK-255 §5). Time je `in_progress = 0` → restart
+`regoc-daemon` 762918, `regoc-taskmanager` 762917, `regoc-voice` 762919 (09:04:16 UTC), StaleCodeCheck
+daemona i ploče ✅. Instanca: `ZNACAJKE_ISKLJUCI` zadržava samo 6 prekidača bez koda; `primijeni --pisi
+--modul znacajke,oporavak` → 8 promjena, drugi prolaz 0, `[znacajke] 75/75`, `[oporavak] 6/6`.
+`paritet.py`: 99 → 63 (faza A) → 52 razlike (preostale: kuke „van/uvjetno”, 6 prekidača bez koda,
+26 modula P5, `klaudio.log` — bot glavnog stroja ne radi na čvoru).
+
+**Čekač restarta (kvar):** `restart_kad_mirno_nodea.sh` brojao je agente s `pgrep -fc "claude --print"`
+unutar `bash -c` koji i sam sadrži taj tekst → uvijek ≥ 1, pa ne bi okinuo ni uz 0 agenata (izmjereno:
+„1 1” bez ijednog agenta). Popravljeno sidrom `^claude `; ovaj restart izveden je ručno uz
+`in_progress = 0` i 0 agenata.
+
+**Nalaz (uzrok siročadi na node-A):** auto-exec čvora stavlja zadatak u `in_progress` PRIJE spawna, a
+kad agent upadne u backoff (`⏳ … u backoff-u … preskačem spawn`), zadatak ostaje `in_progress` bez
+procesa — viđeno uživo na TASK-268 u 09:07:56. Glavni to ima riješeno (TASK-5029: „ULAZ u
+`in_progress` tek kad proces STVARNO krene”). Kalem siroče-oporavka takav zadatak vraća nakon praga;
+pravi popravak dolazi s kompletom (P5).

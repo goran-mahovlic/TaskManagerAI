@@ -1,0 +1,9 @@
+PRIMIJENJENO: 8 promjena · kopije u /home/regoc/.taskmanager/backup/profil-2026-10-07T09-04-05-332Z
+potreban restart regoc-taskmanager: ne
+[znacajke] 75/75 OK
+[oporavak] 6/6 OK
+ZBROJ: OK 81 · RAZLIKA 0 · NEDOSTAJE 0 · TAJNA-NEDOSTAJE 0 · ČOVJEK 0 · PRESKOČENO 0 · PREDUVJET 0
+---
+[oporavak] 6/6 OK
+ZBROJ: OK 81 · RAZLIKA 0 · NEDOSTAJE 0 · TAJNA-NEDOSTAJE 0 · ČOVJEK 0 · PRESKOČENO 0 · PREDUVJET 0
+SUHO: primijenilo bi se 0 stavki (ništa nije zapisano; za pisanje --pisi)

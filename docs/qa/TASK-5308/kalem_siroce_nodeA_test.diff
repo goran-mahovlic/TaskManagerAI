@@ -1,0 +1,25 @@
+--- tests/orphan-recovery.test.ts	2026-10-02 20:34:38.878496919 +0000
++++ tests/orphan-recovery.test.ts	2026-10-07 09:01:39.440545128 +0000
+@@ -177,8 +177,10 @@
+ 
+ describe('ožičenje u RegocDaemonu (izvor)', () => {
+   const src = readFileSync(join(import.meta.dir, '..', 'RegocDaemon.ts'), 'utf-8')
+-  test('otkucaj predaje očišćene najmove siroče-oporavku', () => {
+-    expect(src).toContain('for (const id of ocisceni) if (/^TASK-\\d+$/.test(id)) _siroceOcisceniNajmovi.set(id, sad)')
++  // TASK-5308: kalem na čvoru bez najmova (TaskCloser) — okidač `najam` ne postoji, radi `prag`.
++  test('čvor bez najmova: siroče-oporavak dobiva prazan skup najmova', () => {
++    expect(src).toContain('ziviNajmovi: bezNajmova')
++    expect(src).toContain('ocisceniNajmovi: bezNajmova')
+   })
+   test('siroče-oporavak ide PRIJE zombija i predaje mu preuzete zadatke', () => {
+     const a = src.indexOf('const prepusteni = await oporaviSirocad(db, tracked)')
+@@ -190,7 +192,7 @@
+     expect(src).toContain("if (!isEnabled('siroceOporavak')) return preuzeti")
+     expect(src).toContain('♻️ [siroče]')
+   })
+-  test('svježa provjera spawna i najma tik prije radnje', () => {
+-    expect(src).toContain('if ([...activeAgentSpawns.values()].some(i => i.taskId === t.id) || najamAktivan(t.id)) continue')
++  test('svježa provjera spawna tik prije radnje (čvor bez najmova)', () => {
++    expect(src).toContain('if ([...activeAgentSpawns.values()].some(i => i.taskId === t.id)) continue')
+   })
+ })

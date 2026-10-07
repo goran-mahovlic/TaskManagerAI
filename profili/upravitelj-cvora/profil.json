@@ -89,13 +89,19 @@
           "SpawnFinalizer.ts",
           "SpawnSlotRules.ts",
           "TaskDorada.ts",
-          "RadBezZadatka.ts"
+          "RadBezZadatka.ts",
+          "config/siroce-oporavak.json"
         ],
         "grep": [
           {
             "znacajka": "anti-kaskada regoc-chain (TASK-255)",
             "datoteka": "AgentRouting.ts",
             "sadrzi": "TASK-255"
+          },
+          {
+            "znacajka": "siroče-oporavak ožičen u daemonu (TASK-5140)",
+            "datoteka": "RegocDaemon.ts",
+            "sadrzi": "oporaviSirocad"
           }
         ]
       }

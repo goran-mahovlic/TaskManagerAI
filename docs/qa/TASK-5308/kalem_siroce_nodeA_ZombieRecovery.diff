@@ -1,0 +1,48 @@
+--- ZombieRecovery.ts	2026-09-11 07:45:53.000000000 +0000
++++ ZombieRecovery.ts	2026-10-07 09:01:10.587222070 +0000
+@@ -32,8 +32,9 @@
+   type ExclusionConfig,
+   type WatchdogTask,
+ } from './StaleWatchdog'
++import { homedir } from 'os'
+ 
+-const HOME = process.env.HOME || '/home/regoc'
++const HOME = process.env.HOME || homedir()
+ export const ZOMBIE_RECOVERY_CONFIG_PATH = join(HOME, '.claude', 'regoc', 'config', 'zombie-recovery.json')
+ 
+ // ============================================
+@@ -194,7 +195,7 @@
+  */
+ export function decideZombieTask(
+   task: WatchdogTask,
+-  opts: { now: number; config: ZombieRecoveryConfig; tracked?: Set<string>; priorRecoveries?: number }
++  opts: { now: number; config: ZombieRecoveryConfig; tracked?: Set<string>; priorRecoveries?: number; delegated?: Set<string> }
+ ): ZombieDecision {
+   const { now, config } = opts
+   const assignee = (task.assignee || '').trim()
+@@ -206,6 +207,11 @@
+   if (opts.tracked?.has(task.id)) {
+     return { ...base, ageMs: 0, verdict: 'tracked', reason: 'daemon ima živ spawn za ovaj task' }
+   }
++  // TASK-5140: zadatak koji je preuzeo siroče-oporavak (OrphanRecovery.ts) ovdje se ne dira —
++  // dva mehanizma nad istim zadatkom imala bi dva brojača i dva stropa (2 vs 3).
++  if (opts.delegated?.has(task.id)) {
++    return { ...base, ageMs: 0, verdict: 'excluded', reason: 'prepušten siroče-oporavku (TASK-5140)' }
++  }
+ 
+   const lastActivity = task.updatedAt || task.createdAt || null
+   const parsed = lastActivity ? new Date(lastActivity).getTime() : NaN
+@@ -245,11 +251,11 @@
+ /** Odluke za sve taskove, stabilno sortirane: djelujuće prvo, pa najduže stajanje. */
+ export function evaluateZombieTasks(
+   tasks: WatchdogTask[],
+-  opts: { now: number; config: ZombieRecoveryConfig; tracked?: Set<string>; priorRecoveries?: Map<string, number> }
++  opts: { now: number; config: ZombieRecoveryConfig; tracked?: Set<string>; priorRecoveries?: Map<string, number>; delegated?: Set<string> }
+ ): ZombieDecision[] {
+   const order: Record<ZombieVerdict, number> = { block: 0, recover: 1, excluded: 2, tracked: 3, fresh: 4, skipped: 5 }
+   return (tasks || [])
+-    .map(t => decideZombieTask(t, { now: opts.now, config: opts.config, tracked: opts.tracked, priorRecoveries: opts.priorRecoveries?.get(t.id) }))
++    .map(t => decideZombieTask(t, { now: opts.now, config: opts.config, tracked: opts.tracked, priorRecoveries: opts.priorRecoveries?.get(t.id), delegated: opts.delegated }))
+     .sort((a, b) => order[a.verdict] - order[b.verdict] || b.ageMs - a.ageMs)
+ }
+ 

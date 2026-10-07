@@ -9,7 +9,7 @@ import {
   copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync,
 } from 'fs'
 import { tmpdir } from 'os'
-import { join } from 'path'
+import { dirname, join } from 'path'
 import { zatraziSposobnost } from '../src/Capguard'
 import { razgovorPut } from '../src/razgovor/RazgovorPloca'
 import { ensureSettingsSchema } from '../src/core/ConcurrencySetting'
@@ -94,11 +94,14 @@ function dvojnik(opcije: { bezZnacajke?: boolean; bezKodaZa?: string[] } = {}): 
   writeFileSync(join(home, '.claude', 'hooks', 'SecurityValidator.hook.ts'), '// kuka\n')
   writeFileSync(join(home, '.claude', '.credentials.json'), JSON.stringify({ t: KAN.prijava }))
   writeFileSync(join(sustav, 'REGOC_AGENTS.json'), JSON.stringify({ agents: { inzenjer: {}, istrazivac: {} } }))
-  writeFileSync(join(sustav, 'RegocDaemon.ts'), '// bez tuđeg doma\n')
+  writeFileSync(join(sustav, 'RegocDaemon.ts'), '// bez tuđeg doma\nconst prepusteni = await oporaviSirocad(db, tracked)\n')
   // Kod izvornog sustava „zna" svaki prekidač profila (doslovno 'ime'), osim onih iz bezKodaZa (J14).
   const kljucevi = Object.keys(profil.moduli.znacajke.kljucevi).filter(k => !(opcije.bezKodaZa || []).includes(k))
   writeFileSync(join(sustav, 'Prekidaci.ts'), kljucevi.map(k => `isEnabled('${k}')`).join('\n') + '\n')
-  for (const f of profil.moduli.paket.izvorniSustavSadrzi.datoteke) writeFileSync(join(sustav, f), '// x\n')
+  for (const f of profil.moduli.paket.izvorniSustavSadrzi.datoteke) {
+    mkdirSync(dirname(join(sustav, f)), { recursive: true })
+    writeFileSync(join(sustav, f), '// x\n')
+  }
   writeFileSync(join(sustav, 'AgentRouting.ts'), '// TASK-255 anti-kaskada\n')
   writeFileSync(join(sustav, 'features.json'), JSON.stringify({
     staleReaper: { enabled: true, since: '2026-08-01', note: 'čvor: agresivnije od glavnog' },
@@ -552,6 +555,16 @@ describe('J14 — prekidač ON bez koda na čvoru → izlaz 3 s imenom', () => {
     const r = await d.pokreni(['provjeri', '--modul', 'paket'])
     expect(r.izlaz).toContain('NEDOSTAJE izvorni.OrphanRecovery.ts')
     expect(r.izlaz).toContain('NEDOSTAJE anti-kaskada regoc-chain (TASK-255)')
+  })
+
+  // TASK-5308: modul bez ožičenja u daemonu je lažni paritet — prekidač je ON, a nitko ga ne zove.
+  test('siroče-oporavak: OrphanRecovery.ts bez poziva u RegocDaemonu i bez postavki → NEDOSTAJE', async () => {
+    rmSync(join(d.sustav, 'config', 'siroce-oporavak.json'))
+    writeFileSync(join(d.sustav, 'RegocDaemon.ts'), '// stari daemon: siroče-oporavak nije pozvan\n')
+    const r = await d.pokreni(['provjeri', '--modul', 'paket'])
+    expect(r.izlaz).not.toContain('izvorni.OrphanRecovery.ts')          // modul postoji
+    expect(r.izlaz).toContain('NEDOSTAJE izvorni.config/siroce-oporavak.json')
+    expect(r.izlaz).toContain('NEDOSTAJE siroče-oporavak ožičen u daemonu (TASK-5140)')
   })
 })
 

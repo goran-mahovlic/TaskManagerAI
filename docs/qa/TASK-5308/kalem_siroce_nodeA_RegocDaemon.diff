@@ -1,0 +1,130 @@
+--- RegocDaemon.ts	2026-10-07 08:43:53.000000000 +0000
++++ RegocDaemon.ts	2026-10-07 09:01:00.727111655 +0000
+@@ -103,6 +103,12 @@
+ import { loadStaleWatchdogConfig, evaluateStaleTasks, makeCheckpointLookup, type StaleDecision } from './StaleWatchdog'
+ // TASK-3019: preostala dva čistača in_progress taskova pod flagom/dry-runom (SSOT po mehanizmu)
+ import { loadZombieRecoveryConfig, evaluateZombieTasks, planZombieActions, withinStartupGrace, extractLiveTaskIds, isActionable as isZombieActionable } from './ZombieRecovery'
++// TASK-5308 (kalem s glavnog, TASK-5140): siroče-oporavak. Pravilo je u OrphanRecovery.ts (isti kao
++// na glavnom); node-A nema najmova (TaskCloser), pa radi samo okidač `prag`.
++import {
++  odluciSiroce, planSiroce, jeRadnja as jeSiroceRadnja, ucitajSiroceConfig, ucitajBrojac, zabiljeziPokusaj,
++  SIROCE_BROJAC_PATH, SIROCE_LOG_PATH, type SiroceZadatak,
++} from './OrphanRecovery'
+ import { loadStaleReaperConfig, evaluateReaperTasks, planReaperActions, isActionable as isReaperActionable } from './StaleReaper'
+ // R3/TASK-2561: pravilo "je li agent mrtav" + rutanje na živ izvršni put (SSOT, dijeli ga i report alat)
+ import {
+@@ -5871,7 +5877,93 @@
+   } catch { return new Set<string>() }
+ }
+ 
+-async function recoverZombieTasks(db: Database, trackedSpawns: Set<string>): Promise<void> {
++// ============================================
++// Siroče-oporavak (TASK-5140, kalem na node-A TASK-5308)
++// ============================================
++//
++// Zadatak `in_progress` s izvršiteljem-agentom, a bez živog spawna i procesa. Pravilo je u
++// `OrphanRecovery.ts` (SSOT, isti kao na glavnom); ovdje je samo čitanje sustava i izvođenje plana.
++// Razlika od glavnog: node-A nema najmova (TaskCloser), pa okidač `najam` nikad ne pali — radi
++// samo `prag` (zadano 10 min). Strop pokušaja (zadano 3) zadatak šalje u `blocked`, pa siroče
++// ne kruži beskonačno — važno na čvoru koji je imao kaskadu (TASK-255).
++// Rollback: features.json `siroceOporavak.enabled=false` (djeluje ≤30 s, bez restarta) —
++// tada sve opet radi samo zombie-recovery.
++
++/** Zadnji trenutak kad je zadatak u OVOJ generaciji daemona pokazao znak života. */
++const _siroceZadnjiZivot = new Map<string, number>()
++/** Zadnja zabilježena presuda po zadatku — dojava samo pri promjeni. */
++const _siroceEpizoda = new Map<string, string>()
++const _siroceZadnjaRadnja = new Map<string, number>()
++
++async function oporaviSirocad(db: Database, trackedSpawns: Set<string>): Promise<Set<string>> {
++  const preuzeti = new Set<string>()
++  if (!isEnabled('siroceOporavak')) return preuzeti
++  const now = Date.now()
++  try {
++    const config = ucitajSiroceConfig()
++    const ziviProcesi = taskIdsWithLiveProcess()
++    const bezNajmova = new Set<string>()
++    const resp = await fetch(`${TASK_MANAGER_API}?status=in_progress`)
++    if (!resp.ok) { log(`  [siroče] TaskManager API ${resp.status}`); return preuzeti }
++    const raw = await resp.json() as any
++    const tasks: SiroceZadatak[] = Array.isArray(raw) ? raw : (Array.isArray(raw?.tasks) ? raw.tasks : [])
++    const brojac = ucitajBrojac()
++    const vidjeni = new Set<string>()
++    let radnji = 0
++    for (const t of tasks) {
++      vidjeni.add(t.id)
++      if (trackedSpawns.has(t.id) || ziviProcesi.has(t.id)) _siroceZadnjiZivot.set(t.id, now)
++      const upd = Date.parse(String(t.updatedAt || ''))
++      const zadnjiZivotMs = Math.max(_siroceZadnjiZivot.get(t.id) || 0, daemonStartTime, Number.isFinite(upd) ? upd : 0)
++      const d = odluciSiroce(t, {
++        now, config, tracked: trackedSpawns, ziviProcesi, ziviNajmovi: bezNajmova,
++        ocisceniNajmovi: bezNajmova, zadnjiZivotMs, dosadasnjih: brojac.get(t.id) || 0,
++      })
++      if (d.presuda === 'ceka' || jeSiroceRadnja(d.presuda)) preuzeti.add(t.id)
++      _siroceEpizoda.set(t.id, `${d.presuda}:${d.okidac || ''}`)
++      if (!jeSiroceRadnja(d.presuda)) continue
++      if (now - (_siroceZadnjaRadnja.get(t.id) || 0) < 60_000) continue
++      if (radnji >= config.maxRadnjiPoProlazu) {
++        log(`  🛑 [siroče] brana: više od ${config.maxRadnjiPoProlazu} radnji u prolazu — ostatak preskačem`)
++        break
++      }
++      // Svježa provjera tik prije radnje: spawn je mogao krenuti dok je trajao fetch.
++      if ([...activeAgentSpawns.values()].some(i => i.taskId === t.id)) continue
++      const a = planSiroce(d)
++      if (!a) continue
++      radnji++
++      _siroceZadnjaRadnja.set(t.id, now)
++      try {
++        const r = await fetch(`${TASK_MANAGER_API}${a.path}`, {
++          method: a.method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(a.body),
++        })
++        const zapis = {
++          ts: new Date().toISOString(), mechanism: 'siroce-oporavak', taskId: t.id, assignee: d.assignee, title: d.title,
++          presuda: d.presuda, okidac: d.okidac, pokusaj: d.pokusaj, strop: d.strop, odsutanMs: d.odsutanMs,
++          method: a.method, path: a.path, http: r.status, ok: r.ok, razlog: d.razlog,
++        }
++        try { appendFileSync(SIROCE_LOG_PATH, JSON.stringify(zapis) + '\n') } catch { /* zapis nije kritičan */ }
++        if (r.ok) {
++          zabiljeziPokusaj(SIROCE_BROJAC_PATH, t.id, d.pokusaj)
++          log(`  ♻️ [siroče] ${t.id} (${d.assignee}) → ${a.targetStatus}: ${d.razlog} (HTTP ${r.status})`)
++          logEvent(db, 'siroce_oporavak', d.assignee || 'unassigned', `${t.id} → ${a.targetStatus} (pokušaj ${d.pokusaj}/${d.strop}, okidač ${d.okidac})`)
++          const naslov = d.title ? ` „${d.title.slice(0, 60)}"` : ''
++          queueUserAlarm(db, a.targetStatus === 'blocked'
++            ? `🛑 [siroče] ${t.id}${naslov} (${d.assignee}) — ${d.razlog}. Zadatak je u blocked.`
++            : `♻️ [siroče] ${t.id}${naslov} (${d.assignee}) — ostao in_progress bez procesa (prag). Vraćam ga u obradu (pokušaj ${d.pokusaj}/${d.strop}).`)
++        } else {
++          log(`  ⚠️ [siroče] ${t.id} ${a.method} ${a.path} → HTTP ${r.status}: ${(await r.text()).slice(0, 200)}`)
++        }
++      } catch (e) { log(`  ⚠️ [siroče] ${t.id} pao: ${e}`) }
++    }
++    for (const id of [..._siroceEpizoda.keys()]) if (!vidjeni.has(id)) { _siroceEpizoda.delete(id); _siroceZadnjiZivot.delete(id) }
++  } catch (e) {
++    log(`  ⚠️ [siroče] ${e}`)
++  }
++  return preuzeti
++}
++
++async function recoverZombieTasks(db: Database, trackedSpawns: Set<string>, prepusteni: Set<string> = new Set()): Promise<void> {
+   if (!isEnabled('zombieRecovery')) return
+   const live = isEnabled('zombieRecoveryLive')
+   const config = loadZombieRecoveryConfig()
+@@ -5886,7 +5978,7 @@
+     if (!resp.ok) { log(`  [zombie] TaskManager API ${resp.status}`); return }
+     const raw = await resp.json() as any
+     const tasks = Array.isArray(raw) ? raw : []
+-    const decisions = evaluateZombieTasks(tasks, { now: Date.now(), config, tracked, priorRecoveries: zombieRecoveryCount })
++    const decisions = evaluateZombieTasks(tasks, { now: Date.now(), config, tracked, priorRecoveries: zombieRecoveryCount, delegated: prepusteni })
+     const seen = new Set<string>()
+     const novo: typeof decisions = []
+ 
+@@ -6764,7 +6856,9 @@
+ 
+     // 1) RECOVERY zombie in_progress: task in_progress bez aktivnog spawna (npr. spawn umro
+     //    na restartu). TASK-3019: pod flagom i u DRY-RUNU — pravilo živi u `ZombieRecovery.ts`.
+-    await recoverZombieTasks(db, tracked)
++    // TASK-5308 (kalem TASK-5140): siroče-oporavak prije zombija — zadatke koje preuzme zombie ne dira.
++    const prepusteni = await oporaviSirocad(db, tracked)
++    await recoverZombieTasks(db, tracked, prepusteni)
+     // 2) Pokreni SVE pending taskove s agentom (P1 prvo) — nista ne smije visiti u pending
+     const resp = await fetch(`${TASK_MANAGER_API}?status=pending`)
+     if (!resp.ok) return
