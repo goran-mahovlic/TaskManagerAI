@@ -20,7 +20,7 @@ import { dirname, join, resolve } from 'path'
 import { hostname as osHostname, networkInterfaces as osNetworkInterfaces, homedir } from 'os'
 // SQL-Only TaskManager (v2.0) - replaces MD+SQLite dual-write
 import { getTaskManagerSQL, INBOX_PROJECT_ID } from './core/TaskManagerSQL'
-import { konfigPutanja, osigurajMapu, PAKET_DIR, stanjePutanja, sustavPutanja, TM_DATA, TM_DB, TM_ROOT } from './core/paths'
+import { konfigPutanja, konfigPutanjaZaPisanje, osigurajMapu, PAKET_DIR, stanjePutanja, sustavPutanja, TM_DATA, TM_DB, TM_ROOT } from './core/paths'
 import { datotekaTajni, datotekaTajniZaPisanje } from './core/ConfigModul'
 /**
  * Registar PAI agenata (`REGOC_AGENTS.json`, upisuje ga `scripts/install-agents.sh`).
@@ -43,6 +43,16 @@ import { parseAgentOutput, renderFull } from './core/AgentOutputParser'
 import { izborZaPlocu, parsirajOpcijePloce, komprimirajOdgovor, saziProjekteDashboarda } from './PlocaPromet'
 import { najamAktivan, stanjeSpawnova } from './core/TaskCloser'
 import { isEnabled as jeUkljuceno } from './core/FeatureFlags'
+import { reloadFlags, putanjaZnacajki } from './core/FeatureFlags'
+// TASK-5327 (prijenos TASK-5204/5164 glavnog): revizija blokiranih i zatvaranje kroz daemon.
+import {
+  BLOK_KLASE, UVIJEK_COVJEKU, klasaIzOznaka, klasificirajBlokadu, withBlokTag, nacinRevizije, jeBlokKlasa,
+  loadBlockedReviewConfig, pregledBlokiranih, zadnjePresude, povijestPresuda, procitajBudzet,
+  makeBlockedReviewLookup,
+} from './core/RevizijaBlokiranih'
+import {
+  procitajToken, pozivateljZatvaranja, odlukaZatvaranja, tijelo202, zapisiZahtjev, OZNAKA_CEKA,
+} from './core/ZatvaranjeKrozDaemon'
 // Integracije (TASK-4800): četiri modula po istom obrascu + orkestrator + ulazni Telegram.
 import {
   loadNextcloudConfig, validateNextcloudPatch, saveNextcloudConfig, stanjeNextcloud,
@@ -2259,6 +2269,27 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     .wf-item .wf-skill { color: var(--text-secondary); font-size: 0.7rem; }
   
     /* Ceka odluku */
+    /* TASK-5204: Blokirano — tri skupine (sustav će ponovno pokušati / čeka čovjeka / istrošeno) */
+    .blokirani-traka { background:#1d1f2a; border:1px solid #3c4160; border-left:4px solid #7d86c9;
+      border-radius:6px; padding:10px 14px; margin-bottom:14px; font-size:12px; color:#b8bcd8; }
+    .blokirani-glava { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+    .blokirani-znak { background:#7d86c9; color:#11131c; font-size:10.5px; font-weight:700; padding:2px 7px; border-radius:3px; }
+    .blokirani-glava strong { color:#d6daf5; }
+    .rev-nacin { font-size:10.5px; font-weight:700; padding:2px 7px; border-radius:3px; }
+    .rev-nacin.shadow { background:#5a4a12; color:#f0d060; } .rev-nacin.on { background:#1d4a2a; color:#7ee09a; }
+    .rev-nacin.off { background:#33363f; color:#9aa0ad; }
+    .blokirani-skupine { margin-top:7px; display:flex; flex-direction:column; gap:3px; }
+    .blokirani-skupina b { color:#d6daf5; font-weight:600; }
+    .blokirani-skupina.covjeku b { color:#f0a060; } .blokirani-skupina.istroseno b { color:#e07070; }
+    .blokirani-klase { margin-top:6px; color:#8a8fae; }
+    .blokirani-klase span { cursor:pointer; } .blokirani-klase span:hover { color:#d6daf5; text-decoration:underline; }
+    .rev-badge { display:inline-block; font-size:10px; padding:1px 6px; border-radius:3px; margin-left:4px;
+      background:#2b2f45; color:#b8bcd8; border:1px solid #3c4160; }
+    .rev-badge.covjeku { background:#3a2a16; color:#f0a060; border-color:#6b4a2a; }
+    .rev-badge.istroseno { background:#3a1a1a; color:#e07070; border-color:#6b2a2a; }
+    .rev-badge.ponovno { background:#16303a; color:#7ec8e0; border-color:#2a5a6b; }
+    .rev-sjena { font-size:10.5px; color:#8a8f9e; margin-top:3px; }
+    .rev-povijest { font-size:11.5px; color:#b8bcd8; display:flex; flex-direction:column; gap:2px; }
     .odluke-traka { background:#2a2416; border:1px solid #6b5b2a; border-left:4px solid #d4a017;
       border-radius:6px; padding:10px 14px; margin-bottom:14px; }
     .odluke-glava { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
@@ -2418,6 +2449,19 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
           <span id="odluc-poruka" class="odluc-poruka"></span>
         </div>
         <div id="odluke-popis" class="odluke-popis" style="display:none"></div>
+      </div>
+
+      <!-- TASK-5204: naknadna revizija blokiranih — Vlasnik vidi tko čeka koga i hoće li sustav sam pokušati ponovno. -->
+      <div id="blokirani-traka" class="blokirani-traka" style="display:none">
+        <div class="blokirani-glava">
+          <span class="blokirani-znak">BLOKIRANO</span>
+          <strong id="blokirani-naslov">Blokirano</strong>
+          <span id="blokirani-nacin" class="rev-nacin off">ISKLJ.</span>
+          <span id="blokirani-proracun"></span>
+          <button id="blokirani-toggle" class="odluke-toggle">prikaži</button>
+        </div>
+        <div id="blokirani-skupine" class="blokirani-skupine" style="display:none"></div>
+        <div id="blokirani-klase" class="blokirani-klase"></div>
       </div>
 
       <div class="stats" id="stats">
@@ -2708,6 +2752,11 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
           <div class="info-card-title"><span class="icon">&#8793;</span> <span data-i18n="cfg_kartica_usporedni">Usporedni agenti (1&ndash;10)</span></div>
           <div id="info-concurrency-content"><div class="empty" data-i18n="loading">Loading...</div></div>
         </div>
+        <!-- TASK-5204: naknadna revizija blokiranih — prekidač off/shadow/on + klase uživo, vrijedi bez restarta. -->
+        <div class="info-card info-card-istaknuta" id="info-revizija-card">
+          <div class="info-card-title"><span class="icon">&#8635;</span> <span>Revizija blokiranih</span></div>
+          <div id="info-revizija-content"><div class="empty" data-i18n="loading">Loading...</div></div>
+        </div>
         <!-- TASK-5025 (dopuna 19:03): klizači pragova; API GET/PUT /api/config/autonomy dolazi iz TASK-5028. -->
         <div class="info-card info-card-istaknuta" id="info-autonomija-card">
           <div class="info-card-title"><span class="icon">&#9878;</span> <span data-i18n="cfg_kartica_autonomija">Vrata autonomije</span></div>
@@ -2903,6 +2952,16 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         <div class="detail-field">
           <label data-i18n="blocked_reason">Blocked Reason</label>
           <input type="text" id="detail-blocked-reason" placeholder="Why is this blocked?" data-i18n-placeholder="why_is_this_blocked">
+        </div>
+
+        <!-- TASK-5204: revizija blokiranih — povijest presuda i vlasnikovi gumbi (nema „Odustani”: cancelled se ne koristi). -->
+        <div class="detail-field" id="detail-revizija-field" style="display:none">
+          <label>Revizija blokiranih</label>
+          <div id="detail-revizija" class="rev-povijest"></div>
+          <div style="display:flex; gap:0.5rem; margin-top:0.5rem;">
+            <button class="btn btn-secondary" id="rev-pusti-btn" title="Vrati u red (pending) — ne troši brojač ponovnih puštanja">Pusti sada</button>
+            <button class="btn btn-secondary" id="rev-arhiva-btn" title="Dodaj [ARHIVA] u naslov; status ostaje blocked">[ARHIVA]</button>
+          </div>
         </div>
 
         <div class="detail-field">
@@ -3826,8 +3885,8 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         }
 
         card.innerHTML = \`
-          <div class="task-id">\${task.id}\${projectBadgeHTML}\${pausedBadge}\${unverifiedBadge}\${uputaBadge}\${lanacBadge}</div>
-          <div class="task-title">\${task.title}</div>
+          <div class="task-id">\${task.id}\${projectBadgeHTML}\${pausedBadge}\${unverifiedBadge}\${uputaBadge}\${lanacBadge}\${revizijaBadge(task)}</div>
+          <div class="task-title">\${task.title}</div>\${revizijaSjena(task)}
           \${progressHTML}
           <div class="task-meta">
             <span>\${task.assignee || 'Unassigned'}</span>
@@ -4357,6 +4416,148 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       }
     }
 
+    // ─── TASK-5204: Blokirano (revizija blokiranih) ──────────────────────────────
+    // Tri skupine koje je vlasnik tražio: sustav će ponovno pokušati (kada, n/N), čeka čovjeka
+    // (što točno) i istrošeni pokušaji. Brojke i vremena računa poslužitelj ISTOM funkcijom
+    // kojom sudi daemon (StaleWatchdog.ts), pa ploča ne može pokazivati drugo od pogona.
+    var revizijaPoId = {};
+    var blokiraniOtvoreno = true;   // skupine su glavna informacija trake — vidljive odmah
+    var REV_KLASA_NAZIV = { prolazno: 'prolazno', kriticar: 'kritičar', covjek: 'čovjek', odluka: 'odluka', lanac: 'lanac',
+      datum: 'datum', deploy: 'deploy', sustav: 'sustav', sigurnost: 'sigurnost', novac: 'novac', vanjsko: 'vanjsko',
+      zastarjelo: 'zastarjelo', nepoznato: 'bez klase' };
+    function revZa(ms) {
+      var d = ms - Date.now();
+      if (d <= 0) return 'pri sljedećem prolazu';
+      var h = Math.round(d / 3600000);
+      return h < 1 ? 'za <1 h' : (h < 48 ? 'za ' + h + ' h' : 'za ' + Math.round(h / 24) + ' d');
+    }
+    function revOpisZadatka(z) {
+      if (z.skupina === 'ponovno') {
+        return (z.klasa === 'prolazno' ? 'pokušaj ' + (z.redrive + 1) + '/' + z.maxRedrive + ', ' : '')
+          + (z.sljedecaRevizija ? 'sljedeća revizija ' + revZa(new Date(z.sljedecaRevizija).getTime()) : '');
+      }
+      if (z.skupina === 'istroseno') return z.redrive + '/' + z.maxRedrive + ' puštanja potrošeno';
+      // QA-5205 N1: razina 2 i izuzeti — sustav ih ne pušta sam; reci zašto, ne „sljedeća revizija”.
+      if (z.presuda === 'razina2' || z.presuda === 'izuzet') return (z.presuda === 'razina2' ? 'razina 2: ' : 'izuzet: ') + z.razlog;
+      if (z.rizik && (z.klasa === 'prolazno' || z.klasa === 'lanac')) return 'rizik ' + z.rizik + ' — ne puštam sam' + (z.cekaNa ? ' (' + z.cekaNa + ')' : '');
+      return z.cekaNa || REV_KLASA_NAZIV[z.klasa];
+    }
+    async function ucitajBlokirane() {
+      try {
+        var r = await fetch('/api/blokirani/revizija');
+        if (!r.ok) return;
+        var d = await r.json();
+        revizijaPoId = {};
+        (d.zadaci || []).forEach(function (z) { revizijaPoId[z.id] = z; });
+        var traka = document.getElementById('blokirani-traka');
+        if (!traka) return;
+        var ukupno = (d.zadaci || []).length;
+        if (!ukupno) { traka.style.display = 'none'; return; }
+        traka.style.display = 'block';
+        var sk = d.skupine || {};
+        document.getElementById('blokirani-naslov').textContent = 'Blokirano ' + ukupno + ': '
+          + (sk.ponovno || 0) + ' sustav će ponovno pokušati · ' + (sk.covjeku || 0) + ' čeka tebe · '
+          + (sk.istroseno || 0) + ' istrošeno' + (sk.ostalo ? ' · ' + sk.ostalo + ' ostalo' : '');
+        var nac = document.getElementById('blokirani-nacin');
+        nac.className = 'rev-nacin ' + d.nacin;
+        nac.textContent = d.nacin === 'on' ? 'UŽIVO' : (d.nacin === 'shadow' ? 'SJENA' : 'ISKLJ.');
+        nac.title = 'Klase uživo: ' + ((d.klaseUzivo || []).join(', ') || '—');
+        var pr = d.proracun || {};
+        document.getElementById('blokirani-proracun').textContent = 'danas pušteno ' + (pr.danasBroj || 0)
+          + ' · ' + (pr.danasUsd || 0).toFixed(2) + ' / ' + (pr.maxUsdDnevno || 0) + ' USD';
+        var klase = Object.entries(d.poKlasi || {}).filter(function (e) { return e[1] > 0; });
+        document.getElementById('blokirani-klase').innerHTML = klase.map(function (e) {
+          return '<span data-rev-klasa="' + e[0] + '">' + esc(REV_KLASA_NAZIV[e[0]] || e[0]) + ' ' + e[1] + '</span>';
+        }).join(' · ');
+        var red = function (ime, naslov, oznaka) {
+          var lista = (d.zadaci || []).filter(function (z) { return z.skupina === ime; });
+          if (!lista.length) return '';
+          var MAX = 12;
+          return '<div class="blokirani-skupina ' + ime + '">' + oznaka + ' <b>' + naslov + ' (' + lista.length + '):</b> '
+            + lista.slice(0, MAX).map(function (z) {
+                return '<span title="' + _esc(z.title) + '">' + esc(z.id) + '</span> — ' + esc(revOpisZadatka(z));
+              }).join('; ')
+            + (lista.length > MAX ? ' … i još ' + (lista.length - MAX) + ' (klik na klasu ispod filtrira stupac)' : '') + '</div>';
+        };
+        var skEl = document.getElementById('blokirani-skupine');
+        skEl.innerHTML = red('ponovno', 'sustav će ponovno pokušati', '🔁')
+          + red('covjeku', 'čeka tebe', '👤') + red('istroseno', 'istrošeni pokušaji', '⛔');
+        skEl.style.display = blokiraniOtvoreno ? 'flex' : 'none';
+        document.getElementById('blokirani-toggle').textContent = blokiraniOtvoreno ? 'sakrij' : 'prikaži';
+        if (typeof renderTasks === 'function' && tasks && tasks.length) renderTasks();
+      } catch (e) { /* traka je pomoć, ne smije srušiti ploču */ }
+    }
+    document.addEventListener('click', function (e) {
+      var t = e.target;
+      if (t && t.id === 'blokirani-toggle') { blokiraniOtvoreno = !blokiraniOtvoreno; ucitajBlokirane(); }
+      var k = t && t.closest ? t.closest('[data-rev-klasa]') : null;
+      if (k) {
+        var ids = Object.values(revizijaPoId).filter(function (z) { return z.klasa === k.dataset.revKlasa; }).map(function (z) { return z.id; });
+        document.querySelectorAll('#blocked-tasks .task-card').forEach(function (c) {
+          var id = (((c.querySelector('.task-id') || {}).textContent || '').match(/^TASK-[0-9]+/) || [''])[0];
+          c.style.display = ids.indexOf(id) >= 0 ? '' : 'none';
+        });
+      }
+    });
+    function revizijaBadge(task) {
+      var z = revizijaPoId[task.id];
+      if (task.status !== 'blocked' || !z) return '';
+      var naslov = REV_KLASA_NAZIV[z.klasa] + ' — ' + revOpisZadatka(z) + (z.rizik ? ' · rizik: ' + z.rizik : '');
+      return '<span class="rev-badge ' + z.skupina + '" title="' + escapeAttr(naslov) + '">'
+        + esc(REV_KLASA_NAZIV[z.klasa])
+        + (z.skupina === 'ponovno' && z.klasa === 'prolazno' ? ' · pokušaj ' + (z.redrive + 1) + '/' + z.maxRedrive
+           : (z.redrive > 0 ? ' ↻ ' + z.redrive + '/' + z.maxRedrive : ''))
+        + (z.skupina === 'ponovno' && z.sljedecaRevizija ? ' · ' + esc(revZa(new Date(z.sljedecaRevizija).getTime())) : '')
+        + '</span>';
+    }
+    function revizijaSjena(task) {
+      var z = revizijaPoId[task.id];
+      if (task.status !== 'blocked' || !z || !z.zadnjaPresuda || z.zadnjaPresuda.nacin !== 'shadow') return '';
+      var p = z.zadnjaPresuda.presuda;
+      if (p === 'ceka' || p === 'izuzet') return '';
+      var sat = new Date(z.zadnjaPresuda.ts).toLocaleTimeString('hr-HR', { hour: '2-digit', minute: '2-digit' });
+      var bi = { pusti: 'BI pustio', 'otpusti-lanac': 'BI otpustio lanac', 'popravi-lanac': 'BI popravio lanac',
+        'zatvori-deploy': 'BI zatvorio deploy', covjeku: 'BI predao tebi', goranu: 'BI predao tebi' /* stari naziv u dnevniku izvornog daemona */, razina2: 'BI poslao na razinu 2', strop: 'BI stao (strop)' }[p] || p;
+      return '<div class="rev-sjena">sjena: ' + esc(bi) + ' u ' + sat + '</div>';
+    }
+    async function ucitajRevizijuZadatka(task) {
+      var polje = document.getElementById('detail-revizija-field');
+      if (!polje) return;
+      if (task.status !== 'blocked') { polje.style.display = 'none'; return; }
+      polje.style.display = '';
+      var el = document.getElementById('detail-revizija');
+      var z = revizijaPoId[task.id];
+      var glava = z ? '<div><b>' + esc(REV_KLASA_NAZIV[z.klasa]) + '</b> — ' + esc(revOpisZadatka(z)) + (z.rizik ? ' · rizik: ' + esc(z.rizik) : '') + '</div>' : '';
+      try {
+        var d = await (await fetch('/api/tasks/' + encodeURIComponent(task.id) + '/revizija')).json();
+        var redci = (d.presude || []).slice(-8).reverse().map(function (p) {
+          return '<div>' + esc(new Date(p.ts).toLocaleString('hr-HR')) + ' · ' + esc(p.nacin) + ' · <b>' + esc(p.presuda) + '</b> — ' + esc(p.razlog || '') + '</div>';
+        });
+        el.innerHTML = glava + (redci.length ? redci.join('') : '<div>još nema presuda revizije</div>');
+      } catch (e) { el.innerHTML = glava; }
+    }
+    async function revPustiSada() {
+      if (!selectedTaskId) return;
+      if (!confirm('Pustiti ' + selectedTaskId + ' natrag u red (pending)?')) return;
+      var r = await fetch('/api/tasks/' + encodeURIComponent(selectedTaskId) + '/reclaim', { method: 'POST',
+        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ from: 'blocked', by: 'covjek', reason: 'Pusti sada (ploča)' }) });
+      if (!r.ok) { alert('Nije pušteno: HTTP ' + r.status); return; }
+      fetchTasks(); ucitajBlokirane();
+    }
+    async function revArhiva() {
+      if (!selectedTaskId || !selectedTaskData) return;
+      var naslov = String(selectedTaskData.title || '');
+      if (naslov.trim().indexOf('[ARHIVA]') === 0) return;
+      var r = await fetch('/api/tasks/' + encodeURIComponent(selectedTaskId), { method: 'PUT',
+        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: '[ARHIVA] ' + naslov }) });
+      if (!r.ok) { alert('Nije arhivirano: HTTP ' + r.status); return; }
+      fetchTasks(); ucitajBlokirane();
+    }
+    document.addEventListener('click', function (e) {
+      if (e.target && e.target.id === 'rev-pusti-btn') revPustiSada();
+      if (e.target && e.target.id === 'rev-arhiva-btn') revArhiva();
+    });
+
     // ─── Čeka odluku (vlasnik, 04.09.2026.) ─────────────────────────────────────
     // "taj needs-decision je ok, ali onda mi to napravi da je vidljivo i dodaj polje gdje ću
     // upisati odluku i stisnuti nastavi."
@@ -4821,6 +5022,9 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
 
       // TASK-5013: upute agentu (dostavljeno / čeka)
       ucitajUpute(task.id);
+
+      // TASK-5204: revizija blokiranih — povijest presuda + „Pusti sada” / „[ARHIVA]”
+      ucitajRevizijuZadatka(task);
 
       // TASK-4815: rezultat agenta — bedž (sud ploče) + sklopive sekcije + „prikaži sirovo".
       // Klijent NE parsira: sud stiže gotov s posluzitelja (task.resultParsed).
@@ -8312,6 +8516,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         loadLoginProviders();
         loadDezurni();
         loadConcurrency();
+        loadRevizija();
         loadAutonomija();
         loadTelegram();
         loadUlaznaVrata();
@@ -9395,6 +9600,67 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         await loadRazgovor();
       } catch(e) {
         alert(_T('cfg_razg_greska_spremanje', 'Greška pri spremanju postavki razgovora') + ': ' + e.message);
+        if (btn) btn.disabled = false;
+      }
+    }
+
+    // ── Revizija blokiranih (TASK-5204) — prekidač i klase uživo, audit u settings_history ────
+    async function loadRevizija() {
+      var el = document.getElementById('info-revizija-content');
+      if (!el) return;
+      try {
+        var d = await (await fetch('/api/config/revizija-blokiranih')).json();
+        if (d.error) throw new Error(d.error);
+        el.innerHTML = renderRevizija(d);
+        var o = await (await fetch('/api/odlucitelj/config')).json();
+        var ima = ((o.postavke || {}).rizicno_covjeku) || [];
+        document.getElementById('rev-odluc-rizici').innerHTML = ['novac', 'tajne', 'brisanje', 'vanjski učinak', 'nepovratno'].map(function (r) {
+          return '<label style="margin-right:8px"><input type="checkbox" class="rev-odluc-rizik" value="' + r + '"' + (ima.indexOf(r) >= 0 ? ' checked' : '') + '> ' + r + '</label>';
+        }).join('');
+      } catch(e) {
+        el.innerHTML = '<div class="empty">Greška pri čitanju revizije: ' + _esc(e.message) + '</div>';
+      }
+    }
+    function renderRevizija(d) {
+      var c = d.config || {};
+      var nac = ['off', 'shadow', 'on'].map(function (n) {
+        var ime = n === 'off' ? 'isključeno' : (n === 'shadow' ? 'sjena' : 'uživo');
+        return '<label style="margin-right:10px"><input type="radio" name="rev-nacin" value="' + n + '"' + (d.nacin === n ? ' checked' : '') + '> ' + ime + '</label>';
+      }).join('');
+      var kandidati = (d.klase || []).filter(function (k) { return (d.uvijekCovjeku || []).indexOf(k) < 0 && k !== 'zastarjelo' && k !== 'nepoznato' && k !== 'datum'; });
+      var kl = kandidati.map(function (k) {
+        return '<label style="margin-right:8px"><input type="checkbox" class="rev-klasa" value="' + k + '"' + ((d.klaseUzivo || []).indexOf(k) >= 0 ? ' checked' : '') + '> ' + k + '</label>';
+      }).join('');
+      var h = (d.povijest || []).slice(0, 5).map(function (r) {
+        return '<li>' + _esc(r.changed_at || '') + ' — ' + _esc(r.key) + ': ' + _esc(String(r.old_value == null ? '—' : r.old_value)) + ' → ' + _esc(String(r.new_value)) + ' (' + _esc(r.changed_by) + ')</li>';
+      }).join('');
+      return '<div class="usp-red">' + nac + '</div>' +
+        '<div class="usp-red">Klase uživo: ' + kl + '</div>' +
+        '<div class="usp-red">Odlučitelj — rizici koje model nikad ne odlučuje: <span id="rev-odluc-rizici">…</span></div>' +
+        '<div class="usp-red"><button class="cfg-btn" onclick="spremiReviziju(this)">Spremi</button></div>' +
+        '<div class="cfg-napomena">Sjena = samo zapis (revizija_blokiranih.jsonl daemona), nula puštanja. Uživo pušta samo označene klase; ' +
+          'odluka, čovjek, sustav, sigurnost, novac i vanjski učinak uvijek idu tebi. Stropovi: ' + _esc(String(c.maxRedrive)) + ' puštanja po zadatku, ' +
+          _esc(String(c.maxPustanjaPoProlazu)) + ' po prolazu, ' + _esc(String(c.maxUsdPoPustanju)) + ' USD po puštanju, ' + _esc(String(c.maxUsdPoZadatku)) + ' USD po zadatku, ' +
+          _esc(String(c.maxUsdDnevno)) + ' USD na dan (config/stale-watchdog.json, odjeljak blocked).</div>' +
+        (h ? '<ul class="cfg-povijest">' + h + '</ul>' : '');
+    }
+    async function spremiReviziju(btn) {
+      var n = (document.querySelector('input[name="rev-nacin"]:checked') || {}).value;
+      var kl = Array.prototype.slice.call(document.querySelectorAll('.rev-klasa:checked')).map(function (x) { return x.value; });
+      if (btn) btn.disabled = true;
+      try {
+        var res = await fetch('/api/config/revizija-blokiranih', { method: 'PUT', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ nacin: n, klaseUzivo: kl, by: 'vlasnik', source: 'config' }) });
+        var d = await res.json();
+        if (!res.ok || d.error) throw new Error(d.error || 'save failed');
+        var rz = Array.prototype.slice.call(document.querySelectorAll('.rev-odluc-rizik:checked')).map(function (x) { return x.value; });
+        var ro = await fetch('/api/odlucitelj/config', { method: 'PUT', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ rizicno_covjeku: rz, by: 'vlasnik' }) });
+        if (!ro.ok) throw new Error('odlučitelj: HTTP ' + ro.status);
+        await loadRevizija();
+        if (typeof ucitajBlokirane === 'function') ucitajBlokirane();
+      } catch(e) {
+        alert('Greška pri spremanju revizije: ' + e.message);
         if (btn) btn.disabled = false;
       }
     }
@@ -10617,6 +10883,8 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       this.textContent = odlukeOtvoreno ? _T('sakrij', 'sakrij') : _T('prikazi', 'prikaži');
     });
     ucitajOdluke();
+    ucitajBlokirane();
+    setInterval(function () { if (!document.hidden) ucitajBlokirane(); }, 60000);
     setInterval(function () { if (!document.hidden) ucitajOdluke(); }, 30000);
     setInterval(function () { if (!document.hidden) ucitajOdlucitelja(); }, 30000);
 
@@ -13249,6 +13517,82 @@ async function handleUpdateTask(taskId: string, req: Request): Promise<Response>
     const br = validatedData.blockedReason
     if (br !== undefined) updates.blockedReason = br
 
+    // ─── TASK-5204: klasa blokade pri nastanku + obavezan razlog (P0b, dizajn §4.2, §4.5) ──
+    // SVA mjesta koja blokiraju (FailRequeue, HookBlockGuard, SpawnFinalizer, zombie, siroče)
+    // dolaze ovim PUT-om, pa se klasa upisuje na JEDNOM mjestu. Klasa se računa iznova pri
+    // svakom ulasku u `blocked` (stara `blok:*` bi inače nadživjela razlog koji ju je dala).
+    //   off    → ništa;  shadow → klasa + upozorenje kad razloga nema (`blok:nepoznato`);
+    //   on     → klasa; bez razloga 400; `covjek` dobiva i `waiting-for-human` (Dora §6.3).
+    // TASK-5302: oznake koje u ovom PUT-u dodaje SUSTAV (klasifikator ispod ili revizija blokiranih
+    // sa zaglavljem `X-REGOC-Oznake-Izvor: revizija-blokiranih`) — upisuju se iza uspješnog PUT-a.
+    let oznakeSustava: string[] = []
+    if (req.headers.get('X-REGOC-Oznake-Izvor') === 'revizija-blokiranih' && Array.isArray(validatedData.tags)) {
+      const sada = taskManager.getTask(taskId)?.tags || []
+      oznakeSustava = (validatedData.tags as string[]).filter(t => !sada.includes(t))
+    }
+    if (updates.status === 'blocked') {
+      try {
+        const nacinRev = nacinRevizije(n => jeUkljuceno(n))
+        if (nacinRev !== 'off') {
+          const post = taskManager.getTask(taskId)
+          const razlog = String((br ?? post?.blockedReason) || '').trim()
+          if (!razlog && nacinRev === 'on') {
+            return new Response(JSON.stringify({
+              error: 'Missing blockedReason', klase: BLOK_KLASE,
+              details: 'status "blocked" traži blockedReason; počni strojnim kodom klase, npr. "COVJEK: treba mjerenje na ploči" (TASK-5204).',
+            }), { status: 400, headers: { 'Content-Type': 'application/json' } })
+          }
+          if (!razlog) console.warn(`[API] ⚠️ blocked bez razloga: ${taskId} (by=${req.headers.get('X-REGOC-Zatvara') || post?.assignee || '?'}) — sjena, dajem blok:nepoznato`)
+          const osnova = ((validatedData.tags ?? post?.tags ?? []) as string[]).filter(t => !/^blok:/.test(t))
+          const izricita = klasaIzOznaka(validatedData.tags)
+          const k = izricita ?? klasificirajBlokadu({ ...post, tags: osnova, blockedReason: razlog, blockedBy: (validatedData.blockedBy ?? post?.blockedBy) as string[] },
+            { rizikPreteze: false }).klasa
+          let nove = withBlokTag(osnova, k)
+          if (nacinRev === 'on' && k === 'covjek' && !nove.includes('waiting-for-human')) nove = [...nove, 'waiting-for-human']
+          updates.tags = nove
+          // TASK-5302: što je dodao klasifikator bilježi se kao oznaka SUSTAVA — povrat iz blocked je skida.
+          const prije = ((validatedData.tags ?? post?.tags ?? []) as string[])
+          oznakeSustava = [...oznakeSustava, ...nove.filter(t => /^blok:/.test(t) || !prije.includes(t))]
+        }
+      } catch (e) {
+        console.warn(`[API] revizija-blokiranih: klasa za ${taskId} nije izračunata (${e}) — PUT prolazi`)
+      }
+    }
+
+    // ─── Zatvaranje kroz daemon (TASK-5164, nesukladnost B, dizajn §2.2) ───────
+    // `completed` od bilo koga osim daemona (uloga + token) i čovjeka s ploče postaje ZAHTJEV:
+    // uživo → 202, status ostaje `in_progress`, oznaka `ceka-kriticara`, a daemon ga provodi kroz
+    // kritičara; sjena → PUT zatvara po starom, a zahtjev se samo bilježi za mjerilo §2.4.
+    // Fail-open: svaki kvar ovdje = staro ponašanje.
+    if (updates.status === 'completed') {
+      try {
+        const postojeci = taskManager.getTask(taskId)
+        const pozivatelj = pozivateljZatvaranja(req.headers, procitajToken())
+        const odl = odlukaZatvaranja({
+          status: 'completed', trenutni: postojeci?.status ?? '', pozivatelj,
+          ukljuceno: jeUkljuceno('zatvaranjeKrozDaemon'), live: jeUkljuceno('zatvaranjeKrozDaemonLive'),
+        })
+        if (odl.zahtjev && postojeci) {
+          zapisiZahtjev({ taskId, nacin: odl.provedi ? 'live' : 'shadow', assignee: postojeci.assignee ?? null,
+            startedAt: postojeci.startedAt ?? null, uloga: req.headers.get('X-REGOC-Zatvara') || null })
+          console.warn(`[API] zatvaranje-kroz-daemon: ${taskId} completed od '${req.headers.get('X-REGOC-Zatvara') || 'bez uloge'}' — ${odl.provedi ? 'ZAHTJEV (202)' : 'SJENA'}`)
+        }
+        if (odl.provedi && postojeci) {
+          const oznake = Array.from(new Set([...(validatedData.tags ?? postojeci.tags ?? []), OZNAKA_CEKA]))
+          const zahtjevUpd: Record<string, unknown> = { tags: oznake,
+            progressNotes: [...((updates.progressNotes as string[]) || []),
+              `⏳ Zahtjev zatvaranja primljen — čeka kritičara (daemon zatvara kao completed ili blocked).`] }
+          if (rs !== undefined) zahtjevUpd.resultSummary = rs
+          const t = taskManager.updateTask(taskId, zahtjevUpd as any)
+          const msg = JSON.stringify({ type: 'task_updated', task: t })
+          wsClients.forEach(client => { try { client.send(msg) } catch { wsClients.delete(client) } })
+          return new Response(JSON.stringify(tijelo202(taskId)), { status: 202, headers: { 'Content-Type': 'application/json' } })
+        }
+      } catch (e) {
+        console.warn(`[API] zatvaranje-kroz-daemon: sud nije donesen (${e}) — PUT prolazi`)
+      }
+    }
+
     // ─── spawnCloseGuard (ADR-0012 §6.2, GAP_20260924 F4) ───────────────────
     // Rupa koju zatvara (izmjereno u živoj instalaciji): 6 od 6 zadataka kojima je kritičar
     // presudio FAIL stajalo je kao `completed`, jer ih je agent zatvorio 5–80 s PRIJE suda.
@@ -13422,6 +13766,10 @@ async function handleUpdateTask(taskId: string, req: Request): Promise<Response>
 
     const statusPrijePut = taskManager.getTask(taskId)?.status
     const task = taskManager.updateTask(taskId, updates as any)
+    if (task && oznakeSustava.length) {
+      try { taskManager.zabiljeziAutomatskeOznake(taskId, oznakeSustava, 'revizija-blokiranih') }
+      catch (e) { console.warn(`[API] oznake sustava za ${taskId} nisu zapisane (${e}) — PUT prolazi`) }
+    }
 
     if (!task) {
       // updateTask returns null for two distinct reasons: the task genuinely
@@ -13517,8 +13865,19 @@ async function handleUpdateTask(taskId: string, req: Request): Promise<Response>
  * (agent ne smije vraćati vlastiti task unatrag kroz obični PUT). Watchdog je jedina
  * legitimna iznimka, pa ide kroz vlastiti, auditirani ulaz.
  *
- * Body: { reason: string }  → 200 task | 400 bez razloga | 404 nema taska | 409 nije in_progress
+ * Body: { reason: string, by?: string, from?: 'in_progress' | 'blocked' }
+ *   → 200 task | 400 bez razloga | 404 nema taska | 409 nije u stanju `from` / pozivatelj ne smije
+ *
+ * TASK-5204: `from: 'blocked'` je put naknadne revizije blokiranih — smiju ga samo
+ * `revizija-blokiranih` (daemon) i `covjek` (gumb „Pusti sada” na ploči). Svi ostali i dalje
+ * dobivaju 409, pa agent ne može sam sebe odblokirati kroz ovu rutu.
+ *
+ * TASK-5259: `pozadina-gotova` = daemonova petlja povrata (PozadinaPovrat.ts) — vraća zadatak
+ * čiji je deklarirani pozadinski posao (REGOC-POZADINA) završio, pao ili mu je istekao rok.
+ * Audit: `task_history` (blocked_review, changed_by = pozivatelj) i bilješka s istim imenom.
  */
+const RECLAIM_IZ_BLOCKED_SMIJU = ['revizija-blokiranih', 'covjek', 'pozadina-gotova']
+
 async function handleReclaimTask(taskId: string, req: Request): Promise<Response> {
   const json = (body: unknown, status: number) =>
     new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
@@ -13527,6 +13886,7 @@ async function handleReclaimTask(taskId: string, req: Request): Promise<Response
     const body = await req.json().catch(() => ({} as any))
     const reason = typeof body?.reason === 'string' ? body.reason.trim() : ''
     const by = typeof body?.by === 'string' && body.by.trim() ? body.by.trim() : 'stale-watchdog'
+    const from: 'in_progress' | 'blocked' = body?.from === 'blocked' ? 'blocked' : 'in_progress'
 
     if (!reason) {
       return json({ error: 'Missing reason', details: 'Reclaim zahtijeva tekstualni "reason" (ide u audit trail).' }, 400)
@@ -13537,18 +13897,37 @@ async function handleReclaimTask(taskId: string, req: Request): Promise<Response
       console.error(`[API] Reclaim: task ${taskId} not found`)
       return json({ error: 'Task not found' }, 404)
     }
-    if (existing.status !== 'in_progress') {
+    if (from === 'blocked' && !RECLAIM_IZ_BLOCKED_SMIJU.includes(by.toLowerCase())) {
       return json({
         error: 'Not reclaimable',
-        details: `Task ${taskId} je '${existing.status}' — reclaim je dopušten samo iz 'in_progress'.`,
+        details: `Puštanje iz 'blocked' smiju samo ${RECLAIM_IZ_BLOCKED_SMIJU.join(' i ')} (TASK-5204), ne '${by}'.`,
+        currentStatus: existing.status,
+      }, 409)
+    }
+    if (existing.status !== from) {
+      return json({
+        error: 'Not reclaimable',
+        details: `Task ${taskId} je '${existing.status}' — reclaim je dopušten samo iz '${from}'.`,
         currentStatus: existing.status,
       }, 409)
     }
 
-    const task = taskManager.reclaimStaleTask(taskId, reason, by)
+    // TASK-5302: ručna ljudska oznaka (nije je dao sustav) drži zadatak u blocked — povrat bi
+    // napravio „pending + human-gated” koji red autonomije preskače, a ploča ne prikazuje kao blokiran.
+    if (from === 'blocked') {
+      const plan = taskManager.planPovrataIzBlocked(taskId)
+      if (plan && plan.ljudske.length > 0) {
+        return json({
+          error: 'Human-gated', ljudskeOznake: plan.ljudske, currentStatus: existing.status,
+          details: `Task ${taskId} nosi ručnu ljudsku oznaku (${plan.ljudske.join(', ')}) — ostaje blocked. Skini oznaku pa ponovi povrat (TASK-5302).`,
+        }, 409)
+      }
+    }
+
+    const task = taskManager.reclaimStaleTask(taskId, reason, by, from)
     if (!task) return json({ error: 'Reclaim failed' }, 500)
 
-    console.log(`[API] Task ${taskId} reclaimed by ${by}: ${reason}`)
+    console.log(`[API] Task ${taskId} reclaimed (${from}→pending) by ${by}: ${reason}`)
 
     const message = JSON.stringify({ type: 'task_updated', task })
     wsClients.forEach(client => {
@@ -13557,8 +13936,7 @@ async function handleReclaimTask(taskId: string, req: Request): Promise<Response
 
     return json(task, 200)
   } catch (error) {
-    console.error(`[API] Error reclaiming task ${taskId}:`, error)
-    return json({ error: 'Invalid JSON body' }, 400)
+    return handlerErrorResponse(`Error reclaiming task ${taskId}`, error)
   }
 }
 
@@ -13987,6 +14365,9 @@ async function handleOdluciteljConfigGet(): Promise<Response> {
   }), { headers: { 'Content-Type': 'application/json' } })
 }
 
+/** Nazivi rizika iz `tools/odlucitelj.py` (RIZIK) — jedini dopušteni u `rizicno_covjeku`. */
+const ODLUCITELJ_RIZICI = ['novac', 'tajne', 'brisanje', 'vanjski učinak', 'nepovratno']
+
 async function handleOdluciteljConfigPut(req: Request): Promise<Response> {
   const json = (o: unknown, st = 200) =>
     new Response(JSON.stringify(o), { status: st, headers: { 'Content-Type': 'application/json' } })
@@ -14011,6 +14392,18 @@ async function handleOdluciteljConfigPut(req: Request): Promise<Response> {
   // 3 dana — ispod toga najava nema smisla, iznad toga to više nije odgoda nego zaborav.
   const c = Number(telo.cekanje_sati)
   if (Number.isFinite(c) && c >= 0.08 && c <= 72) nove.cekanje_sati = Math.round(c * 100) / 100
+  // TASK-5204 (§11) / TASK-5327: rizici koje model nikad ne odlučuje (kartica „Revizija blokiranih”).
+  if (telo.rizicno_covjeku !== undefined) {
+    if (!Array.isArray(telo.rizicno_covjeku) || !telo.rizicno_covjeku.every((x: unknown) => ODLUCITELJ_RIZICI.includes(String(x)))) {
+      return json({ error: 'rizicno_covjeku mora biti popis od: ' + ODLUCITELJ_RIZICI.join(', ') }, 400)
+    }
+    nove.rizicno_covjeku = Array.from(new Set(telo.rizicno_covjeku.map(String)))
+    try {
+      revDb(db => db.prepare('INSERT INTO settings_history (key, old_value, new_value, changed_by, source) VALUES (?, ?, ?, ?, ?)')
+        .run('odlucitelj.rizicno_covjeku', JSON.stringify(stare.rizicno_covjeku ?? []), JSON.stringify(nove.rizicno_covjeku),
+             String(telo.by || 'config'), 'config'), false)
+    } catch { /* audit ne smije oboriti spremanje */ }
+  }
   try {
     const fs = require('fs')
     fs.mkdirSync(require('path').dirname(ODLUCITELJ_CONFIG_PATH), { recursive: true })
@@ -14520,6 +14913,133 @@ async function handleAutonomyPut(req: Request): Promise<Response> {
   const message = JSON.stringify({ type: 'autonomy_changed', autonomy: { ...ch.values, by: ch.changedBy } })
   wsClients.forEach(client => { try { client.send(message) } catch { wsClients.delete(client) } })
   return new Response(JSON.stringify({ ...(await autonomyPayload()), change: ch }), { headers: { 'Content-Type': 'application/json' } })
+}
+
+// ─── TASK-5204: naknadna revizija blokiranih — prekidač, pregled, povijest ─────────────────
+// Prekidač živi u features.json (`revizijaBlokiranih` / `revizijaBlokiranihLive`, hot-reload ≤ 30 s
+// u daemonu, odmah na ploči), a popis klasa uživo u config/stale-watchdog.json (`blocked.klaseUzivo`).
+// Svaka promjena ide u `settings_history` (tko/kada/staro→novo), kao strop i pragovi autonomije.
+// Paket: features.json je ONA datoteka koju čita FeatureFlags (TM_FEATURES_FILE → $TM_HOME/config → paket),
+// a stale-watchdog.json se piše gdje se i čita (TM_STALE_WATCHDOG_CONFIG → $TM_HOME/config → paket).
+const putanjaPisanjaRevizije = () => konfigPutanjaZaPisanje('stale-watchdog.json', 'TM_STALE_WATCHDOG_CONFIG')
+
+/** Kratka veza na bazu ploče (settings_history, task_history) — kao capguard: otvori, radi, zatvori. */
+function revDb<T>(fn: (db: Database) => T, samoCitanje = true): T {
+  const db = new Database(TM_DB, samoCitanje ? { readonly: true } : undefined)
+  try { return fn(db) } finally { db.close() }
+}
+
+function revizijaNacin(): 'off' | 'shadow' | 'on' {
+  return nacinRevizije(n => jeUkljuceno(n))
+}
+
+function revizijaConfigPayload() {
+  const cfg = loadBlockedReviewConfig()
+  return {
+    nacin: revizijaNacin(), klaseUzivo: cfg.klaseUzivo, klase: BLOK_KLASE, uvijekCovjeku: UVIJEK_COVJEKU, config: cfg,
+    povijest: revDb(db => db.prepare("SELECT key, old_value, new_value, changed_by, source, changed_at FROM settings_history WHERE key LIKE 'revizija.%' ORDER BY id DESC LIMIT 10").all()),
+  }
+}
+
+function handleRevizijaConfigGet(): Response {
+  try {
+    return new Response(JSON.stringify(revizijaConfigPayload()), { headers: { 'Content-Type': 'application/json' } })
+  } catch (error) {
+    return new Response(JSON.stringify({ error: String(error) }), { status: 500, headers: { 'Content-Type': 'application/json' } })
+  }
+}
+
+/** Atomičan upis JSON-a (poluzapisana datoteka kod čitatelja = fail-open). */
+function upisiJsonAtomicno(put: string, obj: unknown): void {
+  const tmp = `${put}.tmp-${process.pid}`
+  writeFileSync(tmp, JSON.stringify(obj, null, 2) + '\n')
+  renameSync(tmp, put)
+}
+
+/** PUT /api/config/revizija-blokiranih — {"nacin":"off|shadow|on","by":"vlasnik"} i/ili {"klaseUzivo":["lanac","deploy"]}. */
+async function handleRevizijaConfigPut(req: Request): Promise<Response> {
+  const json = (o: unknown, status = 200) => new Response(JSON.stringify(o), { status, headers: { 'Content-Type': 'application/json' } })
+  let body: any
+  try { body = await req.json() } catch { return json({ error: 'Neispravno JSON tijelo' }, 400) }
+  const by = typeof body?.by === 'string' && body.by.trim() ? body.by.trim() : 'config'
+  const source = typeof body?.source === 'string' && body.source.trim() ? body.source.trim().slice(0, 32) : 'config'
+  const nacin = body?.nacin
+  const klase = body?.klaseUzivo
+  if (nacin === undefined && klase === undefined) return json({ error: 'nema nijedne promjene (nacin i/ili klaseUzivo)' }, 400)
+  if (nacin !== undefined && !['off', 'shadow', 'on'].includes(nacin)) return json({ error: `nacin mora biti off|shadow|on, ne '${nacin}'` }, 400)
+  if (klase !== undefined) {
+    if (!Array.isArray(klase) || !klase.every(jeBlokKlasa)) return json({ error: 'klaseUzivo mora biti popis poznatih klasa', klase: BLOK_KLASE }, 400)
+    const zabranjene = klase.filter((k: any) => UVIJEK_COVJEKU.includes(k))
+    if (zabranjene.length) return json({ error: `klase „uvijek čovjeku” se nikad ne puštaju same: ${zabranjene.join(', ')}` }, 400)
+  }
+  // Sve provjereno prije prvog upisa.
+  const promjene: Array<{ kljuc: string; staro: string; novo: string }> = []
+  if (nacin !== undefined) {
+    const staro = revizijaNacin()
+    let f: any = {}
+    try { f = JSON.parse(readFileSync(putanjaZnacajki(), 'utf-8')) } catch { f = {} }
+    const danas = new Date().toISOString().slice(0, 10)
+    f.revizijaBlokiranih = { ...(f.revizijaBlokiranih || {}), enabled: nacin !== 'off', since: f.revizijaBlokiranih?.since || danas,
+      note: f.revizijaBlokiranih?.note || 'TASK-5204: naknadna revizija blokiranih (stale-watchdog, drugi prolaz). true = barem SJENA (presude u data/revizija_blokiranih.jsonl). Mijenja se s Config stranice ili PUT /api/config/revizija-blokiranih (audit u settings_history).' }
+    f.revizijaBlokiranihLive = { ...(f.revizijaBlokiranihLive || {}), enabled: nacin === 'on', since: f.revizijaBlokiranihLive?.since || danas,
+      note: f.revizijaBlokiranihLive?.note || 'TASK-5204: UŽIVO — radnje revizije, puštanja samo za klase iz config/stale-watchdog.json blocked.klaseUzivo. Rollback = false (≤30 s, bez restarta).' }
+    if (nacin === 'on') { f.revizijaBlokiranihLive.liveSince = new Date().toISOString(); f.revizijaBlokiranihLive.liveBy = by }
+    upisiJsonAtomicno(osigurajMapu(putanjaZnacajki()), f)
+    reloadFlags()
+    if (staro !== nacin) promjene.push({ kljuc: 'revizija.nacin', staro, novo: nacin })
+  }
+  if (klase !== undefined) {
+    let c: any = {}
+    try { c = JSON.parse(readFileSync(putanjaPisanjaRevizije(), 'utf-8')) } catch { c = {} }
+    const staro = JSON.stringify(loadBlockedReviewConfig().klaseUzivo)
+    c.blocked = { ...(c.blocked || {}), klaseUzivo: klase }
+    upisiJsonAtomicno(osigurajMapu(putanjaPisanjaRevizije()), c)
+    if (staro !== JSON.stringify(klase)) promjene.push({ kljuc: 'revizija.klaseUzivo', staro, novo: JSON.stringify(klase) })
+  }
+  if (promjene.length) {
+    revDb(db => {
+      const ins = db.prepare('INSERT INTO settings_history (key, old_value, new_value, changed_by, source) VALUES (?, ?, ?, ?, ?)')
+      for (const p of promjene) ins.run(p.kljuc, p.staro, p.novo, by, source)
+    }, false)
+  }
+  console.log(`[API] Revizija blokiranih: ${promjene.map(p => `${p.kljuc} ${p.staro}→${p.novo}`).join(', ') || 'bez promjene'} (${by}, ${source})`)
+  const message = JSON.stringify({ type: 'revizija_changed', promjene, by })
+  wsClients.forEach(client => { try { client.send(message) } catch { wsClients.delete(client) } })
+  return json({ ...revizijaConfigPayload(), promjene })
+}
+
+/** GET /api/blokirani/revizija — traka „Blokirano”, kartice i skupine (ponovno / čovjeku / istrošeno). */
+function handleBlokiraniRevizija(): Response {
+  try {
+    const cfg = loadBlockedReviewConfig()
+    const now = Date.now()
+    const tasks = taskManager.getTasks({ status: 'blocked' } as any) as any[]
+    const ulazak = new Map<string, number>()
+    revDb(db => {
+      const rows = db.prepare("SELECT task_id, MAX(changed_at) t FROM task_history WHERE field = 'status' AND new_value = 'blocked' GROUP BY task_id").all() as any[]
+      for (const r of rows) {
+        const s = String(r.t || '')
+        const ms = Date.parse(/[zZ]|[+-]\d\d:?\d\d$/.test(s) ? s : s.replace(' ', 'T') + 'Z')
+        if (Number.isFinite(ms)) ulazak.set(String(r.task_id), ms)
+      }
+    })
+    // QA-5205 N1: skupina iz presude decideBlockedTask nad ISTIM ulazima kao daemon (izuzeća, starost,
+    // arhiva, roditelji lanca, troškovi). Okolinu i StaleCodeCheck ploča ne mjeri — oni mijenjaju samo
+    // „čeka” ↔ „pušta”, a to je ista skupina.
+    const p = revDb(db => pregledBlokiranih(tasks, {
+      now, config: cfg, nacin: revizijaNacin(), ulazak: id => ulazak.get(id) ?? null,
+      zadnja: zadnjePresude(), budzet: procitajBudzet(now),
+      ulaz: makeBlockedReviewLookup(db as any, { now, config: cfg, uzrok: { ok: false, razlog: 'ploča ne mjeri okolinu' } }),
+    }))
+    return new Response(JSON.stringify(p), { headers: { 'Content-Type': 'application/json' } })
+  } catch (error) {
+    return new Response(JSON.stringify({ error: String(error) }), { status: 500, headers: { 'Content-Type': 'application/json' } })
+  }
+}
+
+/** GET /api/tasks/:id/revizija — povijest presuda revizije za detalje zadatka. */
+function handleRevizijaZadatka(taskId: string): Response {
+  return new Response(JSON.stringify({ taskId, presude: povijestPresuda(taskId) }), { headers: { 'Content-Type': 'application/json' } })
 }
 
 // ─── Raspored Config stranice (TASK-5170, dizajn TASK-5169) ─────────────────
@@ -16998,6 +17518,9 @@ async function obradiZahtjev(req: Request): Promise<Response | undefined> {
       return handleOdBota(req, url.pathname.slice('/api/razgovor/od-bota'.length))
     }
     if (url.pathname === '/api/razgovor/od-bota/stanje' && req.method === 'GET') return handleOdBota(req, '/stanje')
+    if (url.pathname === '/api/config/revizija-blokiranih' && req.method === 'GET') return handleRevizijaConfigGet()
+    if (url.pathname === '/api/config/revizija-blokiranih' && req.method === 'PUT') return handleRevizijaConfigPut(req)
+    if (url.pathname === '/api/blokirani/revizija' && req.method === 'GET') return handleBlokiraniRevizija()
     if (url.pathname === '/api/config/concurrency' && req.method === 'GET') return handleConcurrencyGet()
     if (url.pathname === '/api/config/concurrency' && req.method === 'PUT') return handleConcurrencyPut(req)
     if (url.pathname === '/api/config/autonomy' && req.method === 'GET') return handleAutonomyGet()
@@ -17022,6 +17545,11 @@ async function obradiZahtjev(req: Request): Promise<Response | undefined> {
     }
     if (url.pathname.match(/^\/api\/tasks\/[^\/]+\/ponovno-otvori$/) && req.method === 'POST') {
       return handleReopen(url.pathname.split('/')[3], req)
+    }
+
+    // GET /api/tasks/:id/revizija — TASK-5204: povijest presuda revizije blokiranih
+    if (url.pathname.match(/^\/api\/tasks\/[^\/]+\/revizija$/) && req.method === 'GET') {
+      return handleRevizijaZadatka(url.pathname.split('/')[3])
     }
 
     // POST /api/tasks/:id/reclaim - R2 stale-watchdog: in_progress -> pending

@@ -42,6 +42,57 @@ export function humanGatedTask(tags?: string[] | null): boolean {
   return tags.some(t => HUMAN_GATED_UNBLOCK_TAGS.includes(String(t).trim().toLowerCase()));
 }
 
+/**
+ * TASK-5302: povrat iz `blocked` nikad ne ostavlja „pending + human-gated”.
+ *
+ * Klasifikator blokade na ploči (TASK-5204) i revizija blokiranih dodaju `blok:<k>`, a za
+ * ljudske/rizične klase i `waiting-for-human`/`no-autonomy`. Te oznake opisuju BLOKADU, pa
+ * povrat iz nje (pozadina-gotova, revizija, vlasnikov „Pusti sada”) mora skinuti i njih — inače
+ * zadatak stoji u `pending`, a red autonomije ga preskače (TASK-5269/5275, 06.10.2026.).
+ * Izvor se zna iz povijesti: sustav svaku oznaku koju doda upisuje kao `oznake_auto`
+ * (task_history); sve što nema takav zapis smatra se ručnim i povrat se tada ODBIJA.
+ */
+export const POLJE_AUTO_OZNAKE = 'oznake_auto';
+/** Ljudske oznake koje sustav smije dodati (i zato skinuti); `blok:*` je uvijek sustavova. */
+const OZNAKE_BLOKADE_SUSTAVA = ['waiting-for-human', 'no-autonomy'];
+
+export function jeOznakaBlokadeSustava(t: string): boolean {
+  return /^blok:/.test(t) || OZNAKE_BLOKADE_SUSTAVA.includes(t);
+}
+
+function oznakeIzJsona(v: unknown): string[] {
+  if (typeof v !== 'string') return [];
+  try { const a = JSON.parse(v); return Array.isArray(a) ? a.map(String) : []; } catch { return []; }
+}
+
+/**
+ * Koje su oznake TRENUTNO sustavove, iz povijesti po redu: `tags` red koji oznaku doda čini je
+ * ručnom, `oznake_auto` red (upisuje se odmah iza promjene) je proglašava sustavovom, uklanjanje
+ * je briše. Bez povijesti → prazno (konzervativno: ručno).
+ */
+export function automatskeOznakeIzPovijesti(rows: Array<{ field: string; old_value: unknown; new_value: unknown }>): Set<string> {
+  const izvor = new Map<string, 'auto' | 'rucno'>();
+  for (const r of rows) {
+    if (r.field === POLJE_AUTO_OZNAKE) {
+      for (const t of oznakeIzJsona(r.new_value)) izvor.set(t, 'auto');
+    } else if (r.field === 'tags') {
+      const stare = new Set(oznakeIzJsona(r.old_value));
+      const nove = new Set(oznakeIzJsona(r.new_value));
+      for (const t of nove) if (!stare.has(t)) izvor.set(t, 'rucno');
+      for (const t of stare) if (!nove.has(t)) izvor.delete(t);
+    }
+  }
+  return new Set([...izvor].filter(([, v]) => v === 'auto').map(([k]) => k));
+}
+
+/** Što povrat iz blocked radi s oznakama: `nove` = oznake nakon povrata, `ljudske` = ručne brave koje ostaju. */
+export function planOznakaPovrata(tags: string[], automatske: Set<string>): { nove: string[]; skinute: string[]; ljudske: string[] } {
+  const skinute = tags.filter(t => /^blok:/.test(t) || (OZNAKE_BLOKADE_SUSTAVA.includes(t) && automatske.has(t)));
+  const nove = tags.filter(t => !skinute.includes(t));
+  const ljudske = nove.filter(t => HUMAN_GATED_UNBLOCK_TAGS.includes(String(t).trim().toLowerCase()));
+  return { nove, skinute, ljudske };
+}
+
 // ============================================
 // TYPES & INTERFACES
 // ============================================
@@ -772,6 +823,11 @@ export class TaskManagerSQL {
         this.logChange(id, dbField, (existing as any)[key], updates[key], changedBy);
       }
     }
+    // TASK-5302: izvor oznake mora biti vidljiv (ručno vs sustav) — inače povrat iz blocked
+    // ne zna smije li skinuti `waiting-for-human`.
+    if (Array.isArray(updates.tags) && JSON.stringify(updates.tags) !== JSON.stringify(existing.tags)) {
+      this.logChange(id, 'tags', JSON.stringify(existing.tags), JSON.stringify(updates.tags), changedBy);
+    }
 
     // Handle progress notes addition
     let progressNotes = existing.progressNotes;
@@ -967,26 +1023,61 @@ export class TaskManagerSQL {
    * watchdog is the one legitimate exception, so it gets its own audited entry point
    * instead of a hole in the transition table.
    *
-   * Only `in_progress` may be reclaimed — every other status returns null (the caller
-   * distinguishes "not found" by checking getTask first). The assignee is kept on
-   * purpose: the audit trail must still show who dropped the task.
+   * Reclaimable: `in_progress` (watchdog) and, since TASK-5204, `blocked` (blocked-task review,
+   * owner's „release now”, background-job return) — the route decides WHO may use `from: 'blocked'`.
+   * Every other status returns null (the caller distinguishes "not found" by checking getTask
+   * first). The assignee is kept on purpose: the audit trail must still show who dropped the task.
    */
-  reclaimStaleTask(id: string, reason: string, by: string = 'stale-watchdog'): Task | null {
+  reclaimStaleTask(id: string, reason: string, by: string = 'stale-watchdog', from: 'in_progress' | 'blocked' = 'in_progress'): Task | null {
     const task = this.getTask(id);
     if (!task) return null;
-    if (task.status !== 'in_progress') return null;
+    if (task.status !== from) return null;
+
+    // TASK-5302: oznake blokade koje je dao sustav idu s blokadom; ručna ljudska brava ostaje,
+    // a povrat se tada NE izvodi (zadatak ostaje vidljivo blocked, ne „pending + human-gated”).
+    const plan = from === 'blocked' ? this.planPovrataIzBlocked(id)! : null;
+    if (plan && plan.ljudske.length > 0) return null;
 
     const now = new Date().toISOString();
-    const notes = [...task.progressNotes, { timestamp: now, agent: by, note: `stale-watchdog: ${reason}` }];
+    // TASK-5204: iz `blocked` razlog se SELI u bilješku (ne briše bez traga) — ploča ga više ne
+    // prikazuje kao razlog čekanja, a povijest i dalje pokazuje zašto je zadatak stajao.
+    const skinute = plan && plan.skinute.length ? ` (skinute oznake sustava: ${plan.skinute.join(', ')})` : '';
+    const note = from === 'blocked'
+      ? `${by}: ${task.blockedReason || '(bez razloga)'} → ${reason}${skinute}`
+      : `stale-watchdog: ${reason}`;
+    const notes = [...task.progressNotes, { timestamp: now, agent: by, note }];
 
-    this.db.prepare(
-      "UPDATE tasks SET status = 'pending', progress_notes = ?, updated_at = ? WHERE id = ?"
-    ).run(JSON.stringify(notes), now, id);
+    if (from === 'blocked') {
+      this.db.prepare(
+        "UPDATE tasks SET status = 'pending', blocked_reason = NULL, tags = ?, progress_notes = ?, updated_at = ? WHERE id = ?"
+      ).run(JSON.stringify(plan!.nove), JSON.stringify(notes), now, id);
+      if (plan!.skinute.length) this.logChange(id, 'tags', JSON.stringify(task.tags), JSON.stringify(plan!.nove), by);
+    } else {
+      this.db.prepare(
+        "UPDATE tasks SET status = 'pending', progress_notes = ?, updated_at = ? WHERE id = ?"
+      ).run(JSON.stringify(notes), now, id);
+    }
 
-    this.logChange(id, 'status', 'in_progress', 'pending', by);
-    this.logChange(id, 'stale_reclaim', null, reason, by);
+    this.logChange(id, 'status', from, 'pending', by);
+    this.logChange(id, from === 'blocked' ? 'blocked_review' : 'stale_reclaim', null, reason, by);
 
     return this.getTask(id);
+  }
+
+  /** TASK-5302: zapis da je oznake dodao SUSTAV (klasifikator/revizija), ne čovjek. */
+  zabiljeziAutomatskeOznake(id: string, dodane: string[], by: string): void {
+    const oznake = [...new Set(dodane.filter(jeOznakaBlokadeSustava))];
+    if (oznake.length) this.logChange(id, POLJE_AUTO_OZNAKE, null, JSON.stringify(oznake), by);
+  }
+
+  /** TASK-5302: plan oznaka za povrat iz blocked (null = nema zadatka). */
+  planPovrataIzBlocked(id: string): { nove: string[]; skinute: string[]; ljudske: string[] } | null {
+    const task = this.getTask(id);
+    if (!task) return null;
+    const rows = this.db.prepare(
+      "SELECT field, old_value, new_value FROM task_history WHERE task_id = ? AND field IN ('tags', ?) ORDER BY id"
+    ).all(id, POLJE_AUTO_OZNAKE) as Array<{ field: string; old_value: unknown; new_value: unknown }>;
+    return planOznakaPovrata(task.tags || [], automatskeOznakeIzPovijesti(rows));
   }
 
   /**

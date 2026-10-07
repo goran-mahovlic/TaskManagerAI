@@ -29,6 +29,7 @@ export const RUTE_ZADATKA: readonly string[] = [
   'POST /api/tasks/<ID>/pause',
   'POST /api/tasks/<ID>/resume',
   'POST /api/tasks/<ID>/reclaim',
+  'GET /api/tasks/<ID>/revizija',
   'PUT /api/tasks/<ID>/progress',
   'GET /api/tasks/<ID>/telemetry',
 ]

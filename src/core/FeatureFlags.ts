@@ -24,6 +24,11 @@ const DEFAULT_FEATURES_FILE = konfigPutanja('features.json', 'TM_FEATURES_FILE')
 function featuresFile(): string {
   return process.env.REGOC_FEATURES_FILE || DEFAULT_FEATURES_FILE
 }
+
+/** Datoteka koju ovaj čitač stvarno čita — onaj tko prekidače PIŠE (ploča) mora pisati u nju. */
+export function putanjaZnacajki(): string {
+  return featuresFile()
+}
 const FLAG_TTL_MS = 30_000
 
 export interface FeatureFlag {

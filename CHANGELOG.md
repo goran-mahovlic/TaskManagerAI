@@ -1,3 +1,26 @@
+## 2026-10-07 — revizija blokiranih i zatvaranje kroz daemon na ploči (TASK-5327)
+
+- Novo: naknadna revizija blokiranih (prijenos TASK-5204 izvornog sustava). `PUT status=blocked`
+  dobiva oznaku `blok:<klasa>` (prekidač `revizijaBlokiranih` = sjena; `revizijaBlokiranihLive` =
+  uživo: bez `blockedReason` 400, `COVJEK` dobiva i `waiting-for-human`). Rute
+  `GET /api/blokirani/revizija` (skupine ponovno / covjeku / istroseno / ostalo, proračun),
+  `GET /api/tasks/:id/revizija` (povijest presuda), `GET/PUT /api/config/revizija-blokiranih`
+  (način off/shadow/on + klase uživo, audit u `settings_history`). Ploča: traka „Blokirano”,
+  bedž na kartici, polje u detaljima s „Pusti sada” / „[ARHIVA]”, kartica na Config stranici.
+  Modul `src/core/RevizijaBlokiranih.ts` — presude računaju ISTA pravila kao daemon.
+- Novo: `POST /api/tasks/:id/reclaim {from:"blocked"}` — smiju samo `revizija-blokiranih`,
+  `covjek` (gumb ploče) i `pozadina-gotova`; oznake blokade koje je dao SUSTAV odlaze s blokadom,
+  ručna ljudska oznaka zadržava zadatak (409 `Human-gated`). `task_history` sada bilježi i
+  promjenu oznaka (`tags`, `oznake_auto`).
+- Novo: zatvaranje kroz daemon (prijenos TASK-5164 B). `completed` od bilo koga osim daemona
+  (`X-REGOC-Zatvara: daemon` + `X-REGOC-Zatvarac: <ključ>`, usporedba `timingSafeEqual`) i čovjeka
+  (`X-REGOC-Zatvara: covjek`) je ZAHTJEV: uz `zatvaranjeKrozDaemonLive` → 202, zadatak ostaje
+  `in_progress` s oznakom `ceka-kriticara`; u sjeni (`zatvaranjeKrozDaemon`) se samo bilježi.
+  Modul `src/core/ZatvaranjeKrozDaemon.ts`. Kritičara izvodi daemon (na čvoru: komplet izvornog
+  sustava). Nove varijable `TM_IZVORNI_PODACI`, `TM_STALE_WATCHDOG_CONFIG` (v. env.example).
+- Odlučitelj: `PUT /api/odlucitelj/config` prima `rizicno_covjeku` (rizici koje model nikad ne
+  odlučuje; sprema ga kartica revizije).
+
 ## 2026-10-07 — značka živih spawnova i „BEZ PROCESA” na ploči (TASK-5323)
 
 - Novo: `GET /api/config/concurrency` → `active` broji ŽIVE spawnove po najmovima (pid provjeren
