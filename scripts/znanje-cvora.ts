@@ -195,7 +195,7 @@ async function sastavi(o: Okolina, mem: { banka: string }, mog: Record<string, b
   const servisi = unitovi.stdout.toString().split('\n').filter(Boolean).map(r => {
     const [unit, , aktivan, , ...opis] = r.trim().split(/\s+/)
     return { unit, aktivan, opis: opis.join(' ') }
-  })
+  }).filter(u => u.unit && !u.unit.startsWith('regoc-znanje')) // sam timer ne opisuje čvor
   const git = Bun.spawnSync(['git', '-C', KORIJEN, 'rev-parse', '--short', 'HEAD'], { stdout: 'pipe', stderr: 'pipe' }).stdout.toString().trim()
   let verzija = ''
   try { verzija = JSON.parse(readFileSync(join(KORIJEN, 'package.json'), 'utf-8')).version || '' } catch { /* */ }

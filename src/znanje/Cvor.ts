@@ -103,7 +103,8 @@ export function dokumentStanje(s: StanjeCvora): string {
   }
   if (s.servisi?.length) {
     r.push('', '## Servisi', `Servisi čvora su systemd korisničke jedinice; restart je \`systemctl --user restart <jedinica>\` i smije SAMO kad je na ploči 0 zadataka u statusu in_progress (inače aktivni zadaci padaju). Iz spawna agenta restart ploče i daemona nije dopušten.`)
-    for (const u of s.servisi) r.push(`- \`${u.unit}\` (${u.aktivan}): ${u.opis}`)
+    // Bez trenutnog stanja jedinice: dokument bi se mijenjao svaki prolaz i trošio retain.
+    for (const u of s.servisi) r.push(`- \`${u.unit}\`: ${u.opis}`)
   }
   return r.join('\n') + '\n'
 }
