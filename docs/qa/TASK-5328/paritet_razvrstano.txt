@@ -1,0 +1,47 @@
+PARITET node-B (ssh://regoc@192.168.10.11:2222) — razvrstavanje po ADR-0004 §13.2, TASK-5328, 07.10.2026.
+
+KUKE nespojene (25):
+  Notification:ContextCapture.hook.ts                uvjetno (paket pai-ucenje — instanca node-B: samo jezgra, datoteke ne postoje)
+  Notification:ContextExport.hook.ts                 uvjetno (paket pai-ucenje — instanca node-B: samo jezgra, datoteke ne postoje)
+  PreToolUse:AgentMemoryRead.hook.ts                 uvjetno (modul rag — RAG na čvoru isključen)
+  PreToolUse:KatalogCuvar.hook.ts                    van
+  PreToolUse:RadBezZadatka.hook.ts                   uvjetno (RadBezZadatka: REGOC_SESIJA=telegram)
+  SessionStart:CheckVersion.hook.ts                  van
+  SessionStart:EnsureRegocDaemon.hook.ts             van
+  SessionStart:LoadContext.hook.ts                   uvjetno (LoadContext: komplet skills/CORE)
+  SessionStart:StartupGreeting.hook.ts               van
+  Stop:ContextCapture.hook.ts                        uvjetno (paket pai-ucenje — instanca node-B: samo jezgra, datoteke ne postoje)
+  Stop:FormatEnforcer.hook.ts                        van
+  Stop:ImplicitSentimentCapture.hook.ts              uvjetno (paket pai-ucenje — instanca node-B: samo jezgra, datoteke ne postoje)
+  Stop:QuestionAnswered.hook.ts                      van
+  Stop:SessionSummary.hook.ts                        uvjetno (paket pai-ucenje — instanca node-B: samo jezgra, datoteke ne postoje)
+  Stop:WorkCompletionLearning.hook.ts                uvjetno (paket pai-ucenje — instanca node-B: samo jezgra, datoteke ne postoje)
+  SubagentStop:AgentMemoryWrite.hook.ts              uvjetno (modul rag — RAG na čvoru isključen)
+  SubagentStop:AgentOutputCapture.hook.ts            uvjetno (paket pai-ucenje — instanca node-B: samo jezgra, datoteke ne postoje)
+  UserPromptSubmit:AutoWorkCreation.hook.ts          van
+  UserPromptSubmit:CheckRegocQueue.hook.ts           van
+  UserPromptSubmit:CheckTelegramRelay.hook.ts        van
+  UserPromptSubmit:CheckVoiceRelay.hook.ts           van
+  UserPromptSubmit:ExplicitRatingCapture.hook.ts     uvjetno (paket pai-ucenje — instanca node-B: samo jezgra, datoteke ne postoje)
+  UserPromptSubmit:LoadDomainContext.hook.ts         van
+  UserPromptSubmit:SetQuestionTab.hook.ts            van
+  UserPromptSubmit:UpdateTabTitle.hook.ts            van
+
+ZNAČAJKE različito (9):
+  staleWatchdogLive      uvjetno do čišćenja (§13.2.1): regoc-chain „doradi rad" TASK-021 blokiran na čvoru
+  deadAgentReaperLive    isto
+  zombieRecoveryLive     isto
+  autonomyGate           uvjetno: session_usage.py ne mjeri (claude na čvoru nije prijavljen) → inače FAIL-OPEN
+  projectGitInit         uvjetno (instanca): čvor drži projekte u gitu
+  taskDecompose          isto (B1)
+  taskDecomposeLive      isto (B1)
+  failRequeue            isto
+  failRequeueLive        isto
+
+KONZOLA:
+  regoc.log    uvjetno: kuka RegocConsoleLog SPOJENA (kuke 7/7), puni je tek Claude sesija agenta — claude na čvoru nije prijavljen
+  klaudio.log  van (§13.2.3): bot glavnog stroja ne radi na čvoru
+
+KOD: fale na čvoru 0 (moduli glavni 142 | čvor 143)
+
+UKUPNO 36 = 25 kuka + 9 značajki + 2 konzole; izvan van/uvjetno: 0
