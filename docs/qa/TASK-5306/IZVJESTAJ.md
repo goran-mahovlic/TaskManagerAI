@@ -50,3 +50,16 @@ Testovi: paket `bun test` = **1545 pass, 0 fail** (77 datoteka); glavni `tests/p
 4. **`componentOverrides.hindsight` se prebacuje u configu**, ali Hindsight model čita pri pokretanju. Bez `hindsight_uskladi.ts` stvarno ostaje na starom modelu.
 5. **`/tmp` na glavnom stroju je tmpfs od 100 MB i 100 % je pun.** `bun test` koji piše u `tmpdir()` pada s `ENOSPC` / `JSON Parse error: Unexpected EOF` (prvi prolaz: 8 lažnih padova u `razgovor-jezgra`, 1 u `provider-vrata`). Uz `TMPDIR` u radnoj mapi sve prolazi.
 6. Automatski prelazak na OpenRouter na pragu (ADR §6/K7) **nije izveden** (uputa #189 je suzila opseg). Prebacivanje je ručno, jednim potezom.
+
+## Krug popravka (07./08.10.2026., nakon kritičara)
+
+Kritičar je javio 13 palih testova paketa. Uzrok nije kod nego okolina: tada je `/tmp` (tmpfs od 100 MB) bio 100 % pun, što je nalaz 5 gore. Greške su bile `ENOSPC` i lančani padovi u istom procesu.
+
+- `/tmp` je sada 7 % zauzet (6,3 MB od 100 MB).
+- Svih 10 navedenih datoteka (`session-usage-van-anthropica`, `task-dorada-api`, `task-dorada-sql`, `telegram-obavijest-jednom`, `razgovor-jezgra`, `telegram-privitci`, `razgovor-identitet`, `razgovor-bot-kanal`, `profil-cvora`, `razgovor-dijelovi`) pojedinačno prolazi s 0 fail.
+- Cijeli paket na HEAD `9f1b5c7` (bez `TMPDIR`, dakle kao kritičar): **1795 pass / 0 fail**, zapis u `bun_test_paket_krug2.out`.
+
+Pogon, ponovno provjeren u 00:35 CEST:
+- **Glavni:** `GET /api/models/svi` vraća `aktivno:false` (natrag na Claude). `session_usage.cache.json` je star 7 s.
+- **node-A:** `GET /api/models/svi` vraća `cilj:anthropic:opus`, `tko:ploca`, `kada:2026-10-07T15:05:42Z`. To znači da je netko i s ploče, kroz izbornik, sam vratio sustav na Claude. `defaults` su svi `anthropic:opus`. Mjerilo je svježe: zadnji upis u `session_usage.jsonl` je od 22:31:54Z, status `allowed`, `http_error` je null. Simulator ne radi.
+- **node-A, stvarni pogon (nije simulacija):** 14:47–14:50Z daemon je uz STVARNU sesiju od 91 % (≥ 90) ispisao `▶️ [vrata po provideru] … openrouter — Anthropic kvota ih ne koči`. To je kriterij (3) potvrđen na pravoj potrošnji.
