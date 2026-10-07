@@ -397,3 +397,35 @@ posao nego dio istog `primijeni`/`provjeri`.
 | P5 | Potjeh: na node-A nakon koraka 1–5 `paritet.py` → razlike = samo stavke „van/uvjetno" iz §13.2 (nijedna „u paket") |
 | P6 | Potjeh: E2E uputa — zadatak na čvoru, `POST /api/tasks/<id>/upute` dok agent radi → agent je potvrdi u sljedećem koraku |
 | P7 | Potjeh: siroče — ubijen proces agenta → zadatak se vrati u red (`siroceOporavak`) u ≤ 15 min, bez ručnog `/reclaim` |
+
+### 13.7 Izvedba (TASK-5308, 07.10.2026.) — što je ušlo i gdje se odstupilo od plana
+
+**Paket.** `scripts/profil-cvora.ts` ima module `znacajke`, `kuke`, `konzola`, `oporavak` i
+`paket.izvorniSustavSadrzi`; `${TM_PAKET}` je ugrađena varijabla (mapa paketa na čvoru).
+`hooks/RegocConsoleLog.hook.ts` je u paketu (HOME iz okoline, redak nosi `agent · zadatak`).
+`config/features.example.json` = modul `znacajke` (75 ključeva; test drži usklađenost).
+INSTALL §10.1: 5 koraka + tajne. Mjerila J13–J17: `tests/profil-cvora.test.ts`, kuka: `tests/konzola-kuka.test.ts`.
+
+**Odstupanja od §13.2 (s razlogom):**
+
+| Plan | Izvedba | Zašto |
+|---|---|---|
+| `izvorniSustavSadrzi` → izlaz 3 | `NEDOSTAJE` (izlaz 2); izlaz 3 daje modul `znacajke` kad UKLJUČEN prekidač nema koda (J14) | `PREDUVJET` zaustavlja `--pisi` svih modula — node-A bez P5 ne bi mogao dobiti ni kočnice ni kuke |
+| „kod postoji" po modulu | prekidač je „poznat kodu" ako se `'ime'` doslovno pojavljuje u `*.ts` mapa `kodU` (`${SUSTAV_DIR}`, `${TM_PAKET}/src`, `src/core`) | ime datoteke ne kaže koji prekidač čita; doslovni ključ kaže. `ponovnoOtvaranjeRuta(+Live)` i `teamPilot` ni glavni nema u kodu → `bezKoda` |
+| `oporavak`: redak kruga u daemon.log u 30 min | prekidač ON + kod ga zna + `staleReaper` off + daemon.log svjež ≤ 30 min | krugovi oporavka pišu samo kad nešto vrate; tišina nije kvar |
+| `pai-ucenje` = 8 kuka | 7 — bez `ExplicitRatingCapture` | na node-A pada (rc=1: uvozi `skills/CORE` iz tuđeg HOME-a), izmjereno 07.10. |
+| izvor `klaudio` = PRESKOČENO | izvora nema u profilu | bot glavnog stroja ne radi na čvoru; brana ADR-0001 §8 (imena) |
+| ploča čita `config/features.json` paketa | `okolina.TM_FEATURES_FILE=${SUSTAV_DIR}/features.json` | jedan izvor prekidača za daemon i ploču, kao na glavnom (vrijedi od restarta ploče) |
+
+**node-A (07.10. 08:42 UTC, instanca `deploy/profili/node-A.instanca.env` glavnog stroja).**
+`primijeni --pisi --modul znacajke,kuke,konzola,okolina,oporavak` → 36 promjena, drugi prolaz
+0; značajke 75/75, kuke 14/14 (2 → 14). Faza A izvedena: `staleReaper`, `teamChainLive`,
+`autoResumeLive` off; kočnice i blokovi on; `ollamaClassifier` on (Ollama 200). Instanca odgađa
+(`ZNACAJKE_ISKLJUCI`) fazu B i prekidače bez koda (P5) — čvor je oprezniji od glavnog, nikad
+agresivniji. P6 (uputa) prošao uživo: TASK-263 na node-A, uputa #3 dostavljena uz prvi alat
+spawna (sesija d2b4bef7), agent odgovorio `UPUTA-E2E-PRIMLJENA`; konzola ploče (WebSocket
+`/stream`) primila redak izvora `regoc`.
+
+**Otvoreno:** drop-in konzole i `TM_FEATURES_FILE` čekaju restart ploče (in_progress na node-A =
+2 smeće-zadatka TASK-255); faza B (reaperi) čeka TASK-255; P5/P6-Goran (prijenos koda,
+`OrphanRecovery`) uvjet su za P7 („siroče se samo vraća").

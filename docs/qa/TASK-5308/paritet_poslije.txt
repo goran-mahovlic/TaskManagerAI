@@ -1,0 +1,88 @@
+KUKE  glavni 32 {'SessionStart': 5, 'PreToolUse': 4, 'UserPromptSubmit': 10, 'Stop': 7, 'SubagentStop': 2, 'Notification': 2, 'PostToolUse': 2}
+      čvor   14 {'PreToolUse': 1, 'UserPromptSubmit': 2, 'SessionStart': 1, 'PostToolUse': 2, 'Stop': 5, 'Notification': 2, 'SubagentStop': 1}
+      nespojeno na čvoru (18): PreToolUse:AgentMemoryRead.hook.ts, PreToolUse:KatalogCuvar.hook.ts, PreToolUse:RadBezZadatka.hook.ts, SessionStart:CheckVersion.hook.ts, SessionStart:EnsureRegocDaemon.hook.ts, SessionStart:LoadContext.hook.ts, SessionStart:StartupGreeting.hook.ts, Stop:FormatEnforcer.hook.ts, Stop:QuestionAnswered.hook.ts, SubagentStop:AgentMemoryWrite.hook.ts, UserPromptSubmit:AutoWorkCreation.hook.ts, UserPromptSubmit:CheckRegocQueue.hook.ts, UserPromptSubmit:CheckTelegramRelay.hook.ts, UserPromptSubmit:CheckVoiceRelay.hook.ts, UserPromptSubmit:ExplicitRatingCapture.hook.ts, UserPromptSubmit:LoadDomainContext.hook.ts, UserPromptSubmit:SetQuestionTab.hook.ts, UserPromptSubmit:UpdateTabTitle.hook.ts
+      datoteke kuka koje fale na čvoru (3): KatalogCuvar.hook.ts, RadBezZadatka.hook.ts, TaskInstructionsInject.hook.ts
+ZNAČAJKE glavni 75 (53 ON) | čvor 56 (40 ON)
+      različito uključeno (15): staleWatchdogLive[ON→off], deadAgentReaperLive[ON→off], zombieRecoveryLive[ON→off], projectGitInit[off→ON], taskDecompose[ON→off], taskDecomposeLive[ON→off], failRequeue[ON→off], failRequeueLive[ON→off], sequentialHelpers[ON→off], siroceOporavak[ON→off], r2IzricitaDodjela[ON→off], zatvaranjeKrozDaemon[ON→off], revizijaBlokiranih[ON→off], revizijaBlokiranihLive[ON→off], pozadinaPovrat[ON→off]
+      prekidač na glavnom ima kod, na čvoru nema (8): pozadinaPovrat, r2IzricitaDodjela, revizijaBlokiranih, revizijaBlokiranihLive, sequentialHelpers, siroceOporavak, zatvaranjeKrozDaemon, zatvaranjeKrozDaemonLive
+KOD   moduli glavni 140 | čvor 113 | fale na čvoru (27): AgentOutputParser.ts, AgentSelection.ts, ConfigRaspored.ts, DaemonSingleton.ts, IngestGateKalibracija.ts, KriticarOpseg.ts, Nalog.test.ts, Nalog.ts, OrphanRecovery.ts, PozadinaPovrat.ts, RadBezZadatka.ts, SpawnFinalizer.ts, SpawnSlotRules.ts, Sudac.ts, TaskBrief.test.ts, TaskBrief.ts, TaskCloser.ts, TaskDorada.ts, TaskInstructions.ts, TaskToolkit.ts, TelegramSessionIdentity.ts, TelegramUputa.ts, TijekPosla.test.ts, TijekPosla.ts, TjedniPregledBlokiranih.ts, WorkflowGate.test.ts, ZatvaranjeKrozDaemon.ts
+KONZOLA regoc_daemon.log: glavni svjež / čvor svjež | regoc.log: glavni svjež / čvor svjež | klaudio.log: glavni svjež / čvor star 27 d | voiceserver.log: glavni svjež / čvor nema | taskwebui.log: glavni svjež / čvor nema
+
+ključ	glavni	čvor	kod_na_čvoru
+userFlush	True	True	da
+userFlushLive	True	True	da
+userFlushBacklog	False	False	da
+modeClassify	True	True	da
+modeClassifyLive	False	False	da
+tierRouting	False	False	—
+ollamaClassifier	True	True	da
+verificationGate	False	False	—
+staleWatchdog	True	True	da
+staleWatchdogLive	True	False	da
+deadAgentReaper	True	True	da
+sendBreaker	True	True	da
+sendBreakerLive	False	False	da
+deadAgentReaperLive	True	False	da
+teamPilot	True	True	—
+staleInboxGuard	True	True	da
+zombieRecovery	True	True	da
+zombieRecoveryLive	True	False	da
+staleReaper	False	False	da
+staleReaperLive	False	False	da
+autonomyGate	True	True	da
+taskTier	True	True	da
+taskTierLive	True	True	da
+quotaWakeup	True	True	da
+worktreeIsolation	True	True	da
+worktreeIsolationLive	True	True	da
+fileScopeGate	False	False	da
+fileScopeGateLive	False	False	da
+criticGate	True	True	da
+criticGateLive	True	True	da
+reviewCheckpoint	False	False	da
+reviewCheckpointLive	False	False	da
+mergeGate	True	True	da
+mergeGateLive	True	True	da
+teamChain	True	True	da
+teamChainLive	False	False	da
+autoResume	True	True	da
+autoResumeLive	False	False	da
+projectGitInit	False	True	da
+criticUnverifiedAlert	True	True	da
+taskDecompose	True	None	da
+taskDecomposeLive	True	None	da
+tierRecipesEnabled	True	True	da
+verificationGateShadow	True	True	da
+verificationGateLive	False	None	da
+ollamaClassifierLive	False	None	da
+ollamaProjectDetect	False	None	da
+spawnBreaker	True	True	da
+spawnBreakerLive	True	True	da
+agentIdentityBlock	True	True	da
+agentIdentityBlockLive	True	True	da
+spawnVerificationBlock	True	True	da
+spawnVerificationBlockLive	True	True	da
+earlyWorkGuard	True	True	da
+earlyWorkGuardLive	False	None	da
+shutdownResume	True	True	da
+shutdownResumeLive	True	True	da
+taskCreateBreaker	True	True	da
+taskCreateBreakerLive	True	True	da
+failRequeue	True	None	da
+failRequeueLive	True	None	da
+criticRepairLoop	True	True	da
+criticRepairLoopLive	False	None	da
+spawnCloseGuard	True	True	—
+spawnCloseGuardLive	False	None	—
+sequentialHelpers	True	None	ne
+siroceOporavak	True	None	ne
+r2IzricitaDodjela	True	None	ne
+zatvaranjeKrozDaemon	True	None	ne
+zatvaranjeKrozDaemonLive	False	None	ne
+ponovnoOtvaranjeRuta	True	True	—
+ponovnoOtvaranjeRutaLive	False	None	—
+revizijaBlokiranih	True	None	ne
+revizijaBlokiranihLive	True	None	ne
+pozadinaPovrat	True	None	ne
+
+UKUPNO razlika: 63

@@ -7,7 +7,7 @@ Pravilo redoslijeda: **prvo ono što čvor čini opreznijim, zatim ono što dost
 kraju ono što samo stvara ili vraća zadatke u red.** Na čvoru je nedavno bila kaskada
 `regoc-chain` (TASK-255). Reaper koji vrati smeće u red ponovno bi je zapalio.
 
-## Faza A — na node-A odmah (bez koda, bez restarta)
+## Faza A — na node-A odmah (bez koda, bez restarta) — ✅ IZVEDENO TASK-5308 (07.10. 08:42 UTC, ADR §13.7)
 
 `features.json` čita se uživo (TTL keš u `FeatureFlags.ts`). Kuke iz `settings.json` vrijede za
 svaku **novu** sesiju agenta. Zato ova faza ne čeka `in_progress = 0`.
