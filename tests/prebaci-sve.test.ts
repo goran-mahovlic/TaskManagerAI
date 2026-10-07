@@ -13,21 +13,21 @@ function mcPrimjer(): any {
       anthropic: { enabled: true },
       openrouter: { enabled: true, apiKey: 'env:OPENROUTER_API_KEY' },
       glm: { enabled: true, anthropicCompatible: true, baseUrl: 'https://api.z.ai/api/anthropic', apiKey: 'env:GLM_API_KEY' },
-      ollama: { enabled: true, baseUrl: 'http://192.168.10.4:11434' },
+      ollama: { enabled: true, baseUrl: 'http://ollama.lokalno:11434' },
       google: { enabled: false },
     },
     defaults: { frontier: 'anthropic:opus', strong: 'anthropic:sonnet', good: 'anthropic:sonnet', basic: 'anthropic:haiku', classifier: 'anthropic:haiku', _pin: 'biljeska' },
-    agentOverrides: { jelena: 'anthropic:opus', kosjenka: 'anthropic:opus', _primjer: 'ollama:qwen3:8b' },
+    agentOverrides: { inzenjer: 'anthropic:opus', arhitekt: 'anthropic:opus', _primjer: 'ollama:qwen3:8b' },
     componentOverrides: { _comment: 'c', embeddings: 'ollama:qwen3-embedding:8b', classifier: 'ollama:qwen3:8b', hindsight: 'anthropic:opus' },
   }
 }
 
 describe('prebaciSve — piše postojeća polja', () => {
   test('agenti, razine i komponente idu na cilj; embeddings i classifier ostaju', () => {
-    const { mc, promijenjeno } = prebaciSve(mcPrimjer(), 'openrouter:z-ai/glm-5.2', { tko: 'vlasnik', kada: '2026-10-07T10:00:00Z', agenti: ['jelena', 'kosjenka', 'malik'] })
-    expect(mc.agentOverrides.jelena).toBe('openrouter:z-ai/glm-5.2')
-    expect(mc.agentOverrides.kosjenka).toBe('openrouter:z-ai/glm-5.2')
-    expect(mc.agentOverrides.malik).toBe('openrouter:z-ai/glm-5.2')       // iz registra, prije bez overridea
+    const { mc, promijenjeno } = prebaciSve(mcPrimjer(), 'openrouter:z-ai/glm-5.2', { tko: 'vlasnik', kada: '2026-10-07T10:00:00Z', agenti: ['inzenjer', 'arhitekt', 'revizor'] })
+    expect(mc.agentOverrides.inzenjer).toBe('openrouter:z-ai/glm-5.2')
+    expect(mc.agentOverrides.arhitekt).toBe('openrouter:z-ai/glm-5.2')
+    expect(mc.agentOverrides.revizor).toBe('openrouter:z-ai/glm-5.2')       // iz registra, prije bez overridea
     expect(mc.agentOverrides.razgovor).toBe('openrouter:z-ai/glm-5.2')    // Šabanov razgovor
     expect(mc.agentOverrides._primjer).toBe('ollama:qwen3:8b')            // komentar/primjer netaknut
     expect(mc.defaults.frontier).toBe('openrouter:z-ai/glm-5.2')
@@ -38,24 +38,24 @@ describe('prebaciSve — piše postojeća polja', () => {
     expect(mc.componentOverrides.embeddings).toBe('ollama:qwen3-embedding:8b')
     expect(mc.componentOverrides.classifier).toBe('ollama:qwen3:8b')
     expect(IZUZETE_KOMPONENTE).toContain('embeddings')
-    expect(promijenjeno).toContain('agentOverrides.jelena')
+    expect(promijenjeno).toContain('agentOverrides.inzenjer')
     expect(promijenjeno).not.toContain('componentOverrides.embeddings')
   })
 
   test('snimka prije se pamti jednom — drugi prekidač ne prepisuje izvornik', () => {
     const a = prebaciSve(mcPrimjer(), 'openrouter:z-ai/glm-5.2', { tko: 'vlasnik', kada: 't1' }).mc
     const b = prebaciSve(a, 'anthropic:sonnet', { tko: 'vlasnik', kada: 't2' }).mc
-    expect(b._prebaciSvePrije.agentOverrides.jelena).toBe('anthropic:opus')
+    expect(b._prebaciSvePrije.agentOverrides.inzenjer).toBe('anthropic:opus')
     expect(b._prebaciSvePrije.cilj).toBe('anthropic:sonnet')
     expect(stanjePrebacivanja(b)).toMatchObject({ aktivno: true, cilj: 'anthropic:sonnet', tko: 'vlasnik', kada: 't2' })
   })
 
   test('vrati — točno stanje prije prvog prebacivanja, bez snimke', () => {
     const izvor = mcPrimjer()
-    const p = prebaciSve(mcPrimjer(), 'openrouter:z-ai/glm-5.2', { tko: 'vlasnik', kada: 't1', agenti: ['malik'] }).mc
+    const p = prebaciSve(mcPrimjer(), 'openrouter:z-ai/glm-5.2', { tko: 'vlasnik', kada: 't1', agenti: ['revizor'] }).mc
     const { mc, vraceno } = vratiPrebacivanje(p)
     expect(vraceno).toBe(true)
-    expect(mc.agentOverrides).toEqual(izvor.agentOverrides)                // malik i razgovor nestaju
+    expect(mc.agentOverrides).toEqual(izvor.agentOverrides)                // revizor i razgovor nestaju
     expect(mc.defaults).toEqual(izvor.defaults)
     expect(mc.componentOverrides).toEqual(izvor.componentOverrides)
     expect(mc._prebaciSvePrije).toBeUndefined()
