@@ -69,6 +69,11 @@ function okolina(instanca?: string): Okolina {
   }
 }
 
+/** Mapa izvornog sustava: SUSTAV_DIR instance ili TM_SUSTAV_DIR; bez nje paket radi samo sa sobom (ADR-0001 O1.4). */
+function sustavDirZa(o: Okolina): string {
+  return (o.inst.SUSTAV_DIR || o.postavke.TM_SUSTAV_DIR || '').trim() || join(KORIJEN, 'nema-izvornog-sustava')
+}
+
 async function dohvatiJson(url: string, init?: RequestInit, rokMs = 15_000): Promise<{ status: number; j: any }> {
   const r = await fetch(url, { ...init, signal: AbortSignal.timeout(rokMs) })
   let j: any = null
@@ -94,7 +99,7 @@ async function memorijaPostavke(o: Okolina, a: Argumenti): Promise<{ url: string
 // ─── mogućnosti (§6.1) ───────────────────────────────────────────────────────
 
 async function izmjeriMogucnosti(o: Okolina, mem: { url: string }): Promise<Record<string, boolean>> {
-  const sustav = o.inst.SUSTAV_DIR || join(HOME, '.claude', 'regoc')
+  const sustav = sustavDirZa(o)
   const m: Record<string, boolean> = {}
   // rag: isti izvor kao rag-gate (memory-config rag.enabled), uz TM_CHROMA_* koji ga uključuje u paketu.
   const gate = join(HOME, '.claude', 'skills', 'CORE', 'Tools', 'lib', 'rag-gate.ts')
@@ -145,7 +150,7 @@ function citajZapis(dat: string): PotezRazgovora[] {
 
 async function sastavi(o: Okolina, mem: { banka: string }, mog: Record<string, boolean>, ispis: (r: string) => void): Promise<{ korpus: Korpus; razgovorNaDisk: number; preskoceno: string[] }> {
   const cvor = o.inst.CVOR_IME || 'čvor'
-  const sustavDir = o.inst.SUSTAV_DIR || join(HOME, '.claude', 'regoc')
+  const sustavDir = sustavDirZa(o)
   const korpus: Korpus = new Map()
   const preskoceno: string[] = []
   const varijable = { SUSTAV_DIR: sustavDir, MEMORIJA_BANKA: mem.banka, HOME, TM_HOME: o.tmHome }
