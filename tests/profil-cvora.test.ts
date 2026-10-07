@@ -15,7 +15,7 @@ import { razgovorPut } from '../src/razgovor/RazgovorPloca'
 import { ensureSettingsSchema } from '../src/core/ConcurrencySetting'
 import {
   GreskaPreduvjeta, KOD, KORIJEN, glavna, izvediInstancu, konzolaDropIn, paketiKuka, provjeriVarijable, specZaProfil, vrijemeDropIn,
-  ucinakZnacajki, ucitajProfil, zamijeni, type Ploca,
+  ucinakZnacajki, ucitajProfil, zamijeni, jediniceZnanja, type Ploca,
 } from '../scripts/profil-cvora'
 import { prikupiStanje } from '../scripts/profil-cvora-stanje'
 
@@ -186,8 +186,8 @@ describe('J1 — shema profila (zod)', () => {
   test('predani profil upravitelj-cvora prolazi shemu', () => {
     const p = ucitajProfil(PROFIL)
     expect(p.profil).toBe('upravitelj-cvora')
-    // 13 iz TASK-5295 + znacajke, kuke, konzola, oporavak (ADR-0004 §13.2)
-    expect(Object.keys(p.moduli).length).toBe(17)
+    // 13 iz TASK-5295 + znacajke, kuke, konzola, oporavak (ADR-0004 §13.2) + mogucnosti, znanje (ADR-0006 §9)
+    expect(Object.keys(p.moduli).length).toBe(19)
   })
 
   test('neispravan profil → izlaz 3 s porukom koja imenuje polje', async () => {
@@ -673,5 +673,78 @@ describe('C3 — config/features.example.json = modul znacajke profila', () => {
       expect(ex[k].enabled).toBe(pr[k].on)
       expect(ex[k].note.startsWith(pr[k].odluka)).toBe(true)
     }
+  })
+})
+
+// ─── TASK-5331: znanje čvora (ADR-0006 §9) ───────────────────────────────────
+
+describe('J18 — znanje čvora: mogućnosti, korpus u banci, izolacija memorije, nikadNeNosi', () => {
+  const SVJEZE = () => ({
+    mogucnosti: { postoji: true, starostSati: 1, vrijednosti: { rag: false, memorija: true } },
+    upis: { postoji: true, banka: 'banka_t', sustav: 81, cvor: 9, starostSati: 0.2 },
+    korpusPaketa: 81,
+    timer: { datoteka: true, aktivan: 'active' },
+    banke: ['banka_t'],
+    tudjiDokumenti: 0,
+  })
+  async function pokreni(znanje: any, argv: string[] = ['provjeri', '--json']) {
+    const redovi: string[] = []
+    const kod = await glavna([...argv, '--paket', d.paket, '--instanca', d.inst, '--bez-sustava'], {
+      home: d.home, ispis: r => redovi.push(r), hostname: 'cvor-t', sat: () => new Date('2026-10-07T01:00:00Z'),
+      sakupi: async spec => ({ ...(await prikupiStanje(spec, d.home)), znanje }),
+    })
+    const j = JSON.parse(redovi.at(-1)!)
+    const st = (modul: string) => j.stavke.filter((x: any) => x.modul === modul)
+    return { kod, j, st }
+  }
+
+  test('svježe stanje: mogucnosti, znanje i izolacija OK', async () => {
+    const { st } = await pokreni(SVJEZE())
+    for (const m of ['mogucnosti', 'znanje']) expect(st(m).every((x: any) => x.vrsta === 'OK')).toBe(true)
+    expect(st('memorija').find((x: any) => x.kljuc === 'izolacija').vrsta).toBe('OK')
+    expect(st('memorija').find((x: any) => x.kljuc === 'nikadNeNosi').vrsta).toBe('OK')
+  })
+
+  test('bez mogucnosti.json → RAZLIKA koju alat zna primijeniti', async () => {
+    const z = SVJEZE(); z.mogucnosti = { postoji: false, starostSati: null as any, vrijednosti: {} }
+    const { st } = await pokreni(z)
+    expect(st('mogucnosti')[0].vrsta).toBe('RAZLIKA')
+  })
+
+  test('kroz memoriju se vidi i tuđa banka → izolacija NEDOSTAJE (posrednik je na glavnom stroju)', async () => {
+    const z = SVJEZE(); z.banke = ['banka_t', 'nasa_glavna']
+    const i = (await pokreni(z)).st('memorija').find((x: any) => x.kljuc === 'izolacija')
+    expect(i.vrsta).toBe('NEDOSTAJE')
+    expect(i.poruka).toContain('posrednik')
+  })
+
+  test('u banci je dokument s glavnog stroja → nikadNeNosi NEDOSTAJE', async () => {
+    const z = SVJEZE(); z.tudjiDokumenti = 3
+    expect((await pokreni(z)).st('memorija').find((x: any) => x.kljuc === 'nikadNeNosi').vrsta).toBe('NEDOSTAJE')
+  })
+
+  test('zastario upis, krivi broj sustav/* ili druga banka → RAZLIKA znanje', async () => {
+    for (const izmjena of [(z: any) => { z.upis.starostSati = 5 }, (z: any) => { z.upis.sustav = 3 }, (z: any) => { z.upis.banka = 'stara' }]) {
+      const z = SVJEZE(); izmjena(z)
+      expect((await pokreni(z)).st('znanje').some((x: any) => x.vrsta === 'RAZLIKA')).toBe(true)
+    }
+  })
+
+  test('nema timera dotoka → RAZLIKA s jedinicama u izlazu primjene', async () => {
+    const z = SVJEZE(); z.timer = { datoteka: false, aktivan: 'inactive' }
+    const t = (await pokreni(z)).st('znanje').find((x: any) => x.kljuc === 'timer')
+    expect(t.vrsta).toBe('RAZLIKA')
+  })
+
+  test('bez sakupljenog znanja (npr. --bez-sustava) → PRESKOČENO, ne RAZLIKA', async () => {
+    const { st } = await pokreni(null)
+    expect(st('znanje').every((x: any) => x.vrsta === 'PRESKOČENO')).toBe(true)
+  })
+
+  test('predložak jedinica timera: 30 min, poziva osvjezi --pisi iz paketa, bez tajni', () => {
+    const p = ucitajProfil(PROFIL) as any
+    const { service, timer } = jediniceZnanja(p.moduli.znanje, '/paket', '/bun')
+    expect(service).toContain('ExecStart=/bun /paket/scripts/znanje-cvora.ts osvjezi --pisi')
+    expect(timer).toContain('OnUnitActiveSec=30min')
   })
 })

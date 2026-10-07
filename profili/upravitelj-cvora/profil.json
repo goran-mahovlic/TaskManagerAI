@@ -25,7 +25,10 @@
       "SECURITYVALIDATOR_SHA256",
       "ZNACAJKE_UKLJUCI",
       "ZNACAJKE_ISKLJUCI",
-      "KUKE_PAKETI"
+      "KUKE_PAKETI",
+      "VLASNIK_ULOGA_IME",
+      "MEMORIJA_MISIJA",
+      "ZNANJE_RAZGOVOR"
     ]
   },
   "moduli": {
@@ -228,7 +231,14 @@
       "ovisiO": [
         "tunel-memorije"
       ],
-      "napomena": "Bez memorije u načinu on odgovor počinje s „🧠🚫 bez memorije: <razlog>\" (ADR-0002 §16) — namjerno vidljivo."
+      "napomena": "Bez memorije u načinu on odgovor počinje s „🧠🚫 bez memorije: <razlog>\" (ADR-0002 §16) — namjerno vidljivo.",
+      "izolacija": {
+        "opis": "ADR-0006 §8: kroz memorija.url čvor vidi SAMO svoju banku (posrednik na stroju koji drži Hindsight, faza 1) i u njoj nema dokumenata s glavnog stroja.",
+        "zabranjeniDokumenti": [
+          "system-map/",
+          "regoc_sustav/"
+        ]
+      }
     },
     "tunel-memorije": {
       "vlasnik": "glavni-stroj",
@@ -858,8 +868,60 @@
       "dnevnikMaxMin": 30,
       "tz": {
         "vrijednost": "UTC",
-        "unitovi": ["regoc-daemon", "regoc-taskmanager"]
+        "unitovi": [
+          "regoc-daemon",
+          "regoc-taskmanager"
+        ]
       }
+    },
+    "mogucnosti": {
+      "vlasnik": "paket",
+      "opis": "ADR-0006 §6.1: izmjerene mogućnosti čvora (rag, memorija, nextcloud, docuseal, glas, ollama, internet, root) u $TM_HOME/config/mogucnosti.json — jedan izvor za korpus, identitet i CLAUDE.md. Vrijednost se ne upisuje rukom.",
+      "datoteka": "config/mogucnosti.json",
+      "maxStarostSati": 26,
+      "naredba": [
+        "scripts/znanje-cvora.ts",
+        "mogucnosti",
+        "--pisi"
+      ]
+    },
+    "znanje": {
+      "vlasnik": "paket",
+      "opis": "ADR-0006 §5.3 i §7: opći korpus iz paketa (znanje/sustav, render po mogućnostima) i znanje čvora (cvor/*: projekti, zatvoreni zadaci, agenti, stanje, dnevni razgovori njegova Telegrama) u banci čvora. Upis samo promijenjenih (sha256), nestali se brišu; vrata kvote drži posrednik.",
+      "korpus": "znanje/sustav",
+      "stanje": "data/znanje/stanje.json",
+      "maxStarostSati": 2,
+      "naredba": [
+        "scripts/znanje-cvora.ts",
+        "osvjezi",
+        "--pisi"
+      ],
+      "timer": {
+        "unit": "regoc-znanje",
+        "minuta": 30
+      },
+      "napomena": "Razgovori ulaze u banku samo uz ZNANJE_RAZGOVOR=on u instanci (zadano shadow: dnevni dokument samo na disku čvora). Dan s oblikom tajne se ne upisuje."
     }
+  },
+  "nikadNeNosi": {
+    "opis": "ADR-0006 §3: s glavnog stroja na čvor nikad (provjera: modul memorija.izolacija + brana korpusa).",
+    "popis": [
+      "regoc.db",
+      "messages.db",
+      "conversations/",
+      "chat_sessions.json",
+      "docs/system-map/*.md (izvorni oblik)",
+      "sažetak CLAUDE.md glavnog sustava",
+      "RAG kolekcije glavnog (agent_*, pai_learning_system…)",
+      "Hindsight banke glavnog i drugih čvorova",
+      "credentials.env",
+      ".credentials.json",
+      "telegram.json s tokenom",
+      "deploy/profili/*.instanca.env glavnog",
+      "privatno.popis",
+      "~/.claude/projects/*/memory",
+      "MEMORY/",
+      "radne mape grupa"
+    ]
   }
 }
