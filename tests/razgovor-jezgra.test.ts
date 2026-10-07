@@ -273,6 +273,43 @@ describe('J8 — vrata', () => {
     expect(o.kanal.tekstovi[0]!.tekst).toContain('Kvota')
   })
 
+  // TASK-5305: Anthropic kvota koči SAMO razgovor koji ide preko Anthropica (vlasnik, 07.10.2026.: točka 3).
+  const ciljModela = (spec: string | undefined) => spec?.startsWith('openrouter:')
+    ? { model: spec.slice(11), env: { ANTHROPIC_BASE_URL: 'https://openrouter.ai/api', ANTHROPIC_AUTH_TOKEN: 't', ANTHROPIC_API_KEY: '' }, anthropic: false }
+    : { model: spec?.replace(/^anthropic:/, ''), env: {}, anthropic: true }
+
+  test('kvota puna + razgovor na OpenRouteru → odgovara, poziv ide preko ANTHROPIC_BASE_URL', async () => {
+    const o = okolina({ burstMs: 0, model: 'openrouter:z-ai/glm-5.2' }, {
+      ciljModela, env: { PATH: '/bin', HOME: '/h', CLAUDE_CODE_OAUTH_TOKEN: 'oauth' },
+    })
+    o.kvota(true)
+    o.r.primi(por(), o.kanal)
+    await o.r.mirno()
+    expect(o.izv.zahtjevi.length).toBe(1)
+    const z = o.izv.zahtjevi[0]!
+    expect(z.model).toBe('z-ai/glm-5.2')
+    const env = (z.extra as any).env
+    expect(env.ANTHROPIC_BASE_URL).toBe('https://openrouter.ai/api')
+    expect(env.CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined()   // pretplata se ne miješa u preusmjereni poziv
+    expect(o.kanal.tekstovi[0]!.tekst).not.toContain('Kvota')
+  })
+
+  test('kvota puna + razgovor na Anthropicu → i dalje fiksna poruka', async () => {
+    const o = okolina({ burstMs: 0, model: 'anthropic:opus' }, { ciljModela })
+    o.kvota(true)
+    o.r.primi(por(), o.kanal)
+    await o.r.mirno()
+    expect(o.izv.zahtjevi.length).toBe(0)
+  })
+
+  test('„prebaci sve" (agentOverrides.razgovor uz snimku) nadjačava razgovor.model', async () => {
+    const o = okolina({ burstMs: 0, model: 'anthropic:opus' }, { ciljModela, modelPrebacen: () => 'openrouter:z-ai/glm-5.2' })
+    o.kvota(true)
+    o.r.primi(por(), o.kanal)
+    await o.r.mirno()
+    expect(o.izv.zahtjevi[0]!.model).toBe('z-ai/glm-5.2')
+  })
+
   test('rok → „⏱ Nisam stigao odgovoriti"', async () => {
     const o = okolina({ burstMs: 0, rokSek: 30 })
     o.izv.odgovori = [{ exitCode: 143, resultText: '', greska: 'rok istekao (30000 ms)' }]

@@ -75,6 +75,7 @@
   "cfg_int_uvod": "Connecting to YOUR services. Settings hold addresses and NAMES of environment variables — secrets live in a separate file with mode 0600, never in the JSON.",
   "cfg_kartica_dezurni": "Standby — fallback model when the primary one fails",
   "cfg_kartica_integracije": "Integrations — Nextcloud, e-mail, GitLab, GitHub",
+  "cfg_kartica_model_svi": "System model — switch everything to one model",
   "cfg_kartica_klasifikator": "Classifier model — message routing (separate from the executing model)",
   "cfg_kartica_modeli": "Supported models & provider settings",
   "cfg_kartica_orkestrator": "Orchestrator — the layer that starts agents on tasks",

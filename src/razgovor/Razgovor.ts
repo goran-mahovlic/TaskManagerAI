@@ -22,6 +22,7 @@ import { argumentiOvlasti, okolinaRazgovora, radniDirRazgovora } from './Ovlasti
 import { neutralizirajIme, neutralizirajTekst, zatamniTajne } from './Ciscenje'
 import { sastaviIdentitet, type OpisAgenta } from './Identitet'
 import { dohvatiMemoriju, oznakaMemorije, type MemorijaRezultat } from './Memorija'
+import type { CiljRazgovora } from '../core/models/PrebaciSve'
 import { izvuciDokumente, provjeriDokument } from './SendDoc'
 import { ocistiStareZapise, zapisiPotez } from './Zapis'
 import type { Stil } from '../Stil'
@@ -41,6 +42,16 @@ export interface RazgovorOvisnosti {
   env: Record<string, string | undefined>
   /** Model kad `razgovor.model` nije postavljen (model-config `agentOverrides.razgovor`). */
   modelZadano?: () => string | undefined
+  /**
+   * TASK-5305: model koji je postavio prekidač „prebaci sve" (`agentOverrides.razgovor` dok
+   * postoji snimka `_prebaciSvePrije`). Ima prednost i pred `razgovor.model`.
+   */
+  modelPrebacen?: () => string | undefined
+  /**
+   * TASK-5305: `provider:model` → `--model` + okolina (ANTHROPIC_BASE_URL za ne-Anthropic
+   * providere). Bez njega se niz predaje CLI-ju kakav jest (staro ponašanje).
+   */
+  ciljModela?: (spec: string | undefined) => CiljRazgovora
   /** Agenti iz registra instalacije — za identitet (TASK-5293). */
   agenti?: () => OpisAgenta[]
   /** Vodič vlasnika (`TM_RAZGOVOR_UPUTE`) — za identitet; `uputePut` sesija ne smije pisati. */
@@ -172,6 +183,13 @@ export function stvoriRazgovor(d: RazgovorOvisnosti): RazgovorJezgra {
     try { d.konzola?.(redak, razina) } catch { /* Konzola je prikaz, ne uvjet */ }
   }
   const sesijePut = join(d.korijen, 'sesije.json')
+  /** Model poteza: prekidač „prebaci sve" → `razgovor.model` → model-config (TASK-5305). */
+  const specPoteza = (s: RazgovorPostavke): string | undefined =>
+    d.modelPrebacen?.() || s.model || d.modelZadano?.() || undefined
+  const ciljPoteza = (s: RazgovorPostavke): CiljRazgovora => {
+    const spec = specPoteza(s)
+    return d.ciljModela ? d.ciljModela(spec) : { model: spec, env: {}, anthropic: true }
+  }
   const chatovi = new Map<string, StanjeChata>()
   const red: StanjeChata[] = []
   let aktivnih = 0
@@ -217,8 +235,11 @@ export function stvoriRazgovor(d: RazgovorOvisnosti): RazgovorJezgra {
       c.cekaju = []
       return prigusi(c, zadnja, 'pauza', PORUKE.pauza)
     }
+    // TASK-5305: kvota je Anthropic sesija — razgovor preko drugog providera (OpenRouter…) ona ne koči.
     let kvota = false
-    try { kvota = await d.kvotaPuna() } catch { kvota = false }
+    if (ciljPoteza(d.postavke()).anthropic) {
+      try { kvota = await d.kvotaPuna() } catch { kvota = false }
+    }
     if (kvota) {
       c.cekaju = []
       return prigusi(c, zadnja, 'kvota', PORUKE.kvota)
@@ -325,9 +346,14 @@ export function stvoriRazgovor(d: RazgovorOvisnosti): RazgovorJezgra {
       procitano.every(x => jeDopusten(x.p, s.dopusteniKorisnici))
       ? s.ovlasti : 'citanje'
     const oznaka = `${p.kanal}:${p.chatId}`
+    const cilj = ciljPoteza(s)
+    if (cilj.greska) log(`[razgovor] ${c.kljuc}: model ${specPoteza(s)} — ${cilj.greska}`)
+    const okolinaPoteza = { ...okolinaRazgovora(d.env, oznaka), ...cilj.env }
+    // Preusmjereni poziv (ANTHROPIC_BASE_URL) ne smije nositi prijavu pretplate.
+    if (cilj.env.ANTHROPIC_BASE_URL) delete okolinaPoteza.CLAUDE_CODE_OAUTH_TOKEN
     const zahtjev = (resume?: string): ExecRequest => ({
       agentId: 'razgovor',
-      model: s.model || d.modelZadano?.() || undefined,
+      model: cilj.model,
       prompt,
       systemPrompt: resume ? undefined : sastaviIdentitet({
         ime: s.ime, instalacija: d.instalacija, ovlasti, plocaUrl: d.plocaUrl, port: d.port,
@@ -343,7 +369,7 @@ export function stvoriRazgovor(d: RazgovorOvisnosti): RazgovorJezgra {
           port: d.port, radniDir, tmHome: d.tmHome, home: d.home, zasticene: d.uputePut ? [d.uputePut] : [],
           korijen: d.korijen, ingestLog: d.ingestLog, kanal: p.kanal, chatId: p.chatId,
         }),
-        env: okolinaRazgovora(d.env, oznaka),
+        env: okolinaPoteza,
       },
     })
 
@@ -375,7 +401,7 @@ export function stvoriRazgovor(d: RazgovorOvisnosti): RazgovorJezgra {
 
     const zajednicko = {
       sessionId: res.sessionId || ses?.sessionId || null, novaSesija,
-      model: s.model || d.modelZadano?.() || null,
+      model: specPoteza(s) || null,
       trajanjeMs: sat() - t0,
       tokeni: { ul: res.usage?.inputTokens ?? null, izl: res.usage?.outputTokens ?? null },
       cijenaUsd: res.usage?.costUsd ?? null,
