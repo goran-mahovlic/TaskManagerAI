@@ -61,6 +61,10 @@ ZADANE = {
     # Dok je prekidač uključen, `covjek` NIJE ishod: rizičan ili nejasan zadatak model odgađa,
     # ne prosljeđuje. Tko ovo postavi na false, vraća staro ponašanje (rizik ide čovjeku).
     "smije_rizicno": True,
+    # TASK-5204 (DIZAJN-revizija-blokiranih §11): rizici koje model NIKAD ne odlučuje, ni kad
+    # je `smije_rizicno` true. Nazivi su iz RIZIK: "novac", "tajne", "brisanje", "vanjski učinak",
+    # "nepovratno". Zadano [] = ponašanje iz vlasnikove odluke od 05.09.; uključuje ga vlasnik sam.
+    "rizicno_covjeku": [],
     # Vlasnik, 05.09.2026.: „Mislim da je dovoljno staviti 1h default ali negdje dodati opcije
     # za namjestiti koliko je to cekanje." Jedan broj vrijedi za oboje: koliko čovjek ima
     # vremena prije nego model odluči, i koliko dugo odgođen zadatak ne ulazi u novi prolaz.
@@ -525,19 +529,31 @@ def _pitaj_openai_oblik(url: str, kljuc: str, model: str, tekst: str) -> str | N
     if not kljuc:
         print("nema ključa za tog davatelja", file=sys.stderr)
         return None
-    tijelo = {"model": model, "max_tokens": 500, "temperature": 0,
-              "messages": [{"role": "user", "content": tekst}]}
-    try:
+    def posalji(dodatno: dict) -> dict:
+        # 2000: modeli koji razmišljaju (qwen3.8-27b:free, izmjereno 05.10.2026.) potroše
+        # 260–1000 tokena prije odgovora; uz 500 ponekad ne stignu do `content`.
+        tijelo = {"model": model, "max_tokens": 2000, "temperature": 0,
+                  "messages": [{"role": "user", "content": tekst}], **dodatno}
         r = urllib.request.Request(url, json.dumps(tijelo).encode(),
                                    {"Authorization": "Bearer " + kljuc,
                                     "Content-Type": "application/json"})
         d = json.load(urllib.request.urlopen(r, timeout=120))
-        por = (d.get("choices") or [{}])[0].get("message") or {}
-        # Neki modeli na OpenRouteru vrate `content: null`, a odgovor stave u `reasoning`
-        # (izmjereno na ling-3.0-flash). Bez ovoga bi pao na .strip() nad None i izgledalo
-        # bi kao da davatelj ne radi, iako je odgovorio.
-        tekst = por.get("content") or por.get("reasoning") or ""
-        return str(tekst).strip() or None
+        return (d.get("choices") or [{}])[0].get("message") or {}
+
+    try:
+        por = posalji({})
+        if not str(por.get("content") or "").strip():
+            # Prazan `content` uz pun `reasoning` je razmišljanje koje nije stiglo do odgovora
+            # (TASK-5250: „We need answer in Croatian/Serbian? …" pročitano kao odgovor → lažna
+            # odgoda). Ponovi jednom bez razmišljanja.
+            drugi = posalji({"reasoning": {"enabled": False}})
+            if str(drugi.get("content") or "").strip():
+                return str(drugi["content"]).strip()
+            # Neki modeli (ling-3.0-flash) odgovor stave u `reasoning`, a `content` je null —
+            # tek tada se `reasoning` uzima kao odgovor.
+            por = drugi if str(drugi.get("reasoning") or "").strip() else por
+        tekst_odg = por.get("content") or por.get("reasoning") or ""
+        return str(tekst_odg).strip() or None
     except Exception as e:
         print(f"davatelj ne odgovara: {str(e)[:120]}", file=sys.stderr)
         return None
@@ -648,9 +664,20 @@ def najava_tekst(z: dict, p: dict, rok_iso: str, sati: float) -> str:
             f"{potpis_modela(p)}.")
 
 
+def rizicno_covjeku(p: dict) -> list:
+    """Popis rizika koji uvijek idu čovjeku (§11). Neispravna vrijednost = prazan popis (zadano)."""
+    v = p.get("rizicno_covjeku")
+    return [str(x) for x in v] if isinstance(v, list) else []
+
+
 def odluci(z: dict, p: dict) -> dict:
     r = rizik(z)
     sam = samostalan(p)
+
+    # TASK-5204 §11: rizik s vlasnikova popisa ne ide modelu ni u samostalnom načinu — ni najava
+    # „model odlučuje za 1 h” nema smisla, pa ova provjera ide prije nje.
+    if r and r in rizicno_covjeku(p):
+        return _predaj_covjeku(z, f"{r} (na popisu rizicno_covjeku — model ga nikad ne odlučuje)", r)
 
     # NAJAVA PRIJE ODLUKE (vlasnik, 05.09.2026.): „imate x vremena za <sto treba odluciti> odluku
     # inace model xx odlucuje za vas." Rok se daje JEDNOM po zadatku; dok traje, model ga ne

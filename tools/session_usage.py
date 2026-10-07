@@ -395,10 +395,21 @@ def hook_stop(session_id: str = "") -> None:
     print(json.dumps({"systemMessage": msg, "suppressOutput": True}, ensure_ascii=False))
 
 
+def poziv_van_anthropica(env=None) -> bool:
+    """TASK-5305: `claude` preusmjeren na drugog providera (ANTHROPIC_BASE_URL → OpenRouter, kimi,
+    glm…) ne troši Anthropic sesiju, pa ga njezina potrošnja ne smije zaustaviti."""
+    url = (env if env is not None else os.environ).get("ANTHROPIC_BASE_URL", "").strip().lower()
+    return bool(url) and "anthropic.com" not in url
+
+
 def hook_prompt(session_id: str = "") -> None:
     """UserPromptSubmit hook: blokiraj početak rada ako je sesija ≥ BLOCK_THRESHOLD %.
     Prvo pokušaj keš (svjež ≤ CACHE_TTL); samo ako ga nema → svjež probe.
-    Fail-open: ako probe ne uspije, NE blokiraj (radije nastavi nego se zaključaj)."""
+    Fail-open: ako probe ne uspije, NE blokiraj (radije nastavi nego se zaključaj).
+    TASK-5305: poziv preusmjeren na drugog providera se ne koči (ne troši Anthropic sesiju)."""
+    if poziv_van_anthropica():
+        print(json.dumps({"suppressOutput": True}))
+        return
     try:
         entry = read_cache()
         if entry is None:                        # keš star/prazan → svjež probe + osvježi keš
