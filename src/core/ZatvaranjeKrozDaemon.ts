@@ -13,7 +13,9 @@
  *      Token je u `<podaci daemona>/zatvarac.token` (600) — `TM_IZVORNI_PODACI`, bez nje `TM_DATA`. Nije zaštita od napadača (isti UID), nego od
  *      prečaca: model koji ga pročita čini vidljiv prekršaj u transkriptu.
  *  B2  Ploča: `completed` od bilo koga osim daemona i čovjeka (`X-REGOC-Zatvara: covjek`)
- *      → 202 + oznaka `ceka-kriticara` (uživo) ili samo zapis (sjena).
+ *      → 202 + oznaka `ceka-kriticara` (uživo) ili samo zapis (sjena). `covjek` je bez ključa,
+ *      pa vrijedi samo dok na zadatku NE radi spawn (najam), i svako se takvo zatvaranje bilježi
+ *      (`nacin: 'covjek'`) — TASK-5334.
  *  B3  Daemon: zadatke s oznakom provodi kroz ISTOG kritičara kao spawn (datoteke od
  *      `started_at` + `[PROVJERA] cmd:`) i zatvara ih kao `completed` ili `blocked`.
  *
@@ -21,7 +23,7 @@
  * `zatvaranjeKrozDaemonLive` (provedba). Sve ovdje je fail-open prema STAROM ponašanju:
  * kvar u ovom modulu nikad ne ruši PUT.
  */
-import { existsSync, readFileSync, writeFileSync, appendFileSync, mkdirSync, chmodSync } from 'fs'
+import { existsSync, readFileSync, writeFileSync, appendFileSync, mkdirSync, chmodSync, statSync } from 'fs'
 import { dirname, join } from 'path'
 import { randomBytes, timingSafeEqual } from 'crypto'
 import { izvorniPodaci } from './RevizijaBlokiranih'
@@ -36,18 +38,30 @@ export const putSudova = () => join(dataDir(), 'zatvaranje_sudovi.jsonl')
 
 // ─── B1: token ───────────────────────────────────────────────────────────────
 
-export function procitajToken(put: string = putTokena()): string | null {
+/**
+ * Ključ vrijedi samo ako ga nitko osim vlasnika ne može čitati (`mode & 0o077 === 0`) i ako je
+ * vlasnik ovaj proces (TASK-5334, nalaz TASK-5329 N5) — ključ koji je vidio još netko nije ključ.
+ */
+export function procitajToken(put: string = putTokena(), mojUid: number | undefined = process.getuid?.()): string | null {
   try {
+    const st = statSync(put)
+    if ((st.mode & 0o077) !== 0) return null
+    if (mojUid !== undefined && st.uid !== mojUid) return null
     const t = readFileSync(put, 'utf-8').trim()
     return t.length >= 32 ? t : null
   } catch { return null }
 }
 
-/** Vrati token; ako ga nema, stvori ga (600). Poziva ga samo daemonova strana. */
+/**
+ * Vrati token; ako ga nema (ili je izložen — kriva prava), stvori novi (600) u mapi 700.
+ * Poziva ga samo daemonova strana.
+ */
 export function osigurajToken(put: string = putTokena()): string {
+  const mapa = dirname(put)
+  mkdirSync(mapa, { recursive: true, mode: 0o700 })
+  try { chmodSync(mapa, 0o700) } catch { /* tuđa mapa: ključ i dalje 600 */ }
   const postojeci = procitajToken(put)
   if (postojeci) return postojeci
-  mkdirSync(dirname(put), { recursive: true })
   const t = randomBytes(24).toString('hex')
   writeFileSync(put, t + '\n', { mode: 0o600 })
   chmodSync(put, 0o600)
@@ -72,17 +86,91 @@ function jednako(a: string, b: string): boolean {
   return x.length === y.length && timingSafeEqual(x, y)
 }
 
+/**
+ * `najam` = na zadatku dokazivo radi spawn (TaskCloser.najamAktivan). Tada `covjek` bez ključa
+ * NIJE čovjek nego agent koji je pročitao ime zaglavlja (TASK-5334, nalaz TASK-5329 N1):
+ * ploča to zaglavlje ne šalje, a čovjek ne zatvara zadatak dok ga spawn još radi.
+ */
 export function pozivateljZatvaranja(
   zaglavlja: { get(k: string): string | null },
   token: string | null,
+  najam = false,
 ): Pozivatelj {
   const uloga = zaglavlja.get('X-REGOC-Zatvara')
   if (uloga === 'daemon') {
     const dani = zaglavlja.get('X-REGOC-Zatvarac') || ''
     return token && jednako(dani, token) ? 'daemon' : 'ostali'
   }
-  if (uloga === 'covjek') return 'covjek'
+  if (uloga === 'covjek') return najam ? 'ostali' : 'covjek'
   return 'ostali'
+}
+
+// ─── Povrat iz blocked (`POST /reclaim`, TASK-5334, nalaz TASK-5329 N3) ───────
+
+/** `by` koje šalje daemon (RevizijaBlokiranih, PozadinaPovrat) — dokazuju se ključem zatvarača. */
+export const POVRAT_DAEMONSKI = ['revizija-blokiranih', 'pozadina-gotova']
+export const putPovrata = () => join(dataDir(), 'povrat_uloge.jsonl')
+
+/**
+ * Zahtjev s tuđe stranice (CSRF): preglednik šalje `Origin` (ili `Sec-Fetch-Site: cross-site`).
+ * Bez Origina (curl, daemon) nije tuđi izvor — to ovdje nije autentikacija, nego zaštita od
+ * stranice koja bi kroz preglednik vlasnika puštala zadatke.
+ */
+export function tudiIzvor(zaglavlja: { get(k: string): string | null }): boolean {
+  if ((zaglavlja.get('sec-fetch-site') || '').toLowerCase() === 'cross-site') return true
+  const origin = zaglavlja.get('origin')
+  if (!origin) return false
+  try {
+    return new URL(origin).host.toLowerCase() !== (zaglavlja.get('host') || '').toLowerCase()
+  } catch { return true }
+}
+
+export interface OvlastPovrata {
+  dopusti: boolean
+  status?: number
+  razlog?: string
+  /** Red za `putPovrata()` — što je ploča vidjela (mjerilo pariteta prije provedbe). */
+  zapis?: Record<string, unknown>
+}
+
+/**
+ * Smije li `by` pustiti zadatak iz blocked?
+ *  - daemonski `by` bez daemonova ključa: sjena (`live=false`) pušta i bilježi, provedba odbija 403.
+ *    Provedba (`povratKljucLive`) se pali tek kad SVI daemoni (komplet na čvoru i glavni) šalju
+ *    `zaglavljaZatvaraca()` i u reclaim pozivima — dok zapis sjene ne pokaže 0 redaka bez ključa.
+ *  - `covjek`: tuđi Origin → 403 (CSRF); inače prolazi i bilježi se.
+ *  - ostali `by` ovdje nisu odlučeni (popis dopuštenih je u ruti).
+ */
+export function ovlastPovrata(a: {
+  by: string
+  zaglavlja: { get(k: string): string | null }
+  token: string | null
+  live: boolean
+}): OvlastPovrata {
+  const by = a.by.toLowerCase()
+  if (POVRAT_DAEMONSKI.includes(by)) {
+    if (pozivateljZatvaranja(a.zaglavlja, a.token) === 'daemon') return { dopusti: true }
+    const zapis = { by, nacin: a.live ? 'live' : 'shadow', kljuc: false, uloga: a.zaglavlja.get('X-REGOC-Zatvara') || null }
+    return a.live
+      ? { dopusti: false, status: 403, zapis, razlog: `'${by}' je daemonska uloga — traži X-REGOC-Zatvara: daemon i X-REGOC-Zatvarac ključ.` }
+      : { dopusti: true, zapis }
+  }
+  if (by === 'covjek') {
+    const origin = a.zaglavlja.get('origin')
+    if (tudiIzvor(a.zaglavlja)) {
+      return { dopusti: false, status: 403, razlog: 'Povrat kao covjek s tuđe stranice (Origin) nije dopušten.',
+        zapis: { by, nacin: 'odbijeno', origin } }
+    }
+    return { dopusti: true, zapis: { by, nacin: 'covjek', origin: origin || null } }
+  }
+  return { dopusti: true }
+}
+
+export function zapisiPovrat(red: Record<string, unknown>, put: string = putPovrata()): void {
+  try {
+    mkdirSync(dirname(put), { recursive: true })
+    appendFileSync(put, JSON.stringify({ ts: new Date().toISOString(), ...red }) + '\n')
+  } catch { /* mjerenje nikad ne ruši povrat */ }
 }
 
 export function odlukaZatvaranja(a: {

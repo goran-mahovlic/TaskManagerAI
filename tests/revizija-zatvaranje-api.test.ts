@@ -10,7 +10,7 @@
  * Ključ zatvarača i dnevnici su u `TM_IZVORNI_PODACI` — ondje ih na čvoru drži daemon kompleta.
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from 'fs'
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, existsSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import { podigni, spusti, type Posluzitelj } from './helpers/posluzitelj'
@@ -27,7 +27,8 @@ beforeAll(async () => {
   writeFileSync(join(podaciUzivo, 'zatvarac.token'), KLJUC + '\n', { mode: 0o600 })
   ;[sjena, uzivo] = await Promise.all([
     podigni({ revizijaBlokiranih: true, zatvaranjeKrozDaemon: true }, { TM_IZVORNI_PODACI: podaciSjena }),
-    podigni({ revizijaBlokiranih: true, revizijaBlokiranihLive: true, zatvaranjeKrozDaemon: true, zatvaranjeKrozDaemonLive: true },
+    podigni({ revizijaBlokiranih: true, revizijaBlokiranihLive: true, zatvaranjeKrozDaemon: true, zatvaranjeKrozDaemonLive: true,
+      povratKljucLive: true },
       { TM_IZVORNI_PODACI: podaciUzivo }),
   ])
 }, 40_000)
@@ -166,5 +167,65 @@ describe('zatvaranje kroz daemon', () => {
     const put = join(podaciSjena, 'zatvaranje_zahtjevi.jsonl')
     expect(existsSync(put)).toBe(true)
     expect(readFileSync(put, 'utf-8')).toContain(`"taskId":"${a}"`)
+  })
+})
+
+// TASK-5334 (nalaz TASK-5329 N1/N3): uloge bez ključa — covjek za zatvaranje i `by` za povrat.
+describe('uloge zatvaranja i povrata (TASK-5334)', () => {
+  const redci = (put: string) => existsSync(put)
+    ? readFileSync(put, 'utf-8').trim().split('\n').filter(Boolean).map(l => JSON.parse(l)) : []
+  const uzmiNajam = (p: Posluzitelj, id: string) => {
+    mkdirSync(p.najmovi, { recursive: true })
+    writeFileSync(join(p.najmovi, `${id}.json`), JSON.stringify({ taskId: id, agent: 'inzenjer', pid: process.pid, startedAt: new Date().toISOString() }))
+  }
+
+  test('N1: covjek dok spawn radi (najam) → 202 zahtjev, ne zatvara', async () => {
+    const a = await novi(uzivo!)
+    uzmiNajam(uzivo!, a)
+    const r = await zovi(uzivo!, `/api/tasks/${a}`, 'PUT', { status: 'completed', resultSummary: SAZETAK }, { 'X-REGOC-Zatvara': 'covjek' })
+    expect(r.status).toBe(202)
+    expect((await dohvati(uzivo!, a)).status).toBe('in_progress')
+    expect(redci(join(podaciUzivo, 'zatvaranje_zahtjevi.jsonl')).find(x => x.taskId === a)).toMatchObject({ nacin: 'live', uloga: 'covjek' })
+  })
+
+  test('N1: covjek bez najma zatvara, ali se zatvaranje upisuje (nacin covjek)', async () => {
+    const a = await novi(uzivo!)
+    const r = await zovi(uzivo!, `/api/tasks/${a}`, 'PUT', { status: 'completed', resultSummary: SAZETAK }, { 'X-REGOC-Zatvara': 'covjek' })
+    expect(r.status).toBe(200)
+    expect(redci(join(podaciUzivo, 'zatvaranje_zahtjevi.jsonl')).find(x => x.taskId === a)).toMatchObject({ nacin: 'covjek' })
+  })
+
+  test('N3: povrat kao covjek s tuđe stranice (Origin) → 403, ostaje blocked', async () => {
+    const a = await novi(uzivo!)
+    await zovi(uzivo!, `/api/tasks/${a}`, 'PUT', { status: 'blocked', blockedReason: 'COVJEK: treba odluka vlasnika' })
+    const r = await zovi(uzivo!, `/api/tasks/${a}/reclaim`, 'POST', { from: 'blocked', by: 'covjek', reason: 'csrf' }, { Origin: 'https://zlo.example' })
+    expect(r.status).toBe(403)
+    const t = await dohvati(uzivo!, a)
+    expect(t.status).toBe('blocked')
+    expect(t.tags).toContain('waiting-for-human')
+    // ista ploča (Origin = vlastiti host) i dalje pušta, i to se bilježi
+    const ok = await zovi(uzivo!, `/api/tasks/${a}/reclaim`, 'POST', { from: 'blocked', by: 'covjek', reason: 'Pusti sada (ploča)' }, { Origin: uzivo!.url })
+    expect(ok.status).toBe(200)
+    expect(redci(join(podaciUzivo, 'povrat_uloge.jsonl')).filter(x => x.taskId === a).map(x => x.nacin)).toEqual(['odbijeno', 'covjek'])
+  })
+
+  test('N3 sjena: revizija-blokiranih bez ključa pušta, ali se bilježi', async () => {
+    const a = await novi(sjena!)
+    await zovi(sjena!, `/api/tasks/${a}`, 'PUT', { status: 'blocked', blockedReason: 'LANAC: čeka TASK-1' })
+    const r = await zovi(sjena!, `/api/tasks/${a}/reclaim`, 'POST', { from: 'blocked', by: 'revizija-blokiranih', reason: 'prolazno' })
+    expect(r.status).toBe(200)
+    expect(redci(join(podaciSjena, 'povrat_uloge.jsonl')).find(x => x.taskId === a)).toMatchObject({ nacin: 'shadow', kljuc: false, by: 'revizija-blokiranih' })
+  })
+
+  test('N3 provedba: pozadina-gotova bez ključa → 403; s daemonovim ključem → 200', async () => {
+    const a = await novi(uzivo!)
+    await zovi(uzivo!, `/api/tasks/${a}`, 'PUT', { status: 'blocked', blockedReason: 'LANAC: čeka TASK-1' })
+    const bez = await zovi(uzivo!, `/api/tasks/${a}/reclaim`, 'POST', { from: 'blocked', by: 'pozadina-gotova', reason: 'x' })
+    expect(bez.status).toBe(403)
+    expect((await dohvati(uzivo!, a)).status).toBe('blocked')
+    const s = await zovi(uzivo!, `/api/tasks/${a}/reclaim`, 'POST', { from: 'blocked', by: 'pozadina-gotova', reason: 'x' },
+      { 'X-REGOC-Zatvara': 'daemon', 'X-REGOC-Zatvarac': KLJUC })
+    expect(s.status).toBe(200)
+    expect((await dohvati(uzivo!, a)).status).toBe('pending')
   })
 })
