@@ -7,14 +7,20 @@
  * dodaje proces. Ovi testovi drže novi ugovor: odgovor nikad ne čeka python dulje od
  * `waitMs`, jedan posao u letu, star keš se vraća odmah, keš preživi restart.
  */
-import { describe, test, expect } from 'bun:test'
-import { mkdtempSync, writeFileSync, readFileSync, existsSync } from 'fs'
+import { describe, test, expect, afterAll } from 'bun:test'
+import { mkdtempSync, writeFileSync, readFileSync, existsSync, rmSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import {
   resolveVrijednost, createVrijednostState, VRIJEDNOST_TTL_MS, VRIJEDNOST_MIN_REFRESH_MS,
   type VrijednostDeps,
 } from '../src/VrijednostInputa'
+
+// TASK-5336: svaka privremena mapa ove datoteke briše se na kraju — /tmp je tmpfs od 100 MB,
+// a zaostale mape su ga punile dok kritičar nije pao s ENOSPC.
+const privremene: string[] = []
+function privremenaMapa(prefiks: string): string { const d = mkdtempSync(prefiks); privremene.push(d); return d }
+afterAll(() => { for (const d of privremene) rmSync(d, { recursive: true, force: true }) })
 
 const PODATCI = { cjenik: { S1: 0.05 }, poKorisniku: { "Korisnik A": { eur: 1, upita: 2 } }, poProjektu: {}, upita: 2 }
 
@@ -131,7 +137,7 @@ describe('VrijednostInputa — stale-while-revalidate', () => {
 
 describe('VrijednostInputa — keš na disku (restart ploče)', () => {
   test('uspješan izračun se zapisuje; novo stanje ga učita i odmah služi', async () => {
-    const dir = mkdtempSync(join(process.env.TMPDIR || tmpdir(), 'vr5230-'))
+    const dir = privremenaMapa(join(process.env.TMPDIR || tmpdir(), 'vr5230-'))
     const kesPath = join(dir, 'vrijednost_inputa_kes.json')
     const d = deps({ trajanjeMs: 1, kesPath })
     const st = createVrijednostState(d)
@@ -148,7 +154,7 @@ describe('VrijednostInputa — keš na disku (restart ploče)', () => {
   })
 
   test('pokvarena datoteka keša = nema keša (202), ne pad', async () => {
-    const dir = mkdtempSync(join(process.env.TMPDIR || tmpdir(), 'vr5230-'))
+    const dir = privremenaMapa(join(process.env.TMPDIR || tmpdir(), 'vr5230-'))
     const kesPath = join(dir, 'k.json')
     writeFileSync(kesPath, '{pola')
     const d = deps({ kesPath })

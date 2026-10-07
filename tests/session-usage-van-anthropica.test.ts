@@ -3,16 +3,22 @@
  * (ANTHROPIC_BASE_URL → OpenRouter i sl.) ne troši Anthropic sesiju, pa ga kuka
  * `--hook prompt` ne smije zaustaviti ni kad je sesija iznad praga.
  */
-import { describe, expect, test } from 'bun:test'
-import { mkdirSync, mkdtempSync, writeFileSync } from 'fs'
+import { describe, expect, test, afterAll } from 'bun:test'
+import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from 'fs'
 import { join } from 'path'
 import os from 'os'
+
+// TASK-5336: svaka privremena mapa ove datoteke briše se na kraju — /tmp je tmpfs od 100 MB,
+// a zaostale mape su ga punile dok kritičar nije pao s ENOSPC.
+const privremene: string[] = []
+function privremenaMapa(prefiks: string): string { const d = mkdtempSync(prefiks); privremene.push(d); return d }
+afterAll(() => { for (const d of privremene) rmSync(d, { recursive: true, force: true }) })
 
 const SKRIPTA = join(import.meta.dir, '..', 'tools', 'session_usage.py')
 
 /** Instalacija s kešom potrošnje „sesija 99 %", svjež. */
 function punaSesija(): string {
-  const home = mkdtempSync(join(os.tmpdir(), 'tm-su-van-'))
+  const home = privremenaMapa(join(os.tmpdir(), 'tm-su-van-'))
   mkdirSync(join(home, 'data'), { recursive: true })
   writeFileSync(join(home, 'data', 'session_usage.cache.json'), JSON.stringify({
     cached_at: Date.now() / 1000,

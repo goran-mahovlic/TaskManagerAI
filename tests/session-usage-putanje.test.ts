@@ -3,10 +3,16 @@
  * moraju gledati ISTU datoteku keša, i to ispod korijena instalacije (`TM_HOME`), a ne
  * ispod tuđeg rasporeda mapa (ADR-0001 O1.1 / O1.4).
  */
-import { describe, expect, test } from 'bun:test'
-import { mkdtempSync } from 'fs'
+import { describe, expect, test, afterAll } from 'bun:test'
+import { mkdtempSync, rmSync } from 'fs'
 import { join } from 'path'
 import os from 'os'
+
+// TASK-5336: svaka privremena mapa ove datoteke briše se na kraju — /tmp je tmpfs od 100 MB,
+// a zaostale mape su ga punile dok kritičar nije pao s ENOSPC.
+const privremene: string[] = []
+function privremenaMapa(prefiks: string): string { const d = mkdtempSync(prefiks); privremene.push(d); return d }
+afterAll(() => { for (const d of privremene) rmSync(d, { recursive: true, force: true }) })
 
 const PAKET = join(import.meta.dir, '..')
 const SKRIPTA = join(PAKET, 'tools', 'session_usage.py')
@@ -26,7 +32,7 @@ function putanjePythona(env: Record<string, string>): Record<string, string> {
 
 describe('session_usage — putanje iz okoline', () => {
   test('s TM_HOME sve radne datoteke idu u $TM_HOME/data', () => {
-    const home = mkdtempSync(join(os.tmpdir(), 'tm-su-'))
+    const home = privremenaMapa(join(os.tmpdir(), 'tm-su-'))
     const p = putanjePythona({ HOME: '/nepostojeci', TM_HOME: home })
     expect(p.LOG_FILE).toBe(join(home, 'data', 'session_usage.jsonl'))
     expect(p.CACHE_FILE).toBe(join(home, 'data', 'session_usage.cache.json'))
@@ -53,7 +59,7 @@ describe('session_usage — putanje iz okoline', () => {
   })
 
   test('ploča čita keš koji skripta piše, i zove skriptu iz paketa', async () => {
-    const home = mkdtempSync(join(os.tmpdir(), 'tm-su-'))
+    const home = privremenaMapa(join(os.tmpdir(), 'tm-su-'))
     const r = Bun.spawnSync(
       ['bun', '-e', `const m = await import(${JSON.stringify(join(PAKET, 'src', 'SessionUsage.ts'))});
         console.log(JSON.stringify({c: m.SESSION_USAGE_CACHE_FILE, s: m.SESSION_USAGE_SCRIPT}))`],

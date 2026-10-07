@@ -6,16 +6,22 @@
  * (src/core/OdlukeRazvrstaj.ts), a alat ga samo čita. Stari filtar ostaje samo za ploču
  * koja polje ne šalje.
  */
-import { describe, expect, test } from 'bun:test'
-import { mkdtempSync } from 'fs'
+import { describe, expect, test, afterAll } from 'bun:test'
+import { mkdtempSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
+
+// TASK-5336: svaka privremena mapa ove datoteke briše se na kraju — /tmp je tmpfs od 100 MB,
+// a zaostale mape su ga punile dok kritičar nije pao s ENOSPC.
+const privremene: string[] = []
+function privremenaMapa(prefiks: string): string { const d = mkdtempSync(prefiks); privremene.push(d); return d }
+afterAll(() => { for (const d of privremene) rmSync(d, { recursive: true, force: true }) })
 
 const ALATI = join(import.meta.dir, '..', 'tools')
 
 /** `cekaju()` nad podmetnutim odgovorom ploče; vraća ID-ove koje bi odlučitelj uzeo. */
 function cekaju(zadatci: unknown[], postavke: Record<string, unknown> = {}, odgodi: string[] = []): string[] {
-  const dom = mkdtempSync(join(tmpdir(), 'odl-filtar-'))
+  const dom = privremenaMapa(join(tmpdir(), 'odl-filtar-'))
   const kod = `import sys, json; sys.path.insert(0, ${JSON.stringify(ALATI)})
 import odlucitelj as o
 from pathlib import Path

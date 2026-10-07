@@ -2,15 +2,21 @@
  * J7 (GAP_20260924 F10): koeficijenti procjene su KONFIGURACIJA, ne konstanta u kodu.
  * Modul ih čita jednom pri učitavanju, pa se svaka varijanta mjeri u zasebnom procesu.
  */
-import { describe, test, expect } from 'bun:test'
-import { mkdtempSync, writeFileSync } from 'fs'
+import { describe, test, expect, afterAll } from 'bun:test'
+import { mkdtempSync, writeFileSync, rmSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
+
+// TASK-5336: svaka privremena mapa ove datoteke briše se na kraju — /tmp je tmpfs od 100 MB,
+// a zaostale mape su ga punile dok kritičar nije pao s ENOSPC.
+const privremene: string[] = []
+function privremenaMapa(prefiks: string): string { const d = mkdtempSync(prefiks); privremene.push(d); return d }
+afterAll(() => { for (const d of privremene) rmSync(d, { recursive: true, force: true }) })
 
 const KORIJEN = join(import.meta.dir, '..')
 
 function izmjeri(konfig: object | null): any {
-  const dir = mkdtempSync(join(tmpdir(), 'energija-'))
+  const dir = privremenaMapa(join(tmpdir(), 'energija-'))
   const env: Record<string, string> = { ...process.env as any }
   if (konfig) {
     const p = join(dir, 'energija.json')

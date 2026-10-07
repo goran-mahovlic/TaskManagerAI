@@ -6,10 +6,16 @@
  * pozivanje adrese koje nema. Ovdje se provjerava da je korijen ISTI kao u `paths.ts`
  * i da adresa servisa bez varijable okoline ne postoji (nema zadane vrijednosti).
  */
-import { describe, expect, test } from 'bun:test'
-import { mkdtempSync, mkdirSync, writeFileSync } from 'fs'
+import { describe, expect, test, afterAll } from 'bun:test'
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
+
+// TASK-5336: svaka privremena mapa ove datoteke briše se na kraju — /tmp je tmpfs od 100 MB,
+// a zaostale mape su ga punile dok kritičar nije pao s ENOSPC.
+const privremene: string[] = []
+function privremenaMapa(prefiks: string): string { const d = mkdtempSync(prefiks); privremene.push(d); return d }
+afterAll(() => { for (const d of privremene) rmSync(d, { recursive: true, force: true }) })
 
 const ALATI = join(import.meta.dir, '..', 'tools')
 const PAKET = join(import.meta.dir, '..')
@@ -35,7 +41,7 @@ describe('tools/tm_putanje.py — isti korijen kao src/core/paths.ts', () => {
   })
 
   test('konfiguracija: varijabla > $TM_HOME/config (ako postoji) > config/ uz paket', () => {
-    const dom = mkdtempSync(join(tmpdir(), 'tm-putanje-'))
+    const dom = privremenaMapa(join(tmpdir(), 'tm-putanje-'))
     mkdirSync(join(dom, 'config'))
     writeFileSync(join(dom, 'config', 'ima.json'), '{}')
     const kod = 'import tm_putanje as t; print(t.konfig("ima.json")); print(t.konfig("nema.json")); '
@@ -87,13 +93,13 @@ describe('tools/uvoz_telegram_zadataka.py — projekti, grupe i ljudi su konfigu
     + 'u.projekt_iz_teksta("restart daemon u task manager", "klub"), u.projekt_iz_teksta("bez veze"))'
 
   test('bez konfiguracije: nema pravila, jedna zadana grupa, pretinac paketa', () => {
-    const dom = mkdtempSync(join(tmpdir(), 'tm-uvoz-'))
+    const dom = privremenaMapa(join(tmpdir(), 'tm-uvoz-'))
     const r = py(PROBA + '; print(u.ZADANO_PO_GRUPI.get("glavna", u.ZADANI_PROJEKT))', { TM_HOME: dom })
     expect(r.izlaz).toBe('glavna glavna\nNone None None None\nPRJ-033')
   })
 
   test('s konfiguracijom: pravila po redu, osimGrupa, grupe po pošiljatelju, nadimci korisnika', () => {
-    const dom = mkdtempSync(join(tmpdir(), 'tm-uvoz-'))
+    const dom = privremenaMapa(join(tmpdir(), 'tm-uvoz-'))
     mkdirSync(join(dom, 'config'))
     writeFileSync(join(dom, 'config', 'uvoz-telegrama.json'), JSON.stringify({
       zadanaGrupa: 'glavna',

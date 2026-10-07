@@ -1,13 +1,19 @@
 // Identitet upravitelja (TASK-5293): bot zna agente iz registra, na razini `puno` zna kako
 // se posao delegira kroz ploču, a vodič vlasnika (TM_RAZGOVOR_UPUTE) ide u identitet.
-import { describe, expect, test } from 'bun:test'
-import { mkdtempSync, writeFileSync } from 'fs'
+import { describe, expect, test, afterAll } from 'bun:test'
+import { mkdtempSync, writeFileSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { sastaviIdentitet, ucitajAgente, ucitajUpute, MAX_UPUTA } from '../src/razgovor/Identitet'
 import { argumentiOvlasti, zabranePisanja } from '../src/razgovor/Ovlasti'
 
-const dir = mkdtempSync(join(tmpdir(), 'identitet-'))
+// TASK-5336: svaka privremena mapa ove datoteke briše se na kraju — /tmp je tmpfs od 100 MB,
+// a zaostale mape su ga punile dok kritičar nije pao s ENOSPC.
+const privremene: string[] = []
+function privremenaMapa(prefiks: string): string { const d = mkdtempSync(prefiks); privremene.push(d); return d }
+afterAll(() => { for (const d of privremene) rmSync(d, { recursive: true, force: true }) })
+
+const dir = privremenaMapa(join(tmpdir(), 'identitet-'))
 const osnova = { ime: 'Bot', instalacija: 'cvor', plocaUrl: 'http://127.0.0.1:17781', port: 17781, dokumenti: false, radniDir: '/srv/radni' }
 const agenti = [
   { id: 'ana', ime: 'Ana', uloga: 'Engineer', vjestine: ['TDD', 'Development'] },
@@ -162,7 +168,7 @@ describe('TASK-5300: odjeljak „Tvoja memorija" iz postavki', () => {
   })
 
   test('datotečna memorija Claude Codea: broji .md u ~/.claude/projects/<slug radne mape>/memory', () => {
-    const home = mkdtempSync(join(tmpdir(), 'home-'))
+    const home = privremenaMapa(join(tmpdir(), 'home-'))
     expect(autoMemorijaCC(home, '/srv/radni_x.y')).toBeNull()
     const m = join(home, '.claude/projects/-srv-radni-x-y/memory')
     mkdirSync(m, { recursive: true })

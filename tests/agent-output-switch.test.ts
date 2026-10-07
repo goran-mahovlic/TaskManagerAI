@@ -136,7 +136,7 @@ describe('§D — fail-soft prekidača (nikad ne baca)', () => {
 
 describe('rod iz registra agenata (ne iz koda)', () => {
   test('agent s "rod": "ž" u config/agents.json dobiva ženski rod, ostali muški', () => {
-    const { mkdtempSync, writeFileSync } = require('fs') as typeof import('fs')
+    const { mkdtempSync, writeFileSync, rmSync } = require('fs') as typeof import('fs')
     const { join } = require('path') as typeof import('path')
     const { tmpdir } = require('os') as typeof import('os')
     const dir = mkdtempSync(join(tmpdir(), 'rod-'))
@@ -154,6 +154,7 @@ describe('rod iz registra agenata (ne iz koda)', () => {
       if (prije === undefined) delete process.env.TM_AGENTS_CONFIG
       else process.env.TM_AGENTS_CONFIG = prije
       postaviZenskiRod(null)
+      rmSync(dir, { recursive: true, force: true })  // TASK-5336: ne ostavljaj mapu u TMPDIR
     }
   })
 })
