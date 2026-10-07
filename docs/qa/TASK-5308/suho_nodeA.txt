@@ -1,0 +1,53 @@
+[okolina] 14/16 OK
+  RAZLIKA TM_FEATURES_FILE: profil="/home/regoc/.claude/regoc/features.json" čvor=null
+  TAJNA postoji TM_CREDENTIALS
+  TAJNA-NEDOSTAJE TM_BOT_KANAL_TOKEN
+[znacajke] 54/75 OK
+  RAZLIKA agentIdentityBlock: profil=true čvor="(nema)"
+  RAZLIKA agentIdentityBlockLive: profil=true čvor="(nema)"
+  RAZLIKA autoResumeLive: profil=false čvor=true
+  RAZLIKA criticRepairLoop: profil=true čvor="(nema)"
+  RAZLIKA criticUnverifiedAlert: profil=true čvor="(nema)"
+  RAZLIKA earlyWorkGuard: profil=true čvor="(nema)"
+  RAZLIKA ollamaClassifier: profil=true čvor=false
+  RAZLIKA ponovnoOtvaranjeRuta: profil=true čvor="(nema)"
+  RAZLIKA shutdownResume: profil=true čvor="(nema)"
+  RAZLIKA shutdownResumeLive: profil=true čvor="(nema)"
+  RAZLIKA spawnBreaker: profil=true čvor="(nema)"
+  RAZLIKA spawnBreakerLive: profil=true čvor="(nema)"
+  RAZLIKA spawnCloseGuard: profil=true čvor="(nema)"
+  RAZLIKA spawnVerificationBlock: profil=true čvor="(nema)"
+  RAZLIKA spawnVerificationBlockLive: profil=true čvor="(nema)"
+  RAZLIKA staleReaper: profil=false čvor=true
+  RAZLIKA taskCreateBreaker: profil=true čvor="(nema)"
+  RAZLIKA taskCreateBreakerLive: profil=true čvor="(nema)"
+  RAZLIKA teamChainLive: profil=false čvor=true
+  RAZLIKA tierRecipesEnabled: profil=true čvor="(nema)"
+  RAZLIKA verificationGateShadow: profil=true čvor="(nema)"
+[kuke] 2/14 OK
+  RAZLIKA SessionStart TaskInstructionsInject: profil="/home/regoc/.bun/bin/bun run /home/regoc/TaskManagerAI/hooks/TaskInstructionsInject.hook.ts" čvor="(nije spojena)"
+  RAZLIKA PostToolUse TaskInstructionsInject: profil="/home/regoc/.bun/bin/bun run /home/regoc/TaskManagerAI/hooks/TaskInstructionsInject.hook.ts" čvor="(nije spojena)"
+  RAZLIKA PostToolUse[Bash|Edit|MultiEdit|Write|NotebookEdit|Task] RegocConsoleLog: profil="/home/regoc/.bun/bin/bun run /home/regoc/TaskManagerAI/hooks/RegocConsoleLog.hook.ts" čvor="(nije spojena)"
+  RAZLIKA UserPromptSubmit session_usage: profil="python3 /home/regoc/TaskManagerAI/tools/session_usage.py --hook prompt" čvor="(nije spojena)"
+  RAZLIKA Stop session_usage: profil="python3 /home/regoc/TaskManagerAI/tools/session_usage.py --hook stop" čvor="(nije spojena)"
+  RAZLIKA Stop ContextCapture: profil="/home/regoc/.bun/bin/bun run /home/regoc/.claude/hooks/ContextCapture.hook.ts" čvor="(nije spojena)"
+  RAZLIKA Notification ContextCapture: profil="/home/regoc/.bun/bin/bun run /home/regoc/.claude/hooks/ContextCapture.hook.ts" čvor="(nije spojena)"
+  RAZLIKA Notification ContextExport: profil="/home/regoc/.bun/bin/bun run /home/regoc/.claude/hooks/ContextExport.hook.ts" čvor="(nije spojena)"
+  RAZLIKA Stop SessionSummary: profil="/home/regoc/.bun/bin/bun run /home/regoc/.claude/hooks/SessionSummary.hook.ts" čvor="(nije spojena)"
+  RAZLIKA Stop WorkCompletionLearning: profil="/home/regoc/.bun/bin/bun run /home/regoc/.claude/hooks/WorkCompletionLearning.hook.ts" čvor="(nije spojena)"
+  RAZLIKA Stop ImplicitSentimentCapture: profil="/home/regoc/.bun/bin/bun run /home/regoc/.claude/hooks/ImplicitSentimentCapture.hook.ts" čvor="(nije spojena)"
+  RAZLIKA SubagentStop AgentOutputCapture: profil="/home/regoc/.bun/bin/bun run /home/regoc/.claude/hooks/AgentOutputCapture.hook.ts" čvor="(nije spojena)"
+[konzola] 1/6 OK
+  NEDOSTAJE regoc — izvor konzole nije svjež (> 24 h) — puni ga kuka RegocConsoleLog (rad agenata)
+  RAZLIKA voiceserver.drop-in: profil="StandardOutput=append:/home/regoc/.tmp/regoc_logs/voiceserver.log" čvor="(journal)"
+  NEDOSTAJE voiceserver — izvor konzole nije svjež (> 24 h) — puni ga regoc-voice; drop-in vrijedi tek nakon daemon-reload + restart servisa
+  RAZLIKA taskwebui.drop-in: profil="StandardOutput=append:/home/regoc/.tmp/regoc_logs/taskwebui.log" čvor="(journal)"
+  NEDOSTAJE taskwebui — izvor konzole nije svjež (> 24 h) — puni ga regoc-taskmanager; drop-in vrijedi tek nakon daemon-reload + restart servisa
+[oporavak] 1/6 OK
+  NEDOSTAJE siroceOporavak — isključen na čvoru; kod čvora ga ne zna (P5) — siroče se ne vraća samo
+  NEDOSTAJE zombieRecoveryLive — isključen na čvoru — siroče se ne vraća samo
+  NEDOSTAJE deadAgentReaperLive — isključen na čvoru — siroče se ne vraća samo
+  NEDOSTAJE staleWatchdogLive — isključen na čvoru — siroče se ne vraća samo
+  NEDOSTAJE staleReaper — mora biti isključen (v. modul znacajke)
+ZBROJ: OK 72 · RAZLIKA 36 · NEDOSTAJE 8 · TAJNA-NEDOSTAJE 1 · ČOVJEK 0 · PRESKOČENO 0 · PREDUVJET 0
+SUHO: primijenilo bi se 36 stavki (ništa nije zapisano; za pisanje --pisi)

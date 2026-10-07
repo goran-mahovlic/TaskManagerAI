@@ -1,0 +1,33 @@
+[paket] 15/25 OK
+  NEDOSTAJE izvorni.PozadinaPovrat.ts — nema u kodu izvornog sustava — P5: tm-cvor-azuriraj.sh <čvor> --s-kompletom
+  NEDOSTAJE izvorni.ZatvaranjeKrozDaemon.ts — nema u kodu izvornog sustava — P5: tm-cvor-azuriraj.sh <čvor> --s-kompletom
+  NEDOSTAJE izvorni.TaskInstructions.ts — nema u kodu izvornog sustava — P5: tm-cvor-azuriraj.sh <čvor> --s-kompletom
+  NEDOSTAJE izvorni.TaskCloser.ts — nema u kodu izvornog sustava — P5: tm-cvor-azuriraj.sh <čvor> --s-kompletom
+  NEDOSTAJE izvorni.Sudac.ts — nema u kodu izvornog sustava — P5: tm-cvor-azuriraj.sh <čvor> --s-kompletom
+  NEDOSTAJE izvorni.DaemonSingleton.ts — nema u kodu izvornog sustava — P5: tm-cvor-azuriraj.sh <čvor> --s-kompletom
+  NEDOSTAJE izvorni.SpawnFinalizer.ts — nema u kodu izvornog sustava — P5: tm-cvor-azuriraj.sh <čvor> --s-kompletom
+  NEDOSTAJE izvorni.SpawnSlotRules.ts — nema u kodu izvornog sustava — P5: tm-cvor-azuriraj.sh <čvor> --s-kompletom
+  NEDOSTAJE izvorni.TaskDorada.ts — nema u kodu izvornog sustava — P5: tm-cvor-azuriraj.sh <čvor> --s-kompletom
+  NEDOSTAJE izvorni.RadBezZadatka.ts — nema u kodu izvornog sustava — P5: tm-cvor-azuriraj.sh <čvor> --s-kompletom
+[okolina] 15/16 OK
+  TAJNA postoji TM_CREDENTIALS
+  TAJNA-NEDOSTAJE TM_BOT_KANAL_TOKEN
+[telegram] 22/22 OK
+  TAJNA postoji TELEGRAM_BOT_TOKEN
+[razgovor] 13/13 OK
+[glas] 3/3 OK
+[memorija] 7/7 OK
+[bot-kanal] 8/8 OK
+[tunel-memorije] 1/1 OK
+[capguard] 8/8 OK
+[claude] 2/2 OK
+  TAJNA postoji claude-prijava
+[upravitelj] 1/1 OK
+[home] 1/1 OK
+[rag] 1/1 OK
+[znacajke] 75/75 OK
+[kuke] 14/14 OK
+[konzola] 6/6 OK
+[oporavak] 8/8 OK
+ZBROJ: OK 200 · RAZLIKA 0 · NEDOSTAJE 10 · TAJNA-NEDOSTAJE 1 · ČOVJEK 0 · PRESKOČENO 0 · PREDUVJET 0
+izlaz=2

@@ -1,0 +1,39 @@
+sha=8d52710
+razgovor_modul=ne
+botkanal_modul=ne
+telegram_json=ne
+env.TM_PORT=postoji
+env.TM_ALLOWED_HOSTS=postoji
+env.TM_DB=postoji
+env.TM_AGENTS_REGISTRY=postoji
+env.TM_RAZGOVOR_PUNO=nema
+env.TM_RAZGOVOR_UPUTE=nema
+env.TM_BOT_KANAL_TOKEN=nema
+env.TM_HINDSIGHT_URL=nema
+env.TM_CHROMA_HOST=nema
+env.TM_CREDENTIALS=postoji
+settings.razgovor= 0 settings.memorija= 0
+bun=1.3.14
+claude=/home/regoc/.local/bin/claude 2.1.215 (Claude Code)
+claude_prijava=nema
+claude_md=nema
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+    import json,os;s=json.load(open(os.path.expanduser('~/.claude/settings.json')));print('settings_json_hooks=',sorted({h2['command'].split('/')[-1] for e in s.get('hooks',{}).values() for h in e for h2 in h.get('hooks',[])}))
+                               ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/home/regoc/.claude/settings.json'
+securityvalidator=ne
+capguard_bin=da stanje=da
+
+home_klaudio_u_daemonu=1
+rag=iskljucen
+vrata.17781=slusa
+vrata.17790=slusa
+vrata.17792=ne
+vrata.8899=slusa
+unit.regoc-taskmanager=active
+unit.regoc-daemon=active
+unit.regoc-voice=active
+unit.regoc-setup=active
+voice_model=Environment=WHISPER_MODEL=small
+disk=89% zauzeto, 2.0G slobodno

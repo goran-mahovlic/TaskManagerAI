@@ -2,12 +2,307 @@
   "_opis": [
     "Runtime prekidači (FeatureFlags). Kopiraj u config/features.json ili postavi TM_FEATURES_FILE.",
     "Čita se uz TTL 30 s — promjena vrijedi bez ponovnog pokretanja. Nepoznat ključ = isključeno.",
-    "Pravilo uvođenja: isključeno → sjena (bilježi) → uživo; rollback = enabled:false."
+    "Pravilo uvođenja: isključeno → sjena (bilježi) → uživo; rollback = enabled:false.",
+    "Skup = glavni sustav (ADR-0004 §13.2.1), izveden iz profili/upravitelj-cvora/profil.json (modul znacajke): „u paket” kao glavni, „uvjetno” uz uvjet u note, „van” isključeno s razlogom. Čvor smije biti oprezniji, nikad agresivniji."
   ],
-  "criticGate": { "enabled": false, "note": "kritičar sudi i bilježi nakon spawna (sjena)" },
-  "criticGateLive": { "enabled": false, "note": "presuda kritičara mijenja ishod (blocked umjesto completed)" },
-  "spawnCloseGuard": { "enabled": false, "note": "ADR-0012: bilježi agentov PUT terminalnog statusa dok traje najam spawna (data/spawn_close_guard.jsonl)" },
-  "spawnCloseGuardLive": { "enabled": false, "note": "isti sud vraća HTTP 409 SPAWN_ACTIVE; čovjek s ploče prolazi zaglavljem X-REGOC-Force: 1" },
-  "taskCreateBreaker": { "enabled": false, "note": "strop stvaranja zadataka po autoru (sjena)" },
-  "taskCreateBreakerLive": { "enabled": false, "note": "strop stvaranja zadataka uživo" }
+  "agentIdentityBlock": {
+    "enabled": true,
+    "note": "paket"
+  },
+  "agentIdentityBlockLive": {
+    "enabled": true,
+    "note": "paket"
+  },
+  "autoResume": {
+    "enabled": true,
+    "note": "paket"
+  },
+  "autoResumeLive": {
+    "enabled": false,
+    "note": "van: off na glavnom"
+  },
+  "autonomyGate": {
+    "enabled": true,
+    "note": "uvjetno: ON dok mjerilo potrošnje vraća 200 (daemon.log bez 401 u 30 min); inače sjena"
+  },
+  "criticGate": {
+    "enabled": true,
+    "note": "paket — kritičar sudi i bilježi nakon spawna (sjena)"
+  },
+  "criticGateLive": {
+    "enabled": true,
+    "note": "paket — presuda kritičara mijenja ishod (blocked umjesto completed)"
+  },
+  "criticRepairLoop": {
+    "enabled": true,
+    "note": "paket"
+  },
+  "criticRepairLoopLive": {
+    "enabled": false,
+    "note": "van: off na glavnom"
+  },
+  "criticUnverifiedAlert": {
+    "enabled": true,
+    "note": "paket"
+  },
+  "deadAgentReaper": {
+    "enabled": true,
+    "note": "paket"
+  },
+  "deadAgentReaperLive": {
+    "enabled": true,
+    "note": "uvjetno: kao staleWatchdogLive"
+  },
+  "earlyWorkGuard": {
+    "enabled": true,
+    "note": "paket"
+  },
+  "earlyWorkGuardLive": {
+    "enabled": false,
+    "note": "van: canary na glavnom"
+  },
+  "failRequeue": {
+    "enabled": true,
+    "note": "uvjetno: kao staleWatchdogLive"
+  },
+  "failRequeueLive": {
+    "enabled": true,
+    "note": "uvjetno: kao staleWatchdogLive"
+  },
+  "fileScopeGate": {
+    "enabled": false,
+    "note": "van: off na glavnom"
+  },
+  "fileScopeGateLive": {
+    "enabled": false,
+    "note": "van: off na glavnom"
+  },
+  "mergeGate": {
+    "enabled": true,
+    "note": "paket"
+  },
+  "mergeGateLive": {
+    "enabled": true,
+    "note": "paket"
+  },
+  "modeClassify": {
+    "enabled": true,
+    "note": "paket"
+  },
+  "modeClassifyLive": {
+    "enabled": false,
+    "note": "van: čeka golden-set prag na glavnom"
+  },
+  "ollamaClassifier": {
+    "enabled": true,
+    "note": "uvjetno: Ollama dohvatljiva s čvora (OLLAMA_URL/api/tags → 200)"
+  },
+  "ollamaClassifierLive": {
+    "enabled": false,
+    "note": "van: off na glavnom"
+  },
+  "ollamaProjectDetect": {
+    "enabled": false,
+    "note": "van: off na glavnom"
+  },
+  "ponovnoOtvaranjeRuta": {
+    "enabled": true,
+    "note": "paket"
+  },
+  "ponovnoOtvaranjeRutaLive": {
+    "enabled": false,
+    "note": "van: off na glavnom"
+  },
+  "pozadinaPovrat": {
+    "enabled": true,
+    "note": "uvjetno: kod PozadinaPovrat (P5)"
+  },
+  "projectGitInit": {
+    "enabled": false,
+    "note": "uvjetno: vrijednost instance: ON na čvoru koji projekte drži u gitu"
+  },
+  "quotaWakeup": {
+    "enabled": true,
+    "note": "paket"
+  },
+  "r2IzricitaDodjela": {
+    "enabled": true,
+    "note": "uvjetno: kod (P5)"
+  },
+  "reviewCheckpoint": {
+    "enabled": false,
+    "note": "van: off na glavnom"
+  },
+  "reviewCheckpointLive": {
+    "enabled": false,
+    "note": "van: off na glavnom"
+  },
+  "revizijaBlokiranih": {
+    "enabled": true,
+    "note": "uvjetno: kao staleWatchdogLive + kod (P5)"
+  },
+  "revizijaBlokiranihLive": {
+    "enabled": true,
+    "note": "uvjetno: kao revizijaBlokiranih"
+  },
+  "sendBreaker": {
+    "enabled": true,
+    "note": "paket"
+  },
+  "sendBreakerLive": {
+    "enabled": false,
+    "note": "van: canary na glavnom"
+  },
+  "sequentialHelpers": {
+    "enabled": true,
+    "note": "uvjetno: tek s kodom koji ima anti-kaskadni čuvar TASK-255 (paket.izvorniSustavSadrzi)"
+  },
+  "shutdownResume": {
+    "enabled": true,
+    "note": "paket"
+  },
+  "shutdownResumeLive": {
+    "enabled": true,
+    "note": "paket"
+  },
+  "siroceOporavak": {
+    "enabled": true,
+    "note": "uvjetno: kao staleWatchdogLive + kod OrphanRecovery (P5)"
+  },
+  "spawnBreaker": {
+    "enabled": true,
+    "note": "paket"
+  },
+  "spawnBreakerLive": {
+    "enabled": true,
+    "note": "paket"
+  },
+  "spawnCloseGuard": {
+    "enabled": true,
+    "note": "paket — ADR-0012: bilježi agentov PUT terminalnog statusa dok traje najam spawna (data/spawn_close_guard.jsonl)"
+  },
+  "spawnCloseGuardLive": {
+    "enabled": false,
+    "note": "van: canary na glavnom — isti sud vraća HTTP 409 SPAWN_ACTIVE; čovjek s ploče prolazi zaglavljem X-REGOC-Force: 1"
+  },
+  "spawnVerificationBlock": {
+    "enabled": true,
+    "note": "paket"
+  },
+  "spawnVerificationBlockLive": {
+    "enabled": true,
+    "note": "paket"
+  },
+  "staleInboxGuard": {
+    "enabled": true,
+    "note": "paket"
+  },
+  "staleReaper": {
+    "enabled": false,
+    "note": "van: TRAJNO ugašen (vlasnik, 02.09.) — sudi suprotno od staleWatchdoga"
+  },
+  "staleReaperLive": {
+    "enabled": false,
+    "note": "van: TRAJNO ugašen 02.09."
+  },
+  "staleWatchdog": {
+    "enabled": true,
+    "note": "paket"
+  },
+  "staleWatchdogLive": {
+    "enabled": true,
+    "note": "uvjetno: tek kad je kaskada TASK-255 deployana i smeće-zadaci zatvoreni (reaper bi ih vratio u red)"
+  },
+  "taskCreateBreaker": {
+    "enabled": true,
+    "note": "paket — strop stvaranja zadataka po autoru (sjena)"
+  },
+  "taskCreateBreakerLive": {
+    "enabled": true,
+    "note": "paket — strop stvaranja zadataka uživo"
+  },
+  "taskDecompose": {
+    "enabled": true,
+    "note": "uvjetno: kao staleWatchdogLive"
+  },
+  "taskDecomposeLive": {
+    "enabled": true,
+    "note": "uvjetno: kao staleWatchdogLive"
+  },
+  "taskTier": {
+    "enabled": true,
+    "note": "paket"
+  },
+  "taskTierLive": {
+    "enabled": true,
+    "note": "paket"
+  },
+  "teamChain": {
+    "enabled": true,
+    "note": "paket"
+  },
+  "teamChainLive": {
+    "enabled": false,
+    "note": "van: čvor ne smije biti agresivniji od glavnog; dio puta kaskade TASK-255"
+  },
+  "teamPilot": {
+    "enabled": true,
+    "note": "paket"
+  },
+  "tierRecipesEnabled": {
+    "enabled": true,
+    "note": "paket"
+  },
+  "tierRouting": {
+    "enabled": false,
+    "note": "van: čeka golden-set prag na glavnom"
+  },
+  "userFlush": {
+    "enabled": true,
+    "note": "paket"
+  },
+  "userFlushBacklog": {
+    "enabled": false,
+    "note": "van: potvrda vlasnika za stare poruke"
+  },
+  "userFlushLive": {
+    "enabled": true,
+    "note": "paket"
+  },
+  "verificationGate": {
+    "enabled": false,
+    "note": "van: off na glavnom (Ollama advisory nije prošla mjerenje)"
+  },
+  "verificationGateLive": {
+    "enabled": false,
+    "note": "van: off na glavnom"
+  },
+  "verificationGateShadow": {
+    "enabled": true,
+    "note": "paket"
+  },
+  "worktreeIsolation": {
+    "enabled": true,
+    "note": "paket"
+  },
+  "worktreeIsolationLive": {
+    "enabled": true,
+    "note": "paket"
+  },
+  "zatvaranjeKrozDaemon": {
+    "enabled": true,
+    "note": "uvjetno: kod ZatvaranjeKrozDaemon (P5)"
+  },
+  "zatvaranjeKrozDaemonLive": {
+    "enabled": false,
+    "note": "van: off na glavnom"
+  },
+  "zombieRecovery": {
+    "enabled": true,
+    "note": "paket"
+  },
+  "zombieRecoveryLive": {
+    "enabled": true,
+    "note": "uvjetno: kao staleWatchdogLive"
+  }
 }

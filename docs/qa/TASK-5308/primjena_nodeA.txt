@@ -1,0 +1,18 @@
+PRIMIJENJENO: 36 promjena · kopije u /home/regoc/.taskmanager/backup/profil-2026-10-07T08-42-07-380Z
+potreban restart regoc-taskmanager: da (alat ga ne radi — kad je 0 zadataka in_progress)
+drop-in konzole: systemctl --user daemon-reload, pa restart regoc-voice, regoc-taskmanager (alat ga ne radi — kad je 0 zadataka in_progress)
+[okolina] 15/16 OK
+  TAJNA postoji TM_CREDENTIALS
+  TAJNA-NEDOSTAJE TM_BOT_KANAL_TOKEN
+[znacajke] 75/75 OK
+[kuke] 14/14 OK
+[konzola] 3/6 OK
+  NEDOSTAJE regoc — izvor konzole nije svjež (> 24 h) — puni ga kuka RegocConsoleLog (rad agenata)
+  NEDOSTAJE voiceserver — izvor konzole nije svjež (> 24 h) — puni ga regoc-voice; drop-in vrijedi tek nakon daemon-reload + restart servisa
+  NEDOSTAJE taskwebui — izvor konzole nije svjež (> 24 h) — puni ga regoc-taskmanager; drop-in vrijedi tek nakon daemon-reload + restart servisa
+[oporavak] 2/6 OK
+  NEDOSTAJE siroceOporavak — isključen na čvoru; kod čvora ga ne zna (P5) — siroče se ne vraća samo
+  NEDOSTAJE zombieRecoveryLive — isključen na čvoru — siroče se ne vraća samo
+  NEDOSTAJE deadAgentReaperLive — isključen na čvoru — siroče se ne vraća samo
+  NEDOSTAJE staleWatchdogLive — isključen na čvoru — siroče se ne vraća samo
+ZBROJ: OK 109 · RAZLIKA 0 · NEDOSTAJE 7 · TAJNA-NEDOSTAJE 1 · ČOVJEK 0 · PRESKOČENO 0 · PREDUVJET 0

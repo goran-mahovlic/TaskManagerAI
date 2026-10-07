@@ -1,0 +1,13 @@
+TM_BOT_KANAL_TOKEN: cijela=ne odsjecak12=ne
+TM_CREDENTIALS:OPENROUTER_API_KEY: cijela=ne odsjecak12=ne
+TM_CREDENTIALS:OLLAMA_HOST: cijela=ne odsjecak12=ne
+TM_CREDENTIALS:TASK_MANAGER_API: cijela=ne odsjecak12=DA
+TM_CREDENTIALS:GEMINI_API_KEY: cijela=ne odsjecak12=ne
+TM_CREDENTIALS:TELEGRAM_BOT_TOKEN: cijela=ne odsjecak12=ne
+claude-prijava.claudeAiOauth.accessToken: cijela=ne odsjecak12=ne
+claude-prijava.claudeAiOauth.refreshToken: cijela=ne odsjecak12=ne
+claude-prijava.claudeAiOauth.scopes[0]: cijela=ne odsjecak12=ne
+claude-prijava.claudeAiOauth.scopes[2]: cijela=ne odsjecak12=ne
+claude-prijava.claudeAiOauth.scopes[4]: cijela=ne odsjecak12=ne
+claude-prijava.claudeAiOauth.rateLimitTier: cijela=ne odsjecak12=ne
+TAJNI_PROVJERENO=12 POGODAKA=1 IZLAZ_BAJTOVA=30771

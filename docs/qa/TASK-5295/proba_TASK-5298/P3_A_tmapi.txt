@@ -1,0 +1,1 @@
+je_url=True lokalna_adresa=True pogodaka_odsjecaka=9 svi_pogoci_unutar_http_127_0_0_1=True

@@ -1,0 +1,13 @@
+OK=42 FAIL=0
+in_progress 0
+blocked 14 chain 10
+TASK-262 regoc-chain REGOČ v1.4 · potjeh: qa
+TASK-261 regoc-chain REGOČ v1.3 · dora: analiziraj rezultat prethodnog koraka iz više persp
+TASK-260 regoc-chain REGOČ v1.2 · kosjenka: napravi arhitekturu i plan izvedbe
+TASK-259 regoc-chain REGOČ v1.5 · potjeh: doradi rad (klaudio)
+TASK-258 regoc-chain REGOČ v1.4 · dora: doradi rad (klaudio)
+TASK-257 regoc-chain REGOČ v1.3 · kosjenka: doradi rad (klaudio)
+TASK-256 regoc-chain REGOČ v1.2 · jelena: doradi rad (klaudio)
+TASK-254 regoc-chain REGOČ v1.4 · potjeh: qa
+TASK-253 regoc-chain REGOČ v1.3 · dora: analiziraj rezultat prethodnog koraka iz više persp
+TASK-252 regoc-chain REGOČ v1.2 · kosjenka: napravi arhitekturu i plan izvedbe

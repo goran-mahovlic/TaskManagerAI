@@ -1,0 +1,4 @@
+A_prije 6a7e6e36749d19d6
+A_poslije 6a7e6e36749d19d6
+B_prije f5cb881623fae8a0
+B_poslije f5cb881623fae8a0
