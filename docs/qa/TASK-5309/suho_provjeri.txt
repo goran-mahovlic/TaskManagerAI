@@ -1,0 +1,95 @@
+[paket] 4/9 OK
+  PREDUVJET kanal bot↔bot i „Prekini komunikaciju" (ADR-0003) — kod čvora (be58c94) nema značajku — ažuriraj kod (tm-cvor-azuriraj.sh) na commit koji je sadrži
+  PREDUVJET glas u razgovoru (TASK-5294) — kod čvora (be58c94) nema značajku — ažuriraj kod (tm-cvor-azuriraj.sh) na commit koji je sadrži
+  PRESKOČENO izvorniSustavSadrzi — SUSTAV_DIR nije zadan
+  PREDUVJET baza — /home/klaudio/app/tmp/TASK-5309/sandbox_nodeB/.taskmanager/data/tasks.db: ne postoji (scripts/init-db.ts)
+  PRESKOČENO alati/unit — provjera sustava isključena
+[okolina] 2/15 OK
+  RAZLIKA TM_PORT: profil="17781" čvor=null
+  RAZLIKA TM_ALLOWED_HOSTS: profil="10.0.0.11,cvor-b" čvor=null
+  PRESKOČENO TM_DB — ovisi o praznoj varijabli instance
+  PRESKOČENO TM_AGENTS_REGISTRY — ovisi o praznoj varijabli instance
+  PRESKOČENO TM_MODEL_CONFIG — ovisi o praznoj varijabli instance
+  PRESKOČENO TM_MODULE_CONFIG — ovisi o praznoj varijabli instance
+  PRESKOČENO TM_ODLUCITELJ_CONFIG — ovisi o praznoj varijabli instance
+  PRESKOČENO TM_DEZURNI_CONFIG — ovisi o praznoj varijabli instance
+  PRESKOČENO TM_UPUTE_PO_TIPU — ovisi o praznoj varijabli instance
+  RAZLIKA TM_RAZGOVOR_UPUTE: profil="/home/klaudio/app/tmp/TASK-5309/sandbox_nodeB/CLAUDE.md" čvor=null
+  PRESKOČENO TM_FEATURES_FILE — ovisi o praznoj varijabli instance
+  TAJNA-NEDOSTAJE TM_CREDENTIALS
+  ČOVJEK TM_RAZGOVOR_PUNO — ovlasti=puno traže TM_RAZGOVOR_PUNO=1 — upisuje ga SAMO vlasnik (PROFIL_CVORA_TAJNE.md #5); dotad citanje
+[telegram] 0/22 OK
+  RAZLIKA ukljucen: profil=true čvor=null
+  RAZLIKA botTokenEnv: profil="TELEGRAM_BOT_TOKEN" čvor=null
+  RAZLIKA chatId: profil="-1000000000000" čvor=null
+  RAZLIKA obavijestZavrseno: profil=true čvor=null
+  RAZLIKA obavijestGreska: profil=true čvor=null
+  RAZLIKA prefix: profil="📋" čvor=null
+  RAZLIKA stil: profil="kratko" čvor=null
+  RAZLIKA ulaz.ukljucen: profil=true čvor=null
+  RAZLIKA ulaz.intervalSek: profil=3 čvor=null
+  RAZLIKA ulaz.timeoutSek: profil=25 čvor=null
+  RAZLIKA ulaz.dopusteniChatovi: profil=["-1000000000000"] čvor=null
+  RAZLIKA ulaz.dopusteniKorisnici: profil=[] čvor=null
+  RAZLIKA ulaz.okidac: profil="" čvor=null
+  RAZLIKA ulaz.sameSpomeni: profil=false čvor=null
+  RAZLIKA ulaz.potvrdaUChat: profil=true čvor=null
+  RAZLIKA ulaz.maxDuljina: profil=4000 čvor=null
+  RAZLIKA ulaz.zadaniIzvrsitelj: profil="inzenjer" čvor=null
+  RAZLIKA privitci.ukljucen: profil=true čvor=null
+  RAZLIKA privitci.mapa: profil="" čvor=null
+  RAZLIKA privitci.maxMB: profil=20 čvor=null
+  RAZLIKA privitci.vrste: profil=["photo","document","voice","audio","video","video_note"] čvor=null
+  TAJNA-NEDOSTAJE TELEGRAM_BOT_TOKEN
+[razgovor] 8/14 OK
+  RAZLIKA razgovor.ukljucen: profil=true čvor=false
+  RAZLIKA razgovor.ime: profil="Upravitelj" čvor=""
+  RAZLIKA razgovor.odgovaraNa: profil="dopusteni-sve" čvor="spomen"
+  RAZLIKA razgovor.dopusteniKorisnici: profil=["100000001","vlasnik"] čvor=[]
+  RAZLIKA razgovor.preskociAkoSadrzi: profil=["@drugi_bot"] čvor=[]
+  UPOZORENJE razgovor.ovlasti — profil traži puno; bez TM_RAZGOVOR_PUNO=1 upisuje se citanje
+[glas] 0/3 OK
+  NEDOSTAJE razgovor.glas — ploča ovog čvora nema API za ključ (kod bez značajke ili postavka izvornog sustava) (profil="na-glasovno" čvor=null)
+  NEDOSTAJE razgovor.glasPrepoznavanje — ploča ovog čvora nema API za ključ (kod bez značajke ili postavka izvornog sustava) (profil=true čvor=null)
+  PRESKOČENO servis — provjera sustava isključena
+[memorija] 1/7 OK
+  RAZLIKA memorija.razgovor: profil="on" čvor="off"
+  NEDOSTAJE memorija.globalno — ploča ovog čvora nema API za ključ (kod bez značajke ili postavka izvornog sustava) (profil="on" čvor=null)
+  NEDOSTAJE memorija.agenti — ploča ovog čvora nema API za ključ (kod bez značajke ili postavka izvornog sustava) (profil="on" čvor=null)
+  RAZLIKA memorija.banka: profil="banka_cvor_b" čvor=""
+  RAZLIKA memorija.url: profil="http://127.0.0.1:17792" čvor=""
+  RAZLIKA memorija.rokMs: profil=20000 čvor=1500
+[bot-kanal] 0/1 OK
+  PRESKOČENO (modul) — BOTKANAL_ADRESE nije zadan u instanci
+[tunel-memorije] 0/1 OK
+  PRESKOČENO 17792 — provjera sustava isključena
+[capguard] 0/1 OK
+  NEDOSTAJE (stanje) — capguard nije instaliran na stroju (vlasnik stroj-root)
+[claude] 0/2 OK
+  NEDOSTAJE kuka SecurityValidator.hook.ts — nema datoteke — donosi je komplet izvornog sustava
+  ČOVJEK claude-prijava — nema — `claude auth login` (PROFIL_CVORA_TAJNE.md #4)
+[upravitelj] 0/1 OK
+  RAZLIKA /home/klaudio/app/tmp/TASK-5309/sandbox_nodeB/CLAUDE.md: profil="(predložak, 4760 B)" čvor="(nema)"
+[home] 0/1 OK
+  PRESKOČENO (grep) — TUDI_HOME nije zadan
+[rag] 1/1 OK
+[znacajke] 0/1 OK
+  PRESKOČENO (modul) — SUSTAV_DIR nije zadan
+[kuke] 0/7 OK
+  NEDOSTAJE PreToolUse[Bash|Edit|MultiEdit|Write|Read] SecurityValidator — nema datoteke /home/klaudio/app/tmp/TASK-5309/sandbox_nodeB/.claude/hooks/SecurityValidator.hook.ts — kuka se ne spaja (komplet izvornog sustava)
+  NEDOSTAJE UserPromptSubmit SecurityValidator — nema datoteke /home/klaudio/app/tmp/TASK-5309/sandbox_nodeB/.claude/hooks/SecurityValidator.hook.ts — kuka se ne spaja (komplet izvornog sustava)
+  RAZLIKA SessionStart TaskInstructionsInject: profil="/home/klaudio/app/tmp/TASK-5309/sandbox_nodeB/.bun/bin/bun run /home/klaudio/app/.regoc-worktrees/TaskManagerAI/TASK-5308__jelena__1791361567017/hooks/TaskInstructionsInject.hook.ts" čvor="(nije spojena)"
+  RAZLIKA PostToolUse TaskInstructionsInject: profil="/home/klaudio/app/tmp/TASK-5309/sandbox_nodeB/.bun/bin/bun run /home/klaudio/app/.regoc-worktrees/TaskManagerAI/TASK-5308__jelena__1791361567017/hooks/TaskInstructionsInject.hook.ts" čvor="(nije spojena)"
+  RAZLIKA PostToolUse[Bash|Edit|MultiEdit|Write|NotebookEdit|Task] RegocConsoleLog: profil="/home/klaudio/app/tmp/TASK-5309/sandbox_nodeB/.bun/bin/bun run /home/klaudio/app/.regoc-worktrees/TaskManagerAI/TASK-5308__jelena__1791361567017/hooks/RegocConsoleLog.hook.ts" čvor="(nije spojena)"
+  RAZLIKA UserPromptSubmit session_usage: profil="python3 /home/klaudio/app/.regoc-worktrees/TaskManagerAI/TASK-5308__jelena__1791361567017/tools/session_usage.py --hook prompt" čvor="(nije spojena)"
+  RAZLIKA Stop session_usage: profil="python3 /home/klaudio/app/.regoc-worktrees/TaskManagerAI/TASK-5308__jelena__1791361567017/tools/session_usage.py --hook stop" čvor="(nije spojena)"
+[konzola] 0/6 OK
+  NEDOSTAJE daemon — izvor konzole nije svjež (> 24 h) — puni ga RegocDaemon
+  NEDOSTAJE regoc — izvor konzole nije svjež (> 24 h) — puni ga kuka RegocConsoleLog (rad agenata)
+  RAZLIKA voiceserver.drop-in: profil="StandardOutput=append:/home/klaudio/app/tmp/TASK-5309/sandbox_nodeB/.tmp/regoc_logs/voiceserver.log" čvor="(journal)"
+  NEDOSTAJE voiceserver — izvor konzole nije svjež (> 24 h) — puni ga regoc-voice; drop-in vrijedi tek nakon daemon-reload + restart servisa
+  RAZLIKA taskwebui.drop-in: profil="StandardOutput=append:/home/klaudio/app/tmp/TASK-5309/sandbox_nodeB/.tmp/regoc_logs/taskwebui.log" čvor="(journal)"
+  NEDOSTAJE taskwebui — izvor konzole nije svjež (> 24 h) — puni ga regoc-taskmanager; drop-in vrijedi tek nakon daemon-reload + restart servisa
+[oporavak] 0/1 OK
+  PRESKOČENO (modul) — nema modula znacajke / SUSTAV_DIR
+ZBROJ: OK 16 · RAZLIKA 41 · NEDOSTAJE 12 · TAJNA-NEDOSTAJE 2 · ČOVJEK 2 · PRESKOČENO 16 · PREDUVJET 3

@@ -1,0 +1,2 @@
+{"title":"QA TASK-5309 proba B: siroče (proces će biti ubijen)","assignee":"potjeh","priority":2,"tags":["nalog","qa-proba"],
+"description":"Probni zadatak QA (TASK-5309 s glavnog sustava): simulacija siročeta. Jedini korak: u Bash pokreni u PRVOM planu (ne u pozadini) naredbu: sleep 900 ; zatim napiši REGOC-STATUS: DONE — proba B. QA će proces namjerno ubiti tijekom sleepa; to je očekivano."}
