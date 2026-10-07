@@ -298,6 +298,8 @@ const ragService = getRAGService()
 const messageQueue = getMessageQueue()
 
 // Read-only DB for konzola streaming (MQ + event_log)
+// TASK-5311 (s glavnog, TASK-5164 D): bilješka, dorada, ponovno otvaranje, 404 s prijedlogom.
+import { odgovor404Rute, hintPrijelaza, tekstBiljeske, naslovDorade, opisDorade, oznakeDorade } from './core/TaskDorada'
 import { Database } from 'bun:sqlite'
 // TASK-5011: ista mapa u kojoj ga stvara MessageQueue (uz bazu iz core/paths.ts).
 const MESSAGES_DB_PATH = join(dirname(TM_DB), 'messages.db')
@@ -13511,6 +13513,109 @@ async function handleReclaimTask(taskId: string, req: Request): Promise<Response
   }
 }
 
+/** JSON-odgovor za iznimku u handleru: neispravan JSON tijela → 400, ostalo → 500. */
+function handlerErrorResponse(context: string, error: unknown): Response {
+  const isJsonSyntaxError = error instanceof SyntaxError
+  const message = isJsonSyntaxError ? 'Invalid JSON body' : (error instanceof Error ? error.message : String(error))
+  console.error(`[API] ${context}:`, error)
+  return new Response(JSON.stringify({ error: message }), {
+    status: isJsonSyntaxError ? 400 : 500, headers: { 'Content-Type': 'application/json' },
+  })
+}
+
+// ─── TASK-5164: bilješka, dorada, ponovno otvaranje (nesukladnost D, dizajn §4) ──────────
+
+/** POST /api/tasks/:id/biljeska (alias /notes) `{text|note, author?}` — jedna bilješka, bez statusa. */
+async function handleAddNote(taskId: string, req: Request): Promise<Response> {
+  const json = (b: unknown, st: number) => new Response(JSON.stringify(b), { status: st, headers: { 'Content-Type': 'application/json' } })
+  try {
+    const body = await req.json().catch(() => null) as any
+    const tekst = tekstBiljeske(body)
+    if (!tekst) return json({ error: 'Missing text', details: 'Tijelo mora imati "text" (ili "note"): {"text":"…","author":"…"}' }, 400)
+    const t = taskManager.getTask(taskId)
+    if (!t) return json({ error: 'Task not found' }, 404)
+    const author = typeof body?.author === 'string' && body.author.trim() ? body.author.trim()
+      : (typeof body?.by === 'string' && body.by.trim() ? body.by.trim() : (t.assignee || 'regoc'))
+    taskManager.addProgressNote(taskId, author, tekst)
+    const task = taskManager.getTask(taskId)
+    const msg = JSON.stringify({ type: 'task_updated', task })
+    wsClients.forEach(client => { try { client.send(msg) } catch { wsClients.delete(client) } })
+    return json(task, 200)
+  } catch (error) {
+    return handlerErrorResponse(`Error adding note to ${taskId}`, error)
+  }
+}
+
+/**
+ * POST /api/tasks/:id/dorada `{razlog, author, assignee?, opis?, priority?, tags?}` — NOVI zadatak
+ * povezan s izvornim; izvorni ostaje `completed` (dizajn §4.2). 201 | 400 | 404 | 409.
+ */
+async function handleDorada(taskId: string, req: Request): Promise<Response> {
+  const json = (b: unknown, st: number) => new Response(JSON.stringify(b), { status: st, headers: { 'Content-Type': 'application/json' } })
+  try {
+    const body = await req.json().catch(() => null) as any
+    const razlog = typeof body?.razlog === 'string' ? body.razlog.trim() : ''
+    const author = typeof body?.author === 'string' && body.author.trim() ? body.author.trim()
+      : (typeof body?.by === 'string' && body.by.trim() ? body.by.trim() : '')
+    if (!razlog || !author) {
+      return json({ error: 'Missing field', details: 'Dorada traži "razlog" (što doraditi) i "author" (tko traži): {"razlog":"…","author":"vlasnik"}' }, 400)
+    }
+    const izvorni = taskManager.getTask(taskId)
+    if (!izvorni) return json({ error: 'Task not found' }, 404)
+    if (izvorni.status !== 'completed') {
+      return json({
+        error: 'Not completed', currentStatus: izvorni.status,
+        details: `Zadatak je '${izvorni.status}'. Dorada je za zatvorene zadatke; za zadatak u radu koristi POST /api/tasks/${taskId}/uputa (pravilo 22).`,
+        hint: izvorni.status === 'in_progress' ? `POST /api/tasks/${taskId}/uputa {"text":"…","author":"${author}"}` : hintPrijelaza(izvorni.status, 'pending', taskId),
+      }, 409)
+    }
+    const dodatne = Array.isArray(body?.tags) ? body.tags.filter((x: unknown) => typeof x === 'string') : []
+    const dorada = taskManager.createDorada(taskId, {
+      title: naslovDorade(izvorni.title),
+      description: opisDorade({ izvorni: izvorni as any, razlog, author, opis: typeof body?.opis === 'string' ? body.opis : undefined }),
+      priority: typeof body?.priority === 'number' ? body.priority : izvorni.priority,
+      assignee: typeof body?.assignee === 'string' && body.assignee.trim() ? body.assignee.trim() : (izvorni.assignee || undefined),
+      createdBy: author,
+      projectId: izvorni.projectId || undefined,
+      tags: oznakeDorade(izvorni.tags, taskId, dodatne),
+    } as any, `🔁 Dorada otvorena: <DORADA> — ${razlog}`.slice(0, 600), author)
+    if (!dorada) return json({ error: 'Task not found' }, 404)
+    console.log(`[API] dorada: ${taskId} → ${dorada.id} (${author}): ${razlog.slice(0, 120)}`)
+    for (const t of [dorada, taskManager.getTask(taskId)]) {
+      const msg = JSON.stringify({ type: t === dorada ? 'task_created' : 'task_updated', task: t })
+      wsClients.forEach(client => { try { client.send(msg) } catch { wsClients.delete(client) } })
+    }
+    return json(dorada, 201)
+  } catch (error) {
+    return handlerErrorResponse(`Error creating dorada for ${taskId}`, error)
+  }
+}
+
+/** POST /api/tasks/:id/ponovno-otvori `{razlog, by}` — SAMO za zatvoreno greškom (dizajn §4.3). */
+async function handleReopen(taskId: string, req: Request): Promise<Response> {
+  const json = (b: unknown, st: number) => new Response(JSON.stringify(b), { status: st, headers: { 'Content-Type': 'application/json' } })
+  try {
+    const body = await req.json().catch(() => null) as any
+    const razlog = typeof body?.razlog === 'string' ? body.razlog.trim() : (typeof body?.reason === 'string' ? body.reason.trim() : '')
+    const by = typeof body?.by === 'string' && body.by.trim() ? body.by.trim()
+      : (typeof body?.author === 'string' && body.author.trim() ? body.author.trim() : '')
+    if (!razlog || !by) return json({ error: 'Missing field', details: 'Ponovno otvaranje traži "razlog" i "by" (ide u reviziju). Za doradu isporuke koristi POST /api/tasks/<ID>/dorada.' }, 400)
+    const t = taskManager.getTask(taskId)
+    if (!t) return json({ error: 'Task not found' }, 404)
+    if (t.status !== 'completed' && t.status !== 'cancelled') {
+      return json({ error: 'Not closed', currentStatus: t.status, details: `Zadatak je '${t.status}' — ponovno se otvara samo 'completed' ili 'cancelled'.` }, 409)
+    }
+    const task = taskManager.reopenTask(taskId, razlog, by)
+    if (!task) return json({ error: 'Reopen failed' }, 500)
+    console.warn(`[API] ponovno-otvori: ${taskId} ${t.status}→pending (${by}): ${razlog.slice(0, 120)}`)
+    const msg = JSON.stringify({ type: 'task_updated', task })
+    wsClients.forEach(client => { try { client.send(msg) } catch { wsClients.delete(client) } })
+    return json(task, 200)
+  } catch (error) {
+    return handlerErrorResponse(`Error reopening ${taskId}`, error)
+  }
+}
+
 async function handleUpdateTaskProgress(taskId: string, req: Request): Promise<Response> {
   try {
     const body = await req.json()
@@ -16858,6 +16963,17 @@ async function obradiZahtjev(req: Request): Promise<Response | undefined> {
       return handleTaskPause(url.pathname.split('/')[3], false, req)
     }
 
+    // TASK-5164 (D): bilješka, dorada, ponovno otvaranje.
+    if (url.pathname.match(/^\/api\/tasks\/[^\/]+\/(biljeska|notes)$/) && req.method === 'POST') {
+      return handleAddNote(url.pathname.split('/')[3], req)
+    }
+    if (url.pathname.match(/^\/api\/tasks\/[^\/]+\/dorada$/) && req.method === 'POST') {
+      return handleDorada(url.pathname.split('/')[3], req)
+    }
+    if (url.pathname.match(/^\/api\/tasks\/[^\/]+\/ponovno-otvori$/) && req.method === 'POST') {
+      return handleReopen(url.pathname.split('/')[3], req)
+    }
+
     // POST /api/tasks/:id/reclaim - R2 stale-watchdog: in_progress -> pending
     if (url.pathname.match(/^\/api\/tasks\/[^\/]+\/reclaim$/) && req.method === 'POST') {
       const taskId = url.pathname.split('/')[3]
@@ -17322,6 +17438,16 @@ async function obradiZahtjev(req: Request): Promise<Response | undefined> {
       return new Response(HTML_TEMPLATE, {
         headers: { 'Content-Type': 'text/html', 'Cache-Control': 'no-cache, no-store, must-revalidate', 'Pragma': 'no-cache' }
       })
+    }
+
+    // TASK-5164 (D3): nepoznata podruta zadatka → JSON 404 s popisom ruta i prijedlogom (M12).
+    {
+      const m = url.pathname.match(/^\/api\/tasks\/([^\/]+)\/(.+)$/)
+      if (m) {
+        const b = odgovor404Rute(decodeURIComponent(m[1]), m[2], req.method)
+        console.warn(`[API] 404 ${req.method} ${url.pathname} — mislio_si: ${b.mislio_si ?? '—'}`)
+        return new Response(JSON.stringify(b), { status: 404, headers: { 'Content-Type': 'application/json' } })
+      }
     }
 
     // 404

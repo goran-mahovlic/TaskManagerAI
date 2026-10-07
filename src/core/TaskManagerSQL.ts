@@ -990,6 +990,51 @@ export class TaskManagerSQL {
   }
 
   /**
+   * Dorada zatvorenog zadatka (TASK-5164, DIZAJN-nesukladnosti-BCD §4.2).
+   *
+   * NOVI zadatak povezan s izvornim, u JEDNOJ transakciji: dorada nastaje, a izvorni dobiva
+   * bilješku i oznaku `ima-doradu` — ili se ne dogodi ništa. Izvorni ostaje `completed`
+   * (trošak, `completed_at`, sudovi kritičara i dojava pripadaju isporuci, ne doradi).
+   * Vraća null kad izvorni ne postoji; pozivatelj sam provjerava status (409).
+   */
+  createDorada(izvorniId: string, input: CreateTaskInput, biljeska: string, author: string): Task | null {
+    const tx = this.db.transaction(() => {
+      const izvorni = this.getTask(izvorniId);
+      if (!izvorni) return null;
+      const dorada = this.createTask(input);
+      const now = new Date().toISOString();
+      const tags = izvorni.tags.includes('ima-doradu') ? izvorni.tags : [...izvorni.tags, 'ima-doradu'];
+      const notes = [...izvorni.progressNotes, { timestamp: now, agent: author, note: biljeska.replace('<DORADA>', dorada.id) }];
+      this.db.prepare("UPDATE tasks SET tags = ?, progress_notes = ?, updated_at = ? WHERE id = ?")
+        .run(JSON.stringify(tags), JSON.stringify(notes), now, izvorniId);
+      this.logChange(izvorniId, 'dorada', null, dorada.id, author);
+      return dorada;
+    });
+    return tx();
+  }
+
+  /**
+   * Ponovno otvaranje zadatka zatvorenog GREŠKOM (TASK-5164, §4.3) — iznimka, ne dorada.
+   *
+   * Za razliku od običnog PUT-a `completed → pending`: briše `completed_at` (inače bi drugo
+   * zatvaranje zadržalo stari nadnevak), a u reviziju upisuje PRAVOG pozivatelja, ne izvršitelja.
+   * Vraća null ako zadatak ne postoji ili nije `completed`/`cancelled`.
+   */
+  reopenTask(id: string, razlog: string, by: string): Task | null {
+    const task = this.getTask(id);
+    if (!task) return null;
+    if (task.status !== 'completed' && task.status !== 'cancelled') return null;
+    const now = new Date().toISOString();
+    const notes = [...task.progressNotes, { timestamp: now, agent: by, note: `↩️ Ponovno otvoren (bio '${task.status}'): ${razlog}` }];
+    this.db.prepare(
+      "UPDATE tasks SET status = 'pending', completed_at = NULL, progress_notes = ?, updated_at = ? WHERE id = ?"
+    ).run(JSON.stringify(notes), now, id);
+    this.logChange(id, 'status', task.status, 'pending', by);
+    this.logChange(id, 'ponovno_otvoreno', null, razlog, by);
+    return this.getTask(id);
+  }
+
+  /**
    * Delete a task
    */
   deleteTask(id: string): boolean {
