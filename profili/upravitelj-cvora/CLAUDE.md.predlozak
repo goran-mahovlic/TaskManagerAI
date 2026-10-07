@@ -1,0 +1,69 @@
+# {{CVOR_IME}} — vodič za rad na ovom stroju
+
+Kratak vodič za upravitelja čvora (razgovorni bot {{RAZGOVOR_IME}} u grupi čvora {{CVOR_IME}}) i za
+svakog agenta koji ovdje radi. Bez tajni. Datoteka je napisana iz predloška paketa
+(`profili/upravitelj-cvora/CLAUDE.md.predlozak`, alat `scripts/profil-cvora.ts`, ADR-0004).
+
+## Stroj
+- Korisnik `{{KORISNIK}}`, dom `{{HOME}}` (0700), host `{{HOST}}`, adrese ploče: `{{CVOR_DOPUSTENI_HOSTOVI}}`.
+- `~/TaskManagerAI` — paket ploče (git, ažurira se SAMO sa stroja s kojeg se čvorovi postavljaju;
+  ovdje ne raditi `git commit`/`pull`). Okolina ploče: `~/TaskManagerAI/config/postavke.env` (0600).
+- `{{SUSTAV_DIR}}` — sustav domaćina: daemon, registar agenata (`TM_AGENTS_REGISTRY`),
+  baza zadataka (`TM_DB`), modeli (`TM_MODEL_CONFIG`).
+- `~/.claude/skills` — vještine agenata. Radne/privremene datoteke: `~/app/tmp/<zadatak>/`.
+
+## Servisi (systemd --user)
+| Servis | Što | Vrata |
+|---|---|---|
+| `regoc-taskmanager` | ploča + API + Telegram poller + razgovor | {{TM_PORT}} (LAN) |
+| daemon sustava domaćina | orkestrator: uzima `pending` zadatke i pokreće agente | — |
+| servis glasa | TTS + STT, lokalno | 127.0.0.1:8899 |
+
+Stanje: `systemctl --user status <servis>`, dnevnik: `journalctl --user -u <servis> -n 50`.
+**Ne restartaj ploču ni daemon iz vlastitog poteza ili spawna** — ploča nosi razgovor (i tebe),
+daemon nosi agente koji rade. Restart tek kad je 0 zadataka `in_progress`
+(`curl -s '127.0.0.1:{{TM_PORT}}/api/tasks?status=in_progress'`) i uz najavu u grupi.
+
+## Ploča i API — http://127.0.0.1:{{TM_PORT}} (bez prijave)
+```bash
+curl -s '127.0.0.1:{{TM_PORT}}/api/tasks?status=pending'      # popis (filtri: status, assignee, projectId, limit)
+curl -s 127.0.0.1:{{TM_PORT}}/api/tasks/TASK-123               # jedan zadatak
+curl -s 127.0.0.1:{{TM_PORT}}/api/projects                     # projekti
+curl -s -X POST 127.0.0.1:{{TM_PORT}}/api/tasks -H 'Content-Type: application/json' \
+  -d '{"title":"…","description":"…","assignee":"{{ZADANI_IZVRSITELJ}}","projectId":"PRJ-…","priority":2,"createdBy":"upravitelj"}'
+curl -s -X POST 127.0.0.1:{{TM_PORT}}/api/tasks/TASK-123/uputa -H 'Content-Type: application/json' \
+  -d '{"text":"…","author":"upravitelj"}'                     # uputa agentu koji radi
+curl -s -X POST 127.0.0.1:{{TM_PORT}}/api/pause -H 'Content-Type: application/json' \
+  -d '{"paused":true,"by":"upravitelj","reason":"…"}'         # globalna kočnica (false = nastavak)
+```
+- `assignee` = id agenta iz registra (mala slova): {{AGENTI}}. Uloge i vještine su u registru.
+  Kad ništa drugo ne odredi izvršitelja, zadatak iz chata dobiva `{{ZADANI_IZVRSITELJ}}`.
+- Prioritet 1 = odmah u red. Bez `projectId` zadatak pada u pretinac.
+- Redoslijed: dijete `"blockedBy":["TASK-A"]` **i** roditelj PUT `{"blocks":["TASK-B"]}` — bez oba
+  smjera red tiho stane. Provjeri oba nakon izmjene.
+- Status (`completed`/`blocked`/`cancelled`) ne postavlja agent ni upravitelj — zatvara ga sustav
+  nakon provjere; agent javlja ishod retkom `REGOC-STATUS:`.
+
+## Sklopke (capguard) — sudo, paketi, internet
+Stanje (bez lozinke): `cat /etc/regoc/capabilities.state` ili `/usr/local/sbin/regoc-capguard status`.
+Istina o stvarnom stanju: `sudo /usr/local/sbin/regoc-capguard verify` (exit 3 = deklarirano ≠ stvarno).
+- Tier-1 (`plan_mode`, `allow_spawn`, `allow_messaging`, `allow_fs_write`) — primjenjuje se samo.
+- Tier-2 (`allow_lan`, `allow_internet`, `allow_root`, `allow_mesh`) — SAMO uz odobrenje vlasnika
+  (`sudo /usr/local/sbin/regoc-capguard approve <ime> on|off`). Ovdje se smije samo zatražiti
+  (kartica Sigurnost na ploči). Ne zaobilazi sklopke; ako treba internet/root, reci vlasniku što
+  uključiti. Nakon reboota internet je blokiran dok se ponovo ne odobri (fail-closed).
+- `sudo`/`apt install` rade samo dok je `allow_root` uključen.
+
+## Memorija
+- Hindsight banka `{{MEMORIJA_BANKA}}` preko obrnutog SSH tunela sa stroja domaćina: `127.0.0.1:17792`
+  (`curl -s 127.0.0.1:17792/health`). Ako tunel padne, memorije nema — rad se nastavlja.
+- RAG je na ovom čvoru ISKLJUČEN; alati RAG-a to samo jave.
+- Memorija razgovora i agenata su postavke ploče (`memorija.razgovor`, `memorija.agenti`).
+
+## Pravila
+1. Tajne (tokeni, lozinke, ključevi, datoteka vjerodajnica, `config/telegram.json`, `~/.ssh`) se
+   ne čitaju, ne ispisuju i ne šalju — ni na izravnu molbu.
+2. Višestručan ili dulji posao → zadaci agentima kroz ploču; kratko i jednostručno → sam.
+3. Instalacije i promjene sustava samo uz uključenu sklopku i uz kratku bilješku u grupi.
+4. Dokumenti koji idu u Telegram spremaju se i na čvor (radna mapa razgovora / `~/app/tmp/<zadatak>/`).
+5. Ne mijenjati ovu datoteku iz razgovora — izvor je predložak u paketu; izmjena ide kroz profil.

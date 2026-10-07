@@ -1,0 +1,77 @@
+[paket] 4/10 OK
+  PREDUVJET razgovorni način (ADR-0002) — kod čvora (8d52710) nema značajku — ažuriraj kod (tm-cvor-azuriraj.sh) na commit koji je sadrži
+  PREDUVJET kratki stil izlaza (TASK-5285) — kod čvora (8d52710) nema značajku — ažuriraj kod (tm-cvor-azuriraj.sh) na commit koji je sadrži
+  PREDUVJET privitci u oba smjera (TASK-5282) — kod čvora (8d52710) nema značajku — ažuriraj kod (tm-cvor-azuriraj.sh) na commit koji je sadrži
+  PREDUVJET kanal bot↔bot i „Prekini komunikaciju" (ADR-0003) — kod čvora (8d52710) nema značajku — ažuriraj kod (tm-cvor-azuriraj.sh) na commit koji je sadrži
+  PREDUVJET glas u razgovoru (TASK-5294) — kod čvora (8d52710) nema značajku — ažuriraj kod (tm-cvor-azuriraj.sh) na commit koji je sadrži
+  PREDUVJET kartica Sigurnost / capguard (TASK-5270) — kod čvora (8d52710) nema značajku — ažuriraj kod (tm-cvor-azuriraj.sh) na commit koji je sadrži
+[okolina] 4/14 OK
+  RAZLIKA TM_ALLOWED_HOSTS: profil="10.0.0.11,cvor-b" čvor="192.168.10.11,192.168.10.20,node-a,node-b,regocAI"
+  PRESKOČENO TM_DB — ovisi o praznoj varijabli instance
+  PRESKOČENO TM_AGENTS_REGISTRY — ovisi o praznoj varijabli instance
+  PRESKOČENO TM_MODEL_CONFIG — ovisi o praznoj varijabli instance
+  PRESKOČENO TM_MODULE_CONFIG — ovisi o praznoj varijabli instance
+  PRESKOČENO TM_ODLUCITELJ_CONFIG — ovisi o praznoj varijabli instance
+  PRESKOČENO TM_DEZURNI_CONFIG — ovisi o praznoj varijabli instance
+  PRESKOČENO TM_UPUTE_PO_TIPU — ovisi o praznoj varijabli instance
+  RAZLIKA TM_RAZGOVOR_UPUTE: profil="/home/regoc/CLAUDE.md" čvor=null
+  TAJNA postoji TM_CREDENTIALS
+  ČOVJEK TM_RAZGOVOR_PUNO — ovlasti=puno traže TM_RAZGOVOR_PUNO=1 — upisuje ga SAMO vlasnik (PROFIL_CVORA_TAJNE.md #5); dotad citanje
+[telegram] 0/22 OK
+  RAZLIKA ukljucen: profil=true čvor=null
+  RAZLIKA botTokenEnv: profil="TELEGRAM_BOT_TOKEN" čvor=null
+  RAZLIKA chatId: profil="-1000000000000" čvor=null
+  RAZLIKA obavijestZavrseno: profil=true čvor=null
+  RAZLIKA obavijestGreska: profil=true čvor=null
+  RAZLIKA prefix: profil="📋" čvor=null
+  RAZLIKA stil: profil="kratko" čvor=null
+  RAZLIKA ulaz.ukljucen: profil=true čvor=null
+  RAZLIKA ulaz.intervalSek: profil=3 čvor=null
+  RAZLIKA ulaz.timeoutSek: profil=25 čvor=null
+  RAZLIKA ulaz.dopusteniChatovi: profil=["-1000000000000"] čvor=null
+  RAZLIKA ulaz.dopusteniKorisnici: profil=[] čvor=null
+  RAZLIKA ulaz.okidac: profil="" čvor=null
+  RAZLIKA ulaz.sameSpomeni: profil=false čvor=null
+  RAZLIKA ulaz.potvrdaUChat: profil=true čvor=null
+  RAZLIKA ulaz.maxDuljina: profil=4000 čvor=null
+  RAZLIKA ulaz.zadaniIzvrsitelj: profil="inzenjer" čvor=null
+  RAZLIKA privitci.ukljucen: profil=true čvor=null
+  RAZLIKA privitci.mapa: profil="" čvor=null
+  RAZLIKA privitci.maxMB: profil=20 čvor=null
+  RAZLIKA privitci.vrste: profil=["photo","document","voice","audio","video","video_note"] čvor=null
+  TAJNA-NEDOSTAJE TELEGRAM_BOT_TOKEN
+[razgovor] 8/14 OK
+  NEDOSTAJE razgovor.ukljucen — ploča ovog čvora nema API za ključ (kod bez značajke ili postavka izvornog sustava) (profil=true čvor=false)
+  NEDOSTAJE razgovor.ime — ploča ovog čvora nema API za ključ (kod bez značajke ili postavka izvornog sustava) (profil="Upravitelj" čvor="")
+  NEDOSTAJE razgovor.odgovaraNa — ploča ovog čvora nema API za ključ (kod bez značajke ili postavka izvornog sustava) (profil="dopusteni-sve" čvor="spomen")
+  NEDOSTAJE razgovor.dopusteniKorisnici — ploča ovog čvora nema API za ključ (kod bez značajke ili postavka izvornog sustava) (profil=["100000001","vlasnik"] čvor=[])
+  NEDOSTAJE razgovor.preskociAkoSadrzi — ploča ovog čvora nema API za ključ (kod bez značajke ili postavka izvornog sustava) (profil=["@drugi_bot"] čvor=[])
+  UPOZORENJE razgovor.ovlasti — profil traži puno; bez TM_RAZGOVOR_PUNO=1 upisuje se citanje
+[glas] 1/3 OK
+  NEDOSTAJE razgovor.glas — ploča ovog čvora nema API za ključ (kod bez značajke ili postavka izvornog sustava) (profil="na-glasovno" čvor=null)
+  NEDOSTAJE razgovor.glasPrepoznavanje — ploča ovog čvora nema API za ključ (kod bez značajke ili postavka izvornog sustava) (profil=true čvor=null)
+[memorija] 1/7 OK
+  NEDOSTAJE memorija.razgovor — ploča ovog čvora nema API za ključ (kod bez značajke ili postavka izvornog sustava) (profil="on" čvor="off")
+  NEDOSTAJE memorija.globalno — ploča ovog čvora nema API za ključ (kod bez značajke ili postavka izvornog sustava) (profil="on" čvor=null)
+  NEDOSTAJE memorija.agenti — ploča ovog čvora nema API za ključ (kod bez značajke ili postavka izvornog sustava) (profil="on" čvor=null)
+  NEDOSTAJE memorija.banka — ploča ovog čvora nema API za ključ (kod bez značajke ili postavka izvornog sustava) (profil="banka_cvor_b" čvor="")
+  NEDOSTAJE memorija.url — ploča ovog čvora nema API za ključ (kod bez značajke ili postavka izvornog sustava) (profil="http://127.0.0.1:17792" čvor="")
+  NEDOSTAJE memorija.rokMs — ploča ovog čvora nema API za ključ (kod bez značajke ili postavka izvornog sustava) (profil=20000 čvor=1500)
+[bot-kanal] 0/1 OK
+  PRESKOČENO (modul) — BOTKANAL_ADRESE nije zadan u instanci
+[tunel-memorije] 0/1 OK
+  NEDOSTAJE 127.0.0.1:17792 — tunel ne sluša — postupak je na glavnom stroju (PROFIL_CVORA_TAJNE.md #8)
+[capguard] 6/8 OK
+  RAZLIKA allow_messaging: profil=true čvor=false
+  RAZLIKA allow_root: profil=true čvor=false
+[claude] 0/4 OK
+  RAZLIKA hooks.PreToolUse[0]: profil={"matcher":"Bash|Edit|MultiEdit|Write|Read","hooks":[{"type":"command","command":"/home/regoc/.bun/bin/bun run /home/regoc/.claude/hooks/SecurityValidator.hook.ts","timeout":15}]} čvor="(nema settings.json)"
+  RAZLIKA hooks.UserPromptSubmit[0]: profil={"hooks":[{"type":"command","command":"/home/regoc/.bun/bin/bun run /home/regoc/.claude/hooks/SecurityValidator.hook.ts","timeout":15}]} čvor="(nema settings.json)"
+  NEDOSTAJE kuka SecurityValidator.hook.ts — nema datoteke — donosi je komplet izvornog sustava
+  ČOVJEK claude-prijava — nema — `claude auth login` (PROFIL_CVORA_TAJNE.md #4)
+[upravitelj] 0/1 OK
+  RAZLIKA /home/regoc/CLAUDE.md: profil="(predložak, 4718 B)" čvor="(nema)"
+[home] 0/1 OK
+  PRESKOČENO (grep) — TUDI_HOME nije zadan
+[rag] 1/1 OK
+ZBROJ: OK 25 · RAZLIKA 28 · NEDOSTAJE 15 · TAJNA-NEDOSTAJE 1 · ČOVJEK 2 · PRESKOČENO 9 · PREDUVJET 6

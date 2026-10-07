@@ -1,0 +1,1 @@
+ODBIJENO: --pisi preko --ssh je zabranjen: alat na tuđi čvor samo čita (ADR-0004 §5 pr. 4) — pokreni ga NA čvoru, uz odobrenje

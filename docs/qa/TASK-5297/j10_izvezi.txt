@@ -1,0 +1,21 @@
+izvezeno 15/17 varijabli → <tmp>/node-A.izvezeno.env (izvan paketa)
+[paket] 10/10 OK
+[okolina] 15/15 OK
+  TAJNA postoji TM_CREDENTIALS
+  TAJNA postoji TM_BOT_KANAL_TOKEN
+[telegram] 22/22 OK
+  TAJNA postoji TELEGRAM_BOT_TOKEN
+[razgovor] 13/13 OK
+[glas] 3/3 OK
+[memorija] 7/7 OK
+[bot-kanal] 7/8 OK
+  RAZLIKA razgovor.botKanal.ukljucen: profil=true čvor=false
+[tunel-memorije] 1/1 OK
+[capguard] 8/8 OK
+[claude] 4/4 OK
+  TAJNA postoji claude-prijava
+[upravitelj] 1/1 OK
+[home] 0/1 OK
+  PRESKOČENO (grep) — TUDI_HOME nije zadan
+[rag] 1/1 OK
+ZBROJ: OK 92 · RAZLIKA 1 · NEDOSTAJE 0 · TAJNA-NEDOSTAJE 0 · ČOVJEK 0 · PRESKOČENO 1 · PREDUVJET 0

@@ -324,6 +324,58 @@ Je li ploča otvorila pravu bazu, provjeri nakon restarta:
 ls -l /proc/$(systemctl show taskmanager -p MainPID --value)/fd | grep '\.db$'
 ```
 
+## 10.1. Novi čvor iz profila
+
+Čvor koji radi kao razgovorni upravitelj (Telegram grupa, razgovor, memorija, capguard) ne slaže
+se rukom nego iz **profila** — [ADR-0004](adr/ADR-0004-profil-cvora.md). Tri sloja: *profil*
+(`profili/<ime>/profil.json`, u paketu), *instanca* (vrijednosti po čvoru, izvan gita) i *tajne*
+(samo čovjek, na čvoru). Alat je `scripts/profil-cvora.ts`; postavke ploče upisuje **kroz API**
+(`changedBy=profil-cvora`), a prije svake izmjene datoteke spremi kopiju u
+`$TM_HOME/backup/profil-<vrijeme>/`.
+
+Redoslijed (ADR-0004 §6):
+
+1. **Kod.** Ažuriraj paket na čvoru na commit koji sadrži sve značajke iz `paket.paketSadrzi`
+   (sa stroja s kojeg se čvorovi postavljaju: `tm-cvor-azuriraj.sh <čvor>`). Kod bez značajke
+   alat javlja izlazom `3` (preduvjet) i ništa ne piše.
+2. **Instanca.** Kopiraj primjer i upiši vrijednosti čvora (ID grupe, dopušteni korisnici, banka
+   memorije, …):
+   ```bash
+   cp profili/upravitelj-cvora/instanca.primjer.env ~/.taskmanager/config/profil.instanca.env
+   ```
+   (uz `TM_HOME` u `config/postavke.env` putanja je `$TM_HOME/config/profil.instanca.env`.)
+3. **Provjera.** `bun scripts/profil-cvora.ts provjeri` — popis razlika po modulu (`OK`,
+   `RAZLIKA`, `NEDOSTAJE`, `TAJNA-NEDOSTAJE`, `ČOVJEK`, `PRESKOČENO`). Ne mijenja ništa (baza
+   se otvara samo za čitanje). `--json` daje isto strojno.
+4. **Tajne i ljudske stavke** redom iz [PROFIL_CVORA_TAJNE.md](PROFIL_CVORA_TAJNE.md): bot token,
+   bot u grupi, Claude prijava, `TM_RAZGOVOR_PUNO=1` (samo vlasnik, ručno), tajna kanala
+   bot↔bot, odobrenje Tier-2 sposobnosti, tunel memorije. Za tajnu alat javlja samo `postoji`/`nema`.
+5. **Primjena.** Prvo pregled, pa upis (uz odobrenje vlasnika čvora):
+   ```bash
+   bun scripts/profil-cvora.ts primijeni --suho              # zadano: samo pokaže što bi napravio
+   bun scripts/profil-cvora.ts primijeni --pisi              # upiše razlike
+   bun scripts/profil-cvora.ts primijeni --pisi --modul telegram,razgovor   # samo dio
+   ```
+   `razgovor.ovlasti=puno` alat upisuje samo ako je `TM_RAZGOVOR_PUNO=1` već upisao čovjek (inače
+   `citanje` + upozorenje); capguard sposobnost samo **zatraži** (`pending`), nikad ne odobrava.
+6. **Restart ploče** ako je alat javio `potreban restart regoc-taskmanager: da` (promijenjen
+   `config/postavke.env`) — kad je 0 zadataka `in_progress`. Alat ga sam ne radi.
+7. **Ponovna provjera** → izlazni kod `0` (ili `2` dok ljudske stavke čekaju); drugi
+   `primijeni --pisi` mora javiti `0 promjena`.
+
+Izlazni kodovi: `0` sve OK · `1` razlike koje alat zna primijeniti · `2` nedostaju tajne ili
+ljudske stavke · `3` preduvjet (kod bez značajke, nema baze, profil/instanca neispravni) ·
+`4` alat odbio (npr. `--suho` i `--pisi` zajedno, `--pisi` preko `--ssh`).
+
+**Postojeći čvor kao uzor.** `izvezi` čita čvor po bijeloj listi profila i piše instancu; uz
+`--ssh korisnik@stroj` sakupljač ide SSH standardnim ulazom (na čvoru ne nastaje ni jedna
+datoteka), a pisanje preko `--ssh` alat odbija:
+
+```bash
+bun scripts/profil-cvora.ts izvezi --ssh korisnik@cvor --instanca-van cvor.instanca.env
+bun scripts/profil-cvora.ts provjeri --ssh korisnik@cvor --instanca cvor.instanca.env --bez-sustava
+```
+
 ## 11. Kad nešto ne radi
 
 | Znak | Uzrok i rješenje |

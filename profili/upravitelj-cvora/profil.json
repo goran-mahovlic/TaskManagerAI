@@ -1,0 +1,182 @@
+{
+  "_opis": "Profil čvora „upravitelj-cvora\" — razgovorni upravitelj instalacije u Telegram grupi. Snimljen s prvog čvora 06.10.2026. (ADR-0004). Ovdje su SAMO postavke; vrijednosti koje se razlikuju po čvoru su ${VARIJABLE} iz instanca.env (izvan gita), a tajne se navode samo IMENOM. Alat: bun scripts/profil-cvora.ts provjeri|primijeni|izvezi.",
+  "profil": "upravitelj-cvora",
+  "verzija": 1,
+  "instanca": {
+    "obavezno": [
+      "CVOR_IME", "CVOR_DOPUSTENI_HOSTOVI", "TG_CHAT_ID", "TG_DOPUSTENI_CHATOVI",
+      "RAZGOVOR_IME", "RAZGOVOR_DOPUSTENI_KORISNICI", "MEMORIJA_BANKA", "ZADANI_IZVRSITELJ"
+    ],
+    "neobavezno": [
+      "RAZGOVOR_PRESKOCI_AKO_SADRZI", "RAZGOVOR_RADNI_DIR",
+      "BOTKANAL_ADRESE", "BOTKANAL_CHATOVI", "BOTKANAL_DRUGI", "BOTKANAL_STOP_KORISNICI",
+      "SUSTAV_DIR", "TUDI_HOME", "SECURITYVALIDATOR_SHA256"
+    ]
+  },
+  "moduli": {
+    "paket": {
+      "vlasnik": "paket",
+      "opis": "Kod ploče na čvoru mora sadržavati sve značajke koje profil koristi.",
+      "paketSadrzi": [
+        { "znacajka": "razgovorni način (ADR-0002)", "datoteka": "src/razgovor/Razgovor.ts" },
+        { "znacajka": "kratki stil izlaza (TASK-5285)", "datoteka": "src/Stil.ts" },
+        { "znacajka": "privitci u oba smjera (TASK-5282)", "datoteka": "src/TelegramPrivitci.ts" },
+        { "znacajka": "kanal bot↔bot i „Prekini komunikaciju\" (ADR-0003)", "grep": ["src/TaskWebUI.ts", "od-bota"] },
+        { "znacajka": "glas u razgovoru (TASK-5294)", "grep": ["src/razgovor/RazgovorPostavke.ts", "glasPrepoznavanje"] },
+        { "znacajka": "kartica Sigurnost / capguard (TASK-5270)", "datoteka": "src/Capguard.ts" }
+      ],
+      "alati": { "bun": ">=1.3.0", "claude": ">=2.1.215", "python3": ">=3.8" },
+      "unit": { "ime": "regoc-taskmanager", "aktivan": true, "environmentFile": "config/postavke.env" }
+    },
+    "okolina": {
+      "vlasnik": "paket",
+      "opis": "Netajni retci config/postavke.env. Izvoz je po BIJELOJ listi — ključ kojeg ovdje nema ne izvozi se nikad.",
+      "postavkeEnv": {
+        "TM_PORT": "17781",
+        "TM_ALLOWED_HOSTS": "${CVOR_DOPUSTENI_HOSTOVI}",
+        "TM_DB": "${SUSTAV_DIR}/data/regoc.db",
+        "TM_AGENTS_REGISTRY": "${SUSTAV_DIR}/REGOC_AGENTS.json",
+        "TM_MODEL_CONFIG": "${SUSTAV_DIR}/models/model-config.json",
+        "TM_MODULE_CONFIG": "${SUSTAV_DIR}/modules/module-config.json",
+        "TM_ODLUCITELJ_CONFIG": "${SUSTAV_DIR}/config/odlucitelj.json",
+        "TM_DEZURNI_CONFIG": "${SUSTAV_DIR}/config/dezurni.json",
+        "TM_UPUTE_PO_TIPU": "${SUSTAV_DIR}/config/upute-po-tipu.json",
+        "TM_RAZGOVOR_UPUTE": "${HOME}/CLAUDE.md"
+      },
+      "nesmijeBiti": ["TM_CHROMA_HOST", "TM_CHROMA_PORT"],
+      "tajneImenom": ["TM_CREDENTIALS", "TM_BOT_KANAL_TOKEN"]
+    },
+    "telegram": {
+      "vlasnik": "paket",
+      "datoteka": "config/telegram.json",
+      "json": {
+        "ukljucen": true,
+        "botTokenEnv": "TELEGRAM_BOT_TOKEN",
+        "chatId": "${TG_CHAT_ID}",
+        "obavijestZavrseno": true,
+        "obavijestGreska": true,
+        "prefix": "📋",
+        "stil": "kratko",
+        "ulaz": {
+          "ukljucen": true, "intervalSek": 3, "timeoutSek": 25,
+          "dopusteniChatovi": "${TG_DOPUSTENI_CHATOVI:json}",
+          "dopusteniKorisnici": [], "okidac": "", "sameSpomeni": false,
+          "potvrdaUChat": true, "maxDuljina": 4000,
+          "zadaniIzvrsitelj": "${ZADANI_IZVRSITELJ}"
+        },
+        "privitci": {
+          "ukljucen": true, "mapa": "", "maxMB": 20,
+          "vrste": ["photo", "document", "voice", "audio", "video", "video_note"]
+        }
+      },
+      "nikadNeIzvozi": ["botToken"],
+      "tajneImenom": ["TELEGRAM_BOT_TOKEN"],
+      "provjeraUzivo": "getMe preko tokena iz TM_CREDENTIALS — ispisuje samo username bota, nikad token"
+    },
+    "razgovor": {
+      "vlasnik": "paket",
+      "opis": "Razgovorni način (ADR-0002). Upisuje se kroz PUT /api/config/razgovor, da svaka promjena ima redak u settings_history (changedBy=profil-cvora).",
+      "settings": {
+        "razgovor.ukljucen": true,
+        "razgovor.ime": "${RAZGOVOR_IME}",
+        "razgovor.odgovaraNa": "dopusteni-sve",
+        "razgovor.dopusteniKorisnici": "${RAZGOVOR_DOPUSTENI_KORISNICI:json}",
+        "razgovor.preskociAkoSadrzi": "${RAZGOVOR_PRESKOCI_AKO_SADRZI:json}",
+        "razgovor.model": "",
+        "razgovor.rokSek": 300,
+        "razgovor.maxUsporednih": 2,
+        "razgovor.sesijaNeaktivnostMin": 30,
+        "razgovor.burstMs": 3000,
+        "razgovor.ovlasti": "puno",
+        "razgovor.radniDir": "${RAZGOVOR_RADNI_DIR}",
+        "razgovor.dokumenti": true
+      },
+      "odobrenje": {
+        "razgovor.ovlasti=puno": "Traži TM_RAZGOVOR_PUNO=1 u config/postavke.env. Upisuje ga SAMO čovjek-vlasnik na stroju (ADR-0002 §7.1 c); alat ga nikad ne piše, samo provjerava. Bez njega primjena spušta na „citanje\" i javlja to kao upozorenje."
+      }
+    },
+    "glas": {
+      "vlasnik": "paket + izvorni-sustav",
+      "settings": { "razgovor.glas": "na-glasovno", "razgovor.glasPrepoznavanje": true },
+      "servis": { "unit": "regoc-voice", "vrata": 8899, "okolina": { "WHISPER_MODEL": "small", "ESPEAK_VOICE": "hr" } },
+      "napomena": "Servis glasa (TTS/STT) nije u paketu; dolazi s kompletom izvornog sustava. Alat ga samo provjerava."
+    },
+    "memorija": {
+      "vlasnik": "paket",
+      "settings": {
+        "memorija.razgovor": "on",
+        "memorija.globalno": "on",
+        "memorija.agenti": "on",
+        "memorija.banka": "${MEMORIJA_BANKA}",
+        "memorija.url": "http://127.0.0.1:17792",
+        "memorija.rokMs": 20000,
+        "memorija.oznakaUspjeha": false
+      },
+      "ovisiO": ["tunel-memorije"],
+      "napomena": "Bez memorije u načinu on odgovor počinje s „🧠🚫 bez memorije: <razlog>\" (ADR-0002 §16) — namjerno vidljivo."
+    },
+    "tunel-memorije": {
+      "vlasnik": "glavni-stroj",
+      "opis": "Obrnuti SSH tunel s glavnog stroja: Hindsight je na čvoru 127.0.0.1:17792 (samo loopback). Na čvoru se ništa ne instalira.",
+      "provjeraNaCvoru": { "vrata": 17792, "adresa": "127.0.0.1", "http": "/health" },
+      "postupak": "Na glavnom stroju: tunel-<čvor> petlja pod nadzornikom (obrazac tools/petlje/tunel-nodea.sh, parametar REGOC_TUNEL_CILJ). Ključ za SSH je tajna glavnog stroja."
+    },
+    "bot-kanal": {
+      "vlasnik": "paket",
+      "opis": "Kanal bot↔bot preko LAN-a i stop-fraza „Prekini komunikaciju\" (ADR-0003).",
+      "settings": {
+        "razgovor.botKanal.ukljucen": true,
+        "razgovor.botKanal.adrese": "${BOTKANAL_ADRESE:json}",
+        "razgovor.botKanal.chatovi": "${BOTKANAL_CHATOVI:json}",
+        "razgovor.botKanal.drugi": "${BOTKANAL_DRUGI:json}",
+        "razgovor.botKanal.ovlasti": "citanje",
+        "razgovor.botKanal.prozorMin": 10,
+        "razgovor.botKanal.strop": 6,
+        "razgovor.botKanal.stopKorisnici": "${BOTKANAL_STOP_KORISNICI:json}"
+      },
+      "nikadNeIzvozi": ["razgovor.botKanal.stanje"],
+      "tajneImenom": ["TM_BOT_KANAL_TOKEN"],
+      "uvjet": "ukljucuje se samo ako je BOTKANAL_ADRESE zadan u instanci; inače modul ostaje isključen"
+    },
+    "capguard": {
+      "vlasnik": "stroj-root",
+      "opis": "Kartica Sigurnost čita /etc/regoc/capabilities.state; ploča smije samo upisati NAMJERU (capability_requests, pending). Primjenu radi capguard, Tier-2 tek uz ljudsko odobrenje.",
+      "zeljeno": {
+        "plan_mode": true, "allow_spawn": true, "allow_messaging": true, "allow_fs_write": false,
+        "allow_lan": true, "allow_internet": true, "allow_root": true, "allow_mesh": false
+      },
+      "primjena": "za svaku razliku alat upisuje zahtjev (pending) kroz API ploče; Tier-1 primijeni capguard sam, Tier-2 (internet, root, lan, mesh) odobrava čovjek — v. docs/PROFIL_CVORA_TAJNE.md"
+    },
+    "claude": {
+      "vlasnik": "paket + izvorni-sustav",
+      "opis": "Claude CLI kojim rade razgovor i agenti.",
+      "prijava": "čovjek: `claude auth login` kao korisnik usluge na čvoru (tajna, nikad se ne izvozi)",
+      "settingsJson": {
+        "datoteka": "${HOME}/.claude/settings.json",
+        "hooks": {
+          "PreToolUse": [{ "matcher": "Bash|Edit|MultiEdit|Write|Read", "hooks": [{ "type": "command", "command": "${HOME}/.bun/bin/bun run ${HOME}/.claude/hooks/SecurityValidator.hook.ts", "timeout": 15 }] }],
+          "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "${HOME}/.bun/bin/bun run ${HOME}/.claude/hooks/SecurityValidator.hook.ts", "timeout": 15 }] }]
+        }
+      },
+      "kuke": [{ "datoteka": "${HOME}/.claude/hooks/SecurityValidator.hook.ts", "izvor": "komplet izvornog sustava", "sha256": "${SECURITYVALIDATOR_SHA256}" }],
+      "napomena": "Razgovorna sesija ionako radi uz --setting-sources '' (ADR-0002 §7); settings.json štiti agente daemona i ručni rad na čvoru."
+    },
+    "upravitelj": {
+      "vlasnik": "paket",
+      "opis": "Identitet/vodič upravitelja čvora — TM_RAZGOVOR_UPUTE pokazuje na ovu datoteku.",
+      "predlozak": "profili/upravitelj-cvora/CLAUDE.md.predlozak",
+      "cilj": "${HOME}/CLAUDE.md",
+      "najvise": 16000
+    },
+    "home": {
+      "vlasnik": "izvorni-sustav",
+      "opis": "Datoteke izvornog sustava na čvoru ne smiju nositi tuđi HOME kao zadanu putanju.",
+      "grepNema": { "uzorak": "${TUDI_HOME}", "u": ["${SUSTAV_DIR}/RegocDaemon.ts"] }
+    },
+    "rag": {
+      "vlasnik": "paket",
+      "ukljucen": false,
+      "opis": "RAG isključen: nijedan TM_CHROMA_* u okolini (v. modul okolina.nesmijeBiti)."
+    }
+  }
+}
