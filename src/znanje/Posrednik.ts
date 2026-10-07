@@ -83,6 +83,8 @@ export function odluci(metoda: string, put: string, banke: readonly string[]): O
   return { vrsta: 'zabrani', razlog: `${metoda} ${sirovi.join('/') || '(banka)'} nije dopušten čvoru` }
 }
 
+class Odbijeno extends Error {}
+
 export interface Vrata { smije: boolean; razlog?: string }
 
 export interface PosrednikOpcije {
@@ -98,6 +100,10 @@ export interface PosrednikOpcije {
   zapis?: (red: Record<string, unknown>) => void
 }
 
+/** PUT banke: čvor smije postaviti samo ime, misije i narav banke — ne veličinu dijelova ni dodatne upute retaina. */
+const POLJA_BANKE = ['name', 'mission', 'retain_mission', 'reflect_mission', 'disposition',
+  'disposition_skepticism', 'disposition_literalism', 'disposition_empathy']
+
 const odbij = (status: number, tijelo: Record<string, unknown>) => Response.json(tijelo, { status })
 
 export function createPosrednik(o: PosrednikOpcije): (req: Request) => Promise<Response> {
@@ -106,11 +112,18 @@ export function createPosrednik(o: PosrednikOpcije): (req: Request) => Promise<R
   const rok = o.rokMs ?? 30 * 60_000
 
   const proslijedi = async (req: Request, url: URL, put: string): Promise<Response> => {
-    const tijelo = ['GET', 'HEAD'].includes(req.method) ? undefined : await req.arrayBuffer()
+    let tijelo: ArrayBuffer | string | undefined = ['GET', 'HEAD'].includes(req.method) ? undefined : await req.arrayBuffer()
+    if (req.method === 'PUT' && tijelo) {
+      let j: any
+      try { j = JSON.parse(new TextDecoder().decode(tijelo)) } catch { throw new Odbijeno('tijelo nije JSON') }
+      tijelo = JSON.stringify(Object.fromEntries(Object.entries(j ?? {}).filter(([k]) => POLJA_BANKE.includes(k))))
+    }
+    // Upit (limit, offset…) samo uz GET; ostale rute ga ne trebaju.
+    const upit = req.method === 'GET' ? url.search : ''
     const zaglavlja = new Headers()
     const ct = req.headers.get('content-type')
     if (ct) zaglavlja.set('content-type', ct)
-    const odg = await f(`${cilj}${put}${url.search}`, { method: req.method, headers: zaglavlja, body: tijelo, signal: AbortSignal.timeout(rok) })
+    const odg = await f(`${cilj}${put}${upit}`, { method: req.method, headers: zaglavlja, body: tijelo, signal: AbortSignal.timeout(rok) })
     return new Response(odg.body, { status: odg.status, headers: { 'content-type': odg.headers.get('content-type') || 'application/json' } })
   }
 
@@ -134,6 +147,7 @@ export function createPosrednik(o: PosrednikOpcije): (req: Request) => Promise<R
       }
       return await proslijedi(req, url, od.put)
     } catch (e: any) {
+      if (e instanceof Odbijeno) return odbij(400, { error: e.message })
       return odbij(502, { error: 'Hindsight nedostupan', razlog: String(e?.message || e).slice(0, 200) })
     }
   }

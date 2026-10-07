@@ -85,6 +85,16 @@ describe('Z6 — posrednik', () => {
     expect(h.pozivi.at(-1)!.url).toBe(`${CILJ}/v1/default/banks/banka_cvora/documents/sustav%2Fagenti?x=1`)
   })
 
+  test('PUT banke prosljeđuje samo dopuštena polja; upit samo uz GET', async () => {
+    let tijelo = ''
+    let zadnji = ''
+    const fetchImpl = (async (url: string, init?: RequestInit) => { zadnji = url; tijelo = String(init?.body ?? ''); return Response.json({}) }) as unknown as typeof fetch
+    const p = createPosrednik({ cilj: CILJ, banke: ['banka_cvora'], fetchImpl })
+    await p(zahtjev('PUT', '/v1/default/banks/banka_cvora?x=1', { name: 'n', mission: 'm', retain_chunk_size: 99999, retain_custom_instructions: 'x' }))
+    expect(JSON.parse(tijelo)).toEqual({ name: 'n', mission: 'm' })
+    expect(zadnji).toBe(`${CILJ}/v1/default/banks/banka_cvora`)
+  })
+
   test('reflect uz zatvorena vrata → 429', async () => {
     const h = lazniHindsight()
     const p = createPosrednik({ cilj: CILJ, banke: ['banka_cvora'], fetchImpl: h.fetchImpl, vrata: async () => ({ smije: false, razlog: 'tjedan' }) })
