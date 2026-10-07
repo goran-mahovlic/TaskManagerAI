@@ -1,9 +1,10 @@
-# ADR-0004 — Vrata potrošnje po provideru i prekidač „svi na model"
+# ADR-0005 — Vrata potrošnje po provideru i prekidač „svi na model"
 
 | | |
 |---|---|
 | **Stanje** | Prijedlog (dizajn, bez koda) — čeka Goranove odluke iz §9, zatim izvedbu (Jelena, §8) |
 | **Datum** | 07.10.2026. |
+| **Broj** | Zapisan kao ADR-0004 (TASK-5304); preimenovan u ADR-0005 pri spajanju u main (TASK-5311) jer je ADR-0004 već profil čvora (TASK-5295, 06.10.). Commiti TASK-5304/5305 ga zovu „ADR-0004". |
 | **Autorica** | Kosjenka (Architect), TASK-5304 (PRJ-048) |
 | **Nalog** | Goran, grupa REGOČ, 07.10.2026.: (1) node-A se mora moći CIJELI preseliti na OpenRouter kad je Anthropic sesija potrošena; (2) mjerenje sesije na node-A „ne radi pa se potroši do 100 %"; (3) OpenRouter i ostali ne-Anthropic modeli NE smiju reagirati na potrošnju Anthropic sesije; (4) jedan padajući izbornik „prebaci sve na model" (Config) |
 | **Vrijedi za** | oba sustava: glavni (dell-home, `~/.claude/regoc`) i paket TaskManagerAI (node-A 192.168.10.20, `~/TaskManagerAI` + `~/.claude/regoc` na čvoru) |

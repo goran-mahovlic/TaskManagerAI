@@ -94,8 +94,8 @@ nepoznata polja (HTTP 400 s popisom dopuštenih).
 | `memorija.url` | `''` | URL | `''` → `TM_HINDSIGHT_URL` → memorija isključena |
 | `memorija.rokMs` | `1500` | 200–30000 | rok dohvata memorije, TVRD (TASK-5277: 5000 → 10000, recall kroz tunel na node-A mjeren 6–7,5 s; TASK-5292: strop 30000, node-A 20000) |
 | `memorija.oznakaUspjeha` | `false` | bool | uz uspješan dohvat odgovor počinje s 🧠 (bez memorije u načinu `on` UVIJEK ide `🧠🚫 bez memorije: <razlog>`, TASK-5292) |
-| `razgovor.glasPrepoznavanje` | `false` | bool | glasovna/zvučna/video-krug poruka → lokalni STT → `[GLAS] …` (§19; traži `telegram.privitci`) |
-| `razgovor.glas` | `'off'` | `off` \| `na-glasovno` \| `uvijek` | odgovor glasom (TTS → `sendVoice`) uz tekst (§19) |
+| `razgovor.glasPrepoznavanje` | `false` | bool | glasovna/zvučna/video-krug poruka → lokalni STT → `[GLAS] …` (§20; traži `telegram.privitci`) |
+| `razgovor.glas` | `'off'` | `off` \| `na-glasovno` \| `uvijek` | odgovor glasom (TTS → `sendVoice`) uz tekst (§20) |
 | `razgovor.glasUrl` | `''` | http(s) ili prazno | glasovni servis (`/stt`, `/tts`, `/health`); prazno = `http://127.0.0.1:8899` |
 | `razgovor.glasGlas` | `''` | ime glasa (`[\w.-]`, bez putanje) | piper model servisa bez `.onnx`; prazno = zadani glas servisa |
 | `razgovor.glasRokSek` | `120` | 10–600 | tvrdi rok jednog STT ili TTS poziva |
@@ -618,14 +618,6 @@ mape NE učitava sama — vodič za stroj mora doći kroz identitet.
    tim nositeljem (`nositeljIzPoruke`, samo dopušteni nositelji); potvrda u chatu nosi `→ <id>`.
    Pitanje („koji agenti postoje…") je ispod praga i ide razgovoru, koji zna agente iz identiteta.
 
-## 19. Nastavak: kanal bot↔bot (ADR-0003, TASK-5289)
-
-Pravilo §5.1 („pošiljatelj je bot → nikad") i §15 („sadrži @klaudioAI_bot → tišina") imaju
-jednu iznimku: poruku koja stiže LAN rutom `/api/razgovor/od-bota` s valjanom tajnom. Ta
-poruka uvijek ide na razinu ≤ `razgovor.botKanal.ovlasti` (zadano `citanje`) i nikad ne ide u
-ingest. Stop-fraza „Prekini komunikaciju" provjerava se prije cijelog Filtra. Detalji su u
-`docs/adr/ADR-0003-kanal-bot-bot-preko-lan-a.md`.
-
 ## 18. Dopunska odluka (TASK-5285, 06.10.2026.): nalog s izvršiteljem, kratki stil, razgovor koji se vidi
 
 Izmjereno na čvoru: zadaci iz chata otvarali su se bez izvršitelja (`no-assignee`, nitko ih ne
@@ -656,7 +648,15 @@ pokreće), rezultati su išli u konzolu daemona umjesto u grupu, izravno obraća
    ČITATI zapise razgovora, `posiljatelji.json` i `ingest.jsonl` (ne `sesije.json`, ne `radni/`
    drugih chatova, ne konfiguraciju bota i tajne).
 
-## 19. Dopunska odluka (TASK-5294, 06.10.2026.): glasovne poruke i odgovor glasom — lokalno
+## 19. Nastavak: kanal bot↔bot (ADR-0003, TASK-5289)
+
+Pravilo §5.1 („pošiljatelj je bot → nikad") i §15 („sadrži @klaudioAI_bot → tišina") imaju
+jednu iznimku: poruku koja stiže LAN rutom `/api/razgovor/od-bota` s valjanom tajnom. Ta
+poruka uvijek ide na razinu ≤ `razgovor.botKanal.ovlasti` (zadano `citanje`) i nikad ne ide u
+ingest. Stop-fraza „Prekini komunikaciju" provjerava se prije cijelog Filtra. Detalji su u
+`docs/adr/ADR-0003-kanal-bot-bot-preko-lan-a.md`.
+
+## 20. Dopunska odluka (TASK-5294, 06.10.2026.): glasovne poruke i odgovor glasom — lokalno
 
 Vlasnik (grupa node-A, 06.10. 19:19): bot mora transkribirati glasovne poruke i odgovarati
 glasom kao izvorni sustav, **sve na čvoru, ništa preko glavnog stroja**.

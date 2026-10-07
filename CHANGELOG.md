@@ -25,7 +25,7 @@
   odgovor bez markdowna, koda, poveznica, emojija i oznake memorije (≤1200 znakova).
 - Fail-open s vidljivom oznakom: `🎙️🚫 transkript nije uspio: <razlog>` (u chat i u tekst
   poruke), `🔊🚫 glasovni odgovor nije uspio: <razlog>`. Rok STT/TTS je tvrd.
-- ADR-0002 §19. Test: `tests/razgovor-glas.test.ts` (36).
+- ADR-0002 §20. Test: `tests/razgovor-glas.test.ts` (36).
 
 ## 2026-10-06 — privitci iz Telegrama spremaju se lokalno (TASK-5282)
 
