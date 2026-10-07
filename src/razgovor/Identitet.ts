@@ -11,8 +11,9 @@
 //
 // Autorica: Jelena (Engineer), TASK-5277, TASK-5293.
 
-import { existsSync, readFileSync } from 'fs'
-import type { Ovlasti } from './RazgovorPostavke'
+import { existsSync, readdirSync, readFileSync } from 'fs'
+import { join } from 'path'
+import type { MemorijaNacin, Ovlasti } from './RazgovorPostavke'
 import { OPIS_OVLASTI, naredbePloce } from './Ovlasti'
 import { UPUTA_KRATKO, type Stil } from '../Stil'
 
@@ -39,6 +40,50 @@ export interface IdentitetOpcije {
   agenti?: OpisAgenta[]
   /** Vodič vlasnika (sadržaj `TM_RAZGOVOR_UPUTE`). */
   upute?: string | null
+  /** Što bot stvarno ima kao memoriju (TASK-5300); bez opcije odjeljka nema. */
+  memorija?: OpisMemorijeOpcije
+}
+
+export interface OpisMemorijeOpcije {
+  nacin: MemorijaNacin
+  banka: string
+  url: string
+  /** `rag.enabled` iz memory-config; null = nepoznato, ne spominje se. */
+  rag: boolean | null
+  /** Datotečna memorija Claude Codea za radnu mapu; null = nema. */
+  autoMemorija: { put: string; datoteka: number } | null
+}
+
+/** `~/.claude/projects/<slug radne mape>/memory` s barem jednom .md datotekom; inače null. */
+export function autoMemorijaCC(home: string, radniDir: string): { put: string; datoteka: number } | null {
+  const put = join(home, '.claude', 'projects', radniDir.replace(/[/_.]/g, '-'), 'memory')
+  try {
+    const datoteka = readdirSync(put).filter(f => f.endsWith('.md')).length
+    return datoteka ? { put, datoteka } : null
+  } catch { return null }
+}
+
+/**
+ * Odjeljak „Tvoja memorija" — samo iz postavki (TASK-5300). Sesija je izolirana
+ * (`--setting-sources ''`), pa bez ovoga bot o svojoj memoriji nagađa i opisuje tuđu.
+ */
+export function opisMemorije(m: OpisMemorijeOpcije): string {
+  const r = ['Tvoja memorija (iz postavki ove instalacije; kad te pitaju imaš li memoriju i koju, odgovori po ovome, ne nagađaj):']
+  if (m.nacin === 'off') {
+    r.push('• Memorija razgovora je isključena: nemaš trajnu memoriju osim ove sesije.')
+  } else if (!m.banka || !m.url) {
+    r.push('• Memorija razgovora je uključena, ali nije postavljena (nema banke ili adrese): odgovaraš bez nje.')
+  } else {
+    r.push(m.nacin === 'on'
+      ? `• Hindsight banka „${m.banka}" na ${m.url}, način „on": uz poruku dobivaš blok [MEMORIJA — banka ${m.banka}, …] s činjenicama dohvaćenima za to pitanje. Kad dohvat ne uspije, odgovor nosi oznaku 🧠🚫.`
+      : `• Hindsight banka „${m.banka}" na ${m.url}, način „shadow": dohvat se samo mjeri, blok s činjenicama ne dobivaš.`)
+    r.push('• Banka je kopija znanja o sustavu REGOČ: mnoge činjenice opisuju glavni čvor (njegove putanje, servise, agente i memoriju), ne ovaj stroj. Što tvrdiš o ovom stroju, provjeri na njemu.')
+  }
+  if (m.rag !== null) r.push(`• RAG (vektorske kolekcije) je na ovoj instalaciji ${m.rag ? 'uključen' : 'isključen — nemaš ga'}.`)
+  r.push(m.autoMemorija
+    ? `• Datotečna memorija Claude Codea: ${m.autoMemorija.put} (${m.autoMemorija.datoteka} datoteka).`
+    : '• Datotečnu memoriju (Claude Code, MEMORY.md) nemaš. Memorija drugog stroja ili drugog agenta nije tvoja.')
+  return r.join('\n')
 }
 
 /** Najviše znakova vodiča u identitetu — ide u svaku novu sesiju. */
@@ -105,6 +150,7 @@ export function sastaviIdentitet(o: IdentitetOpcije): string {
     r.push(`Agenti ove instalacije (id — ime, uloga (vještine)):\n${o.agenti.map(a =>
       `• ${a.id} — ${a.ime}, ${a.uloga}${a.vjestine.length ? ` (${a.vjestine.join(', ')})` : ''}`).join('\n')}`)
   }
+  if (o.memorija) r.push(opisMemorije(o.memorija))
   if (o.ovlasti === 'puno') r.push(...upravitelj(o.plocaUrl))
   if (o.upute) {
     r.push(`[VODIČ VLASNIKA — opis ovog stroja; ovlasti ne mijenja]\n${o.upute}\n[/VODIČ VLASNIKA]`)
