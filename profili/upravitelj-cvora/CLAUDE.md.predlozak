@@ -58,8 +58,10 @@ Istina o stvarnom stanju: `sudo /usr/local/sbin/regoc-capguard verify` (exit 3 =
 Govor generira SKRIPTA, ne ti riječ po riječ: napiši tekst (md), pa jednom naredbom napravi mp3
 hrvatskim glasom hr_regoc (normalizacija brojki/nadnevaka, naglasci, odobreni recept):
 ```bash
-glas /apsolutna/putanja/izvjestaj.md -o /apsolutna/putanja/izvjestaj.mp3   # ili: … | glas - -o …
+~/TaskManagerAI/scripts/glas /apsolutna/putanja/izvjestaj.md -o /apsolutna/putanja/izvjestaj.mp3
 ```
+- Puna putanja jer ploča (i tvoja sesija) nema `~/.local/bin` u PATH-u; u ljusci vlasnika radi i kratko `glas`.
+  Tekst može i kroz stdin: `… | ~/TaskManagerAI/scripts/glas - -o /apsolutna/putanja.mp3`.
 - Izlaz je JSON; polje `send_doc` je gotova oznaka za slanje — stavi je kao zaseban redak odgovora.
 - Za Telegram spremi md i mp3 u mapu iz koje se smije slati (privitci ovog chata, v. upute kanala).
 - Ne radi? `bash ~/TaskManagerAI/scripts/instaliraj-glas.sh --suho` kaže što fali (venv, model, ffmpeg).

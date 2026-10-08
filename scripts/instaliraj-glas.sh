@@ -55,7 +55,7 @@ else
   radi "stvaram venv i instaliram piper-tts==$PIPER_VERZIJA"
   if [ "$SUHO" = 0 ]; then
     mkdir -p "$(dirname "$VENV")"
-    if python3 -m venv "$VENV" 2>/dev/null && [ -x "$VENV/bin/pip" ]; then
+    if python3 -m venv "$VENV" >/dev/null 2>&1 && [ -x "$VENV/bin/pip" ]; then
       "$VENV/bin/pip" install -q "piper-tts==$PIPER_VERZIJA" || { fali "pip install piper-tts"; exit 1; }
     else
       # Debian bez python3-venv/ensurepip: prazan venv, pip sustava instalira u njega.
