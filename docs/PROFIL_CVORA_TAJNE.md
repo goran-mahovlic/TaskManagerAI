@@ -7,9 +7,18 @@ ne stavlja u profil ni instancu. `profil-cvora.ts provjeri` za svaku stavku javl
 
 Redoslijed je bitan: stavke 1–3 traži sam rad ploče, 4–6 traže razgovor, 7–9 su ovlasti.
 
+**Upis bez prijave na stroj (ADR-0007, TASK-5343).** Lozinke i tokeni modula (mail, Nextcloud,
+GitHub/GitLab, pgvector, ključevi davatelja, bot token) upisuju se na ploči čvora:
+**Config → Tajne**. Vrijednost je samo-za-pisanje (ploča pokazuje samo postoji/ne, otisak i
+tko/kada), a svaki upis potvrđuje vlasnik kodom koji bot pošalje u njegov **privatni** Telegram.
+Preduvjet je jednokratno, na stroju: `bun scripts/tajna.ts podesi --potvrda-uid <Telegram uid vlasnika>`
+(`config/tajne.json`, nije tajna; ploča je ne smije mijenjati). Upis ide samo preko loopbacka,
+Tailscalea ili HTTPS-a. Dok bot nije podešen (stavka 1), tajne se upisuju CLI-jem na stroju:
+`bun scripts/tajna.ts postavi IME` (vrijednost na upit, bez ispisa; nikad kao argument).
+
 | # | Stavka | Kako se unosi | Kako se provjerava (bez otkrivanja) | Zašto čovjek |
 |---|---|---|---|---|
-| 1 | **Bot token** (novi bot za ovaj čvor) | BotFather → `/newbot`. Unosi se na ploči čvora: Config → Telegram obavijesti → polje tokena. Ploča ga sprema u datoteku vjerodajnica (`TM_CREDENTIALS`, 0600) pod imenom iz `botTokenEnv` (`TELEGRAM_BOT_TOKEN`) | `provjeri` → `TAJNA postoji TELEGRAM_BOT_TOKEN`; uživo `getMe` vraća samo `@username` bota | token je ključ bota. **Ne smije se dijeliti s drugim čvorom**: Telegram dopušta jedan `getUpdates` po tokenu |
+| 1 | **Bot token** (novi bot za ovaj čvor) | BotFather → `/newbot`. Unosi se na ploči čvora: Config → Telegram obavijesti → polje tokena (ili Config → Tajne kad je potvrda kodom već podešena; prvi token na čvoru bez bota: `scripts/tajna.ts postavi TELEGRAM_BOT_TOKEN`). Ploča ga sprema u datoteku vjerodajnica (`TM_CREDENTIALS`, 0600) pod imenom iz `botTokenEnv` (`TELEGRAM_BOT_TOKEN`) | `provjeri` → `TAJNA postoji TELEGRAM_BOT_TOKEN`; uživo `getMe` vraća samo `@username` bota | token je ključ bota. **Ne smije se dijeliti s drugim čvorom**: Telegram dopušta jedan `getUpdates` po tokenu |
 | 2 | **Bot u grupi** | dodaj bota u grupu čvora. U BotFatheru `/setprivacy` → Disable (bot mora vidjeti poruke bez prozivke, `odgovaraNa=dopusteni-sve`) | poruka u grupi stiže u `ingest.jsonl` | to radi samo vlasnik grupe u Telegramu |
 | 3 | **ID grupe i dopušteni korisnici** u instanci | `TG_CHAT_ID` = ID **grupe** (negativan broj), `RAZGOVOR_DOPUSTENI_KORISNICI` = brojčani uid ili korisničko ime | `provjeri` → modul `telegram` OK | nije tajna, ali je odluka: tko smije upravljati čvorom. Na prvom čvoru je uid upisan kao chat (nalaz TASK-5278) |
 | 4 | **Claude prijava** | kao korisnik usluge (`regoc`) na čvoru: `claude auth login`, pa link u pregledniku | `provjeri` → `ČOVJEK claude-prijava: postoji` (gleda se samo da datoteka prijave postoji i nije prazna, sadržaj se ne čita) | prijava je osobni račun/pretplata |
