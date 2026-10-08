@@ -184,4 +184,16 @@ export interface OrchestratorPorts {
   notifier: Notifier
   clock: Clock
   logger: Logger
+  /**
+   * Rezervni model kad primarni padne (TASK-5359). Bez njega pad (429/401/limit) ide u
+   * `blocked` kao prije. Strukturni tip, da jezgra ne uvozi modul domaćina.
+   */
+  dezurni?: {
+    ukljucen(): boolean
+    simulacija(): boolean
+    jePad(tekst: string): { vrsta: string; razlog: string } | null
+    cilj(): { model?: string; env: Record<string, string>; spec: string } | null
+    greska(): unknown
+    uspjeh(): unknown
+  }
 }

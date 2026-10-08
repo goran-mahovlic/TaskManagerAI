@@ -1031,5 +1031,10 @@
   "posta_zadnja_provjera": "zadnja provjera",
   "posta_obavijesti": "obavijesti",
   "posta_zadnja_poruka": "Zadnja primljena",
-  "posta_zadnja_greska": "Zadnja greška"
+  "posta_zadnja_greska": "Zadnja greška",
+  "dez_simulacija": "Simulacija pada",
+  "dez_simuliraj": "Simuliraj pad (5 min)",
+  "dez_ugasi_simulaciju": "Ugasi simulaciju",
+  "dez_simulacija_do": "primarni „pao\" do {vrijeme}",
+  "dez_simulacija_opis": "Razgovor i agenti preskaču primarni model i odgovaraju preko dežurnog. Sama prestaje nakon roka; zapis ide u Konzolu."
 }
