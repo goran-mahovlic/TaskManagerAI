@@ -39,7 +39,7 @@ import { allAgents } from '../types/task-types'
 import { KonfiguracijskiRegistar } from './orchestrator/AgentRegistry'
 import type { AgentDirectory } from './orchestrator/Ports'
 import {
-  loadIngestConfig, nacinZaIzvor, projektZaIzvor,
+  ZADANE_POSTAVKE, loadIngestConfig, nacinZaIzvor, projektZaIzvor,
   type IngestPostavke, type Nacin,
 } from './IngestConfig'
 
@@ -185,7 +185,8 @@ export function jeObicnoPitanje(tekst: string): boolean {
 // ─── Odluka ──────────────────────────────────────────────────────────────────
 
 export type IngestAkcija = 'odbijeno' | 'preskoceno' | 'sjena' | 'odgovor' | 'zadatak'
-export type IzvorProjekta = 'zahtjev' | 'izvor' | 'pretinac'
+/** `cvor` = `defaultProject` instalacije koji nije pretinac (TASK-5367: projekt čvora). */
+export type IzvorProjekta = 'zahtjev' | 'izvor' | 'cvor' | 'pretinac'
 
 /** Razlozi — stalni nizovi, jer ulaze u dnevnik i u testove. */
 export const RAZLOG = {
@@ -209,6 +210,23 @@ export function trazeZadatak(tekst: string): boolean {
   return /\b(otvori|napravi|stvori|kreiraj|otvorite|napravite)\s+(novi\s+)?zadatak\b/.test(t)
 }
 
+// ─── Ne-kodni nalog (TASK-5367) ──────────────────────────────────────────────
+
+/** Isporuka koja nije kod: dokument, zvuk, slika, tablica. */
+const ISPORUKA_NEKODNA = /\b(pdf|mp3|wav|ogg|docx?|xlsx?|pptx?|odt|csv|png|jpe?g|svg)\b|\b(glas\w*|zvu[kč]\w*|audio|snimk\w*|slik\w*|dokument\w*|tablic\w*|prezentacij\w*|izvje[šs]taj\w*|sa[žz]et\w*|prijevod\w*|prevedi)\b/u
+/** Bilo kakav trag koda, repozitorija ili pogona — tada ostaje git obveza. */
+const TRAG_KODA = /\b(kod\w*|test\w*|commit\w*|git|gran[aeiu]|repo\w*|bug\w*|gre[šs]k\w*|popravi|ispravi|implementir\w*|funkcij\w*|skript\w*|modul\w*|api|endpoint\w*|daemon\w*|servis\w*|refaktor\w*|migracij\w*|deploy\w*|baz[aeiu]|sql|konfiguracij\w*|ugradi|programir\w*)\b|\.(ts|tsx|js|py|sh|json|md|sql|yaml|yml|toml|c|h|cpp|rs|go)\b/u
+
+/**
+ * Nalog koji traži dokument/zvuk/sliku i nema traga koda → „samo tekst" (korak 4): ne traži
+ * granu ni commit. Konzervativno: oba uvjeta moraju vrijediti, inače git obveza ostaje.
+ */
+export function izgledaNekodno(tekst: string): boolean {
+  const t = String(tekst || '').toLowerCase()
+  if (countFiles(t) > 0) return false
+  return ISPORUKA_NEKODNA.test(t) && !TRAG_KODA.test(t)
+}
+
 // ─── Izvršitelj (TASK-5285) ──────────────────────────────────────────────────
 
 export interface OdabirIzvrsitelja {
@@ -230,8 +248,9 @@ export interface OdabirIzvrsitelja {
  * (izmjereno na čvoru 06.10.: pet zadataka iz chata `no-assignee`). Redom:
  *   1. izričit nositelj iz zahtjeva;
  *   2. ruting po ključnim riječima iz `config/agents.json` (najdulja riječ, bez `*`);
- *   3. prvi prijedlog klasifikatora koji postoji u ovoj instalaciji — osim „nitko posebno";
- *   4. zadani izvršitelj kanala;
+ *   3. zadani izvršitelj kanala — izbor vlasnika instalacije (TASK-5367: riječ „QA" u nalogu
+ *      za PDF dala je QA agenta umjesto zadanog izvršitelja);
+ *   4. prvi prijedlog klasifikatora koji postoji u ovoj instalaciji — osim „nitko posebno";
  *   5. catch-all (`*`) iz registra, pa prvi dopušteni nositelj.
  * Imena dolaze iz konfiguracije instalacije, ne iz koda.
  */
@@ -243,11 +262,11 @@ export function odaberiIzvrsitelja(o: OdabirIzvrsitelja = {}): string | undefine
   const registar = o.registar ?? KonfiguracijskiRegistar.izDatoteke()
   const ruta = o.tekst ? registar.route(o.tekst) : null
   if (ruta && !ruta.razlog.startsWith('catch-all')) return ruta.agentId.toLowerCase()
+  const zadani = String(o.zadani || '').trim().toLowerCase()
+  if (zadani) return zadani
   const izPrijedloga = (o.prijedlozi || []).map(a => a.toLowerCase())
     .find(a => a !== KLASIFIKATOR_ZADANI && postoji(a))
   if (izPrijedloga) return izPrijedloga
-  const zadani = String(o.zadani || '').trim().toLowerCase()
-  if (zadani) return zadani
   if (ruta) return ruta.agentId.toLowerCase()
   return popis.find(a => a !== KLASIFIKATOR_ZADANI)
 }
@@ -304,7 +323,7 @@ function odrediProjekt(z: IngestZahtjev, cfg: IngestPostavke): { projectId: stri
   if (z.projectId) return { projectId: z.projectId, projectSource: 'zahtjev' }
   const izPostavki = projektZaIzvor(cfg, z.source, z.externalId)
   if (izPostavki) return { projectId: izPostavki, projectSource: 'izvor' }
-  return { projectId: cfg.defaultProject, projectSource: 'pretinac' }
+  return { projectId: cfg.defaultProject, projectSource: cfg.defaultProject === ZADANE_POSTAVKE.defaultProject ? 'pretinac' : 'cvor' }
 }
 
 /**
@@ -369,7 +388,7 @@ export function procijeniIngest(z: IngestZahtjev, cfg: IngestPostavke = loadInge
   if (akcija !== 'zadatak') return odluka
 
   const uLancu = put.postupak === 'lanac' || put.postupak === 'lanac-uz-potvrdu'
-  const samoTekst = isTextOnly(z.tags)
+  const samoTekst = isTextOnly(z.tags) || izgledaNekodno(cisto)
   const oznake = [
     'ulaz',
     `izvor:${z.source}`,

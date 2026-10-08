@@ -27,6 +27,7 @@ import {
   type Obveznost, type WorkflowStep,
 } from './WorkflowTemplate'
 import { RESEARCH_STEP_OUTPUT_SPEC } from './ResearchRagGate'
+import { isRagEnabled } from '../rag/memory-config'
 
 const PAKET_DIR = join(import.meta.dir, '..', '..')
 
@@ -103,6 +104,18 @@ export interface OpisUlaz {
   receivedAt?: string
   /** Predlošci iz druge mape (testovi, druga instalacija). */
   templatesDir?: string
+  /** Ima li čvor RAG (`rag.enabled`); zadano se čita iz memory-config. */
+  ragUkljucen?: boolean
+}
+
+/** Korak 2 na čvoru bez RAG-a (TASK-5367): izlaz je zapis u rezultatu, ne dokument u RAG-u. */
+export const KORAK2_BEZ_RAG =
+  'Korak 2 (Istraživanje) — RAG je isključen na ovom čvoru: dokument u bazi znanja se NE traži.\n' +
+  'Ako istražuješ, izvore (URL, putanja, ID zadatka) i nalaz navedi u result_summary.'
+
+function ragNaCvoru(ulaz: OpisUlaz): boolean {
+  if (typeof ulaz.ragUkljucen === 'boolean') return ulaz.ragUkljucen
+  try { return isRagEnabled() } catch { return true }
 }
 
 /** Naslov zadatka iz poruke — prva rečenica, skraćena na `max` znakova. */
@@ -117,7 +130,11 @@ function blokKoraka(ulaz: OpisUlaz): string {
   const w = Number.isFinite(ulaz.weight) ? Number(ulaz.weight) : 0
   const pragB = ulaz.pragB ?? 36
   const skala = obveznostPoKljucu(w, pragB)
-  return ucitajKorake(ulaz.templatesDir).map(s => {
+  const rag = ragNaCvoru(ulaz)
+  return ucitajKorake(ulaz.templatesDir).map(korak => {
+    const s = !rag && korak.key === 'istrazivanje'
+      ? { ...korak, tool: 'Research (RAG isključen na čvoru)', artifact: 'izvori i nalaz u result_summary', proof: 'izvori navedeni u result_summary' }
+      : korak
     const sk = skala.get(s.key) ?? { o: 'obvezno' as Obveznost }
     const glava = `${s.n}. ${s.title.toUpperCase()} ${OBVEZNOST_OZNAKA[sk.o]} — ${s.what}`
     return [
@@ -174,7 +191,7 @@ const ZADANI_SKELET = [
   '## Dojava',
   '{{dojava}}',
   '',
-  '## Korak 2 — obvezan izlaz',
+  '## Korak 2 — izlaz istraživanja',
   '{{korak2}}',
 ].join('\n')
 
@@ -210,7 +227,7 @@ export function renderirajOpis(ulaz: OpisUlaz): string {
     koraci: blokKoraka(ulaz),
     git: blokGita(ulaz),
     dojava: blokDojave(ulaz),
-    korak2: RESEARCH_STEP_OUTPUT_SPEC,
+    korak2: ragNaCvoru(ulaz) ? RESEARCH_STEP_OUTPUT_SPEC : KORAK2_BEZ_RAG,
   }
 
   return ucitajSkelet(ulaz.templatesDir || PREDLOSCI_DIR)

@@ -12,5 +12,5 @@ Težina: {{tezina}}/100 · grill: {{grill}} · prag B: {{pragB}}{{projekt}}
 ## Dojava
 {{dojava}}
 
-## Korak 2 — obvezan izlaz
+## Korak 2 — izlaz istraživanja
 {{korak2}}
