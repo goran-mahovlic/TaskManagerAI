@@ -33,7 +33,7 @@ export interface Polje {
   /** Za `broj`. */
   min?: number
   max?: number
-  /** Za `izbor`. */
+  /** Za `izbor`; za `popis` = dopuštene stavke (višestruki izbor, TASK-5378). */
   vrijednosti?: readonly string[]
   /** Za `objekt` — ugniježđena shema. */
   polja?: Shema
@@ -189,7 +189,12 @@ export class ConfigModul<T extends Record<string, any>> {
         case 'popis':
           if (!Array.isArray(v)) { greske.push(`${puno} mora biti popis`); break }
           if (v.some(x => typeof x === 'object')) { greske.push(`${puno} smije sadržavati samo tekst i brojeve`); break }
-          izlaz[k] = v.map(x => String(x).trim()).filter(Boolean)
+          {
+            const stavke = v.map(x => String(x).trim()).filter(Boolean)
+            const tudje = polje.vrijednosti ? stavke.filter(x => !polje.vrijednosti!.includes(x)) : []
+            if (tudje.length) { greske.push(`${puno}: ${tudje.join(', ')} nije dopušteno (dopušteno: ${polje.vrijednosti!.join(', ')})`); break }
+            izlaz[k] = stavke
+          }
           break
         case 'objekt': {
           if (!v || typeof v !== 'object' || Array.isArray(v)) { greske.push(`${puno} mora biti objekt`); break }

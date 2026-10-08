@@ -1,7 +1,7 @@
 /**
  * EmailConfig — postavke izlazne (SMTP) i ulazne (IMAP) pošte (DIZAJN-integracije §3).
  *
- * IZLAZ: obavijest o zadatku, isti pozivatelj kao `obavijestiZadatak()` u Telegramu. Bun
+ * IZLAZ: obavijest o zadatku (`ObavijestZadatka.ts`, uz zasebnu postavku). Bun
  * nema ugrađen SMTP klijent, pa je `nodemailer` u `optionalDependencies` — bez njega
  * kartica jasno kaže što instalirati, a ostatak paketa radi. To je isti obrazac kao
  * `chromadb`/`ollama`: neobavezna sposobnost ne smije rušiti osnovnu instalaciju.
@@ -48,6 +48,23 @@ export interface ImapPostavke {
   obavijestChat: string
 }
 
+/**
+ * Statusi za koje SMIJE ići obavijest o zadatku e-poštom (TASK-5378). `in_progress` i
+ * `pending` namjerno nisu tu: to su koraci rada, ne ishodi — na node-A su upravo oni
+ * (uz QA probe) napunili sandučić vlasnika.
+ */
+export const STATUSI_OBAVIJESTI = ['completed', 'failed', 'blocked', 'cancelled'] as const
+
+/** Obavijest o promjeni statusa zadatka — odvojena od samog slanja/primanja pošte. */
+export interface ObavijestZadatkaPostavke {
+  /** Zadano `false`: uključena e-pošta (SMTP/IMAP) ne znači da svaki zadatak ide mailom. */
+  ukljucena: boolean
+  /** Prijelazi koji šalju mail (podskup `STATUSI_OBAVIJESTI`). */
+  statusi: string[]
+  /** Strop po primatelju; višak ide u jedan sažetak kad se prozor od sat vremena otvori. */
+  najviseNaSat: number
+}
+
 export interface EmailPostavke {
   ukljucen: boolean
   smjer: 'izlaz' | 'ulaz' | 'oba'
@@ -60,6 +77,7 @@ export interface EmailPostavke {
   smtp: SmtpPostavke
   imap: ImapPostavke
   primatelji: string[]
+  obavijestZadatak: ObavijestZadatkaPostavke
 }
 
 export const ZADANE_POSTAVKE: EmailPostavke = {
@@ -73,6 +91,7 @@ export const ZADANE_POSTAVKE: EmailPostavke = {
     obavijest: false, obavijestChat: '',
   },
   primatelji: [],
+  obavijestZadatak: { ukljucena: false, statusi: ['completed'], najviseNaSat: 10 },
 }
 
 export const GRANICE = {
@@ -81,6 +100,7 @@ export const GRANICE = {
   intervalSek: { min: 10, max: 3600 },
   filtar: { maxDuljina: 200 },
   primatelji: { maxStavki: 20 },
+  najviseNaSat: { min: 1, max: 100 },
 } as const
 
 /** CRLF i navodnik ne smiju u IMAP naredbu — to je injekcija, ne filtar. */
@@ -137,6 +157,14 @@ const modul = new ConfigModul<EmailPostavke>({
       },
     },
     primatelji: { tip: 'popis', obavezno: true },
+    obavijestZadatak: {
+      tip: 'objekt',
+      polja: {
+        ukljucena: { tip: 'bool' },
+        statusi: { tip: 'popis', vrijednosti: STATUSI_OBAVIJESTI },
+        najviseNaSat: { tip: 'broj', min: GRANICE.najviseNaSat.min, max: GRANICE.najviseNaSat.max },
+      },
+    },
   },
 })
 
@@ -300,13 +328,8 @@ export async function posaljiOdgovorEmail(
   }
 }
 
-/** Obavijest o zadatku — isti oblik i isti prekidači kao Telegram. */
-export async function obavijestiZadatakEmail(
-  taskId: string, naslov: string, status: string, path?: string,
-): Promise<Ishod> {
-  const ikona = status === 'completed' ? '✅' : status === 'failed' ? '❌' : '📋'
-  return posaljiEmail(`${ikona} ${taskId} — ${status}`, `${naslov}\n\nZadatak: ${taskId}\nStatus: ${status}\n`, path)
-}
+// Obavijest o promjeni statusa zadatka: `ObavijestZadatka.ts` (TASK-5378) — zasebna
+// postavka `obavijestZadatak`, bez proba, uz strop po primatelju.
 
 // ─── Proba ───────────────────────────────────────────────────────────────────
 

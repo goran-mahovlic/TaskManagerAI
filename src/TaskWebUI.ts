@@ -62,8 +62,9 @@ import {
 } from './NextcloudConfig'
 import {
   loadEmailConfig, validateEmailPatch, saveEmailConfig, stanjeEmail, probajEmail, EMAIL_CONFIG_PATH,
-  emailKonfigModul, posaljiOdgovorEmail, posaljiEmail, obavijestiZadatakEmail,
+  emailKonfigModul, posaljiOdgovorEmail, posaljiEmail,
 } from './EmailConfig'
+import { Obavjestavac, jeProbniZadatak } from './ObavijestZadatka'
 import { odlukaPrijenosa } from './TajneApi'
 import {
   loadGitLabConfig, validateGitLabPatch, saveGitLabConfig, stanjeGitLab, probajGitLab, GITLAB_CONFIG_PATH,
@@ -317,6 +318,9 @@ function hostDopusten(host: string): boolean {
 
 // WebSocket clients
 const wsClients = new Set<any>()
+
+// TASK-5378: obavijesti o zadatku e-poštom — jedan po procesu, jer drži strop po primatelju.
+const obavjestavacEmail = new Obavjestavac()
 
 // Task Manager (SQL-Only v2.0)
 const taskManager = getTaskManagerSQL()
@@ -9366,6 +9370,17 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
           '<input id="' + id + '" type="number"' + granice + ' value="' + vrijednost + '" style="' + _stil() + ';width:110px">' + spremi('broj'),
           sp.min != null && sp.max != null ? sp.min + '–' + sp.max : '');
       }
+      // TASK-5378: popis s dopuštenim vrijednostima (npr. statusi obavijesti) = kvačice, ne slobodan tekst.
+      if (sp.tip === 'popis' && sp.vrijednosti) {
+        var odabrano = vrijednost || [];
+        var kvacice = sp.vrijednosti.map(function (v) {
+          return '<label style="margin-right:0.8rem;white-space:nowrap"><input type="checkbox" name="' + id + '" value="' + _esc(v) + '"' +
+            (odabrano.indexOf(v) >= 0 ? ' checked' : '') +
+            ' onchange="spremiIntegracijuKvacice(\\'' + ime + '\\', \\'' + staza + '\\', \\'' + id + '\\', this)"> ' +
+            _esc(_T('cfg_vrijednost_' + v, v)) + '</label>';
+        }).join('');
+        return _red(naziv, kvacice, _T('cfg_polje_' + kljuc + '_opis', ''));
+      }
       if (sp.tip === 'popis' || Object.prototype.toString.call(vrijednost) === '[object Array]') {
         return _red(naziv,
           '<input id="' + id + '" value="' + _esc((vrijednost || []).join(', ')) + '" style="' + _stil() + ';min-width:260px" placeholder="' + _T('cfg_zarezom', 'odvojeno zarezom') + '">' + spremi('popis'),
@@ -9477,6 +9492,12 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       var v = el.value;
       if (tip === 'broj') v = Number(v);
       if (tip === 'popis') v = v.split(',').map(function (x) { return x.trim(); }).filter(Boolean);
+      return spremiIntegraciju(ime, staza, v, btn);
+    }
+
+    function spremiIntegracijuKvacice(ime, staza, id, btn) {
+      var v = Array.prototype.slice.call(document.querySelectorAll('input[name="' + id + '"]'))
+        .filter(function (x) { return x.checked; }).map(function (x) { return x.value; });
       return spremiIntegraciju(ime, staza, v, btn);
     }
 
@@ -14187,7 +14208,12 @@ async function handleUpdateTask(taskId: string, req: Request): Promise<Response>
     // Nikad ne ruši PUT — neuspjeh slanja se samo logira.
     // TASK-5285: samo na PRIJELAZU (completed → completed je slao drugu istu poruku, TASK-5287),
     // u stilu `kratko` s točkama iz rezultata i poveznicom na ploču.
-    if (trebaObavijest(statusPrijePut, task.status)) {
+    // TASK-5378: probni zadatak (biljeg `x-regoc-proba: 1`, oznake qa/proba, QA autor) nikad
+    // ne javlja ništa — ni Telegram ni e-pošta. QA probe na node-A punile su grupu i sandučić.
+    const probniZadatak = jeProbniZadatak(task as any, { biljeg: req.headers.get('x-regoc-proba') })
+    if (probniZadatak && trebaObavijest(statusPrijePut, task.status)) {
+      console.log(`[TELEGRAM] obavijest preskočena: ${taskId} je probni zadatak`)
+    } else if (trebaObavijest(statusPrijePut, task.status)) {
       try {
         // TASK-5292: rad BEZ memorije (🧠🚫 u izvještaju/bilješci) vidi se i u obavijesti.
         const tgRez = await obavijestiZadatak(taskId, String(task.title || ''), task.status, undefined, {
@@ -14204,16 +14230,20 @@ async function handleUpdateTask(taskId: string, req: Request): Promise<Response>
         console.warn(`[TELEGRAM] greška pri slanju obavijesti: ${String(e && e.message ? e.message : e)}`)
       }
     }
-      // TASK-5371: isti prijelaz i e-poštom — samo kad je izlaz uključen i ima primatelja
-      // (DIZAJN-integracije §3); bez čekanja, PUT ne smije visjeti na SMTP-u.
-      try {
-        const ec = loadEmailConfig()
-        if (ec.ukljucen && ec.smjer !== 'ulaz' && ec.primatelji.length) {
-          void obavijestiZadatakEmail(taskId, String(task.title || ''), task.status)
-            .then(r => console.log(`[EMAIL] obavijest ${taskId} → ${task.status}: ${r.ok ? 'poslana' : 'nije — ' + r.greska}`))
-            .catch(e => console.warn(`[EMAIL] obavijest pala: ${String(e)}`))
-        }
-      } catch { /* obavijest nikad ne ruši PUT */ }
+    // TASK-5371/5378: e-pošta samo uz zasebnu postavku `obavijestZadatak` (zadano isključena),
+    // na PRIJELAZ u odabrani status, bez proba i uz strop po primatelju (v. ObavijestZadatka).
+    // Bez čekanja — PUT ne smije visjeti na SMTP-u.
+    if (statusPrijePut !== task.status) {
+      void obavjestavacEmail.obavijesti(task as any, statusPrijePut, { biljeg: req.headers.get('x-regoc-proba') })
+        .then(r => {
+          if (r.poslano.length || r.uSazetak.length) {
+            console.log(`[EMAIL] obavijest ${taskId} → ${task.status}: poslano ${r.poslano.length}, u sažetak ${r.uSazetak.length}`)
+          } else if (r.razlog && !/isključena|nije odabran|nije promjena/.test(r.razlog)) {
+            console.log(`[EMAIL] obavijest ${taskId} → ${task.status} nije poslana: ${r.razlog}`)
+          }
+        })
+        .catch(e => console.warn(`[EMAIL] obavijest pala: ${String(e)}`))
+    }
 
     // ─── TASK-5363: dokumenti iz rezultata zadatka u chat naloga ─────────────
     // Nalog iz Telegram grupe (oznaka `chat:<id>`) → `[[SEND_DOC: …]]` u resultSummary šalje se

@@ -1138,5 +1138,14 @@
   "infra_prazno": "No entries",
   "orc_vodi_daemon_znacka": "RegocDaemon running",
   "orc_vodi_daemon": "Tasks on this machine are run by RegocDaemon (PID {pid}) with {broj} agents from {registar}. The package orchestrator (scripts/orchestrator.ts) is not running here — the settings below apply only if it is started instead of the daemon.",
-  "orc_agenti_opis_daemon": "Registry of the package orchestrator (config/agents.json). Not used here — agents are started by RegocDaemon from its own registry."
+  "orc_agenti_opis_daemon": "Registry of the package orchestrator (config/agents.json). Not used here — agents are started by RegocDaemon from its own registry.",
+  "cfg_skupina_obavijestZadatak": "Task notification by e-mail",
+  "cfg_polje_ukljucena": "Send task notification by e-mail",
+  "cfg_polje_statusi": "For statuses",
+  "cfg_polje_statusi_opis": "A mail is sent only on TRANSITION into a selected status. in_progress is not offered. Probe tasks (tag qa/proba, QA author, x-regoc-proba header) never send.",
+  "cfg_polje_najviseNaSat": "Max mails per hour per recipient",
+  "cfg_vrijednost_completed": "completed",
+  "cfg_vrijednost_failed": "failed",
+  "cfg_vrijednost_blocked": "blocked",
+  "cfg_vrijednost_cancelled": "cancelled"
 }
