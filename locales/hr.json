@@ -1138,5 +1138,11 @@
   "infra_prazno": "Nema stavki",
   "orc_vodi_daemon_znacka": "RegocDaemon radi",
   "orc_vodi_daemon": "Zadatke na ovom stroju vodi RegocDaemon (PID {pid}) s {broj} agenata iz {registar}. Orkestrator paketa (scripts/orchestrator.ts) ovdje ne radi — postavke ispod vrijede samo ako se pokrene umjesto daemona.",
-  "orc_agenti_opis_daemon": "Registar orkestratora paketa (config/agents.json). Ovdje se ne koristi — agente pokreće RegocDaemon iz svog registra."
+  "orc_agenti_opis_daemon": "Registar orkestratora paketa (config/agents.json). Ovdje se ne koristi — agente pokreće RegocDaemon iz svog registra.",
+  "sk_nespremljeno": "nespremljene izmjene",
+  "sk_odbaci_potvrda": "Na Config stranici ima nespremljenih izmjena. Osvježiti i odbaciti ih?",
+  "sk_spremam": "spremam…",
+  "sk_nije_spremljeno": "Nije spremljeno — ništa nije zapisano",
+  "sk_spremljeno": "Spremljeno ({n} polja) — {vrijeme}",
+  "tajne_otvori_bota": "otvori @{bot} i stisni Start, pa ponovo Spremi"
 }

@@ -1138,5 +1138,11 @@
   "infra_prazno": "No entries",
   "orc_vodi_daemon_znacka": "RegocDaemon running",
   "orc_vodi_daemon": "Tasks on this machine are run by RegocDaemon (PID {pid}) with {broj} agents from {registar}. The package orchestrator (scripts/orchestrator.ts) is not running here — the settings below apply only if it is started instead of the daemon.",
-  "orc_agenti_opis_daemon": "Registry of the package orchestrator (config/agents.json). Not used here — agents are started by RegocDaemon from its own registry."
+  "orc_agenti_opis_daemon": "Registry of the package orchestrator (config/agents.json). Not used here — agents are started by RegocDaemon from its own registry.",
+  "sk_nespremljeno": "unsaved changes",
+  "sk_odbaci_potvrda": "The Config page has unsaved changes. Reload and discard them?",
+  "sk_spremam": "saving…",
+  "sk_nije_spremljeno": "Not saved — nothing was written",
+  "sk_spremljeno": "Saved ({n} fields) — {vrijeme}",
+  "tajne_otvori_bota": "open @{bot} and press Start, then Save again"
 }

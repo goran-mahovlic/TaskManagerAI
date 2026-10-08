@@ -287,9 +287,13 @@ describe('Config kartica — Privitci', () => {
       "var _stil = function () { return ''; };" +
       "var _red = function (a, b, c) { return '<tr><td>' + a + '</td><td>' + b + '</td><td>' + c + '</td></tr>'; };" +
       "var _TEL_VRSTE = ['photo', 'document', 'voice', 'audio', 'video'];" +
+      izvuci(kod, '_sk') + ';' +
       izvuci(kod, 'renderTelegramPrivitci') + '; return renderTelegramPrivitci;')()
     const h: string = fn({ postavke: { privitci: { ukljucen: true, mapa: '/srv/p', maxMB: 7, vrste: ['photo', 'voice'] } } })
-    expect(h).toContain('spremiTelegram({privitci:{ukljucen:this.checked}}')
+    // TASK-5346: polja nose stazu zakrpe (privitci.*); sprema ih jedan „Spremi" cijele Telegram skupine
+    expect(h).toContain('data-sk="privitci.ukljucen" data-sk-tip="bool"')
+    expect(h).toContain('data-sk="privitci.maxMB" data-sk-tip="broj"')
+    expect(h).not.toContain('onclick="spremi')
     expect(h).toContain('value="/srv/p"')
     expect(h).toContain('value="7"')
     expect(h).toMatch(/value="photo" checked/)
@@ -298,7 +302,7 @@ describe('Config kartica — Privitci', () => {
     expect(h).not.toContain('<datum>') // opis je zaštićen, ne postaje HTML oznaka
     // Bez grane u odgovoru (stara instalacija) — ne puca, prikaže zadano
     expect(() => fn({ postavke: {} })).not.toThrow()
-    expect(kod).toContain('function spremiTelegramVrste(')
+    expect(h).toContain('data-sk="privitci.vrste" data-sk-tip="skup"')
   })
 })
 
