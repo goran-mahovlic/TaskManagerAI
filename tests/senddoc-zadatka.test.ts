@@ -138,3 +138,22 @@ describe('predložak ingesta uči agenta SEND_DOC oznaku', () => {
     expect(renderirajOpis({ message: 'izradi pdf', weight: 20, source: 'email', replyTo: 'a@b.c' })).not.toContain('SEND_DOC')
   })
 })
+
+describe('sigurnosne granice (pregled TASK-5363)', () => {
+  test('chat koji ploča ne poznaje → ništa se ne šalje ni ne javlja', async () => {
+    const r = await posaljiDokumenteZadatka(
+      { id: 'TASK-306', resultSummary: `[[SEND_DOC: ${dir}/tmp/TASK-1/proba.pdf]]`, tags: ['chat:-999'] },
+      kanal(), { dopusteneMape: () => [join(dir, 'tmp')], chatDopusten: c => c === '-5112799687' })
+    expect(r).toBeNull()
+    expect(posla).toEqual([])
+    expect(tekstovi).toEqual([])
+  })
+  test('dopuštene mape dobivaju i ID zadatka (radna mapa samo tog zadatka)', async () => {
+    const vidio: string[] = []
+    await posaljiDokumenteZadatka(
+      { id: 'TASK-1', resultSummary: `[[SEND_DOC: ${dir}/tmp/TASK-1/proba.pdf]]`, tags: ['chat:-5112799687'] },
+      kanal(), { dopusteneMape: (c, id) => { vidio.push(`${c}|${id}`); return [join(dir, 'tmp', id)] } })
+    expect(vidio).toEqual(['-5112799687|TASK-1'])
+    expect(posla.length).toBe(1)
+  })
+})

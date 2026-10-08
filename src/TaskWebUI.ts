@@ -11585,7 +11585,8 @@ function handleTelegramConfigGet(): Response {
 
 /**
  * TASK-5363: `[[SEND_DOC: …]]` iz rezultata zadatka → chat naloga. Dopušteno: izvještaji
- * paketa, mapa privitaka tog chata i `~/app/tmp` (radne datoteke zadataka, CLAUDE.md pr. 26).
+ * paketa, mapa privitaka tog chata i radna mapa SAMO tog zadatka `~/app/tmp/<TASK-ID>`
+ * (CLAUDE.md pr. 26) — ne tuđih zadataka. Chat mora biti chat kanala ili s popisa ulaza.
  * Bez bot tokena se ništa ne šalje (ishod se samo zapiše u dnevnik).
  */
 async function posaljiDokumenteIzRezultata(t: { id: string; resultSummary?: unknown; tags?: unknown }): Promise<void> {
@@ -11596,7 +11597,10 @@ async function posaljiDokumenteIzRezultata(t: { id: string; resultSummary?: unkn
   const privitci = () => ({ ...ZADANI_PRIVITCI_RAZG, ...(loadTelegramConfig().privitci || {}) })
   const k = telegramKanal(token, privitci)
   await posaljiDokumenteZadatka(t, { ...k, posaljiDokumentIshod: k.posaljiDokumentIshod! }, {
-    dopusteneMape: chatId => [join(TM_DATA, 'izvjestaji'), mapaPrivitakaRazg(privitci(), chatId), join(homedir(), 'app', 'tmp')],
+    dopusteneMape: (chatId, taskId) => [
+      join(TM_DATA, 'izvjestaji'), mapaPrivitakaRazg(privitci(), chatId), join(homedir(), 'app', 'tmp', taskId),
+    ],
+    chatDopusten: chatId => String(cfg.chatId) === chatId || (cfg.ulaz?.dopusteniChatovi || []).map(String).includes(chatId),
     home: homedir(),
     log: r => console.log(r),
   })

@@ -26,8 +26,13 @@ export function chatZadatka(t: { tags?: unknown }): string | null {
 }
 
 export interface DokumentiZadatkaOpcije {
-  /** Mape iz kojih rezultat zadatka smije slati, za dani chat. */
-  dopusteneMape: (chatId: string) => string[]
+  /** Mape iz kojih rezultat zadatka smije slati, za dani chat i zadatak. */
+  dopusteneMape: (chatId: string, taskId: string) => string[]
+  /**
+   * Oznaku `chat:<id>` može upisati svatko tko piše zadatke, pa se šalje samo u chat koji
+   * ploča poznaje (kanal ili popis ulaza). Bez provjere = svaki chat.
+   */
+  chatDopusten?: (chatId: string) => boolean
   home?: string
   log?: (r: string) => void
 }
@@ -48,10 +53,14 @@ export async function posaljiDokumenteZadatka(
   if (!markeri.length) return null
   const chatId = chatZadatka(t)
   if (!chatId) return null
+  if (o.chatDopusten && !o.chatDopusten(chatId)) {
+    o.log?.(`[send-doc] ${t.id}: chat ${chatId} nije među chatovima ploče — dokumenti nisu poslani`)
+    return null
+  }
 
   const ishod: DokumentiZadatkaIshod = { chatId, poslano: [], neposlano: [] }
   const vidjeno = new Set<string>()
-  const mape = o.dopusteneMape(chatId)
+  const mape = o.dopusteneMape(chatId, t.id)
   for (const m of markeri) {
     const ime = m.putanja.split('/').pop() || 'dokument'
     const pr = provjeriDokument(m.putanja, { dopusteneMape: mape, maxBajta: k.maxDokumentBajta, home: o.home || '' })

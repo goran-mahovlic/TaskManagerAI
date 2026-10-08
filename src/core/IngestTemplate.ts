@@ -175,7 +175,7 @@ function blokDojave(ulaz: OpisUlaz): string {
 /** TASK-5363: datoteka za korisnika ide oznakom u rezultatu — ploča je šalje u chat naloga. */
 function blokDatoteka(ulaz: OpisUlaz): string {
   if (ulaz.source !== 'telegram' || !ulaz.replyTo) return ''
-  return `\nDatoteke (PDF, mp3, xlsx…) za korisnika: spremi ih u ~/app/tmp/<zadatak>/ i u rezultat stavi`
+  return `\nDatoteke (PDF, mp3, xlsx…) za korisnika: spremi ih u ~/app/tmp/${ulaz.taskId || '<ID ovog zadatka>'}/ (samo ta mapa) i u rezultat stavi`
     + ` [[SEND_DOC: /apsolutna/putanja | opis]] — pri zatvaranju zadatka ploča ih šalje u chat ${ulaz.replyTo}.`
 }
 
