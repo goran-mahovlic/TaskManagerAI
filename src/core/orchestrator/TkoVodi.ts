@@ -3,7 +3,7 @@
  *
  * Kartica Orkestrator je čitala samo registar paketa (config/agents.json) i na čvoru s
  * RegocDaemonom pisala „Agenata u registru: 0 — orkestrator ne pokreće ništa", iako daemon
- * iz ~/.claude/regoc vodi zadatke s 12 agenata. Odluka je ovdje, bez I/O, da se rubni
+ * sustava domaćina (TM_AGENTS_REGISTRY) vodi zadatke s 12 agenata. Odluka je ovdje, bez I/O, da se rubni
  * slučajevi testiraju bez pravog daemona; živost daje DaemonLiveness (PID + cmdline).
  *
  * Autorica: Jelena (Engineer), TASK-5368.

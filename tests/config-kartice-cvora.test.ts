@@ -1,7 +1,7 @@
 /**
  * TASK-5368 — kartice Config na čvoru (nalaz TASK-5360, node-A).
  *
- * Četiri kvara koja je Goran vidio kao „ploča laže":
+ * Četiri kvara koja je vlasnik vidio kao „ploča laže":
  *   1. Infrastruktura je pisala tvrde adrese (VoiceServer :8888, STT :8787) i „Ollama nije
  *      podešeno" dok je kartica AI Providers istu Ollamu vidjela online.
  *   2. Orkestrator je pisao „0 agenata" iako zadatke vodi RegocDaemon s 12 agenata.
@@ -21,13 +21,13 @@ describe('Infrastruktura — adrese iz okoline i postavki, ne iz koda', () => {
   test('glas, Ollama i ploča dolaze iz postavki; tvrdih :8888 / :8787 nema', () => {
     const s = stavkeInfrastrukture({
       env: { TM_PORT: '17781' },
-      ollamaUrl: 'http://192.168.10.4:11434',
+      ollamaUrl: 'http://10.0.0.4:11434',
       glasUrl: '',
     })
     const po = Object.fromEntries(s.map(x => [x.nameKey, x]))
     expect(po.infra_ploca.endpoint).toBe('localhost:17781')
     expect(po.infra_glas.endpoint).toBe('http://127.0.0.1:8899')
-    expect(po.infra_ollama.endpoint).toBe('http://192.168.10.4:11434')
+    expect(po.infra_ollama.endpoint).toBe('http://10.0.0.4:11434')
     expect(po.infra_ollama.izvor).toContain('model-config.json')
     const tekst = JSON.stringify(s)
     expect(tekst).not.toContain('8888')
