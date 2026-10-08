@@ -14,7 +14,7 @@ describe('vrataKonzole — prijenos (isti sud kao tajne, bez iznimke za LAN HTTP
       expect(vrataKonzole(z(ip))).toBeNull()
   })
   test('LAN, javna adresa i nepoznat peer se odbijaju (403)', () => {
-    for (const ip of ['192.168.10.20', '10.0.0.5', '172.24.0.2', '100.128.0.1', '8.8.8.8', null]) {
+    for (const ip of ['192.0.2.20', '10.0.0.5', '172.24.0.2', '100.128.0.1', '8.8.8.8', null]) {
       const r = vrataKonzole(z(ip))
       expect(r?.status).toBe(403)
       expect(r?.greska).toMatch(/^konzola_prijenos/)
@@ -43,7 +43,7 @@ describe('odlukaNaredbe — nema čitača datoteka ni putova tajni', () => {
     expect('status' in r ? r.status : 200).toBe(403)
   }
   test('cat/head/tail/grep/find/less/more/strings/xxd/od/base64 se odbijaju', () => {
-    for (const c of ['cat ~/.claude/regoc/credentials.env', 'head -c 999 config/credentials.env',
+    for (const c of ['cat ~/.config/x/credentials.env', 'head -c 999 config/credentials.env',
       'tail -n 5 /proc/1/environ', 'grep -r TOKEN /home', 'find / -name credentials.env -exec cat {} ;',
       'less x', 'more x', 'strings x', 'xxd x', 'od -c x', 'base64 x']) ne(c)
   })
@@ -52,15 +52,25 @@ describe('odlukaNaredbe — nema čitača datoteka ni putova tajni', () => {
     for (const c of ['ps', 'ps aux', 'ps -ef', 'ps auxf']) expect(odlukaNaredbe(c, 'plan', {})).toEqual({ argv: c.split(' ') })
   })
   test('putovi tajni i /proc/*/environ se odbijaju i za dopuštene naredbe', () => {
-    for (const c of ['ls /proc/1/environ', 'wc -c config/credentials.env', 'ls ~/.claude/regoc/.env', 'wc /proc/self/environ']) ne(c)
+    for (const c of ['ls /proc/1/environ', 'wc -c config/credentials.env', 'ls ~/.config/x/.env', 'wc /proc/self/environ']) ne(c)
   })
   test('git ne čita datoteke izvan repozitorija (--no-index, -C, --output, apsolutni put, ..)', () => {
-    for (const c of ['git diff --no-index /dev/null /home/k/.claude/regoc/credentials.env',
+    for (const c of ['git diff --no-index /dev/null /home/k/.config/x/credentials.env',
       'git -C / log', 'git log --output=/tmp/x', 'git diff /etc/passwd', 'git show HEAD:../../x',
       'git -c core.pager=cat log', 'git diff --ext-diff']) ne(c)
     expect(odlukaNaredbe('git log --oneline -5', 'plan', {})).toEqual({ argv: ['git', 'log', '--oneline', '-5'] })
     expect(odlukaNaredbe('git log main..HEAD', 'plan', {})).toEqual({ argv: ['git', 'log', 'main..HEAD'] })
     expect(odlukaNaredbe('wc -l src/TajneApi.ts', 'plan', {})).toEqual({ argv: ['wc', '-l', 'src/TajneApi.ts'] })
+  })
+  test('git: skraćene duge opcije i put iza „=" ne zaobilaze zabranu', () => {
+    for (const c of ['git diff --no-ind a b', 'git diff --no-i a b', 'git log --out=x', 'git log --outp=x',
+      'git diff --ext-d', 'git log --format=x --src-prefix=/etc/', 'git log --git-d=/x', 'git show --textc']) ne(c)
+    expect(odlukaNaredbe('git log --stat --format=%h', 'plan', {})).toEqual({ argv: ['git', 'log', '--stat', '--format=%h'] })
+  })
+  test('skriveni čitači kroz poruku o grešci: wc --files0-from, date -f/--file, hostname -F', () => {
+    for (const c of ['wc --files0-from=x', 'wc --files0', 'date -f x', 'date --file=x', 'date --fi=x', 'hostname -F x', 'hostname --file x']) ne(c)
+    for (const c of ['wc -l x', 'wc -lc x', 'date +%F', 'date -u', 'date -Iseconds', 'date --iso-8601=seconds', 'hostname -I', 'hostname -f'])
+      expect(odlukaNaredbe(c, 'plan', {})).toEqual({ argv: c.split(' ') })
   })
   test('git u plan načinu samo čita; bun/node samo u work načinu', () => {
     ne('git commit -m x', 'plan')

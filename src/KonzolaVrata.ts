@@ -29,6 +29,7 @@ export function vrataKonzole(z: ZahtjevKonzole): Odbijeno | null {
       'Konzola izvodi naredbe samo s ovog stroja (localhost) ili preko Tailscalea — s LAN-a je zatvorena (ADR-0007). Koristi SSH tunel: ssh -L 17781:localhost:17781 <stroj>.')
   }
   const h = z.zaglavlja
+  // DNS rebinding (tuđe ime u Host-u, peer loopback) odbija već `isHostAllowed` u TaskWebUI-ju.
   const csrf = odbij(403, 'konzola_csrf', 'Zahtjev konzole bez zaglavlja X-TM-Konzola ili s tuđeg izvora odbijen.')
   if (h.get('x-tm-konzola') !== '1') return csrf
   const sfs = h.get('sec-fetch-site')
@@ -75,8 +76,26 @@ const PUT_TAJNI = [/\/proc\//i, /environ/i, /credentials/i, /(^|[\/~])\.env\b/i,
 const PS_DOPUSTENO = new Set(['aux', 'auxf', 'ax', 'axf', 'x', '-ef', '-eF', '-e', '-A', '-f', '-F', '-H', '-eH', '-efH'])
 
 const GIT_SAMO_CITA = ['status', 'log', 'diff', 'show', 'branch', 'remote', 'tag']
-/** Opcije kojima git čita/piše izvan repozitorija ili pokreće vanjski program. */
-const GIT_ZABRANJENO = /^(--no-index|--output|--ext-diff|--textconv|--git-dir|--work-tree|--exec-path|--namespace|--super-prefix|--config-env|-c|-C|-o|-O)(=|$)/
+/** Opcije kojima git čita/piše izvan repozitorija ili pokreće vanjski program. Git prihvaća i
+ *  jedinstven PREFIKS duge opcije (`--no-ind`, `--out=`), pa se uspoređuje prefiks. */
+const GIT_DUGE_ZABRANJENE = ['--no-index', '--output', '--ext-diff', '--textconv', '--git-dir', '--work-tree',
+  '--exec-path', '--namespace', '--super-prefix', '--config-env', '--src-prefix', '--dst-prefix', '--output-directory']
+const GIT_KRATKE_ZABRANJENE = /^-(c|C|o|O)/
+
+function gitArgZabranjen(a: string): boolean {
+  if (GIT_KRATKE_ZABRANJENE.test(a)) return true
+  const [opcija, ...vrijednost] = a.split('=')
+  if (opcija!.startsWith('--') && opcija!.length > 3 && GIT_DUGE_ZABRANJENE.some(z => z.startsWith(opcija!))) return true
+  return [opcija!, vrijednost.join('=')].some(d => /^[\/~]/.test(d) || /(^|[\/:])\.\.(\/|$)/.test(d))
+}
+
+/** Opcije koje čitaju datoteku i njen sadržaj ispišu u poruci o grešci (wc --files0-from,
+ *  date -f, hostname -F) — zato bijela lista opcija, ne crna. */
+const OPCIJE: Record<string, RegExp> = {
+  wc: /^(-[lcwmL]+|--(lines|bytes|chars|words|max-line-length))$/,
+  date: /^(\+.*|-[uR]|-I\w*|--utc|--universal|--rfc-email|--iso-8601(=\w+)?|--rfc-3339=\w+)$/,
+  hostname: /^(-[IifsdA]|--(fqdn|short|domain|all-fqdns|all-ip-addresses|ip-address|long))$/,
+}
 
 export function odlukaNaredbe(
   sirovo: string, nacin: 'plan' | 'work', aliasi: Record<string, string[]>,
@@ -102,8 +121,12 @@ export function odlukaNaredbe(
   if (izvrsna === 'ps' && !arg.every(a => PS_DOPUSTENO.has(a))) {
     return odbij(403, 'konzola_ps', `ps je dopušten samo kao: ps [${[...PS_DOPUSTENO].join(' | ')}] (bez okoline procesa).`)
   }
+  const opcije = OPCIJE[izvrsna!]
+  if (opcije && arg.some(a => (a.startsWith('-') || izvrsna !== 'wc') && !opcije.test(a))) {
+    return odbij(403, 'konzola_opcija', `Opcija nije dopuštena za ${izvrsna} (konzola ne čita sadržaj datoteka).`)
+  }
   if (izvrsna === 'git') {
-    if (arg.some(a => GIT_ZABRANJENO.test(a) || /^[\/~]/.test(a) || /(^|[\/:])\.\.(\/|$)/.test(a))) return blok
+    if (arg.some(gitArgZabranjen)) return blok
     if (nacin === 'plan' && arg[0] && !GIT_SAMO_CITA.includes(arg[0])) {
       return odbij(403, 'konzola_plan', `Git "${arg[0]}" requires WORK mode.`)
     }

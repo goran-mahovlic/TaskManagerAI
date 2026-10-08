@@ -49,6 +49,12 @@ describe('E2E /api/konzola/exec — ADR-0007', () => {
     expect(t.status).toBe(403)
   })
 
+  test('DNS rebinding: loopback peer s tuđim Host/Origin → 403 (globalna brana isHostAllowed)', async () => {
+    const r = await exec(p!.url, 'whoami', { 'Content-Type': 'application/json', 'X-TM-Konzola': '1', Host: 'rebind.zlo.example', Origin: 'http://rebind.zlo.example' })
+    expect(r.status).toBe(403)
+    expect(r.j?.exitCode).toBeUndefined()
+  })
+
   test('LAN peer → 403 i za whoami i za mode (napad iz nalaza zatvoren)', async () => {
     expect(lanIp).toBeTruthy()
     const lan = p!.url.replace('127.0.0.1', lanIp!)
