@@ -13566,10 +13566,10 @@ async function handleLoginApikey(req: Request): Promise<Response> {
     const def = LOGIN_PROVIDERS.find(d => d.id === id)
     if (!def || !def.envKey) return json({ error: 'Provider ne podržava API ključ' }, 400)
     if (typeof key !== 'string' || !key.trim()) return json({ error: 'Prazan ključ' }, 400)
-    // ADR-0007 §5.3 (N1): JEDINI pisač — oblik IME='…' (ljuska ga ne izvršava), odbija \0\r\n,
-    // brava + atomičan zapis. Ključ se ne citira ni u grešci.
-    const upis = postaviTajnu(def.envKey, key.trim(), { spremiste: datotekaTajniZaPisanje() })
-    if (!upis.ok) return json({ error: `Ključ nije upisan (${upis.greska})` }, 400)
+    // Jedini pisač (TASK-5345, ADR-0007 N1): `IME='…'`, odbija \0 \r \n i >4096 B, atomično 0600.
+    // Goli `IME=ključ` u spremištu koje petlja maila učita s `. spremište` bio je naredba ljuske.
+    const upis = postaviTajnu(osigurajMapu(datotekaTajniZaPisanje()), def.envKey, key.trim())
+    if (!upis.ok) return json({ error: 'Ključ nije spremljen', greska: upis.greska }, 400)
     // Gemini: prebaci auth na API-key (OAuth Code Assist je Google ukinuo) + trust workspace.
     if (id === 'geminicli') {
       try {
@@ -14492,7 +14492,8 @@ function odluciteljDavatelji(): Record<string, any> {
     spremiste = fs.readFileSync(datotekaTajni(), 'utf-8')
   } catch { /* nema spremišta — tada odlučuje samo okolina */ }
   // Provjerava se SAMO postoji li redak s tim imenom; vrijednost se nikad ne čita ni ne šalje.
-  const imaKljuc = (ime: string) => !!process.env[ime] || kljucPrisutan(spremiste, ime)
+  const imaKljuc = (ime: string) =>
+    !!process.env[ime] || kljucPrisutan(spremiste, ime)
 
   const out: Record<string, any> = {}
   for (const [ime, v] of Object.entries(konf)) {

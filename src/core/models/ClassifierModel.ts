@@ -17,7 +17,7 @@
  * koji spremište učitava u okolinu dobiva istu vrijednost nakon restarta.
  */
 import { readFileSync, writeFileSync, existsSync, chmodSync } from 'fs'
-import { postaviTajnu, procitajIzTeksta, ukloniTajnu } from '../../LoginCreds'
+import { upisiTajnu, procitajIzTeksta, ukloniTajnu } from '../../LoginCreds'
 import { join } from 'path'
 import { konfigPutanja } from '../paths'
 
@@ -142,7 +142,7 @@ function writeConfigClassifier(HOME: string, spec: string | null): { ok: true } 
 // ADR-0007 §5.3 (TASK-5343): spremište ima JEDNOG pisača — `LoginCreds` (brava, atomično, 0600).
 function writeStore(HOME: string, model: string | null): void {
   const o = { spremiste: classifierStorePath(HOME) }
-  const r = model === null ? ukloniTajnu(CLASSIFIER_ENV_KEY, o) : postaviTajnu(CLASSIFIER_ENV_KEY, model, o)
+  const r = model === null ? ukloniTajnu(CLASSIFIER_ENV_KEY, o) : upisiTajnu(CLASSIFIER_ENV_KEY, model, o)
   if (!r.ok) throw new Error(`spremište nije upisano (${r.greska})`)
 }
 

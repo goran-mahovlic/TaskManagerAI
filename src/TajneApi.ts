@@ -7,7 +7,7 @@
  * Brane, redom (§4): CSRF (X-TM-Tajne, JSON, Sec-Fetch-Site, vlastiti Origin) → prijenos
  * (loopback / Tailscale / HTTPS; čisti LAN HTTP samo uz `dopustiLanHttp`; IP peera, nikad
  * X-Forwarded-For) → popis imena (§6) → kod iz vlasnikova privatnog Telegrama (§4.2) →
- * JEDINI pisač `LoginCreds.postaviTajnu/ukloniTajnu`.
+ * JEDINI pisač `LoginCreds.upisiTajnu/ukloniTajnu`.
  *
  * Čista funkcija nad (zahtjev, kontekst): TaskWebUI samo prosljeđuje, test zove izravno.
  * Dnevnik dobiva samo `[TAJNE] <radnja> <IME> <ishod> <prijenos>` (§8.1).
@@ -15,7 +15,7 @@
 import { appendFileSync, chmodSync, existsSync, mkdirSync, readFileSync } from 'fs'
 import { dirname } from 'path'
 import {
-  imeZabranjeno, IME_RE, kljucOtiskaUz, opisStarogRetka, otisak, parsirajRedak, postaviTajnu,
+  imeZabranjeno, IME_RE, kljucOtiskaUz, opisStarogRetka, otisak, parsirajRedak, upisiTajnu,
   provjeriVrijednost, ukloniTajnu, type DopustenoIme,
 } from './LoginCreds'
 import type { PotvrdaVlasnika, RadnjaTajne } from './core/PotvrdaVlasnika'
@@ -232,7 +232,7 @@ export async function obradiTajne(z: ZahtjevTajni, ctx: KontekstTajni): Promise<
     const ime = imena[i]!
     const v = upisi[i]![1] as string
     const r = radnja === 'upis'
-      ? postaviTajnu(ime, v, { spremiste: ctx.spremiste, kljucOtiska: kljucPut })
+      ? upisiTajnu(ime, v, { spremiste: ctx.spremiste, kljucOtiska: kljucPut })
       : ukloniTajnu(ime, { spremiste: ctx.spremiste, kljucOtiska: kljucPut })
     const rubniRazmak = radnja === 'upis' && /^\s|\s$/.test(v)
     upisi[i] = [ime, undefined]

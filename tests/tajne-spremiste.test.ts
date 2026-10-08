@@ -11,7 +11,7 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import {
   parsirajRedak, procitajIzTeksta, kljucPrisutan, kodirajVrijednost, provjeriVrijednost,
-  postaviTajnu, ukloniTajnu, ukloniKljucIzDatoteke, otisak, imeZabranjeno, dopustenaImena,
+  upisiTajnu, ukloniTajnu, ukloniKljucIzDatoteke, otisak, imeZabranjeno, dopustenaImena,
   naPromjenuTajne, opisStarogRetka,
 } from '../src/LoginCreds'
 import { procitajTajnu, tajnaPostavljena, zapisiTajnu } from '../src/core/ConfigModul'
@@ -50,7 +50,7 @@ const MATRICA: [string, string][] = [
 describe('J2 — oblik IME=\'…\': ljuska čita isto što je upisano i ništa ne izvršava', () => {
   for (const [opis, v] of MATRICA) {
     test(opis, () => {
-      expect(postaviTajnu('SMTP_PASSWORD', v, { spremiste: f }).ok).toBe(true)
+      expect(upisiTajnu('SMTP_PASSWORD', v, { spremiste: f }).ok).toBe(true)
       expect(ljuskom(f, 'SMTP_PASSWORD')).toBe(v)
       expect(existsSync(join(mapa, 'MARKER'))).toBe(false)
       expect(procitajTajnu('SMTP_PASSWORD', f)).toBe(v)
@@ -74,13 +74,12 @@ describe('J2 — oblik IME=\'…\': ljuska čita isto što je upisano i ništa n
 
 describe('parser čita sve oblike (stari goli, dvostruki, export)', () => {
   test('oblici', () => {
-    expect(parsirajRedak("IME='a b'")).toMatchObject({ ime: 'IME', vrijednost: 'a b', oblik: 'navodnici' })
-    expect(parsirajRedak("export IME='a'\\''b'")).toMatchObject({ ime: 'IME', vrijednost: "a'b", export: true })
-    expect(parsirajRedak('IME="x y"')).toMatchObject({ vrijednost: 'x y', oblik: 'dvostruki' })
-    expect(parsirajRedak('IME=goli')).toMatchObject({ vrijednost: 'goli', oblik: 'stari' })
+    expect(parsirajRedak("IME='a b'")).toEqual({ ime: 'IME', vrijednost: 'a b' })
+    expect(parsirajRedak("export IME='a'\\''b'")).toEqual({ ime: 'IME', vrijednost: "a'b" })
+    expect(parsirajRedak('IME="x y"')).toEqual({ ime: 'IME', vrijednost: 'x y' })
+    expect(parsirajRedak('IME=goli')).toEqual({ ime: 'IME', vrijednost: 'goli' })
     expect(parsirajRedak('  # komentar')).toBeNull()
     expect(parsirajRedak('')).toBeNull()
-    expect(parsirajRedak('mala=x')).toBeNull()
   })
   test('kljucPrisutan prati parser: prazan navodnik nije prijava', () => {
     expect(kljucPrisutan("A=''\n", 'A')).toBe(false)
@@ -88,19 +87,21 @@ describe('parser čita sve oblike (stari goli, dvostruki, export)', () => {
     expect(kljucPrisutan('export A=x\n', 'A')).toBe(true)
     expect(kljucPrisutan('AB=x\n', 'A')).toBe(false)
   })
-  test('stari goli redak s opasnim znakom javlja opasan', () => {
+  test('stari redak s opasnim znakom javlja opasan; novi oblik nije opasan', () => {
     expect(opisStarogRetka('A=a$(b)')).toEqual({ oblik: 'stari', opasan: true })
+    expect(opisStarogRetka('A="a$(b)"')).toEqual({ oblik: 'stari', opasan: true })
     expect(opisStarogRetka("A='a$(b)'")).toEqual({ oblik: 'novi', opasan: false })
+    expect(opisStarogRetka("A='it'\\''s'")).toEqual({ oblik: 'novi', opasan: false })
     expect(opisStarogRetka('A=abc')).toEqual({ oblik: 'stari', opasan: false })
   })
 })
 
 describe('J3 — odbijanja ostavljaju spremište bajt za bajt', () => {
   test('prazno, \\0, \\r, \\n, >4096 B', () => {
-    postaviTajnu('SMTP_PASSWORD', 'prvo', { spremiste: f })
+    upisiTajnu('SMTP_PASSWORD', 'prvo', { spremiste: f })
     const prije = sha(f)
     for (const v of ['', 'a\0b', 'a\rb', 'a\nB=1', 'z'.repeat(4097)]) {
-      const r = postaviTajnu('SMTP_PASSWORD', v, { spremiste: f })
+      const r = upisiTajnu('SMTP_PASSWORD', v, { spremiste: f })
       expect(r.ok).toBe(false)
       expect(r.greska).toMatch(/^vrijednost_/)
       expect(sha(f)).toBe(prije)
@@ -108,7 +109,7 @@ describe('J3 — odbijanja ostavljaju spremište bajt za bajt', () => {
     expect(provjeriVrijednost('ok')).toBeNull()
   })
   test('ime krivog oblika', () => {
-    expect(postaviTajnu('mala', 'x', { spremiste: f }).greska).toBe('ime_neispravno')
+    expect(upisiTajnu('mala', 'x', { spremiste: f }).greska).toBe('ime_neispravno')
     expect(existsSync(f)).toBe(false)
   })
   test('tvrda zabrana §6.2', () => {
@@ -136,7 +137,7 @@ describe('§6.1 — popis dopuštenih imena', () => {
 describe('J5/J6 — prava, simbolička poveznica, bez kopija', () => {
   test('0600 i kad je prije bilo 0644; mapa 0700', () => {
     writeFileSync(f, 'A=b\n', { mode: 0o644 }); chmodSync(f, 0o644); chmodSync(mapa, 0o755)
-    expect(postaviTajnu('SMTP_PASSWORD', 'v', { spremiste: f }).ok).toBe(true)
+    expect(upisiTajnu('SMTP_PASSWORD', 'v', { spremiste: f }).ok).toBe(true)
     expect(statSync(f).mode & 0o777).toBe(0o600)
     expect(statSync(mapa).mode & 0o777).toBe(0o700)
     expect(readFileSync(f, 'utf-8')).toBe("A=b\nSMTP_PASSWORD='v'\n")
@@ -144,16 +145,16 @@ describe('J5/J6 — prava, simbolička poveznica, bez kopija', () => {
   test('simbolička poveznica na mjestu spremišta → odbijeno', () => {
     const cilj = join(mapa, 'drugdje'); writeFileSync(cilj, 'X=1\n')
     symlinkSync(cilj, f)
-    expect(postaviTajnu('SMTP_PASSWORD', 'v', { spremiste: f }).greska).toBe('spremiste_nije_sigurno')
+    expect(upisiTajnu('SMTP_PASSWORD', 'v', { spremiste: f }).greska).toBe('spremiste_nije_sigurno')
     expect(readFileSync(cilj, 'utf-8')).toBe('X=1\n')
     expect(lstatSync(f).isSymbolicLink()).toBe(true)
   })
   test('rotacija: ostali retci bajt za bajt, nema .bak, .lock ni tmp', () => {
     writeFileSync(f, '# glava\nA=b\nexport SMTP_PASSWORD=staro\nC="d"\n', { mode: 0o600 })
-    const r1 = postaviTajnu('SMTP_PASSWORD', 'novo', { spremiste: f })
+    const r1 = upisiTajnu('SMTP_PASSWORD', 'novo', { spremiste: f })
     expect(r1.ok).toBe(true)
     expect(readFileSync(f, 'utf-8')).toBe("# glava\nA=b\nexport SMTP_PASSWORD='novo'\nC=\"d\"\n")
-    const r2 = postaviTajnu('SMTP_PASSWORD', 'trece', { spremiste: f })
+    const r2 = upisiTajnu('SMTP_PASSWORD', 'trece', { spremiste: f })
     expect(r2.otisakPrije).toBe(r1.otisak)
     expect(r2.otisak).not.toBe(r1.otisak)
     expect(readdirSync(mapa).filter(n => n !== 'tajne-otisak.kljuc').sort()).toEqual(['credentials.env'])
@@ -171,9 +172,9 @@ describe('J4 — zaključavanje: dva procesa × 50 upisa', () => {
   test('svih 100 imena prisutno, nijedan redak razbijen', async () => {
     const skripta = join(mapa, 'pisac.ts')
     const lc = join(import.meta.dir, '..', 'src', 'LoginCreds.ts')
-    writeFileSync(skripta, `import { postaviTajnu } from ${JSON.stringify(lc)}
+    writeFileSync(skripta, `import { upisiTajnu } from ${JSON.stringify(lc)}
 const [p, f] = process.argv.slice(2)
-for (let i = 0; i < 50; i++) { const r = postaviTajnu('T' + p + '_' + i + '_TOKEN', 'v' + p + i + "'x", { spremiste: f }); if (!r.ok) { console.error(r.greska); process.exit(1) } }`)
+for (let i = 0; i < 50; i++) { const r = upisiTajnu('T' + p + '_' + i + '_TOKEN', 'v' + p + i + "'x", { spremiste: f }); if (!r.ok) { console.error(r.greska); process.exit(1) } }`)
     const procesi = ['A', 'B'].map(p => Bun.spawn(['bun', skripta, p, f], { stderr: 'pipe' }))
     const izlazi = await Promise.all(procesi.map(p => p.exited))
     expect(izlazi).toEqual([0, 0])
@@ -202,7 +203,7 @@ describe('J14 — otisak je HMAC s ključem čvora', () => {
     const k = join(mapa, 'kljuc'); writeFileSync(k, Buffer.from(vektori.kljucHex, 'hex'), { mode: 0o600 })
     for (const v of vektori.otisci) expect(otisak(v.vrijednost, k)).toBe(v.otisak)
     for (const r of vektori.retci) expect(parsirajRedak(r.redak)?.vrijednost ?? null).toBe(r.vrijednost)
-    const py = Bun.spawnSync(['python3', join(import.meta.dir, '..', 'tools', 'tajne_parser.py'), '--vektori',
+    const py = Bun.spawnSync(['python3', join(import.meta.dir, '..', 'tools', 'tajna_redak.py'), '--vektori',
       join(import.meta.dir, 'fixtures', 'tajne-vektori.json')])
     expect(py.stderr.toString()).toBe('')
     expect(py.exitCode).toBe(0)
@@ -211,16 +212,16 @@ describe('J14 — otisak je HMAC s ključem čvora', () => {
 
 describe('J16 — naPromjenuTajne', () => {
   test('cb unutar 2 s nakon promjene, ne zove se bez promjene otiska', async () => {
-    postaviTajnu('SMTP_PASSWORD', 'a', { spremiste: f })
+    upisiTajnu('SMTP_PASSWORD', 'a', { spremiste: f })
     let pozivi = 0
     const stop = naPromjenuTajne('SMTP_PASSWORD', () => { pozivi++ }, { spremiste: f })
     try {
       await Bun.sleep(100)
-      postaviTajnu('DRUGO_TOKEN', 'x', { spremiste: f })
+      upisiTajnu('DRUGO_TOKEN', 'x', { spremiste: f })
       await Bun.sleep(1200)
       expect(pozivi).toBe(0)
       const t0 = Date.now()
-      postaviTajnu('SMTP_PASSWORD', 'b', { spremiste: f })
+      upisiTajnu('SMTP_PASSWORD', 'b', { spremiste: f })
       while (pozivi === 0 && Date.now() - t0 < 2000) await Bun.sleep(50)
       expect(pozivi).toBe(1)
     } finally { stop() }

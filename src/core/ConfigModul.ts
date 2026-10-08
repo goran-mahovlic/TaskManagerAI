@@ -17,8 +17,8 @@
  */
 
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'fs'
-import { postaviTajnu, procitajIzTeksta } from '../LoginCreds'
 import { konfigPutanja, konfigPutanjaZaPisanje, osigurajMapu } from './paths'
+import { IME_TAJNE_RE, postaviTajnu, procitajIzTeksta } from '../LoginCreds'
 
 // ─── Shema ───────────────────────────────────────────────────────────────────
 
@@ -256,41 +256,37 @@ export const CREDENTIALS_FILE = konfigPutanja(IME_TAJNI, 'TM_CREDENTIALS')
  * odgovor API-ja ili u dnevnik. Parser je zajednički (`LoginCreds.parsirajRedak`, ADR-0007 §5.2).
  */
 export function tajnaPostavljena(imeVarijable: string, credPath: string = datotekaTajni()): boolean {
-  const ime = String(imeVarijable || '').trim()
-  if (!ime) return false
-  if (process.env[ime]) return true
-  try {
-    return existsSync(credPath) && !!procitajIzTeksta(readFileSync(credPath, 'utf-8'), ime)
-  } catch {
-    return false
-  }
+  return procitajTajnu(imeVarijable, credPath) !== null
 }
 
-/** Vrijednost tajne za POZIV (ne za prikaz). Vraća `null` ako je nema. */
+/**
+ * Vrijednost tajne za POZIV (ne za prikaz). Vraća `null` ako je nema. Redak čita JEDAN parser
+ * (`LoginCreds.parsirajRedak`): `IME='…'` i stari goli/navodnički oblik (TASK-5345).
+ */
 export function procitajTajnu(imeVarijable: string, credPath: string = datotekaTajni()): string | null {
   const ime = String(imeVarijable || '').trim()
   if (!ime) return null
   if (process.env[ime]) return process.env[ime] as string
   try {
-    if (existsSync(credPath)) return procitajIzTeksta(readFileSync(credPath, 'utf-8'), ime) || null
+    if (!existsSync(credPath)) return null
+    return procitajIzTeksta(readFileSync(credPath, 'utf-8'), ime)
   } catch { /* nema datoteke ili nije čitljiva */ }
   return null
 }
 
 /**
- * Zapiši tajnu u `credentials.env` (0600). JSON i dalje nosi samo IME varijable.
- * Tanki omotač oko JEDINOG pisača `LoginCreds.postaviTajnu` (ADR-0007 §5.3).
+ * Zapiši tajnu (0600, atomično, oblik `IME='…'`). JSON i dalje nosi samo IME varijable.
+ * Tanki omotač oko `LoginCreds.postaviTajnu`, jedinog pisača (TASK-5345, ADR-0007 N1).
  */
 export function zapisiTajnu(
   imeVarijable: string, vrijednost: string, credPath: string = datotekaTajniZaPisanje(),
 ): { ok: boolean; greska?: string } {
   const ime = String(imeVarijable || '').trim()
-  if (!/^[A-Z][A-Z0-9_]{1,63}$/.test(ime)) {
+  if (!IME_TAJNE_RE.test(ime)) {
     return { ok: false, greska: 'ime varijable mora biti VELIKIM_SLOVIMA (A-Z, 0-9, _)' }
   }
-  if (/[\r\n]/.test(vrijednost)) return { ok: false, greska: 'tajna ne smije sadržavati prijelaz retka' }
-  const r = postaviTajnu(ime, vrijednost, { spremiste: credPath })
-  return r.ok ? { ok: true } : { ok: false, greska: r.greska }
+  try { osigurajMapu(credPath) } catch (e: any) { return { ok: false, greska: String(e?.message || e) } }
+  return postaviTajnu(credPath, ime, vrijednost)
 }
 
 /** Zajedničko stanje za ploču: što je podešeno, bez ijedne vrijednosti. */

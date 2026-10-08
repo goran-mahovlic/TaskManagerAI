@@ -1,6 +1,6 @@
 /**
  * LoginCreds — JEDINI pisač i jedini parser spremišta tajni čvora (`credentials.env`,
- * v. ConfigModul.datotekaTajni()). ADR-0007 §5.
+ * v. ConfigModul.datotekaTajni(); redci oblika `IME='vrijednost'`). ADR-0007 §5.
  *
  * ZAŠTO POSTOJI (TASK-4796): mjerilo „je li davatelj prijavljen" i radnja „odjavi ga"
  * bile su dva odvojena, ručno prepisana izraza u TaskWebUI.ts. Mjerilo je gledalo ključ u
@@ -12,68 +12,103 @@
  * namjerno ŠIRE od mjerila (hvata i `export IME=`, i razmake, i praznu vrijednost) —
  * nikad ne smije ostati redak koji bi mjerilo moglo pročitati kao prijavu.
  *
- * POOPĆENJE (TASK-5343, ADR-0007): spremište je bilo `IME=vrijednost` bez navodnika, a
- * petlja maila ga učitava s `. spremište` — vrijednost s `$(…)` postala bi naredba (N1).
- * Pisač sada piše `IME='…'` (ljuska unutar jednostrukih navodnika ništa ne zamjenjuje),
- * pod zaključavanjem, atomično (tmp O_EXCL + rename + fsync), 0600 i bez `.bak` kopija.
- * `ConfigModul.zapisiTajnu`, upis ključa davatelja, odjava i ploča „Tajne" zovu OVO.
+ * OBLIK RETKA (TASK-5345, ADR-0007 §5.2, nalaz N1): spremište netko učita s
+ * `set -a; . spremište` (petlja maila na glavnom). Goli `IME=vrijednost` tada je IZVRŠNI KOD:
+ * `$(…)`, backtick i `;` u vrijednosti izvrše se kao naredba, a `\n` u vrijednosti dopiše
+ * proizvoljan redak (npr. `BASH_ENV`). Zato pisač piše SAMO `IME='…'` (unutar jednostrukih
+ * navodnika ljuska ništa ne zamjenjuje; `'` → `'\''`) i odbija `\0 \r \n`. Čitač razumije
+ * taj oblik i stari goli/navodnički, jer postojeći retci ostaju dok ih netko ne prepiše.
+ *
+ * POOPĆENJE ZA PLOČU (TASK-5343, ADR-0007 §5.3, §6, §7): brava između procesa (ploča + CLI),
+ * HMAC otisak s ključem čvora, popis dopuštenih imena, brisanje i dojava promjene. Ploča
+ * („Config → Tajne"), `ConfigModul.zapisiTajnu`, upis ključa davatelja i odjava zovu OVO.
  */
 import {
-  chmodSync, closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync,
-  renameSync, statSync, unlinkSync, watch, writeSync, constants as K,
+  chmodSync, closeSync, constants as K, existsSync, fsyncSync, lstatSync, mkdirSync, openSync,
+  readFileSync, renameSync, statSync, unlinkSync, watch, writeSync,
 } from 'fs'
 import { createHmac, randomBytes } from 'crypto'
 import { dirname, join } from 'path'
 
 const escapeRe = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
-export const IME_RE = /^[A-Z][A-Z0-9_]{1,63}$/
-export const NAJVISE_BAJTOVA = 4096
+export const IME_TAJNE_RE = /^[A-Z][A-Z0-9_]{1,63}$/
+export const TAJNA_MAX_BAJTOVA = 4096
+/** Kraća imena za novi kod (TASK-5343); isto pravilo. */
+export const IME_RE = IME_TAJNE_RE
+
+export interface RedakTajne { ime: string; vrijednost: string }
 
 // ─── Parser (§5.2) ───────────────────────────────────────────────────────────
 
-export interface Redak { ime: string; vrijednost: string; oblik: 'navodnici' | 'dvostruki' | 'stari'; export: boolean }
+/** `IME='…'` — POSIX jednostruki navodnici, jedini oblik koji pisač piše. */
+export function kodirajRedak(ime: string, vrijednost: string): string {
+  return `${ime}=${kodirajVrijednost(vrijednost)}`
+}
+export const kodirajVrijednost = (v: string): string => `'${v.split("'").join("'\\''")}'`
 
-/** POSIX dekodiranje niza jednostrukih navodnika i `\'` (oblik koji piše `kodirajVrijednost`). */
-function dekodirajJednostruke(s: string): string | null {
-  let out = '', i = 0
+/**
+ * Riječ ljuske koja počinje navodnikom (`'…'`, `"…"`, i spojevi poput `'a'\''b'`) → niz.
+ * Vraća `null` za nezatvoren navodnik (tada vrijedi stari, tolerantni put).
+ * `$…` u dvostrukim navodnicima se NE razvija — čitač nikad ništa ne izvršava.
+ */
+function dekodirajRijec(s: string): string | null {
+  let out = ''
+  let i = 0
   while (i < s.length) {
-    if (s[i] === "'") {
+    const c = s[i]
+    if (c === ' ' || c === '\t') break // ostatak je razmak ili `# komentar`
+    if (c === "'") {
       const kraj = s.indexOf("'", i + 1)
       if (kraj < 0) return null
       out += s.slice(i + 1, kraj); i = kraj + 1
-    } else if (s[i] === '\\' && i + 1 < s.length) { out += s[i + 1]; i += 2 }
-    else return null
+    } else if (c === '"') {
+      i++
+      for (;;) {
+        if (i >= s.length) return null
+        const d = s[i]
+        if (d === '"') { i++; break }
+        if (d === '\\' && i + 1 < s.length && '$`"\\'.includes(s[i + 1]!)) { out += s[i + 1]; i += 2; continue }
+        out += d; i++
+      }
+    } else if (c === '\\' && i + 1 < s.length) {
+      out += s[i + 1]; i += 2
+    } else {
+      out += c; i++
+    }
   }
   return out
 }
 
-/** Jedan redak spremišta → ime i vrijednost; `null` za komentar, prazan ili neispravan redak. */
-export function parsirajRedak(redak: string): Redak | null {
-  const m = /^\s*(export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=(.*)$/.exec(redak.replace(/\r$/, ''))
-  if (!m || !/^[A-Z][A-Z0-9_]{0,63}$/.test(m[2]!)) return null
-  const exp = !!m[1], ime = m[2]!, sirovo = m[3]!
-  if (sirovo.startsWith("'")) {
-    const v = dekodirajJednostruke(sirovo.trimEnd())
-    if (v !== null) return { ime, vrijednost: v, oblik: 'navodnici', export: exp }
+const DODJELA = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=(.*)$/
+
+/** Jedan parser retka spremišta (ADR-0007 §5.2). Komentar i ne-dodjela → `null`. */
+export function parsirajRedak(redak: string): RedakTajne | null {
+  const m = DODJELA.exec(redak.replace(/\r$/, ''))
+  if (!m) return null
+  const sirovo = m[2]!.trim()
+  if (sirovo.startsWith("'") || sirovo.startsWith('"')) {
+    const v = dekodirajRijec(sirovo)
+    if (v !== null) return { ime: m[1]!, vrijednost: v }
   }
-  const t = sirovo.trim()
-  if (t.length >= 2 && t.startsWith('"') && t.endsWith('"')) return { ime, vrijednost: t.slice(1, -1), oblik: 'dvostruki', export: exp }
-  // Stari zapis: kao dosadašnji procitajTajnu (trim + rubni navodnici).
-  return { ime, vrijednost: t.replace(/^["']|["']$/g, ''), oblik: 'stari', export: exp }
+  // stari goli zapis: kao dosad — obrubni razmaci i rubni navodnici se skidaju
+  return { ime: m[1]!, vrijednost: sirovo.replace(/^["']|["']$/g, '') }
 }
 
-/** Vrijednost imena iz teksta spremišta (zadnji zapis pobjeđuje, kao u ljusci). */
-export function procitajIzTeksta(tekst: string, ime: string): string | null {
+/** Vrijednost imena iz teksta spremišta; zadnji redak pobjeđuje (kao u ljusci). Prazno → `null`. */
+export function procitajIzTeksta(tekst: string, envKey: string): string | null {
+  if (!envKey) return null
   let v: string | null = null
-  for (const r of tekst.split('\n')) { const p = parsirajRedak(r); if (p && p.ime === ime) v = p.vrijednost }
-  return v
+  for (const r of tekst.split('\n')) {
+    const p = parsirajRedak(r)
+    if (p && p.ime === envKey) v = p.vrijednost
+  }
+  return v ? v : null
 }
 
-/** Mjerilo prijavljenosti: TOČNO ime ključa s NEPRAZNOM vrijednošću (svi oblici). */
+/** Mjerilo prijavljenosti: TOČNO ime ključa s NEPRAZNOM vrijednošću (bilo kojeg oblika). */
 export function kljucPrisutan(tekst: string, envKey: string): boolean {
-  if (!envKey) return false
-  return !!procitajIzTeksta(tekst, envKey)
+  return procitajIzTeksta(tekst, envKey) !== null
 }
 
 export function kljucPrisutanUDatoteci(putanja: string, envKey: string): boolean {
@@ -82,11 +117,16 @@ export function kljucPrisutanUDatoteci(putanja: string, envKey: string): boolean
   } catch { return false }
 }
 
-/** Za `GET /api/tajne`: stari goli redak s metaznakom ljuske treba ponovo upisati (§5.2). */
+/**
+ * Za `GET /api/tajne` (§5.2): `novi` = redak koji je napisao pisač (`IME='…'`). Stari goli ili
+ * dvostruko-navodnički redak s metaznakom ljuske je `opasan` — treba ga ponovo upisati.
+ */
 export function opisStarogRetka(redak: string): { oblik: 'novi' | 'stari'; opasan: boolean } {
-  const p = parsirajRedak(redak)
-  if (!p || p.oblik === 'navodnici') return { oblik: 'novi', opasan: false }
-  return { oblik: 'stari', opasan: /[$`;()|&<>]/.test(redak.slice(redak.indexOf('=') + 1)) }
+  const m = DODJELA.exec(redak.replace(/\r$/, ''))
+  if (!m) return { oblik: 'novi', opasan: false }
+  const sirovo = m[2]!.trim()
+  if (sirovo.startsWith("'") && dekodirajRijec(sirovo) !== null && !sirovo.includes('"')) return { oblik: 'novi', opasan: false }
+  return { oblik: 'stari', opasan: /[$`;()|&<>]/.test(sirovo) }
 }
 
 /** Je li redak zapis TOG ključa (šire od mjerila: `export`, razmaci, prazna vrijednost). */
@@ -104,15 +144,14 @@ export function ukloniKljuc(tekst: string, envKey: string): { tekst: string; ukl
 
 // ─── Provjere (§5.2, §6) ─────────────────────────────────────────────────────
 
-export const kodirajVrijednost = (v: string): string => "'" + v.replace(/'/g, "'\\''") + "'"
-
-/** Kod greške ili `null`. Vrijednost se NE trim-a (lozinka smije imati razmak na rubu). */
-export function provjeriVrijednost(v: unknown): string | null {
-  if (typeof v !== 'string' || v.length === 0) return 'vrijednost_prazna'
-  if (/[\0\r\n]/.test(v)) return 'vrijednost_nedopusten_znak'
-  if (Buffer.byteLength(v, 'utf-8') > NAJVISE_BAJTOVA) return 'vrijednost_preduga'
+/** Zašto vrijednost ne smije u spremište (kod greške), ili `null` ako smije. Ne trim-a. */
+export function provjeriVrijednostTajne(vrijednost: unknown): string | null {
+  if (typeof vrijednost !== 'string' || vrijednost.length === 0) return 'vrijednost_prazna'
+  if (/[\0\r\n]/.test(vrijednost)) return 'vrijednost_nedopusten_znak'
+  if (Buffer.byteLength(vrijednost, 'utf-8') > TAJNA_MAX_BAJTOVA) return 'vrijednost_preduga'
   return null
 }
+export const provjeriVrijednost = provjeriVrijednostTajne
 
 /** §6.2 — vrijedi i kad je ime na popisu: okolina koja mijenja izvršenje ili odredište. */
 const ZABRANA = [
@@ -138,7 +177,7 @@ export function dopustenaImena(izvori: {
 }): DopustenoIme[] {
   const out = new Map<string, string>()
   const dodaj = (ime: string | undefined, izvor: string) => {
-    if (ime && IME_RE.test(ime) && !imeZabranjeno(ime) && !out.has(ime)) out.set(ime, izvor)
+    if (ime && IME_TAJNE_RE.test(ime) && !imeZabranjeno(ime) && !out.has(ime)) out.set(ime, izvor)
   }
   for (const d of izvori.davatelji || []) dodaj(d.envKey, d.izvor)
   for (const m of izvori.moduli || []) dodaj(m.ime, m.izvor)
@@ -180,6 +219,7 @@ export interface IshodPisaca { ok: boolean; greska?: string; otisakPrije?: strin
 
 const pidZiv = (pid: number): boolean => { try { process.kill(pid, 0); return true } catch (e: any) { return e?.code === 'EPERM' } }
 
+/** Brava između procesa (ploča + CLI): `<spremište>.lock` s O_EXCL. */
 function zakljucaj(spremiste: string): () => void {
   const lock = spremiste + '.lock'
   const rok = Date.now() + 10_000
@@ -203,20 +243,25 @@ function zakljucaj(spremiste: string): () => void {
   }
 }
 
+/** Spremište mora biti obična datoteka korisnika — ne poveznica (bacila bi upis u tuđu datoteku). */
 function provjeriMjesto(spremiste: string): string | null {
   const mapa = dirname(spremiste)
   mkdirSync(mapa, { recursive: true, mode: 0o700 })
   const sm = statSync(mapa)
-  if (typeof process.getuid === 'function' && sm.uid !== process.getuid()) return 'spremiste_nije_sigurno'
+  const uid = typeof process.getuid === 'function' ? process.getuid() : sm.uid
+  if (sm.uid !== uid) return 'spremiste_nije_sigurno'
   if ((sm.mode & 0o077) !== 0) { try { chmodSync(mapa, 0o700) } catch {} }
-  if (existsSync(spremiste) || (() => { try { lstatSync(spremiste); return true } catch { return false } })()) {
-    const s = lstatSync(spremiste)
-    if (s.isSymbolicLink() || !s.isFile()) return 'spremiste_nije_sigurno'
-    if (typeof process.getuid === 'function' && s.uid !== process.getuid()) return 'spremiste_nije_sigurno'
-  }
+  let st
+  try { st = lstatSync(spremiste) } catch { return null } // još ne postoji — stvorit će se
+  if (st.isSymbolicLink() || !st.isFile() || st.uid !== uid) return 'spremiste_nije_sigurno'
   return null
 }
 
+/**
+ * Atomičan upis: `tmp` s nasumičnim imenom (`O_EXCL|O_NOFOLLOW`, 0600) + `fsync` + `rename`,
+ * `fsync` mape, pa `chmod 0600` (i kad je spremište ranije bilo 0644). Bez kopija (`.bak`) —
+ * rotacija mora ugasiti staru vrijednost (ADR-0007 N2). Pad usred upisa ostavlja staro spremište.
+ */
 function zapisiAtomicno(spremiste: string, tekst: string): void {
   const tmp = `${spremiste}.tmp-${process.pid}-${randomBytes(8).toString('hex')}`
   const fd = openSync(tmp, K.O_WRONLY | K.O_CREAT | K.O_EXCL | K.O_NOFOLLOW, 0o600)
@@ -229,13 +274,17 @@ function zapisiAtomicno(spremiste: string, tekst: string): void {
 }
 
 /** Zajednički okvir: mjesto → brava → čitanje → izmjena → atomičan zapis → otključavanje. */
-function uredi(ime: string, o: OpcijePisaca, izmijeni: (redovi: string[]) => string[] | null, nova: string | null): IshodPisaca {
-  if (!IME_RE.test(ime)) return { ok: false, greska: 'ime_neispravno' }
-  const greska = provjeriMjesto(o.spremiste)
+function uredi(
+  ime: string, o: OpcijePisaca & { bezOtiska?: boolean },
+  izmijeni: (redovi: string[]) => string[] | null, nova: string | null,
+): IshodPisaca {
+  if (!IME_TAJNE_RE.test(ime)) return { ok: false, greska: 'ime_neispravno' }
+  let greska: string | null
+  try { greska = provjeriMjesto(o.spremiste) } catch { greska = 'spremiste_nije_sigurno' }
   if (greska) return { ok: false, greska }
   const kljucPut = o.kljucOtiska || kljucOtiskaUz(o.spremiste)
   let otkljucaj: () => void
-  try { otkljucaj = zakljucaj(o.spremiste) } catch (e: any) { return { ok: false, greska: e?.code === 'TAJNE_ZAKLJUCANO' ? 'zakljucano' : 'spremiste_greska' } }
+  try { otkljucaj = zakljucaj(o.spremiste) } catch (e: any) { return { ok: false, greska: e?.code === 'TAJNE_ZAKLJUCANO' ? 'zakljucano' : 'upis_nije_uspio' } }
   try {
     const stari = existsSync(o.spremiste) ? readFileSync(o.spremiste, 'utf-8') : ''
     const prije = procitajIzTeksta(stari, ime)
@@ -243,6 +292,7 @@ function uredi(ime: string, o: OpcijePisaca, izmijeni: (redovi: string[]) => str
     const novi = izmijeni(redovi)
     if (novi === null) return { ok: true, uklonjen: false, otisakPrije: null, otisak: null }
     zapisiAtomicno(o.spremiste, novi.length ? novi.join('\n') + '\n' : '')
+    if (o.bezOtiska) return { ok: true, uklonjen: nova === null ? true : undefined }
     return {
       ok: true,
       otisakPrije: prije ? otisak(prije, kljucPut) : null,
@@ -251,16 +301,20 @@ function uredi(ime: string, o: OpcijePisaca, izmijeni: (redovi: string[]) => str
     }
   } catch {
     // Poruka iznimke se ne prenosi: ne smije postati put kojim sadržaj izađe van.
-    return { ok: false, greska: 'spremiste_greska' }
+    return { ok: false, greska: 'upis_nije_uspio' }
   } finally { otkljucaj() }
 }
 
-/** Upis ili rotacija. Redak tog imena mijenja se NA MJESTU, ostali ostaju bajt za bajt. */
-export function postaviTajnu(ime: string, vrijednost: string, o: OpcijePisaca): IshodPisaca {
-  if (!IME_RE.test(String(ime || ''))) return { ok: false, greska: 'ime_neispravno' }
-  const g = provjeriVrijednost(vrijednost)
+/**
+ * Upis ili rotacija s otiskom (ploča, CLI). Mijenja SAMO redak tog imena (svi oblici, i
+ * `export` — koji se čuva; duplikati se miču), ostale retke ostavlja bajt za bajt; nema li ga,
+ * dopisuje na kraj. Vrijednost se NE trim-a (lozinka smije imati razmak na rubu).
+ */
+export function upisiTajnu(ime: string, vrijednost: string, o: OpcijePisaca & { bezOtiska?: boolean }): IshodPisaca {
+  if (typeof ime !== 'string' || !IME_TAJNE_RE.test(ime)) return { ok: false, greska: 'ime_neispravno' }
+  const g = provjeriVrijednostTajne(vrijednost)
   if (g) return { ok: false, greska: g }
-  const redak = `${ime}=${kodirajVrijednost(vrijednost)}`
+  const redak = kodirajRedak(ime, vrijednost)
   return uredi(ime, o, redovi => {
     let zamijenjen = false
     const out: string[] = []
@@ -274,9 +328,16 @@ export function postaviTajnu(ime: string, vrijednost: string, o: OpcijePisaca): 
   }, vrijednost)
 }
 
+/** JEDINI pisač tajne (TASK-5345 sučelje): `{ok}` ili `{ok:false, greska}`. */
+export function postaviTajnu(putanja: string, ime: string, vrijednost: string): { ok: boolean; greska?: string } {
+  const r = upisiTajnu(ime, vrijednost, { spremiste: putanja, bezOtiska: true })
+  return r.ok ? { ok: true } : { ok: false, greska: r.greska }
+}
+
 /** Brisanje: miče SVE retke tog imena (načelo TASK-4796). */
-export function ukloniTajnu(ime: string, o: OpcijePisaca): IshodPisaca {
-  if (!existsSync(o.spremiste)) return IME_RE.test(ime) ? { ok: true, uklonjen: false, otisakPrije: null, otisak: null } : { ok: false, greska: 'ime_neispravno' }
+export function ukloniTajnu(ime: string, o: OpcijePisaca & { bezOtiska?: boolean }): IshodPisaca {
+  if (!IME_TAJNE_RE.test(ime)) return { ok: false, greska: 'ime_neispravno' }
+  if (!existsSync(o.spremiste)) return { ok: true, uklonjen: false, otisakPrije: null, otisak: null }
   return uredi(ime, o, redovi => {
     const ostatak = redovi.filter(r => !redakJeKljuc(r, ime))
     return ostatak.length === redovi.length ? null : ostatak
@@ -285,8 +346,8 @@ export function ukloniTajnu(ime: string, o: OpcijePisaca): IshodPisaca {
 
 /** Odjava na disku. Vraća je li ključ doista bio ondje (dvostruki klik je bezopasan). */
 export function ukloniKljucIzDatoteke(putanja: string, envKey: string): boolean {
-  if (!envKey) return false
-  const r = ukloniTajnu(envKey, { spremiste: putanja })
+  if (!envKey || !existsSync(putanja)) return false
+  const r = ukloniTajnu(envKey, { spremiste: putanja, bezOtiska: true })
   return r.ok && !!r.uklonjen
 }
 

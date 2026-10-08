@@ -15,7 +15,7 @@ import { existsSync, readFileSync, writeFileSync } from 'fs'
 import { appendFileSync, chmodSync, mkdirSync } from 'fs'
 import { dirname } from 'path'
 import {
-  imeZabranjeno, IME_RE, kljucOtiskaUz, otisak, parsirajRedak, postaviTajnu, provjeriVrijednost, ukloniTajnu,
+  imeZabranjeno, IME_RE, kljucOtiskaUz, otisak, parsirajRedak, upisiTajnu, provjeriVrijednost, ukloniTajnu,
 } from '../src/LoginCreds'
 import { datotekaTajniZaPisanje } from '../src/core/ConfigModul'
 import { konfigPutanjaZaPisanje, osigurajMapu, stanjePutanja } from '../src/core/paths'
@@ -70,7 +70,7 @@ if (radnja === 'postavi' || radnja === 'obrisi') {
   const v = await procitajVrijednost()
   const g = provjeriVrijednost(v)
   if (g) van(2, `vrijednost odbijena: ${g}`)
-  const r = postaviTajnu(ime, v, { spremiste })
+  const r = upisiTajnu(ime, v, { spremiste })
   if (!r.ok) { audit('upis', ime, 'odbijeno', { razlog: r.greska }); van(1, `nije upisano: ${r.greska}`) }
   audit('upis', ime, 'ok', { otisakPrije: r.otisakPrije ?? null, otisak: r.otisak ?? null })
   van(0, `${ime} upisana · otisak ${r.otisak}${r.otisakPrije ? ` (prije ${r.otisakPrije})` : ''}${process.env[ime] ? ' · UPOZORENJE: okolina procesa ima isto ime i ima prednost' : ''}`)

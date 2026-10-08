@@ -206,8 +206,8 @@ def _ucitaj_kljuc(ime: str) -> str:
     try:
         # ADR-0007 §5.2: zajednički parser (IME='…', stari goli i export oblik).
         sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-        from tajne_parser import procitaj
-        return procitaj(CREDENTIALS.read_text(encoding="utf-8"), ime) or ""
+        from tajna_redak import procitaj
+        return procitaj(str(CREDENTIALS), ime) or ""
     except Exception:
         pass
     return ""
