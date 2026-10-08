@@ -46,7 +46,7 @@ describe('E2E /api/tajne', () => {
     const g0 = await api('GET', '/api/tajne')
     expect(g0.status).toBe(200)
     expect(g0.cc).toBe('no-store')
-    expect(g0.j.potvrda).toEqual({ podesena: true, primatelja: 1 })
+    expect(g0.j.potvrda).toMatchObject({ podesena: true, primatelja: 1, izvor: 'tajne.json', primatelji: ['…555'] })
     expect(g0.j.tajne.map((t: any) => t.ime)).toContain('SMTP_PASSWORD')
 
     const k = await api('POST', '/api/tajne/kod', { imena: ['SMTP_PASSWORD', 'IMAP_PASSWORD'], radnja: 'upis' })

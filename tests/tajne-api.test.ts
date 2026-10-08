@@ -147,13 +147,13 @@ describe('J8 — kod', () => {
   })
 })
 
-describe('J9 — bez potvrdaUid upis je isključen', () => {
+describe('J9 — bez primatelja (ni tajne.json ni vlasnik u profilu) upis je isključen', () => {
   test('409 potvrda_nije_podesena', async () => {
     uid = []
     const r = await poziv(z('POST', '/api/tajne/kod', { ime: 'SMTP_PASSWORD', radnja: 'upis' }))
     expect(r.status).toBe(409); expect(r.tijelo.greska).toBe('potvrda_nije_podesena')
     expect(poslano.length).toBe(0)
-    expect((await poziv(z('GET', '/api/tajne'))).tijelo.potvrda).toEqual({ podesena: false, primatelja: 0 })
+    expect((await poziv(z('GET', '/api/tajne'))).tijelo.potvrda).toEqual({ podesena: false, primatelja: 0, izvor: null, primatelji: [], bot: null })
   })
 })
 

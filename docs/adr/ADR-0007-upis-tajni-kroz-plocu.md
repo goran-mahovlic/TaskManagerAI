@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Stanje** | Prihvaćeno (dizajn i model prijetnje, bez koda). Izvedba: Jelena (§11). Proba: Potjeh (§11). Pregled izvedbe: Malik |
+| **Stanje** | Prihvaćeno (dizajn i model prijetnje, bez koda). Izvedba: Jelena (§11). Proba: Potjeh (§11). Pregled izvedbe: Malik. **Dopuna TASK-5357** (Jelena, 08.10.2026.): §4.2a primatelj koda iz profila čvora, §4.3 privatni LAN zadano dopušten — čeka Malikov pregled |
 | **Datum** | 08.10.2026. |
 | **Autor** | Malik (Security), TASK-5342 (PRJ-048) |
 | **Nalog** | Goran, grupa node-A, 08.10.2026.: u TaskManageru mora postojati upis lozinke/tajne koja se zapisuje na disk u spremište tajni čvora. Upis lozinke za mail na node-A tražio je prijavu na računalo, a to nije prihvatljivo. Upis ide kroz TaskManager i mora biti siguran. Vrijedi za **sve** TaskManagere: glavni, node-A, node-B i paket TaskManagerAI |
@@ -158,6 +158,45 @@ agenta ni razgovor.
    u 15 min (cijela ploča) `POST /api/tajne/kod` vraća 429 i 15 min ništa ne šalje. Svaki
    događaj ide u audit (§7.3).
 
+### 4.2a Dopuna (TASK-5357, 08.10.2026.): primatelj koda bez CLI-ja
+
+**Povod.** Nakon isporuke vlasnik i dalje nije mogao upisati lozinku maila: ploča je tražila
+`bun scripts/tajna.ts podesi --potvrda-uid <uid>` na stroju i odbijala čisti HTTP s LAN-a. Upis
+s ploče koji traži naredbu na stroju ne rješava nalog.
+
+**Odluka.** Primatelj koda razrješava se ovim redom (prvi koji postoji pobjeđuje):
+
+1. `tajne.json → potvrdaUid` — izričita odluka na stroju (CLI), kao dosad;
+2. profil instance čvora `$TM_HOME/config/profil.instanca.env` → `VLASNIK_UID`;
+3. isti profil → **jedini** pozitivni ID iz `TG_DOPUSTENI_CHATOVI` (privatni chat s botom ima
+   ID jednak uid-u čovjeka; grupe su negativne i preskaču se), i to samo ako je taj ID ujedno
+   u `RAZGOVOR_DOPUSTENI_KORISNICI`.
+
+Ništa od toga → upis s ploče ostaje isključen (`409 potvrda_nije_podesena`), kao prije.
+
+**Zašto profil instance, a ne `telegram.json`.** `telegram.json` (`ulaz.dopusteniChatovi`,
+`dopusteniKorisnici`) ploča mijenja (Config → Telegram), pa bi A1 iz LAN-a upisao SVOJ chat i
+kod bi stigao njemu. Profil instance piše instalater čvora (ADR-0004), a nijedna ruta ploče ga ne
+mijenja. Agent čvora (A3) može pisati u njega, ali isto vrijedi i za `tajne.json`, a agent nema
+privatni Telegram čovjeka u koji bi kod stigao. Prijetnja je ista kao dosad, a za vlasnika je to
+nula koraka.
+
+**Zašto `TG_DOPUSTENI_CHATOVI` kao rezerva i zašto tako uska.** To je popis chatova kojima je
+instalater dao pravo upravljanja botom. Pozitivan ID na tom popisu je čovjek kojem je izričito
+dopušten privatni razgovor s botom čvora. Rezerva vrijedi samo kad je **nedvosmislena**: na popisu
+je točno jedan takav ID i isti je čovjek dopušteni sugovornik razgovora (dva neovisna upisa
+instalatera se slažu). Ako je kandidata više, ili se upisi ne slažu, upis s ploče ostaje isključen
+dok se ne upiše `VLASNIK_UID`. Tako kod nikad ne dobiva netko tko je slučajno na popisu (nalaz
+automatskog sigurnosnog pregleda pri izvedbi). Na node-A to daje točno vlasnikov uid.
+
+**Ploča i Telegram.** `GET /api/tajne` vraća `potvrda.izvor`, kraj uid-a (`…1234`, ne cijeli
+uid) i `@ime` bota (`getMe`). Ploča tako ispisuje korake: „pokreni bota u privatnom chatu
+(/start) → upiši → potvrdi kodom". Kad vlasnik (pošiljatelj = primatelj koda) u razgovoru napiše
+molbu za upis („upiši lozinku za mail"), jezgra razgovora **ne zove model**. Bot vrati gotovu
+uputu s poveznicom `http://<LAN|Tailscale adresa>:<port>/#tajne&ime=SMTP_PASSWORD,IMAP_PASSWORD`.
+Poveznica ne nosi tajnu ni kod. Kod i dalje šalje samo ploča, i to tek nakon „Spremi". Molba
+nekog drugog ide u običan potez (ne dobiva uputu), a bot-poruke (ADR-0003) nikad.
+
 **Zašto kod, a ne lozinka ploče:** A3 (agent) čita sve datoteke korisnika i zove loopback, pa
 nijedna tajna na disku ne razlikuje vlasnika od agenta. Vlasnikov privatni Telegram je jedini
 kanal koji agent čvora ne čita.
@@ -169,8 +208,18 @@ kanal koji agent čvora ne čita.
 | `127.0.0.1`, `::1` | dopušteno | i dalje traži kod (A3) |
 | Tailscale `100.64.0.0/10`, `fd7a:115c:a1e0::/48` | dopušteno | šifrirano, ali A6 → kod |
 | zahtjev preko HTTPS-a (ako ploča ima TLS) | dopušteno | |
-| privatni LAN, čisti HTTP | **odbijeno 403** `{greska:"tajne_lan_http"}` | vlasnik ga može uključiti postavkom `tajne.dopustiLanHttp=true` (ploča uz polje stalno ispisuje upozorenje). **node-B** je iza VirtualBox NAT-a i svi zahtjevi stižu s adrese NAT pristupnika. Tamo vrijedi samo Tailscale ili ta postavka |
+| privatni LAN (`10/8`, `172.16/12`, `192.168/16`, `169.254/16`, `fc00::/7`, `fe80::/10`), čisti HTTP | **dopušteno** (TASK-5357; do tada odbijeno) | vlasnik ga gasi samo izričitim `tajne.dopustiLanHttp=false` (`403 tajne_lan_http`). Ploča stalno ispisuje upozorenje da lozinka kroz LAN putuje nešifrirano i nudi Tailscale. **node-B** je iza VirtualBox NAT-a: zahtjevi stižu s privatne adrese NAT pristupnika, pa prolaze |
+| javna adresa, čisti HTTP | **odbijeno 403** `{greska:"tajne_javni_http"}` | uvijek, bez postavke koja ga otvara; s javne adrese vrijedi samo HTTPS ili Tailscale |
 | `X-Forwarded-For` | **ignorira se** | ploča nije iza proxyja; zaglavlje bi napadač sam postavio |
+
+**Obrazloženje dopune §4.3 (TASK-5357).** Pasivni prisluškivač u LAN-u (A1) vidi lozinku na
+čistom HTTP-u. To je stvaran trošak, ali nije put do *upisa*. Upis i dalje traži kod iz
+vlasnikova privatnog Telegrama, a kod je jednokratan, vrijedi 5 minuta i vezan je uz skup imena
+(§4.2). Zadano zatvoren LAN u praksi je značio da vlasnik ne upisuje ništa (nema Tailscalea na
+node-A, nema TLS-a). Tajna je tada ostajala stara, u chatu ili u CLI-ju preko tuđe pomoći, a to je
+gore od kratkog nešifriranog skoka u vlastitoj mreži. Javne adrese ostaju zatvorene jer tamo
+prisluškivač nije „u kući". Konzola (`KonzolaVrata`, TASK-5352) zove `odlukaPrijenosa` s
+`dopustiLanHttp:false` i ostaje samo loopback/Tailscale: iza nje nema koda u Telegramu.
 
 ### 4.4 CSRF i DNS rebinding
 
@@ -471,6 +520,6 @@ vjeruje, a petlja maila neka učitava samo svoje ime, ne cijelo spremište
 - (+) Goran upisuje i rotira tajne s mobitela, bez prijave na stroj, na sva četiri TaskManagera.
 - (+) Zatvara se N1 (izvršenje kroz vrijednost), za postojeće upise i za nove.
 - (+) Jedan parser i jedan pisač umjesto tri i pet.
-- (−) Upis s ploče traži podešen Telegram vlasnika (`tajne.potvrdaUid`). Bez toga ostaje CLI na stroju.
-- (−) Na čistom LAN-u bez Tailscalea upis je zadano isključen (node-B NAT).
+- (−) Upis s ploče traži poznatog vlasnika: `tajne.potvrdaUid`, inače `VLASNIK_UID` ili privatni chat u profilu instance (§4.2a). Bez ijednog ostaje CLI na stroju.
+- (±) Privatni LAN preko čistog HTTP-a je zadano dopušten (§4.3, TASK-5357): upis radi s mobitela u kućnoj mreži, ali lozinka unutar LAN-a putuje nešifrirano. Za šifrirani put koristi Tailscale.
 - (−) Agent s ovlasti `puno` i dalje može čitati spremište s diska (§3.3). Ovaj ADR to ne mijenja.
