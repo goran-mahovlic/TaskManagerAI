@@ -153,6 +153,19 @@ describe('J9 — ovlasti i okolina izvršitelja', () => {
     expect(t).toMatch(/samo čita|čitanje/i)
     expect(t).toContain('SEND_DOC')
   })
+
+  // TASK-5365: na razini citanje/rad model mora unaprijed znati da glas/PDF ne može pokrenuti.
+  test.each(['citanje', 'rad'] as const)('%s: identitet kaže da izradu datoteka naredbom brani straža i što tada reći', razina => {
+    const t = sastaviIdentitet({ ime: 'Šaban', instalacija: 'cvor', ovlasti: razina, plocaUrl: 'http://127.0.0.1:17781', port: 17781, radniDir: '/srv/radni' })
+    expect(t).toMatch(/glas/)
+    expect(t).toMatch(/straža mi ne da/)
+    expect(t).toMatch(/ne nagađaj/i)
+  })
+
+  test('puno: bez rečenice o straži (ljuska nije ograničena)', () => {
+    const t = sastaviIdentitet({ ime: 'Šaban', instalacija: 'cvor', ovlasti: 'puno', plocaUrl: 'http://127.0.0.1:17781', port: 17781, radniDir: '/srv/radni' })
+    expect(t).not.toMatch(/straža mi ne da/)
+  })
 })
 
 // ─── J10 ─────────────────────────────────────────────────────────────────────

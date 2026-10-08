@@ -17,7 +17,16 @@ export function provjeriBash(ulaz: unknown, port: number): { ok: true } | { ok: 
   if (u.tool_name !== 'Bash') return { ok: true }
   const naredba = typeof u.tool_input?.command === 'string' ? u.tool_input.command.trim() : ''
   if (naredbePloce(port).includes(naredba)) return { ok: true }
-  return { ok: false, razlog: `razgovor smije pokrenuti samo naredbe ploče, doslovno: ${naredbePloce(port).join(' | ')}` }
+  // TASK-5365: kratak razlog („samo naredbe ploče") model je na bot-potezu za `glas` prepričao
+  // izmišljenim uzrokom („nema venva"). Zato razlog kaže što NIJE pokrenuto, da je to pravilo
+  // i što reći korisniku.
+  const prikaz = naredba.length > 200 ? `${naredba.slice(0, 200)}…` : naredba
+  return {
+    ok: false,
+    razlog: `BashStraža: naredba „${prikaz}" NIJE pokrenuta — to je sigurnosno pravilo razgovora na ovoj razini ovlasti, nije kvar naredbe. ` +
+      `Razgovor smije pokrenuti samo naredbe ploče, doslovno: ${naredbePloce(port).join(' | ')}. ` +
+      'Korisniku reci istinito: „straža mi ne da pokrenuti tu naredbu u razgovoru — neka to zatraži vlasnik (čovjek) ili zadatak na ploči". Ne nagađaj drugi uzrok.',
+  }
 }
 
 if (import.meta.main) {

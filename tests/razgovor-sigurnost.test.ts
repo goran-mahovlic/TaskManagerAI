@@ -80,6 +80,26 @@ describe('straža ljuske', () => {
     expect(provjeriBash({ tool_name: 'Bash', tool_input: {} }, 17781).ok).toBe(false)
   })
 
+  // TASK-5365: odbijena `glas` naredba na bot-potezu → Šaban je javio izmišljen uzrok
+  // („nema venva"). Razlog straže mora reći koju naredbu NIJE pokrenula, da je to pravilo
+  // razgovora (ne kvar naredbe) i što reći korisniku.
+  test('razlog odbijanja imenuje naredbu, kaže da nije pokrenuta i da je to pravilo, ne kvar', () => {
+    const r = provjeriBash(b('glas izvjestaj.md -o /srv/radni/a.mp3'), 17781)
+    expect(r.ok).toBe(false)
+    const razlog = (r as { razlog: string }).razlog
+    expect(razlog).toContain('glas izvjestaj.md')
+    expect(razlog).toContain('NIJE pokrenuta')
+    expect(razlog).toMatch(/nije kvar naredbe/)
+    expect(razlog).toMatch(/straža mi ne da/)
+    expect(razlog).toMatch(/ne nagađaj/i)
+    expect(razlog).toContain('samo naredbe ploče')
+  })
+
+  test('dugačka odbijena naredba se u razlogu skraćuje', () => {
+    const r = provjeriBash(b('x'.repeat(5000)), 17781) as { razlog: string }
+    expect(r.razlog.length).toBeLessThan(1200)
+  })
+
   test('kao proces (kako ga zove Claude Code): izlaz 2 i razlog na stderr, 0 za naredbu ploče', async () => {
     const pokreni = async (ulaz: unknown) => {
       const p = Bun.spawn([process.execPath, BASH_STRAZA, '17781'], { stdin: new Blob([JSON.stringify(ulaz)]), stderr: 'pipe' })

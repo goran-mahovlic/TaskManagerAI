@@ -181,8 +181,14 @@ export function okolinaRazgovora(env: Record<string, string | undefined>, oznaka
   return out
 }
 
+/**
+ * TASK-5365: na `citanje`/`rad` straža ljuske odbija sve osim naredbi ploče — i `glas`, PDF,
+ * skripte. Model to mora znati unaprijed, inače neuspjeh prepriča izmišljenim uzrokom.
+ */
+const LJUSKA_OGRANICENA = ' Ljuska ti je ograničena na naredbe ploče: datoteke naredbama (glas/mp3, PDF, skripte) ne možeš izraditi. Kad se to traži, reci istinito: „straža mi ne da pokrenuti tu naredbu u razgovoru — neka to zatraži vlasnik (čovjek) ili zadatak na ploči". Ne nagađaj drugi uzrok (venv, instalacija, kvar).'
+
 export const OPIS_OVLASTI: Record<Ovlasti, string> = {
-  citanje: 'samo čita: smiješ čitati datoteke u radnoj mapi i čitati popis zadataka s ploče. Ne smiješ ništa mijenjati ni pokretati.',
-  rad: 'čitanje i rad u radnoj mapi: smiješ čitati popis zadataka s ploče te čitati i pisati datoteke u radnoj mapi; smiješ ČITATI zapise razgovora, popis zadnjih pošiljatelja i dnevnik ulaza.',
+  citanje: 'samo čita: smiješ čitati datoteke u radnoj mapi i čitati popis zadataka s ploče. Ne smiješ ništa mijenjati ni pokretati.' + LJUSKA_OGRANICENA,
+  rad: 'čitanje i rad u radnoj mapi: smiješ čitati popis zadataka s ploče te čitati i pisati datoteke u radnoj mapi; smiješ ČITATI zapise razgovora, popis zadnjih pošiljatelja i dnevnik ulaza.' + LJUSKA_OGRANICENA,
   puno: 'puna prava na ovom stroju, osim čitanja tajni (vjerodajnice, ključevi, konfiguracija kanala).',
 }
