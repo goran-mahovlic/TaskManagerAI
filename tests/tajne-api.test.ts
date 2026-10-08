@@ -275,3 +275,31 @@ describe('uputa #194 — jedan Spremi za skupinu: jedan kod za više imena', () 
     expect(r.status).toBe(400); expect(poslano.length).toBe(0)
   })
 })
+
+// TASK-5346 / uputa #198 (nalaz node-A 08.10.): Telegram vraća 403 „bot can't initiate conversation"
+// dok vlasnik botu nije pisao /start privatno. Kartica mora reći KOJEM botu i dati poveznicu, a audit
+// mora nositi razlog iz Telegrama, ne samo `slanje_nije_uspjelo`.
+describe('kod nije stigao — razlog iz Telegrama i poveznica na bota', () => {
+  const OPIS = "Forbidden: bot can't initiate conversation with a user"
+  beforeEach(() => {
+    ctx.potvrda = new PotvrdaVlasnika({ primatelji: () => uid, cvor: 'node-T', posalji: async () => ({ ok: false, opis: OPIS }) })
+    ctx.bot = async () => 'regoc_test_bot'
+  })
+  test('odgovor nosi opis Telegrama i poveznicu t.me/<bot>?start=tajne; audit nosi razlog', async () => {
+    const r = await poziv(z('POST', '/api/tajne/kod', { imena: ['SMTP_PASSWORD'], radnja: 'upis' }))
+    expect(r.status).toBe(502)
+    expect(r.tijelo).toMatchObject({ greska: 'slanje_nije_uspjelo', telegram: OPIS, bot: { ime: 'regoc_test_bot', poveznica: 'https://t.me/regoc_test_bot?start=tajne' } })
+    const audit = readFileSync(ctx.auditPut, 'utf-8').trim().split('\n').map(l => JSON.parse(l))
+    expect(audit[audit.length - 1]).toMatchObject({ ishod: 'odbijeno', razlog: 'slanje_nije_uspjelo', telegram: OPIS })
+  })
+  test('GET /api/tajne pokazuje bota kojem treba pisati', async () => {
+    const r = await poziv(z('GET', '/api/tajne'))
+    expect(r.tijelo.bot).toEqual({ ime: 'regoc_test_bot', poveznica: 'https://t.me/regoc_test_bot?start=tajne' })
+  })
+  test('token u opisu greške nikad ne izlazi (ni odgovor ni audit)', async () => {
+    ctx.potvrda = new PotvrdaVlasnika({ primatelji: () => uid, cvor: 'node-T', posalji: async () => ({ ok: false, opis: 'fetch https://api.telegram.org/bot123456:AAH-tajni_dio/sendMessage pao' }) })
+    const r = await poziv(z('POST', '/api/tajne/kod', { imena: ['SMTP_PASSWORD'], radnja: 'upis' }))
+    expect(r.sirovo).not.toContain('AAH-tajni_dio')
+    expect(readFileSync(ctx.auditPut, 'utf-8')).not.toContain('AAH-tajni_dio')
+  })
+})

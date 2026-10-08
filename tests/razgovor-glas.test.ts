@@ -501,6 +501,7 @@ describe('Config — razgovor: glas', () => {
       "var _T = function (k, d) { return d; };" +
       "var _esc = function (s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\"/g,'&quot;'); };" +
       izvuci(kod, '_razgPolje') + ';' + izvuci(kod, '_razgIzbor') + ';' + izvuci(kod, '_razgPosiljatelji') + ';' +
+      izvuci(kod, '_skOznaka') + ';' + // TASK-5346: oznaka nespremljenih izmjena uz jedini „Spremi"
       izvuci(kod, 'renderRazgovor') + '; return renderRazgovor;')()
     const h: string = fn({ postavke: { ...RAZGOVOR_ZADANO, glasPrepoznavanje: true, glas: 'na-glasovno', glasUrl: 'http://127.0.0.1:8899', glasGlas: 'sr_RS-x', glasRokSek: 90 } })
     expect(h).toMatch(/id="razg-stt" type="checkbox" checked/)

@@ -35,6 +35,20 @@ export interface KontekstTajni {
   sat?: () => number
   /** `false` na glavnom: mapa spremišta je zajednička mapa sustava (v. LoginCreds). */
   stegniMapu?: boolean
+  /** Korisničko ime bota (getMe) — kartica kaže KOJEM botu treba pisati /start (uputa #198). */
+  bot?: () => Promise<string | null>
+}
+
+/** Opis greške iz Telegrama bez ijednog tokena (`bot<id>:<tajna>` u adresi ne smije van). */
+export function ocistiOpis(opis: string): string {
+  return opis.replace(/bot\d+:[A-Za-z0-9_-]+/g, 'bot***').replace(/\d{6,}:[A-Za-z0-9_-]{10,}/g, '***').slice(0, 300)
+}
+
+async function opisBota(ctx: KontekstTajni): Promise<{ ime: string; poveznica: string } | null> {
+  try {
+    const ime = await ctx.bot?.()
+    return ime && /^[A-Za-z0-9_]{3,64}$/.test(ime) ? { ime, poveznica: `https://t.me/${ime}?start=tajne` } : null
+  } catch { return null }
 }
 
 export interface ZahtjevTajni {
@@ -91,6 +105,8 @@ interface AuditRedak {
   kada: string; radnja: string; ime: string | null; ishod: string
   otisakPrije?: string | null; otisak?: string | null; ip: string | null; prijenos: string
   zahtjevId?: string | null; potvrda?: string | null; razlog?: string | null
+  /** Razlog iz Telegrama kad kod nije stigao (description, bez tokena). */
+  telegram?: string | null
 }
 
 function dopisi(put: string, red: object): void {
@@ -167,6 +183,7 @@ export async function obradiTajne(z: ZahtjevTajni, ctx: KontekstTajni): Promise<
       potvrda: { podesena: postavke.potvrdaUid.length > 0, primatelja: postavke.potvrdaUid.length },
       prijenos,
       zakljucano: ctx.potvrda.zakljucano(),
+      bot: await opisBota(ctx),
     })
   }
 
@@ -190,7 +207,12 @@ export async function obradiTajne(z: ZahtjevTajni, ctx: KontekstTajni): Promise<
     const kljuc = kljucSkupine(trazena as string[])
     const r = await ctx.potvrda.zatrazi(kljuc, radnja)
     if (!r.ok) {
-      const status = r.greska === 'zakljucano' ? 429 : r.greska === 'potvrda_nije_podesena' ? 409 : 502
+      if (r.greska === 'slanje_nije_uspjelo') {
+        const telegram = 'opis' in r && r.opis ? ocistiOpis(r.opis) : null
+        audit('odbijeno', kljuc, 'odbijeno', { razlog: r.greska, telegram })
+        return odg(502, { greska: r.greska, telegram, bot: await opisBota(ctx) })
+      }
+      const status = r.greska === 'zakljucano' ? 429 : 409
       return odbij(status, r.greska, kljuc, r.greska === 'zakljucano' ? 'zakljucano' : 'odbijeno')
     }
     audit('kod_poslan', kljuc, 'ok', { zahtjevId: r.zahtjevId, potvrda: 'telegram' })
