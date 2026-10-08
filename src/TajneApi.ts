@@ -33,7 +33,7 @@ export interface KontekstTajni {
   env?: Record<string, string | undefined>
   log?: (redak: string) => void
   sat?: () => number
-  /** `false` na glavnom: mapa spremišta je zajednička `~/.claude/regoc/` (v. LoginCreds). */
+  /** `false` na glavnom: mapa spremišta je zajednička mapa sustava (v. LoginCreds). */
   stegniMapu?: boolean
 }
 

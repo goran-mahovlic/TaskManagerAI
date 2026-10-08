@@ -219,7 +219,7 @@ export interface OpcijePisaca {
   kljucOtiska?: string
   /**
    * Stegni mapu spremišta na 0700 ako je šira (ADR-0007 §5.3). Zadano da — na čvoru je to
-   * `$TM_HOME/config/`. Glavni stroj drži spremište u zajedničkoj `~/.claude/regoc/`, čija se
+   * `$TM_HOME/config/`. Glavni stroj drži spremište u zajedničkoj mapi sustava, čija se
    * prava ne smiju mijenjati usput (`false`).
    */
   stegniMapu?: boolean
