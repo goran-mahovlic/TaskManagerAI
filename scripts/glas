@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# glas — tekst/markdown u mp3 hrvatskim glasom (hr_regoc), jednom naredbom (TASK-5340).
+#   glas izvjestaj.md -o /apsolutna/putanja/izvjestaj.mp3
+# Pokreće tools/glas/glas.py Pythonom iz venva s piper-tts (scripts/instaliraj-glas.sh).
+# Okolina: TM_GLAS_VENV (zadano ~/.local/share/regoc-piper/venv), TM_GLAS_MODEL (zadano
+# ~/.local/share/piper-voices/hr_regoc.onnx).
+set -euo pipefail
+PAKET="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
+VENV="${TM_GLAS_VENV:-$HOME/.local/share/regoc-piper/venv}"
+if [ ! -x "$VENV/bin/python" ]; then
+  echo "glas: nema venva $VENV — pokreni $PAKET/scripts/instaliraj-glas.sh" >&2
+  exit 3
+fi
+exec "$VENV/bin/python" "$PAKET/tools/glas/glas.py" "$@"

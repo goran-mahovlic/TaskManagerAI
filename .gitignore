@@ -91,3 +91,8 @@ config/uvoz-telegrama.json
 tools/rag_audit.py
 tools/razvrstaj_pretinac.py
 tools/razvrstaj_prijave.py
+
+# ── Glasovni model (TASK-5340) ─────────────────────────────────────────────
+# hr_regoc je privatan: dolazi uz scripts/instaliraj-glas.sh --model-izvor, ne kroz git.
+*.onnx
+*.onnx.json

@@ -54,6 +54,16 @@ Istina o stvarnom stanju: `sudo /usr/local/sbin/regoc-capguard verify` (exit 3 =
   uključiti. Nakon reboota internet je blokiran dok se ponovo ne odobri (fail-closed).
 - `sudo`/`apt install` rade samo dok je `allow_root` uključen.
 
+## Govor — audio izvještaj (naredba `glas`)
+Govor generira SKRIPTA, ne ti riječ po riječ: napiši tekst (md), pa jednom naredbom napravi mp3
+hrvatskim glasom hr_regoc (normalizacija brojki/nadnevaka, naglasci, odobreni recept):
+```bash
+glas /apsolutna/putanja/izvjestaj.md -o /apsolutna/putanja/izvjestaj.mp3   # ili: … | glas - -o …
+```
+- Izlaz je JSON; polje `send_doc` je gotova oznaka za slanje — stavi je kao zaseban redak odgovora.
+- Za Telegram spremi md i mp3 u mapu iz koje se smije slati (privitci ovog chata, v. upute kanala).
+- Ne radi? `bash ~/TaskManagerAI/scripts/instaliraj-glas.sh --suho` kaže što fali (venv, model, ffmpeg).
+
 ## Memorija
 - Hindsight banka `{{MEMORIJA_BANKA}}` preko obrnutog SSH tunela sa stroja domaćina: `127.0.0.1:17792`
   (`curl -s 127.0.0.1:17792/health`). Ako tunel padne, memorije nema — rad se nastavlja.
