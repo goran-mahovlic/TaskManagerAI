@@ -152,7 +152,7 @@ export function ciljDezurnog(o: DezurniOpcije = {}): (CiljRazgovora & { spec: st
 
 // ── Pet oblika poziva (isto kao most glavnog sustava, TASK-4709) ─────────────────────────
 
-interface Zahtjev { p: Record<string, any>; sustav: string; pitanje: string; tokena: number; konf: Record<string, any>; o: DezurniOpcije }
+interface Zahtjev { p: Record<string, any>; sustav: string; pitanje: string; tokena: number; konf: Record<string, any>; o: DezurniOpcije; samoSadrzaj?: boolean }
 
 export const NACIN_POZIVA_MOSTA: Record<NacinPoziva, (z: Zahtjev) => Promise<string | null>> = {
   ollama: async ({ p, sustav, pitanje, tokena, o }) => {
@@ -180,7 +180,7 @@ export const NACIN_POZIVA_MOSTA: Record<NacinPoziva, (z: Zahtjev) => Promise<str
     } catch { return null }
   },
 
-  openai: async ({ p, sustav, pitanje, tokena, o }) => {
+  openai: async ({ p, sustav, pitanje, tokena, o, samoSadrzaj }) => {
     const ime = String(p.provider).toLowerCase()
     const url = o.openaiUrl || (ime === 'openrouter'
       ? 'https://openrouter.ai/api/v1/chat/completions'
@@ -197,8 +197,10 @@ export const NACIN_POZIVA_MOSTA: Record<NacinPoziva, (z: Zahtjev) => Promise<str
     })
     if (!r.ok) return null
     const por = ((await r.json())?.choices || [{}])[0]?.message || {}
-    // Neki modeli vrate `content: null`, a odgovor stave u `reasoning` (izmjereno na OpenRouteru).
-    return String(por.content || por.reasoning || '').trim() || null
+    // Neki modeli vrate `content: null`, a odgovor stave u `reasoning` (izmjereno na OpenRouteru:
+    // Mistral Large 4, node-A 08.10.2026.). Za probu to znači „davatelj radi"; korisniku se
+    // razmišljanje modela NE šalje (`samoSadrzaj`).
+    return String(por.content || (samoSadrzaj ? '' : por.reasoning) || '').trim() || null
   },
 
   anthropic: async ({ p, sustav, pitanje, tokena, konf, o }) => {
@@ -236,13 +238,15 @@ export const NACIN_POZIVA_MOSTA: Record<NacinPoziva, (z: Zahtjev) => Promise<str
 }
 
 /** Pošalji sustavnu poruku i pitanje dežurnom. `null` = nije odgovorio. */
-export async function pitajModel(sustav: string, pitanje: string, tokena = 400, o: DezurniOpcije = {}): Promise<string | null> {
+export async function pitajModel(
+  sustav: string, pitanje: string, tokena = 400, o: DezurniOpcije = {}, opcije: { samoSadrzaj?: boolean } = {},
+): Promise<string | null> {
   const p = postavke(o)
   const ime = String(p.provider || 'ollama').toLowerCase()
   const konf = davatelji(o)[ime] || {}
   const nacin = nacinPoziva(ime, konf)
   if (!nacin) return null
-  try { return await NACIN_POZIVA_MOSTA[nacin]({ p, sustav, pitanje, tokena, konf, o }) } catch { return null }
+  try { return await NACIN_POZIVA_MOSTA[nacin]({ p, sustav, pitanje, tokena, konf, o, samoSadrzaj: opcije.samoSadrzaj }) } catch { return null }
 }
 
 export interface ProbaIshod { ok: boolean; provider: string; model: string; odgovor?: string; greska?: string; ms: number; nacin?: string }
@@ -282,7 +286,8 @@ export function dezurniRazgovora(o: DezurniOpcije = {}): DezurniRazgovora {
     simulacija: () => simulacijaPada(o),
     jePad: jePadPrimarnog,
     cilj: () => ciljDezurnog(o),
-    pitaj: (sustav, pitanje) => pitajModel(sustav, pitanje, 600, o),
+    // 2000 tokena: modeli koji „misle naglas" potroše dio na razmišljanje prije odgovora.
+    pitaj: (sustav, pitanje) => pitajModel(sustav, pitanje, 2000, o, { samoSadrzaj: true }),
     greska: () => zabiljeziGresku(o),
     uspjeh: () => zabiljeziUspjeh(o),
   }

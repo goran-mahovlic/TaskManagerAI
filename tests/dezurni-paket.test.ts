@@ -122,6 +122,13 @@ describe('most u paketu — poziv davatelja', () => {
     expect(r.greska).toContain('openrouter')
   })
 
+  test('razgovor ne šalje „razmišljanje" modela: samoSadrzaj odbacuje odgovor koji je samo reasoning', async () => {
+    const o = okruzje({ provider: 'openrouter', model: 'x/y' })
+    const samoRazmisljanje: typeof fetch = (async () => Response.json({ choices: [{ message: { content: null, reasoning: 'The user wants…' } }] })) as any
+    expect(await pitajModel('s', 'p', 50, { ...o, fetchImpl: samoRazmisljanje })).toBe('The user wants…')
+    expect(await pitajModel('s', 'p', 50, { ...o, fetchImpl: samoRazmisljanje }, { samoSadrzaj: true })).toBeNull()
+  })
+
   test('bez ključa → ne zove ništa', async () => {
     const o = okruzje({ provider: 'openrouter', model: 'x/y' })
     expect(await pitajModel('s', 'p', 50, { ...o, citajTajnu: () => null })).toBeNull()
