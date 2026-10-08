@@ -419,3 +419,23 @@ vlasnikovu potvrdu (§5.3).
 **Mjerenje curenja** (`docs/qa/TASK-5331/mjeri_curenje.ts`, izrazi s privatnog popisa bez ID-eva
 koje čvor ima i sam): stara banka 89/90 izraza vraća privatnu činjenicu; brojke nove banke su u
 `docs/qa/TASK-5331/README.md`.
+
+## 15. Savjet glavnog sustava u banci čvora (TASK-5341, Jelena, 08.10.2026.)
+
+Nalog vlasnika: kad Klaudio odgovori Šabanu, u Šabanovu banku ide **cjelina teme**, ne samo poslani
+tekst — kako alat ili tok radi, zašto, preduvjeti, ograničenja, česte greške (doslovne poruke),
+povezani alati i provjera uspjeha, prilagođeno čvoru (njegove putanje, njegov bot, njegov token).
+
+| Korak | Gdje | Što |
+|---|---|---|
+| okidač | Klaudio, `lib/ZnanjeCvoru.ts` (izvan paketa) | odgovor na `bot-ulaz` ili vlastiti odgovor koji je LAN-om otišao drugom botu (`prenesi` = `poslano`) → odvojeni proces; najviše 2 u letu; uključuje se po grupi `grupe.json` → `botKanal.znanje` |
+| sastavljanje | `scripts/savjet-cvoru.ts sastavi` (glavni stroj) | model **samo čita** (Read/Glob/Grep, bez MCP-a, okolina bijelom listom) kod paketa i kartu; vraća JSON paketa: `tema`, `kljuc`, `pitanje`, `odgovor`, `cinjenice.{kako-radi, zasto, preduvjeti, ogranicenja, ceste-greske, povezano, provjera}` |
+| filtar | `src/znanje/Savjet.ts` `procistiSavjet` | **isti kao korpus** (§4.3): `pripremi` + brana privatnog popisa + opći uzorci + brana tajni. Jedinica je činjenica: s pogotkom ne ulazi; pitanje i odgovor režu se po rečenici; tema s pogotkom ili oblik tajne bilo gdje = paket ne ulazi (izlaz 5). Iznimka: HOME **čvora** (`--cvor-home`) smije ostati doslovno jer SEND_DOC traži apsolutnu putanju čvora; svaki drugi `/home/<x>` i dalje ruši činjenicu |
+| upis | posrednik memorije `127.0.0.1:17795` (§14/5) | `document_id = savjet/<kljuc>` (treći prostor imena; `znanje-cvora upisi` ga ne briše), brisanje pa upis = novi savjet iste teme zamjenjuje stari; vrata kvote 429 → izlaz 3. Posrednik propušta samo banku čvora, pa savjet ne može završiti u našoj banci |
+| trag | ploča čvora (`botKanal.url`) | bilješka 🧠 (ili 🧠🚫 s razlogom) u najnovijem razgovornom zadatku tog chata (TASK-5337); ako ga nema, otvara se zadatak traga bez nositelja (`no-autonomy`). Odbijen paket ne nosi ni temu ni ključ na ploču |
+
+**Banka.** Nalog navodi `regoc_opus_nodea`; to je od TASK-5331 arhiva koju posrednik čvoru više ne
+propušta (403). Šabanova živa banka je `MEMORIJA_BANKA` čvora (`cvor_node_a`), pa savjet ide onamo.
+
+**Privatni popis** je obavezan argument (`--privatno`): bez njega se ne upisuje ništa — alat zato
+radi samo na glavnom stroju, gdje popis jest.
