@@ -22,7 +22,9 @@
  *   • ne zove nijedan model — ocjena je determinističa (`ModeClassifier` + `WeightScore`),
  *     jer stoji na vrućem putu svake dolazne poruke (pouka TASK-2559: model kao vratar
  *     krivo je skretao 92 % prometa);
- *   • ne šalje ništa natrag na `replyTo` — dojavu radi korak 9, kanalom koji je izvan paketa.
+ *   • ne šalje ništa natrag na `replyTo` — dojavu radi korak 9, kanalom koji je izvan paketa;
+ *     iznimka (TASK-5363): Telegram chat ide u oznaku `chat:<id>`, pa ploča dokumente iz
+ *     rezultata (`[[SEND_DOC: …]]`) pri zatvaranju šalje u taj chat.
  *
  * Autorica: Jelena (Engineer), TASK-4266.
  */
@@ -395,6 +397,8 @@ export function procijeniIngest(z: IngestZahtjev, cfg: IngestPostavke = loadInge
     weightTag(ocjena.score),
     ...(uLancu ? [CHAIN_TAG] : []),
     ...(samoTekst ? [TEXT_ONLY_TAG] : []),
+    // TASK-5363: chat naloga putuje uz zadatak — `[[SEND_DOC: …]]` iz rezultata ide onamo.
+    ...(z.source === 'telegram' && /^-?\d{1,20}$/.test(z.replyTo || '') ? [`chat:${z.replyTo}`] : []),
     ...(z.tags || []),
   ]
   odluka.zadatak = {

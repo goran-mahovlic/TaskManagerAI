@@ -73,7 +73,9 @@ import {
   loadGitHubConfig, validateGitHubPatch, saveGitHubConfig, stanjeGitHub, probajGitHub, GITHUB_CONFIG_PATH,
   githubKonfigModul,
 } from './GitHubConfig'
-import { probajUlaz, stanjeUlaza, pokreniTelegramPoller, uskladiTelegramPoller, type RazgovorUlaza } from './TelegramPoller'
+import { probajUlaz, stanjeUlaza, pokreniTelegramPoller, uskladiTelegramPoller, telegramKanal, type RazgovorUlaza } from './TelegramPoller'
+// TASK-5363: `[[SEND_DOC: …]]` iz rezultata zadatka → chat naloga (isti kanal kao razgovor).
+import { posaljiDokumenteZadatka } from './razgovor/SendDocZadatka'
 import {
   botKanalGet, botKanalPut, botKanalRucno, odBotaPost, razgovorGet, razgovorPut, razgovorPovijestGet, sklopiRazgovor,
   zadnjiPosiljatelji, plocaIzTaskManagera, type RazgovorSloj,
@@ -11636,6 +11638,29 @@ function handleTelegramConfigGet(): Response {
   }
 }
 
+/**
+ * TASK-5363: `[[SEND_DOC: …]]` iz rezultata zadatka → chat naloga. Dopušteno: izvještaji
+ * paketa, mapa privitaka tog chata i radna mapa SAMO tog zadatka `~/app/tmp/<TASK-ID>`
+ * (CLAUDE.md pr. 26) — ne tuđih zadataka. Chat mora biti chat kanala ili s popisa ulaza.
+ * Bez bot tokena se ništa ne šalje (ishod se samo zapiše u dnevnik).
+ */
+async function posaljiDokumenteIzRezultata(t: { id: string; resultSummary?: unknown; tags?: unknown }): Promise<void> {
+  if (!/\[\[SEND_DOC:/.test(String(t.resultSummary || ''))) return
+  const cfg = loadTelegramConfig()
+  const token = telegramBotToken(cfg)
+  if (!token) { console.warn(`[send-doc] ${t.id}: bot token nije postavljen — dokumenti iz rezultata nisu poslani`); return }
+  const privitci = () => ({ ...ZADANI_PRIVITCI_RAZG, ...(loadTelegramConfig().privitci || {}) })
+  const k = telegramKanal(token, privitci)
+  await posaljiDokumenteZadatka(t, { ...k, posaljiDokumentIshod: k.posaljiDokumentIshod! }, {
+    dopusteneMape: (chatId, taskId) => [
+      join(TM_DATA, 'izvjestaji'), mapaPrivitakaRazg(privitci(), chatId), join(homedir(), 'app', 'tmp', taskId),
+    ],
+    chatDopusten: chatId => String(cfg.chatId) === chatId || (cfg.ulaz?.dopusteniChatovi || []).map(String).includes(chatId),
+    home: homedir(),
+    log: r => console.log(r),
+  })
+}
+
 // ── Razgovorni način bota (ADR-0002, TASK-5277) ──────────────────────────────────────
 // Jedan razgovorni sloj po procesu ploče. Poller ga dobiva kroz `RazgovorUlaza`; uključuje
 // se postavkom `razgovor.ukljucen` (zadano off) — bez nje poller radi točno kao prije.
@@ -14390,6 +14415,15 @@ async function handleUpdateTask(taskId: string, req: Request): Promise<Response>
             .catch(e => console.warn(`[EMAIL] obavijest pala: ${String(e)}`))
         }
       } catch { /* obavijest nikad ne ruši PUT */ }
+
+    // ─── TASK-5363: dokumenti iz rezultata zadatka u chat naloga ─────────────
+    // Nalog iz Telegram grupe (oznaka `chat:<id>`) → `[[SEND_DOC: …]]` u resultSummary šalje se
+    // u taj chat kanalom razgovora (provjera mapa, evidencija.jsonl privitaka). Ne čeka se —
+    // slanje dokumenata ne smije usporiti ni srušiti PUT.
+    if (task.status === 'completed' && trebaObavijest(statusPrijePut, task.status)) {
+      void posaljiDokumenteIzRezultata(task as any).catch(e =>
+        console.warn(`[send-doc] ${taskId}: ${String(e && e.message ? e.message : e)}`))
+    }
 
     // Broadcast to WebSocket clients
     const message = JSON.stringify({ type: 'task_updated', task })
