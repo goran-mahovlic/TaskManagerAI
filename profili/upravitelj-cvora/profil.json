@@ -866,7 +866,7 @@
     },
     "oporavak": {
       "vlasnik": "paket",
-      "opis": "Samo provjera (ADR-0004 §13.2): oporavak siročadi i reaperi uključeni, kod ih zna, staleReaper isključen i daemon.log svjež (daemon radi). Krugovi oporavka u daemon.log pišu samo kad nešto vrate, pa se njihov redak ne traži. Procesi izvornog sustava rade u UTC-u (drop-in TZ, TASK-5308): ploča vraća vrijeme bez zone, a izvan UTC-a bi ga Date.parse čitao kao lokalno pa siroče i zombie ne bi vidjeli odsutnost.",
+      "opis": "Samo provjera (ADR-0004 §13.2): oporavak siročadi i reaperi uključeni, kod ih zna, staleReaper isključen i daemon.log svjež (daemon radi). Krugovi oporavka u daemon.log pišu samo kad nešto vrate, pa se njihov redak ne traži. Procesi izvornog sustava rade u UTC-u (drop-in TZ, TASK-5308): ploča vraća vrijeme bez zone, a izvan UTC-a bi ga Date.parse čitao kao lokalno pa siroče i zombie ne bi vidjeli odsutnost. PATH daemona i ploče sadrži ~/.local/bin (drop-in put.conf, TASK-5364): ondje žive claude i glas.",
       "ukljuceni": [
         "siroceOporavak",
         "zombieRecoveryLive",
@@ -880,6 +880,13 @@
       "dnevnikMaxMin": 30,
       "tz": {
         "vrijednost": "UTC",
+        "unitovi": [
+          "regoc-daemon",
+          "regoc-taskmanager"
+        ]
+      },
+      "put": {
+        "vrijednost": "%h/.bun/bin:%h/.local/bin:/usr/local/bin:/usr/bin:/bin",
         "unitovi": [
           "regoc-daemon",
           "regoc-taskmanager"

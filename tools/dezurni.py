@@ -46,6 +46,15 @@ from tm_putanje import konfig, ollama_url, stanje
 from zoneinfo import ZoneInfo
 
 HOME = Path.home()
+
+
+def _claude() -> str:
+    """`claude` s PATH-a, inače iz ~/.local/bin — usluga pod systemd-om tu mapu često nema (TASK-5364)."""
+    import shutil
+    if shutil.which("claude"):
+        return "claude"
+    lokalno = HOME / ".local" / "bin" / "claude"
+    return str(lokalno) if lokalno.exists() else "claude"
 ZONA = ZoneInfo("Europe/Zagreb")
 PLOCA = "http://localhost:17781"
 DNEVNIK = Path(os.environ.get("TM_DAEMON_LOG") or stanje("daemon.log"))
@@ -179,7 +188,7 @@ def pitaj_model(kartica: str, pitanje: str, tokena: int = 200, p: dict | None = 
             return ((d.get("message") or {}).get("content") or "").strip() or None
 
         if nacin == "claude-cli":
-            naredba = ["claude", "-p", f"{kartica}\n\n{pitanje}"]
+            naredba = [_claude(), "-p", f"{kartica}\n\n{pitanje}"]
             if model:
                 naredba += ["--model", model]
             pr = subprocess.run(naredba, capture_output=True, timeout=180, text=True)
@@ -438,7 +447,7 @@ def zasto() -> str:
 def probaj() -> str:
     try:
         p = subprocess.run(
-            ["claude", "-p", "odgovori samo rijecju: ok", "--model", "claude-haiku-4-5-20251001"],
+            [_claude(), "-p", "odgovori samo rijecju: ok", "--model", "claude-haiku-4-5-20251001"],
             capture_output=True, timeout=90, text=True)
         izlaz = (p.stdout or "").strip()
         if p.returncode == 0 and izlaz:

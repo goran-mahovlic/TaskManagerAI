@@ -261,6 +261,8 @@ Type=simple
 User=taskmanager
 WorkingDirectory=/opt/TaskManagerAI
 Environment=TM_HOME=/var/lib/taskmanager
+# ~/.local/bin: ondje žive `claude` i `glas`; bez njega ploča javlja „no Claude CLI" (TASK-5364)
+Environment=PATH=/home/taskmanager/.bun/bin:/home/taskmanager/.local/bin:/usr/local/bin:/usr/bin:/bin
 ExecStart=/usr/local/bin/bun src/TaskWebUI.ts
 Restart=on-failure
 RestartSec=5

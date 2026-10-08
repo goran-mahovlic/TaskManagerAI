@@ -18,6 +18,7 @@ import { dirname } from 'path'
 import { konfigPutanja } from './core/paths'
 import { kljucPrisutan } from './LoginCreds'
 import { MISTRAL_LARGE_4 } from './core/models/IstaknutiModeli'
+import { nadjiClaude } from './razgovor/Izvrsitelj'
 
 /**
  * ADR-0001 O1.4: `TM_DEZURNI_CONFIG` → `$TM_HOME/config/dezurni.json` → `config/` uz paket.
@@ -140,6 +141,7 @@ function imaKljuc(ime: string, credPath: string): boolean {
 export function davateljiDezurnog(
   mcPath: string = MODEL_CONFIG_PATH,
   credPath: string = CREDENTIALS_PATH,
+  okolina: Record<string, string | undefined> = process.env,
 ): Record<string, DavateljDezurnog> {
   let konf: Record<string, any> = {}
   try {
@@ -164,7 +166,8 @@ export function davateljiDezurnog(
       zastoKey = 'dez_zasto_ollama'; zastoVars = undefined
     }
     if (ime === 'anthropic') {
-      spreman = !!Bun.which('claude')
+      // TASK-5364: ne samo PATH — usluga pod systemd-om često nema ~/.local/bin, gdje CLI živi.
+      spreman = nadjiClaude(okolina) !== 'claude'
       zasto = spreman
         ? 'Claude CLI (pretplata) — POZOR: troši istu kvotu koja je dežurnog i pozvala'
         : 'nema Claude CLI na ovom stroju'

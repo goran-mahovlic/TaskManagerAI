@@ -138,6 +138,8 @@ export const ProfilShema = z.object({
       ukljuceni: Imena, iskljuceni: Imena, dnevnik: z.string().min(1), dnevnikMaxMin: z.number().positive(),
       // TASK-5308: zona procesa izvornog sustava (drop-in Environment=TZ=…) — v. vrijemeDropIn.
       tz: z.object({ vrijednost: z.string().min(1), unitovi: z.array(z.string().min(1)).min(1) }).optional(),
+      // TASK-5364: PATH usluga s ~/.local/bin (claude, glas) — v. putDropIn.
+      put: z.object({ vrijednost: z.string().min(1), unitovi: z.array(z.string().min(1)).min(1) }).optional(),
     }).optional(),
   }).strict(),
 }).passthrough()
@@ -714,6 +716,20 @@ export function vrijemeDropIn(tz: string): string {
 
 export const vrijemeDropInPut = (unit: string) => `\${HOME}/.config/systemd/user/${unit}.service.d/vrijeme.conf`
 
+/**
+ * Drop-in PATH-a usluge (TASK-5364). Unit daemona i ploče na node-A imao je PATH bez `~/.local/bin`,
+ * a ondje žive `claude` i `glas`: ploča je javljala „no Claude CLI", agenti nisu našli `glas` po imenu.
+ * `%h` razrješava systemd (HOME korisnika), pa ista vrijednost vrijedi na svakom čvoru.
+ */
+export function putDropIn(put: string): string {
+  return [
+    `# ${AUTOR} (TASK-5364): alati korisnika (~/.local/bin: claude, glas) moraju biti na PATH-u usluge.`,
+    '[Service]', `Environment=PATH=${put}`, '',
+  ].join('\n')
+}
+
+export const putDropInPut = (unit: string) => `\${HOME}/.config/systemd/user/${unit}.service.d/put.conf`
+
 function usporediKonzolu(k: Kontekst, inst: Record<string, string>, dodaj: Dodaj): void {
   const mod = k.profil.moduli.konzola
   if (!mod) return
@@ -771,6 +787,17 @@ function usporediOporavak(k: Kontekst, inst: Record<string, string>, dodaj: Doda
       : { modul: 'oporavak', kljuc: `${unit}.TZ`, vrsta: 'RAZLIKA', profil: `TZ=${mod.tz!.vrijednost}`,
           cvor: cvor === null || cvor === undefined ? '(zona stroja)' : '(drugačiji drop-in)',
           poruka: 'bez toga se vrijeme ploče (UTC bez zone) čita kao lokalno — siroče i zombie kasne za pomak zone',
+          primjena: { vrsta: 'dropin', unit, datoteka: zamijeni(tpl, inst) as string, sadrzaj } })
+  }
+  for (const unit of mod.put?.unitovi || []) {
+    const tpl = putDropInPut(unit)
+    const sadrzaj = putDropIn(mod.put!.vrijednost)
+    const cvor = k.stanje.konzola.dropIni[tpl]
+    dodaj(cvor === sadrzaj
+      ? { modul: 'oporavak', kljuc: `${unit}.PATH`, vrsta: 'OK' }
+      : { modul: 'oporavak', kljuc: `${unit}.PATH`, vrsta: 'RAZLIKA', profil: `PATH=${mod.put!.vrijednost}`,
+          cvor: cvor === null || cvor === undefined ? '(PATH unita)' : '(drugačiji drop-in)',
+          poruka: 'bez ~/.local/bin usluga ne nalazi `claude` ni `glas` po imenu (Standby: „no Claude CLI")',
           primjena: { vrsta: 'dropin', unit, datoteka: zamijeni(tpl, inst) as string, sadrzaj } })
   }
   const min = k.stanje.konzola.starostMin[mod.dnevnik]
@@ -1179,7 +1206,8 @@ export function specZaProfil(p: Profil, inst: Record<string, string>, paket: str
     konzola: {
       datoteke: [...(M.konzola?.izvori || []).filter(x => !x.preskoci).map(x => x.datoteka), ...(M.oporavak ? [M.oporavak.dnevnik] : [])],
       dropIni: [...(M.konzola?.izvori || []).filter(x => x.unit && !x.preskoci).map(x => dropInPut(x.unit!)),
-        ...(M.oporavak?.tz?.unitovi || []).map(vrijemeDropInPut)],
+        ...(M.oporavak?.tz?.unitovi || []).map(vrijemeDropInPut),
+        ...(M.oporavak?.put?.unitovi || []).map(putDropInPut)],
     },
     sustav: sustav ? {
       unitovi: [...new Set([M.paket?.unit?.ime, M.glas?.servis?.unit, ...(M.konzola?.izvori || []).map(x => x.unit)].filter(Boolean))] as string[],
@@ -1274,7 +1302,7 @@ export async function glavna(argv: string[], d: Partial<Ovisnosti> = {}): Promis
       pisi(`PRIMIJENJENO: ${ishod.promjena} promjena${ishod.kopije ? ` · kopije u ${ishod.kopije}` : ''}`)
       ishod.greske.forEach(g => pisi(`GREŠKA ${g}`))
       pisi(`potreban restart regoc-taskmanager: ${ishod.restart ? 'da (alat ga ne radi — kad je 0 zadataka in_progress)' : 'ne'}`)
-      if (ishod.unitovi.length) pisi(`drop-in (konzola, vrijeme): systemctl --user daemon-reload, pa restart ${ishod.unitovi.join(', ')} (alat ga ne radi — kad je 0 zadataka in_progress)`)
+      if (ishod.unitovi.length) pisi(`drop-in (konzola, vrijeme, PATH): systemctl --user daemon-reload, pa restart ${ishod.unitovi.join(', ')} (alat ga ne radi — kad je 0 zadataka in_progress)`)
       ispisStavki(poslije).forEach(pisi)
     }
     return kod

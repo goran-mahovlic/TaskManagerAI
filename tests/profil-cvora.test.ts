@@ -14,7 +14,7 @@ import { zatraziSposobnost } from '../src/Capguard'
 import { razgovorPut } from '../src/razgovor/RazgovorPloca'
 import { ensureSettingsSchema } from '../src/core/ConcurrencySetting'
 import {
-  GreskaPreduvjeta, KOD, KORIJEN, glavna, izvediInstancu, konzolaDropIn, paketiKuka, provjeriVarijable, specZaProfil, vrijemeDropIn,
+  GreskaPreduvjeta, KOD, KORIJEN, glavna, izvediInstancu, konzolaDropIn, paketiKuka, provjeriVarijable, putDropIn, specZaProfil, vrijemeDropIn,
   ucinakZnacajki, ucitajProfil, zamijeni, jediniceZnanja, type Ploca,
 } from '../scripts/profil-cvora'
 import { prikupiStanje } from '../scripts/profil-cvora-stanje'
@@ -657,6 +657,31 @@ describe('oporavak — vrijeme izvornog sustava je UTC (drop-in TZ)', () => {
       expect(readFileSync(f, 'utf-8')).toContain('Environment=TZ=UTC')
     }
     expect((await d.pokreni(['primijeni', '--pisi', '--modul', 'oporavak'])).izlaz).toContain('PRIMIJENJENO: 0 promjena')
+  })
+})
+
+// TASK-5364 (izmjereno na node-A): PATH daemona i ploče bio je ~/.bun/bin:/usr/local/bin:/usr/bin:/bin —
+// bez ~/.local/bin, gdje žive `claude` i `glas`. Ploča je javljala „no Claude CLI", agenti nisu našli `glas`.
+describe('oporavak — PATH usluga sadrži ~/.local/bin (drop-in put.conf)', () => {
+  test('bez drop-ina → RAZLIKA za daemon i ploču; --pisi upiše PATH s %h/.local/bin; drugi --pisi 0', async () => {
+    const r = await d.pokreni(['provjeri', '--modul', 'oporavak'])
+    expect(r.izlaz).toContain('RAZLIKA regoc-daemon.PATH')
+    expect(r.izlaz).toContain('RAZLIKA regoc-taskmanager.PATH')
+    const p = await d.pokreni(['primijeni', '--pisi', '--modul', 'oporavak'])
+    expect(p.izlaz).toContain('daemon-reload')
+    for (const unit of ['regoc-daemon', 'regoc-taskmanager']) {
+      const f = join(d.home, '.config', 'systemd', 'user', `${unit}.service.d`, 'put.conf')
+      const t = readFileSync(f, 'utf-8')
+      expect(t).toBe(putDropIn('%h/.bun/bin:%h/.local/bin:/usr/local/bin:/usr/bin:/bin'))
+      expect(t).toContain('Environment=PATH=%h/.bun/bin:%h/.local/bin:')
+    }
+    expect((await d.pokreni(['primijeni', '--pisi', '--modul', 'oporavak'])).izlaz).toContain('PRIMIJENJENO: 0 promjena')
+  })
+
+  test('profil traži ~/.local/bin za oba unita', () => {
+    const put = ucitajProfil(PROFIL).moduli.oporavak?.put
+    expect(put?.vrijednost.split(':')).toContain('%h/.local/bin')
+    expect(put?.unitovi).toEqual(['regoc-daemon', 'regoc-taskmanager'])
   })
 })
 

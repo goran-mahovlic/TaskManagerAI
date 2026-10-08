@@ -13,7 +13,8 @@ set -uo pipefail
 
 KORIJEN="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$KORIJEN" || exit 1
-export PATH="$HOME/.bun/bin:$PATH"
+# ~/.local/bin: ondje žive `claude` i `glas` — ploča bez njega javlja „no Claude CLI" (TASK-5364).
+export PATH="$HOME/.bun/bin:$HOME/.local/bin:$PATH"
 
 POSTAVKE="$KORIJEN/config/postavke.env"
 # shellcheck disable=SC1090
