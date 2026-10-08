@@ -74,6 +74,16 @@ describe('HTTP /api/config/skupina', () => {
     expect(audit().filter(r => r.key === 'skupina.telegram').length).toBe(2)
   }, 30000)
 
+  test('kartica s vlastitim spremanjem (autonomija): dvije promjene → JEDAN skupina.autonomija redak', async () => {
+    const prije = audit().length
+    const r = await fetch(`${p!.url}/api/config/autonomy`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionAutonomy: 60, sessionCaution: 80, by: 'vlasnik' }) })
+    expect(r.status).toBe(200)
+    const novi = audit().slice(prije)
+    expect(novi.length).toBe(1)
+    expect(novi[0]).toMatchObject({ key: 'skupina.autonomija', changed_by: 'vlasnik', source: 'config-skupina' })
+    expect(JSON.parse(novi[0]!.new_value).kljucevi.sort()).toEqual(['sessionAutonomy', 'sessionCaution'])
+  }, 30000)
+
   test('stranica: integracije i telegram imaju jedan „Spremi” po skupini, ne po polju', async () => {
     const html = await (await fetch(`${p!.url}/`)).text()
     expect(html).not.toContain('spremiIntegracijuIzPolja(')

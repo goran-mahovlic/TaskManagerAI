@@ -92,7 +92,7 @@ import { readPauseState, writePauseState, describePause } from './core/PauseCont
 import { parseInstructionInput } from './core/TaskInstructions'
 import { parseConcurrencyInput, formatConcurrencyChange, CONCURRENCY_ENV, CONCURRENCY_MIN, CONCURRENCY_MAX, CONCURRENCY_DEFAULT } from './core/ConcurrencySetting'
 import { parseAutonomyInput, formatAutonomyChanges, usageZone, AUTONOMY_DEFAULTS, AUTONOMY_MIN, AUTONOMY_MAX, AUTONOMY_KEYS, AUTONOMY_CACHE_MS } from './core/AutonomyThresholdSetting'
-import { spremiSkupinu, type SkupinaZapis } from './core/SkupinaPostavki'
+import { spremiSkupinu, upisiAuditSkupine, type SkupinaZapis } from './core/SkupinaPostavki'
 import { parsirajZahtjev as parsirajRasporedZahtjev, klijentskaLogikaJS as rasporedKlijentskaLogikaJS } from './core/ConfigRaspored'
 // TASK-3461: stanje MJERILA potrošnje (razlikuje „čekam kvotu" od „mjerilo ne radi").
 import { readWaitingQueue } from './core/AutonomyQueue'
@@ -11650,6 +11650,7 @@ async function handleRazgovorPut(req: Request): Promise<Response> {
   const r = razgovorPut(TM_DB, tijelo)
   if (r.status === 200) {
     const promjene = ((r.tijelo as any).promjene || []).filter((c: any) => c.changed)
+    auditSkupine('razgovor', promjene.map((c: any) => String(c.kljuc)), (tijelo as any)?.by)
     console.log(`[RAZGOVOR] postavke promijenjene: ${promjene.map((c: any) => `${c.kljuc}=${c.novo}`).join(', ') || '(bez promjene)'}`)
     // Kao TASK-5274: paljenje razgovora pokreće petlju odmah, bez restarta.
     try {
@@ -11716,6 +11717,7 @@ async function handleBotKanalConfigPut(req: Request): Promise<Response> {
   const r = botKanalPut(TM_DB, tijelo, ipZahtjeva(req))
   if (r.status === 200) {
     const promjene = ((r.tijelo as any).promjene || []).filter((c: any) => c.changed).map((c: any) => c.kljuc)
+    auditSkupine('bot-kanal', promjene.map(String), (tijelo as any)?.by)
     console.log(`[bot-kanal] postavke promijenjene: ${promjene.join(', ') || '(bez promjene)'}`)
   }
   return razgovorOdgovor(r)
@@ -12153,6 +12155,17 @@ async function skupinaPostavki(ime: string): Promise<SkupinaZapis | null> {
   const prov = /^provider-(.+)$/.exec(ime)
   if (prov && PROVIDERI_PLOCE.includes(prov[1]!)) return skupinaProvidera(prov[1]!)
   return null
+}
+
+/**
+ * Kartice s vlastitim putem spremanja (strop, autonomija, revizija, razgovor, bot↔bot) i dalje pišu
+ * povijest VRIJEDNOSTI po ključu (prikaz povijesti na kartici, izvor vrijednosti). Uz to dobivaju
+ * isti zapis kao ostale skupine: JEDAN `skupina.<ime>` redak po spremanju s popisom ključeva.
+ */
+function auditSkupine(ime: string, kljucevi: string[], by: unknown): void {
+  if (!kljucevi.length) return
+  const tko = typeof by === 'string' && by.trim() ? by.trim().slice(0, 64) : 'config'
+  try { revDb(db => upisiAuditSkupine(db, ime, kljucevi, tko), false) } catch (e) { console.log(`[SKUPINA] audit ${ime} nije zapisan: ${String(e)}`) }
 }
 
 async function handleSkupinaPut(ime: string, req: Request): Promise<Response> {
@@ -15233,6 +15246,7 @@ async function handleConcurrencyPut(req: Request): Promise<Response> {
   const by = typeof body.by === 'string' && body.by.trim() ? body.by.trim() : 'config'
   const source = typeof body.source === 'string' && body.source.trim() ? body.source.trim().slice(0, 32) : 'config'
   const ch = taskManager.setConcurrencySetting(p.value, by, source)
+  if (ch.oldValue !== ch.newValue) auditSkupine('usporedni', ['maxConcurrent'], by)
   console.log(`[API] ${formatConcurrencyChange({ oldValue: ch.oldValue, newValue: ch.newValue, changedBy: ch.changedBy, source })}`)
   const message = JSON.stringify({ type: 'concurrency_changed', concurrency: { maxConcurrent: ch.newValue, by: ch.changedBy } })
   wsClients.forEach(client => { try { client.send(message) } catch { wsClients.delete(client) } })
@@ -15286,6 +15300,7 @@ async function handleAutonomyPut(req: Request): Promise<Response> {
     return new Response(JSON.stringify({ error: e instanceof Error ? e.message : String(e) }), { status: 400, headers: { 'Content-Type': 'application/json' } })
   }
   if (ch.changes.length) console.log(`[API] 🎚️ ${formatAutonomyChanges(ch.changes, ch.changedBy, source)}`)
+  auditSkupine('autonomija', ch.changes.map((c: any) => String(c.field)), by)
   const message = JSON.stringify({ type: 'autonomy_changed', autonomy: { ...ch.values, by: ch.changedBy } })
   wsClients.forEach(client => { try { client.send(message) } catch { wsClients.delete(client) } })
   return new Response(JSON.stringify({ ...(await autonomyPayload()), change: ch }), { headers: { 'Content-Type': 'application/json' } })
@@ -15378,6 +15393,7 @@ async function handleRevizijaConfigPut(req: Request): Promise<Response> {
       for (const p of promjene) ins.run(p.kljuc, p.staro, p.novo, by, source)
     }, false)
   }
+  auditSkupine('revizija', promjene.map(p => p.kljuc), by)
   console.log(`[API] Revizija blokiranih: ${promjene.map(p => `${p.kljuc} ${p.staro}→${p.novo}`).join(', ') || 'bez promjene'} (${by}, ${source})`)
   const message = JSON.stringify({ type: 'revizija_changed', promjene, by })
   wsClients.forEach(client => { try { client.send(message) } catch { wsClients.delete(client) } })
