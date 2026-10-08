@@ -82,6 +82,9 @@ import { citajKonzolu, zapisiKonzolu } from './razgovor/Zapis'
 import { probaModela as probaDezurnog, simulirajPad as simulirajPadPrimarnog, citajStanje as citajStanjeDezurnog } from './Dezurni'
 import { ZADANI_PRIVITCI as ZADANI_PRIVITCI_RAZG, mapaPrivitaka as mapaPrivitakaRazg } from './TelegramPrivitci'
 import { GLAS_ZADANI_URL, stanjeGlasa, type StanjeGlasa } from './razgovor/Glas'
+import { stavkeInfrastrukture, probajInfrastrukturu, type InfraStavka } from './core/InfraKartica'
+import { tkoVodiZadatke } from './core/orchestrator/TkoVodi'
+import { zonaPrikaza, ugradiPrikazVremena } from './core/PrikazVremena'
 import { ucitajAgente } from './razgovor/Identitet'
 import { MIN_TAJNA, PUT_RUTE, ZAGLAVLJE_POTPISA, potpisi, smijeTajnuNa, type Zahtjev } from './razgovor/BotKanal'
 import { jeDopustenAgent } from './core/AgentIds'
@@ -2748,7 +2751,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         </div>
         <!-- TASK-5204: naknadna revizija blokiranih — prekidač off/shadow/on + klase uživo, vrijedi bez restarta. -->
         <div class="info-card info-card-istaknuta" id="info-revizija-card">
-          <div class="info-card-title"><span class="icon">&#8635;</span> <span>Revizija blokiranih</span></div>
+          <div class="info-card-title"><span class="icon">&#8635;</span> <span data-i18n="cfg_kartica_revizija">Revizija blokiranih</span></div>
           <div id="info-revizija-content"><div class="empty" data-i18n="loading">Loading...</div></div>
         </div>
         <!-- TASK-5025 (dopuna 19:03): klizači pragova; API GET/PUT /api/config/autonomy dolazi iz TASK-5028. -->
@@ -2770,7 +2773,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
           <div id="info-modelsvi-content"><div class="empty" data-i18n="loading">Loading...</div></div>
         </div>
         <div class="info-card info-full" id="info-agents-card">
-          <div class="info-card-title"><span class="icon">&#9733;</span> Agents &amp; Model Requirements</div>
+          <div class="info-card-title"><span class="icon">&#9733;</span> <span data-i18n="cfg_kartica_agenti">Agenti i zahtjevi za model</span></div>
           <div id="info-agents-content"><div class="empty" data-i18n="loading">Loading...</div></div>
         </div>
         <div class="info-card info-full" id="info-classifier-card">
@@ -2831,39 +2834,39 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
           <p data-i18n="cfg_skupina_sustav_opis">Samo za &#269;itanje: verzija, infrastruktura, baze, metrike, komponente i pravila.</p>
         </div>
         <div class="info-card" id="info-system-card">
-          <div class="info-card-title"><span class="icon">&#9646;</span> System</div>
+          <div class="info-card-title"><span class="icon">&#9646;</span> <span data-i18n="cfg_kartica_sustav">Sustav</span></div>
           <div id="info-system-content"><div class="empty" data-i18n="loading">Loading...</div></div>
         </div>
         <div class="info-card" id="info-providers-card">
-          <div class="info-card-title"><span class="icon">&#9881;</span> AI Providers</div>
+          <div class="info-card-title"><span class="icon">&#9881;</span> <span data-i18n="cfg_kartica_provideri">AI provideri</span></div>
           <div id="info-providers-content"><div class="empty" data-i18n="loading">Loading...</div></div>
         </div>
         <div class="info-card" id="info-infra-card">
-          <div class="info-card-title"><span class="icon">&#9729;</span> Infrastructure</div>
+          <div class="info-card-title"><span class="icon">&#9729;</span> <span data-i18n="cfg_kartica_infra">Infrastruktura</span></div>
           <div id="info-infra-content"><div class="empty" data-i18n="loading">Loading...</div></div>
         </div>
         <div class="info-card" id="info-databases-card">
-          <div class="info-card-title"><span class="icon">&#9744;</span> Databases</div>
+          <div class="info-card-title"><span class="icon">&#9744;</span> <span data-i18n="cfg_kartica_baze">Baze podataka</span></div>
           <div id="info-databases-content"><div class="empty" data-i18n="loading">Loading...</div></div>
         </div>
         <div class="info-card" id="info-metrics-card">
-          <div class="info-card-title"><span class="icon">&#9776;</span> Metrics Summary</div>
+          <div class="info-card-title"><span class="icon">&#9776;</span> <span data-i18n="cfg_kartica_metrike">Sa&#382;etak metrika</span></div>
           <div id="info-metrics-content"><div class="empty" data-i18n="loading">Loading...</div></div>
         </div>
         <div class="info-card" id="info-modules-card">
-          <div class="info-card-title"><span class="icon">&#9670;</span> Modules</div>
+          <div class="info-card-title"><span class="icon">&#9670;</span> <span data-i18n="cfg_kartica_moduli">Moduli</span></div>
           <div id="info-modules-content"><div class="empty" data-i18n="loading">Loading...</div></div>
         </div>
         <div class="info-card info-full" id="info-components-card">
-          <div class="info-card-title"><span class="icon">&#9881;</span> Core Components</div>
+          <div class="info-card-title"><span class="icon">&#9881;</span> <span data-i18n="cfg_kartica_komponente">Klju&#269;ne komponente</span></div>
           <div id="info-components-content"><div class="empty" data-i18n="loading">Loading...</div></div>
         </div>
         <div class="info-card info-full" id="info-skills-card">
-          <div class="info-card-title"><span class="icon">&#9733;</span> Skills &amp; Workflows</div>
+          <div class="info-card-title"><span class="icon">&#9733;</span> <span data-i18n="cfg_kartica_vjestine">Vje&#353;tine i tijekovi</span></div>
           <div id="info-skills-content"><div class="empty" data-i18n="loading">Loading...</div></div>
         </div>
         <div class="info-card info-full" id="info-rules-card">
-          <div class="info-card-title"><span class="icon">&#9888;</span> Critical Rules <span id="info-rules-broj"></span></div>
+          <div class="info-card-title"><span class="icon">&#9888;</span> <span data-i18n="cfg_kartica_pravila">Klju&#269;na pravila</span> <span id="info-rules-broj"></span></div>
           <div id="info-rules-content"><div class="empty" data-i18n="loading">Loading...</div></div>
         </div>
       </div>
@@ -3286,6 +3289,10 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
   </div>
 
   <script>
+    // TASK-5368: baza piše UTC (i SQLite zapis bez zone); prikaz ide u zonu ploče (TM_ZONA,
+    // inače zona procesa) — ne u preglednikovu. Oznaku ispod poslužitelj zamjenjuje
+    // skriptom iz PrikazVremena.ts (_kad/_sat/_dan), istom funkcijom koju koristi i sam.
+    /*__PRIKAZ_VREMENA__*/
     let ws;
     let currentFilter = 'all';
     let currentProjectFilter = '';
@@ -3672,11 +3679,11 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         el.innerHTML = list.map(u => {
           const kad = new Date(u.created_at);
           const stanje = u.delivered_at
-            ? '✅ ' + _T('uputa_dostavljeno', 'dostavljeno') + ' ' + new Date(u.delivered_at).toLocaleTimeString() + (u.delivered_session ? ' (' + _T('uputa_sesija', 'sesija') + ' ' + String(u.delivered_session).slice(0, 8) + ')' : '')
+            ? '✅ ' + _T('uputa_dostavljeno', 'dostavljeno') + ' ' + _sat(u.delivered_at) + (u.delivered_session ? ' (' + _T('uputa_sesija', 'sesija') + ' ' + String(u.delivered_session).slice(0, 8) + ')' : '')
             : '⏳ ' + _T('uputa_ceka_dostavu', 'čeka dostavu (stiže uz sljedeći alat agenta ili pri sljedećem pokretanju)');
           return '<div class="uputa-item' + (u.delivered_at ? '' : ' ceka') + '">'
             + '<div class="uputa-meta">#' + rsEscapeHtml(u.id) + ' · ' + rsEscapeHtml(u.author) + ' · '
-            + rsEscapeHtml(kad.toLocaleDateString()) + ' ' + rsEscapeHtml(kad.toLocaleTimeString()) + ' · ' + rsEscapeHtml(stanje) + '</div>'
+            + rsEscapeHtml(_kad(kad)) + ' · ' + rsEscapeHtml(stanje) + '</div>'
             + '<div style="white-space:pre-wrap;word-break:break-word;">' + rsEscapeHtml(u.text) + '</div></div>';
         }).join('');
       } catch (err) {
@@ -3849,7 +3856,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         const unverifiedBadge = unv
           ? '<span class="unverified-badge" title="' + escapeAttr(
               _Tv('tsk_neprovjereno_naslov', 'Vratar NIJE provjerio rezultat ({status}, {kada}).',
-                  { status: unv.status, kada: unv.ts || '' }) + '\\n' +
+                  { status: unv.status, kada: unv.ts ? _kad(unv.ts) : '' }) + '\\n' +
               (unv.reasons && unv.reasons.length ? unv.reasons.map(r => '• ' + r).join('\\n')
                 : _T('tsk_razlog_nije_zapisan', 'razlog nije zapisan'))
             ) + '">&#9888; ' + _T('tsk_nije_provjereno', 'NIJE PROVJERENO') + '</span>'
@@ -4514,7 +4521,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       if (task.status !== 'blocked' || !z || !z.zadnjaPresuda || z.zadnjaPresuda.nacin !== 'shadow') return '';
       var p = z.zadnjaPresuda.presuda;
       if (p === 'ceka' || p === 'izuzet') return '';
-      var sat = new Date(z.zadnjaPresuda.ts).toLocaleTimeString('hr-HR', { hour: '2-digit', minute: '2-digit' });
+      var sat = _sat(z.zadnjaPresuda.ts);
       var bi = { pusti: 'BI pustio', 'otpusti-lanac': 'BI otpustio lanac', 'popravi-lanac': 'BI popravio lanac',
         'zatvori-deploy': 'BI zatvorio deploy', covjeku: 'BI predao tebi', goranu: 'BI predao tebi' /* stari naziv u dnevniku izvornog daemona */, razina2: 'BI poslao na razinu 2', strop: 'BI stao (strop)' }[p] || p;
       return '<div class="rev-sjena">sjena: ' + esc(bi) + ' u ' + sat + '</div>';
@@ -4530,7 +4537,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       try {
         var d = await (await fetch('/api/tasks/' + encodeURIComponent(task.id) + '/revizija')).json();
         var redci = (d.presude || []).slice(-8).reverse().map(function (p) {
-          return '<div>' + esc(new Date(p.ts).toLocaleString('hr-HR')) + ' · ' + esc(p.nacin) + ' · <b>' + esc(p.presuda) + '</b> — ' + esc(p.razlog || '') + '</div>';
+          return '<div>' + esc(_kad(p.ts)) + ' · ' + esc(p.nacin) + ' · <b>' + esc(p.presuda) + '</b> — ' + esc(p.razlog || '') + '</div>';
         });
         el.innerHTML = glava + (redci.length ? redci.join('') : '<div>još nema presuda revizije</div>');
       } catch (e) { el.innerHTML = glava; }
@@ -4691,9 +4698,8 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
             const doKad = new Date(t.odgoda.do);
             const min = Math.round((doKad.getTime() - Date.now()) / 60000);
             const koliko = min >= 60 ? Math.round(min / 6) / 10 + ' h' : min + ' min';
-            // Sat se ispisuje po jeziku sucelja; podatak (vrijeme) ostaje isti trenutak.
-            const sat = doKad.toLocaleTimeString(JEZIK === 'en' ? 'en-GB' : 'hr-HR',
-              { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Zagreb' });
+            // TASK-5368: sat u zoni ploče (TM_ZONA), kao i sva ostala vremena.
+            const sat = _sat(doKad);
             modelKaze = t.odgoda.najava
               // Najava: rok je TVOJ, i to se mora vidjeti kao poziv, ne kao obavijest o odgodi.
               ? '<div class="odluka-model-kaze">⏳ ' + (min > 0
@@ -5365,7 +5371,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         return \`
           <div class="progress-note">
             <div class="progress-note-meta">
-              \${date.toLocaleDateString()} \${date.toLocaleTimeString()} - \${note.agent || 'unknown'}
+              \${_kad(date)} - \${note.agent || 'unknown'}
             </div>
             <div>\${note.note}</div>
           </div>
@@ -5376,7 +5382,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     // Render timestamps
     function renderTimestamps(task) {
       const timestampsContainer = document.getElementById('detail-timestamps');
-      const format = (d) => d ? new Date(d).toLocaleString() : '-';
+      const format = (d) => d ? _kad(d) : '-';
 
       timestampsContainer.innerHTML = \`
         <div><strong>Created:</strong> \${format(task.createdAt)} by \${task.createdBy || 'unknown'}</div>
@@ -7005,15 +7011,10 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
 
     /**
      * Vremenska oznaka iz baze u Date. Baza nosi dva zapisa ('2026-08-28 11:29:20'
-     * i '2026-08-28T11:29:20.000Z') koji oba znače ISTI, LOKALNI sat (v. ChronoOrder.ts),
-     * pa 'Z' odbacujemo — inače bi ISO zapis ispao pomaknut za razliku prema UTC-u.
+     * i '2026-08-28T11:29:20.000Z') koji oba znače ISTI trenutak u UTC-u (SQLite
+     * CURRENT_TIMESTAMP je UTC) — TASK-5368: zapis bez zone više se ne čita kao lokalni.
      */
-    function parseDbTs(ts) {
-      if (!ts) return null;
-      const norm = String(ts).replace('T', ' ').replace('Z', '').trim();
-      const d = new Date(norm.replace(' ', 'T'));
-      return isNaN(d.getTime()) ? null : d;
-    }
+    function parseDbTs(ts) { return parsirajVrijemeBaze(ts); }
 
     /** 'prije 5 min' / 'prije 3 h' / 'prije 2 d' — koliko je davno bio zadnji rad. */
     function projectAgeText(ts) {
@@ -7271,7 +7272,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
 
       // Render timestamps
       const timestampsContainer = document.getElementById('project-detail-timestamps');
-      const format = (d) => d ? new Date(d).toLocaleString() : '-';
+      const format = (d) => d ? _kad(d) : '-';
       timestampsContainer.innerHTML = \`
         <div><strong>Created:</strong> \${format(project.created_at)}</div>
         <div><strong>Updated:</strong> \${format(project.updated_at)}</div>
@@ -7649,7 +7650,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
               <span class="rag-entry-id">\${entry.id.substring(0, 12)}...</span>
               <span class="rag-entry-collection">\${entry.collection}</span>
               <span class="rag-entry-type">\${entry.type || 'unknown'}</span>
-              <span class="rag-entry-date">\${new Date(entry.stored_at).toLocaleDateString()}</span>
+              <span class="rag-entry-date">\${_dan(entry.stored_at)}</span>
             </div>
             <div class="rag-entry-preview">\${(entry.content || entry.document || '').substring(0, 150)}...</div>
           </div>
@@ -7773,7 +7774,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         document.getElementById('rag-modal-id').textContent = entry.id;
         document.getElementById('rag-modal-collection').textContent = entry.collection;
         document.getElementById('rag-modal-type').textContent = entry.type || 'unknown';
-        document.getElementById('rag-modal-date').textContent = new Date(entry.stored_at).toLocaleString();
+        document.getElementById('rag-modal-date').textContent = _kad(entry.stored_at);
         document.getElementById('rag-modal-content').textContent = entry.content || entry.document || JSON.stringify(entry.metadata, null, 2);
 
         ragModalOverlay.style.display = 'flex';
@@ -7873,7 +7874,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     function fmtClock(iso) {
       if (!iso) return null;
       const dt = new Date(iso);
-      return isNaN(dt.getTime()) ? null : dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      return isNaN(dt.getTime()) ? null : _sat(dt);
     }
 
     function firstNum() {
@@ -8038,7 +8039,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     function appendToKonzolaLog(text, cssClass) {
       const output = document.getElementById('konzola-output');
       const line = document.createElement('div');
-      const ts = new Date().toLocaleTimeString();
+      const ts = _sat();
       line.innerHTML = '<span class="log-ts">[' + ts + ']</span> <span class="' + (cssClass || '') + '">' + escapeHtml(text) + '</span>';
       output.appendChild(line);
       while (output.children.length > KONZOLA_MAX_LINES) output.removeChild(output.firstChild);
@@ -8361,7 +8362,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         renderTokenUsage(d.tokens);
         renderProjectsAndTasks(d.tasks, d.projects);
         renderSchedulerQueue(d.scheduler);
-        document.getElementById('status-last-updated').textContent = 'Updated: ' + new Date().toLocaleTimeString();
+        document.getElementById('status-last-updated').textContent = 'Updated: ' + _sat();
       } catch(e) { console.error('Status dashboard fetch failed:', e); }
     }
 
@@ -8468,7 +8469,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       if (!scheduler || Object.keys(scheduler).length === 0) { el.innerHTML = '<div class="empty">No scheduler data</div>'; return; }
       let html = '<div style="font-size:0.85rem;">';
       if (scheduler.activeTasks) html += '<div><strong>Active:</strong> ' + (scheduler.activeTasks?.length || 0) + ' &middot; <strong>Queued:</strong> ' + (scheduler.queuedTasks?.length || 0) + ' &middot; <strong>Completed:</strong> ' + (scheduler.completedTasks?.length || 0) + '</div>';
-      if (scheduler.lastCheck) html += '<div style="color:var(--text-secondary);font-size:0.75rem;margin-top:0.25rem;">Last check: ' + new Date(scheduler.lastCheck).toLocaleTimeString() + '</div>';
+      if (scheduler.lastCheck) html += '<div style="color:var(--text-secondary);font-size:0.75rem;margin-top:0.25rem;">Last check: ' + _sat(scheduler.lastCheck) + '</div>';
       html += '</div>';
       el.innerHTML = html;
     }
@@ -8732,7 +8733,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       var simAktivna = st.simulacijaDo && Date.parse(st.simulacijaDo) > Date.now();
       h += _red(_T('dez_simulacija', 'Simulacija pada'),
         (simAktivna
-          ? '<span class="info-badge disabled">' + _Tv('dez_simulacija_do', 'primarni „pao" do {vrijeme}', { vrijeme: _esc(new Date(st.simulacijaDo).toLocaleTimeString()) }) + '</span> ' +
+          ? '<span class="info-badge disabled">' + _Tv('dez_simulacija_do', 'primarni „pao" do {vrijeme}', { vrijeme: _esc(_sat(st.simulacijaDo)) }) + '</span> ' +
             '<button class="cfg-btn" onclick="simulirajPadDezurnog(0, this)">' + _T('dez_ugasi_simulaciju', 'Ugasi simulaciju') + '</button>'
           : '<button class="cfg-btn" onclick="simulirajPadDezurnog(5, this)">' + _T('dez_simuliraj', 'Simuliraj pad (5 min)') + '</button>'),
         _T('dez_simulacija_opis', 'Razgovor i agenti preskaču primarni model i odgovaraju preko dežurnog. Sama prestaje nakon roka; zapis ide u Konzolu.'));
@@ -8829,7 +8830,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         var svjeza = document.getElementById('dez-poruka');
         if (svjeza) svjeza.innerHTML = '<span style="color:var(--accent-green,#22c55e)">' +
           _Tv('dez_spremljeno', 'Spremljeno — vrijedi odmah, bez restarta ({vrijeme})',
-                 { vrijeme: new Date().toLocaleTimeString() }) + '</span>';
+                 { vrijeme: _sat() }) + '</span>';
       } catch(e) {
         if (poruka) poruka.innerHTML = '<span style="color:var(--accent-red,#ef4444)">' +
           _Tv('dez_nije_spremljeno', 'Nije spremljeno: {greska}',
@@ -8907,7 +8908,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
           : '<span style="color:var(--text-secondary)">&mdash; ' + _esc(_T('tajne_nema', 'nije upisana')) + '</span>';
         if (t.zasjenjena) stanje += ' <span style="color:var(--accent-yellow)" title="' + _esc(_T('tajne_zasjenjena_title', 'Ista varijabla postoji u okolini procesa i ima prednost pred spremištem.')) + '">&#9888; ' + _esc(_T('tajne_zasjenjena', 'zasjenjena okolinom')) + '</span>';
         if (t.postoji && t.opasan) stanje += ' <span style="color:var(--accent-red)">&#9888; ' + _esc(_T('tajne_opasan', 'stari zapis s posebnim znakovima — upiši je ponovo')) + '</span>';
-        var zadnje = t.zadnje ? (_esc(t.zadnje.radnja) + ' ' + _esc(new Date(t.zadnje.kada).toLocaleString()) + ' &middot; ' + _esc(t.zadnje.ip || '?') + ' (' + _esc(t.zadnje.prijenos || '') + ')') : '';
+        var zadnje = t.zadnje ? (_esc(t.zadnje.radnja) + ' ' + _esc(_kad(t.zadnje.kada)) + ' &middot; ' + _esc(t.zadnje.ip || '?') + ' (' + _esc(t.zadnje.prijenos || '') + ')') : '';
         h += '<tr style="border-top:1px solid var(--border-color)">' +
           '<td style="padding:4px 4px 4px 0;vertical-align:top"><code>' + _esc(t.ime) + '</code><div style="color:var(--text-secondary)">' + _esc(t.izvor) + '</div></td>' +
           '<td style="padding:4px;vertical-align:top">' + stanje + (zadnje ? '<div style="color:var(--text-secondary)">' + zadnje + '</div>' : '') + '</td>' +
@@ -9513,11 +9514,21 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         ? '<span class="info-badge enabled">' + _T('orc_aktivno', 'uključen') + '</span>'
         : '<span class="info-badge disabled">' + _T('orc_iskljuceno', 'isključen') + '</span>';
 
-      var h = '<div style="font-size:0.72rem;color:var(--text-secondary);margin-bottom:0.5rem">' +
+      var v = d.vodstvo || {};
+      var h = '';
+      if (v.vodi === 'regocdaemon') {
+        // TASK-5368: zadatke vodi daemon sustava; postavke ispod vrijede samo za orkestrator paketa.
+        h += '<div style="font-size:0.78rem;margin-bottom:0.5rem;padding:0.4rem 0.6rem;border-left:3px solid var(--accent-green,#22c55e)">' +
+          '<span class="info-badge enabled">' + _T('orc_vodi_daemon_znacka', 'RegocDaemon radi') + '</span> ' +
+          _Tv('orc_vodi_daemon', 'Zadatke na ovom stroju vodi RegocDaemon (PID {pid}) s {broj} agenata iz {registar}. Orkestrator paketa (scripts/orchestrator.ts) ovdje ne radi — postavke ispod vrijede samo ako se pokrene umjesto daemona.',
+            { pid: _esc(String(v.pid || '?')), broj: _esc(String(v.agenata || 0)), registar: '<code>' + _esc(v.registarSustava || '') + '</code>' }) +
+          '</div>';
+      }
+      h += '<div style="font-size:0.72rem;color:var(--text-secondary);margin-bottom:0.5rem">' +
         _T('orc_uvod',
           'Sloj koji sam uzima zadatke s ploče i pokreće agenta na njima. Svježa instalacija ' +
           'ga NE pali sama. Pokretanje: bun scripts/orchestrator.ts (v. docs/INSTALL.md).') +
-        ' ' + znacka + '</div>';
+        ' ' + (v.vodi === 'regocdaemon' ? '' : znacka) + '</div>';
 
       h += '<table class="info-table"><tbody>';
       h += _red(_T('orc_ukljucen', 'Orkestrator uključen'),
@@ -9538,7 +9549,9 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         _T('orc_cinjenice_opis', 'Rečenice koje ulaze u prompt agenta. Odvoji ih znakom |. Paket svoje nema.'));
       h += _red(_T('orc_agenti', 'Agenata u registru'),
         '<strong>' + (d.agenata || 0) + '</strong>',
-        _T('orc_agenti_opis', 'config/agents.json — bez ijednog agenta orkestrator ne pokreće ništa.'));
+        v.vodi === 'regocdaemon'
+          ? _T('orc_agenti_opis_daemon', 'Registar orkestratora paketa (config/agents.json). Ovdje se ne koristi — agente pokreće RegocDaemon iz svog registra.')
+          : _T('orc_agenti_opis', 'config/agents.json — bez ijednog agenta orkestrator ne pokreće ništa.'));
       h += _red(_T('orc_izvodaci', 'Izvođača podešeno'),
         '<strong>' + (st.brojIzvodaca || 0) + '</strong>',
         _T('orc_izvodaci_opis', 'CLI ili HTTP; podešavaju se u orchestrator.json → executors.'));
@@ -10201,7 +10214,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         // innerHTML cijele kartice, pa bi ranija poruka nestala u istom dahu.
         await loadUlaznaVrata();
         var svjeza = document.getElementById('ulaz-poruka');
-        if (svjeza) svjeza.innerHTML = '<span style="color:var(--accent-green,#22c55e)">' + _T('cfg_ulaz_spremljeno', 'Spremljeno — vrijedi odmah, bez restarta') + ' (' + new Date().toLocaleTimeString() + ')</span>';
+        if (svjeza) svjeza.innerHTML = '<span style="color:var(--accent-green,#22c55e)">' + _T('cfg_ulaz_spremljeno', 'Spremljeno — vrijedi odmah, bez restarta') + ' (' + _sat() + ')</span>';
       } catch(e) {
         if (poruka) poruka.innerHTML = '<span style="color:var(--accent-red,#ef4444)">' + _T('cfg_ulaz_nije_spremljeno', 'Nije spremljeno') + ': ' + _esc(e.message) + '</span>';
         if (el) el.disabled = false;
@@ -10335,7 +10348,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       h += '<button class="btn" style="font-size:0.72rem;padding:3px 10px" onclick="setModelSvi(document.getElementById(\\'modelsvi-select\\').value, this)">' + _T('cfg_msvi_primijeni', 'Primijeni na sve') + '</button>';
       if (d.aktivno) {
         h += '<button class="btn" style="font-size:0.72rem;padding:3px 10px" onclick="setModelSvi(\\'vrati\\', this)">' + _T('cfg_msvi_vrati', 'Vrati na konfiguraciju') + '</button>';
-        h += '<span class="info-badge enabled">' + _Tv('cfg_msvi_aktivno', 'sustav vozi {cilj} (prebacio {tko}, {kada})', { cilj: _esc(d.cilj || '?'), tko: _esc(d.tko || '?'), kada: _esc(String(d.kada || '').replace('T', ' ').slice(0, 16)) }) + '</span>';
+        h += '<span class="info-badge enabled">' + _Tv('cfg_msvi_aktivno', 'sustav vozi {cilj} (prebacio {tko}, {kada})', { cilj: _esc(d.cilj || '?'), tko: _esc(d.tko || '?'), kada: _esc(d.kada ? _kad(d.kada) : '') }) + '</span>';
       } else {
         h += '<span class="info-badge disabled">' + _T('cfg_msvi_neaktivno', 'isključeno — vrijedi model po agentu') + '</span>';
       }
@@ -10550,13 +10563,29 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       document.getElementById('info-modules-content').innerHTML = h;
     }
 
-    function renderInfoInfra(d) {
+    // TASK-5368: adresa + izvor (varijabla/postavka) + stvarna proba dosežnosti.
+    function renderInfoInfra(d, saStanjem) {
       const infra = d.infrastructure || [];
+      const znacke = {
+        online: '<span class="info-badge enabled">' + _T('infra_online', 'dostupan') + '</span>',
+        offline: '<span class="info-badge disabled">' + _T('infra_offline', 'ne odgovara') + '</span>',
+        nije_podeseno: '<span class="info-badge disabled">' + _T('infra_nije_podeseno', 'nije podešeno') + '</span>',
+      };
       let h = '';
       infra.forEach(function(s) {
-        h += '<div class="info-kv"><span class="info-kv-label">' + s.name + '</span><span class="info-kv-value">' + s.endpoint + '</span></div>';
+        const adresa = s.endpoint ? _esc(s.endpoint) : '—';
+        const znacka = saStanjem ? (znacke[s.stanje] || '') : '<span class="info-badge">…</span>';
+        h += '<div class="info-kv"><span class="info-kv-label">' + _T(s.nameKey, s.name) + '</span>' +
+          '<span class="info-kv-value">' + adresa + ' ' + znacka + '</span></div>' +
+          '<div style="font-size:.66rem;color:var(--text-secondary);margin:-0.2rem 0 0.3rem;text-align:right">' +
+          _T('infra_izvor', 'izvor') + ': <code>' + _esc(s.izvor || '') + '</code></div>';
       });
-      document.getElementById('info-infra-content').innerHTML = h || '<div class="empty">No infrastructure</div>';
+      document.getElementById('info-infra-content').innerHTML = h || '<div class="empty">' + _T('infra_prazno', 'Nema stavki') + '</div>';
+      if (!saStanjem) {
+        fetch('/api/info/infrastruktura').then(function(r) { return r.json(); })
+          .then(function(j) { if (j && j.stavke) renderInfoInfra({ infrastructure: j.stavke }, true); })
+          .catch(function() {});
+      }
     }
 
     function renderInfoDatabases(d) {
@@ -12008,18 +12037,31 @@ function handleIntegracijeSazetak(): Response {
 
 // ── Orkestrator (sloj 1) — TASK-4800 / ADR-0001 ───────────────────────────────
 
-function handleOrchestratorGet(): Response {
+async function handleOrchestratorGet(): Promise<Response> {
   const json = (o: unknown, s = 200) =>
     new Response(JSON.stringify(o), { status: s, headers: { 'Content-Type': 'application/json' } })
   try {
     const postavke = loadOrchestratorConfig()
+    const agenata = KonfiguracijskiRegistar.izDatoteke(postavke.agents.registryPath || undefined).list().length
+    // TASK-5368: na čvoru zadatke vodi RegocDaemon sustava, ne orkestrator paketa — kartica
+    // to mora reći, inače „0 agenata" izgleda kao kvar. Živost = PID + cmdline (DaemonLiveness).
+    const live = await resolveDaemonLiveness(daemonLivenessDeps).catch(() => null)
+    let agenataSustava = 0
+    try {
+      agenataSustava = Object.keys(JSON.parse(readFileSync(AGENTS_REGISTRY_FILE, 'utf-8')).agents || {}).length
+    } catch { /* registra sustava nema — paket radi sam */ }
+    const vodstvo = tkoVodiZadatke({
+      daemon: { alive: !!live?.alive, pid: live?.pid ?? null },
+      agenataSustava, agenataPaketa: agenata, paketUkljucen: !!postavke.enabled,
+    })
     return json({
       postavke,
       stanje: stanjeOrkestratora(postavke),
       putanja: orchestratorConfigPath(),
       // Strop NIJE polje orchestrator.json nego postavka (kartica „Usporedni agenti").
       strop: taskManager.getConcurrencySetting().value,
-      agenata: KonfiguracijskiRegistar.izDatoteke(postavke.agents.registryPath || undefined).list().length,
+      agenata,
+      vodstvo: { ...vodstvo, registarSustava: AGENTS_REGISTRY_FILE },
     })
   } catch (err) {
     return json({ error: String(err) }, 500)
@@ -12259,6 +12301,15 @@ async function handleSetProvider(providerId: string, req: Request): Promise<Resp
   }
 }
 
+/** Stavke kartice Infrastruktura — Ollama iz model-config.json (kao AI Providers), glas iz razgovora. */
+function infraStavke(): InfraStavka[] {
+  let ollamaUrl: string | null = null
+  try { ollamaUrl = JSON.parse(readFileSync(MODEL_CONFIG_PATH, 'utf-8'))?.providers?.ollama?.baseUrl || null } catch {}
+  let glasUrl: string | null = null
+  try { glasUrl = razgovorSloj().ulaz.postavke().glasUrl || null } catch {}
+  return stavkeInfrastrukture({ env: process.env, ollamaUrl, glasUrl })
+}
+
 function buildInfoPayload(): Record<string, unknown> {
   const HOME = process.env.HOME || homedir()
   const agentOverrides = loadAgentOverrides(HOME)
@@ -12431,7 +12482,7 @@ function buildInfoPayload(): Record<string, unknown> {
     { number: 6, name: 'ZOD VALIDATION', summary: 'Runtime type safety for all agents' },
     { number: 7, name: 'SERENA MCP', summary: 'Use for files >1000 lines (70-90% token savings)' },
     { number: 8, name: 'SECURITY ISOLATION', summary: 'Gita & Grga: no IPs, ports, paths, credentials' },
-    { number: 9, name: 'INFRASTRUCTURE', summary: 'TaskWebUI:17781 | Voice:8888 | ChromaDB:18765 | Ollama:11434' },
+    { number: 9, name: 'INFRASTRUCTURE', summary: infraStavke().map(s => `${s.name}: ${s.endpoint ?? '—'}`).join(' | ') },
     { number: 10, name: 'CONTEXT 75%', summary: 'Auto-save to RAG when context exceeds 75%' },
     { number: 11, name: 'CHECKPOINT FIRST', summary: 'CHECKPOINT block BEFORE task, not after' },
     { number: 12, name: 'PROGRESS NOTES', summary: 'Agents update TaskManager every 5 min' },
@@ -12463,18 +12514,9 @@ function buildInfoPayload(): Record<string, unknown> {
     providers,
     agents,
     modules,
-    infrastructure: [
-      { name: 'TaskWebUI', endpoint: 'localhost:17781' },
-      { name: 'VoiceServer', endpoint: 'localhost:8888' },
-      { name: 'RegocPulse', endpoint: 'localhost:17780 (planned)' },
-      // ADR-0001 §5.1: adresa se ČITA iz okoline, ne piše u kodu. Bez postavke se
-      // pošteno kaže da servis nije podešen, umjesto da se prikaže tuđi poslužitelj.
-      { name: 'ChromaDB', endpoint: process.env.TM_CHROMA_HOST
-          ? `${process.env.TM_CHROMA_HOST}:${process.env.TM_CHROMA_PORT || '8000'}`
-          : 'nije podešeno (TM_CHROMA_HOST)' },
-      { name: 'Ollama', endpoint: process.env.TM_OLLAMA_URL || 'nije podešeno (TM_OLLAMA_URL)' },
-      { name: 'STT Server', endpoint: 'localhost:8787 (disabled)' },
-    ],
+    // TASK-5368: adrese iz istih izvora iz kojih ih čita ostatak ploče (InfraKartica.ts);
+    // stanje dosežnosti dolazi zasebno s /api/info/infrastruktura, da proba ne koči karticu.
+    infrastructure: infraStavke(),
     databases: [
       { name: 'messages.db', purpose: 'Inter-agent communication (MessageQueue)' },
       { name: 'regoc.db', purpose: 'Task management (tasks, projects, queue, knowledge graph)' },
@@ -18230,7 +18272,7 @@ async function obradiZahtjev(req: Request): Promise<Response | undefined> {
 
     // GET|PUT /api/orchestrator/config — postavke jezgre orkestratora (ADR-0001)
     if (url.pathname === '/api/orchestrator/config' && req.method === 'GET') {
-      return handleOrchestratorGet()
+      return await handleOrchestratorGet()
     }
     if (url.pathname === '/api/orchestrator/config' && req.method === 'PUT') {
       return handleOrchestratorPut(req)
@@ -18254,6 +18296,12 @@ async function obradiZahtjev(req: Request): Promise<Response | undefined> {
     // ============================================
     // INFO API ROUTE
     // ============================================
+
+    // GET /api/info/infrastruktura — stavke kartice Infrastruktura s probom dosežnosti (TASK-5368)
+    if (url.pathname === '/api/info/infrastruktura' && req.method === 'GET') {
+      const stavke = await probajInfrastrukturu(infraStavke())
+      return new Response(JSON.stringify({ stavke }), { headers: { 'Content-Type': 'application/json' } })
+    }
 
     // GET /api/info - REGOČ System Info (model requirements, agents, modules, rules)
     if (url.pathname === '/api/info' && req.method === 'GET') {
@@ -18349,7 +18397,8 @@ async function obradiZahtjev(req: Request): Promise<Response | undefined> {
 
     // Serve HTML UI
     if (url.pathname === '/' || url.pathname === '/index.html') {
-      return new Response(HTML_TEMPLATE, {
+      // TASK-5368: zona se čita pri svakom posluživanju (TM_ZONA iz okoline procesa).
+      return new Response(ugradiPrikazVremena(HTML_TEMPLATE, zonaPrikaza()), {
         headers: { 'Content-Type': 'text/html', 'Cache-Control': 'no-cache, no-store, must-revalidate', 'Pragma': 'no-cache' }
       })
     }
