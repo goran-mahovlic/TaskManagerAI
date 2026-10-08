@@ -1,8 +1,8 @@
 /**
- * TASK-5373 — node-A: filtar „za drugoga" uhvatio „Goran" unutar URL-a (`?s=goran`) u
- * vlasnikovoj poruci i Šaban je šutio na nalog. Pravila:
+ * TASK-5373 — node-A: filtar „za drugoga" uhvatio „Ivan" unutar URL-a (`?s=ivan`) u
+ * vlasnikovoj poruci i Pomoćnik je šutio na nalog. Pravila:
  *  1. riječ s popisa `preskociAkoSadrzi` ne traži se unutar URL-ova, e-mail adresa ni `code`;
- *  2. vlasnikovo vlastito ime ne utišava vlasnikovu poruku (OD Gorana ≠ ZA Gorana);
+ *  2. vlasnikovo vlastito ime ne utišava vlasnikovu poruku (OD Ivana ≠ ZA Ivana);
  *  3. utišana poruka dopuštenog korisnika dobije kratku napomenu u chatu — jednom po sesiji.
  *
  * Autorica: Jelena (Engineer), TASK-5373.
@@ -23,30 +23,30 @@ let mapa: string
 beforeEach(() => { mapa = mkdtempSync(join(tmpdir(), 'tm-r5373-')) })
 afterEach(() => { rmSync(mapa, { recursive: true, force: true }) })
 
-// node-A 08.10.: Goran (vlasnik, 5284452279) i Tomislava dopušteni; Bubi i Klaudio su drugi.
-const GORAN = '5284452279'
+// node-A 08.10.: Ivan (vlasnik, 1001) i Ana dopušteni; Robi i Klaudio su drugi.
+const VLASNIK = '1001'
 const NODEA: RazgovorPostavke = {
-  ...RAZGOVOR_ZADANO, ukljucen: true, ime: 'Šaban', odgovaraNa: 'dopusteni-sve',
-  dopusteniKorisnici: [GORAN, '77'], preskociAkoSadrzi: ['Bubi', 'Goran', '@klaudioAI_bot'],
-  tisinaKadDrugom: false, vlasnici: [GORAN],
+  ...RAZGOVOR_ZADANO, ukljucen: true, ime: 'Pomoćnik', odgovaraNa: 'dopusteni-sve',
+  dopusteniKorisnici: [VLASNIK, '77'], preskociAkoSadrzi: ['Robi', 'Ivan', '@klaudioAI_bot'],
+  tisinaKadDrugom: false, vlasnici: [VLASNIK],
 }
 
 const por = (o: Partial<UlaznaPoruka> = {}): UlaznaPoruka => ({
-  kanal: 'telegram', chatId: '-5112799687', porukaId: '1', posiljateljId: GORAN, posiljateljIme: 'Goran',
-  posiljateljKorisnickoIme: 'goranmahovlic', posiljateljJeBot: false, tekst: 'bok',
+  kanal: 'telegram', chatId: '-100', porukaId: '1', posiljateljId: VLASNIK, posiljateljIme: 'Ivan',
+  posiljateljKorisnickoIme: 'ivan_k', posiljateljJeBot: false, tekst: 'bok',
   ts: '2026-10-08T11:18:14Z', privatno: false, obracanjeBotu: false, ...o,
 })
-const TOMISLAVA = { posiljateljId: '77', posiljateljIme: 'Tomislava', posiljateljKorisnickoIme: 'tomislava' }
+const ANA = { posiljateljId: '77', posiljateljIme: 'Ana', posiljateljKorisnickoIme: 'ana' }
 
-const NALOG = 'Napravi mi najavu za radionicu Meshtastic, link https://radiona.org/?s=goran'
+const NALOG = 'Napravi mi najavu za radionicu Meshtastic, link https://primjer.org/?s=ivan'
 
 describe('bezAdresaIKoda — URL, e-mail i code se ne pretražuju', () => {
   test.each([
-    ['https://radiona.org/?s=goran', ''],
-    ['vidi www.goran.hr sad', 'vidi   sad'],
-    ['piši na goran@radiona.org', 'piši na  '],
-    ['naredba `grep goran` radi', 'naredba   radi'],
-    ['```\ngoran\n```', ' '],
+    ['https://primjer.org/?s=ivan', ''],
+    ['vidi www.ivan.hr sad', 'vidi   sad'],
+    ['piši na ivan@primjer.org', 'piši na  '],
+    ['naredba `grep ivan` radi', 'naredba   radi'],
+    ['```\nivan\n```', ' '],
   ])('%s', (ulaz, izlaz) => {
     expect(bezAdresaIKoda(ulaz).replace(/\s+/g, ' ').trim()).toBe(izlaz.replace(/\s+/g, ' ').trim())
   })
@@ -54,14 +54,14 @@ describe('bezAdresaIKoda — URL, e-mail i code se ne pretražuju', () => {
 
 describe('sadrziRijec ne gleda unutar URL-a, e-maila ni koda', () => {
   test.each([
-    ['link https://x/?s=goran', 'Goran', false],
-    ['http://goran.example/put', 'Goran', false],
-    ['www.goran.hr', 'Goran', false],
-    ['mail goran@radiona.org', 'Goran', false],
-    ['mail ivan@goran.hr', 'Goran', false],
-    ['`goran`', 'Goran', false],
-    ['```goran je tu```', 'Goran', false],
-    ['Goran, vidi https://x/?s=bubi', 'Goran', true],
+    ['link https://x/?s=ivan', 'Ivan', false],
+    ['http://ivan.example/put', 'Ivan', false],
+    ['www.ivan.hr', 'Ivan', false],
+    ['mail ivan@primjer.org', 'Ivan', false],
+    ['mail ivan@ivan.hr', 'Ivan', false],
+    ['`ivan`', 'Ivan', false],
+    ['```ivan je tu```', 'Ivan', false],
+    ['Ivan, vidi https://x/?s=bubi', 'Ivan', true],
     ['javi @klaudioAI_bot', '@klaudioAI_bot', true],
     ['https://t.me/klaudioAI_bot', '@klaudioAI_bot', false],
   ])('„%s" ⊃ %s → %s', (tekst, rijec, ok) => {
@@ -70,35 +70,35 @@ describe('sadrziRijec ne gleda unutar URL-a, e-maila ni koda', () => {
 })
 
 describe('TASK-5373 prihvatni slučajevi (Filtar)', () => {
-  test('Goran (vlasnik) s https://x/?s=goran → odgovor', () => {
-    expect(razlogZaDrugog(por({ tekst: 'pogledaj https://x/?s=goran' }), NODEA)).toBeNull()
+  test('Ivan (vlasnik) s https://x/?s=ivan → odgovor', () => {
+    expect(razlogZaDrugog(por({ tekst: 'pogledaj https://x/?s=ivan' }), NODEA)).toBeNull()
     expect(trebaOdgovoriti(por({ tekst: NALOG }), NODEA)).toBe(true)
   })
-  test('vlasnikovo ime u vlasnikovoj poruci ne utišava (OD Gorana ≠ ZA Gorana)', () => {
-    expect(trebaOdgovoriti(por({ tekst: 'Goran ovdje — napravi najavu' }), NODEA)).toBe(true)
+  test('vlasnikovo ime u vlasnikovoj poruci ne utišava (OD Ivana ≠ ZA Ivana)', () => {
+    expect(trebaOdgovoriti(por({ tekst: 'Ivan ovdje — napravi najavu' }), NODEA)).toBe(true)
   })
-  test('vlasnik i dalje šuti kad piše drugome s popisa (Bubi)', () => {
-    expect(razlogZaDrugog(por({ tekst: 'Bubi, javi se' }), NODEA)).toBe('sadrži „Bubi"')
-    expect(trebaOdgovoriti(por({ tekst: 'Bubi, javi se' }), NODEA)).toBe(false)
+  test('vlasnik i dalje šuti kad piše drugome s popisa (Robi)', () => {
+    expect(razlogZaDrugog(por({ tekst: 'Robi, javi se' }), NODEA)).toBe('sadrži „Robi"')
+    expect(trebaOdgovoriti(por({ tekst: 'Robi, javi se' }), NODEA)).toBe(false)
   })
-  test('„Goran, …" od Tomislave → šuti', () => {
-    expect(razlogZaDrugog(por({ ...TOMISLAVA, tekst: 'Goran, jesi vidio?' }), NODEA)).toBe('sadrži „Goran"')
-    expect(trebaOdgovoriti(por({ ...TOMISLAVA, tekst: 'Goran, jesi vidio?' }), NODEA)).toBe(false)
+  test('„Ivan, …" od Ane → šuti', () => {
+    expect(razlogZaDrugog(por({ ...ANA, tekst: 'Ivan, jesi vidio?' }), NODEA)).toBe('sadrži „Ivan"')
+    expect(trebaOdgovoriti(por({ ...ANA, tekst: 'Ivan, jesi vidio?' }), NODEA)).toBe(false)
   })
   test('poruka s @klaudioAI_bot → šuti (i od vlasnika)', () => {
     expect(trebaOdgovoriti(por({ tekst: '@klaudioAI_bot što ima?', spomeni: ['klaudioai_bot'] }), NODEA)).toBe(false)
-    expect(trebaOdgovoriti(por({ ...TOMISLAVA, tekst: '@klaudioAI_bot što ima?' }), NODEA)).toBe(false)
+    expect(trebaOdgovoriti(por({ ...ANA, tekst: '@klaudioAI_bot što ima?' }), NODEA)).toBe(false)
   })
-  test('ime na popisu koje NIJE pošiljateljevo ne izuzima: Tomislava piše „Goran ovdje"', () => {
-    expect(trebaOdgovoriti(por({ ...TOMISLAVA, tekst: 'Goran ovdje' }), NODEA)).toBe(false)
+  test('ime na popisu koje NIJE pošiljateljevo ne izuzima: Ana piše „Ivan ovdje"', () => {
+    expect(trebaOdgovoriti(por({ ...ANA, tekst: 'Ivan ovdje' }), NODEA)).toBe(false)
   })
   test('vlasnik koji NIJE dopušteni korisnik nema iznimku (oba uvjeta)', () => {
     const s = { ...NODEA, dopusteniKorisnici: ['77'] }
-    expect(razlogZaDrugog(por({ tekst: 'Goran ovdje' }), s)).toBe('sadrži „Goran"')
+    expect(razlogZaDrugog(por({ tekst: 'Ivan ovdje' }), s)).toBe('sadrži „Ivan"')
   })
   test('bez popisa vlasnika (nema tajne.json/VLASNIK_UID) staro ponašanje', () => {
     const s = { ...NODEA, vlasnici: [] }
-    expect(razlogZaDrugog(por({ tekst: 'Goran ovdje' }), s)).toBe('sadrži „Goran"')
+    expect(razlogZaDrugog(por({ tekst: 'Ivan ovdje' }), s)).toBe('sadrži „Ivan"')
     expect(razlogZaDrugog(por({ tekst: NALOG }), s)).toBeNull()
   })
 })
@@ -120,7 +120,7 @@ describe('Jezgra — napomena kad je dopušteni utišan (jednom po sesiji)', () 
     return { r, kanal, poslano, konzola, zahtjevi }
   }
 
-  test('Goranov nalog s ?s=goran ide modelu (prihvatni slučaj iz 11:18Z)', async () => {
+  test('Ivanov nalog s ?s=ivan ide modelu (prihvatni slučaj iz 11:18Z)', async () => {
     const { r, kanal, zahtjevi, poslano } = sklopi({ t: Date.parse('2026-10-08T11:18:14Z') })
     r.primi(por({ tekst: NALOG }), kanal)
     await r.mirno()
@@ -131,22 +131,22 @@ describe('Jezgra — napomena kad je dopušteni utišan (jednom po sesiji)', () 
   test('utišan dopušteni → jedna kratka napomena po sesiji, nedopušteni bez napomene', async () => {
     const sat = { t: Date.parse('2026-10-08T11:00:00Z') }
     const { r, kanal, poslano, zahtjevi, konzola } = sklopi(sat)
-    r.primi(por({ tekst: 'Bubi, javi se' }), kanal)
+    r.primi(por({ tekst: 'Robi, javi se' }), kanal)
     await r.mirno()
-    r.primi(por({ ...TOMISLAVA, tekst: 'Goran, jesi vidio?' }), kanal)
+    r.primi(por({ ...ANA, tekst: 'Ivan, jesi vidio?' }), kanal)
     await r.mirno()
     expect(zahtjevi.length).toBe(0)
     expect(poslano.length).toBe(1)
-    expect(poslano[0]).toContain('Bubi')
-    expect(poslano[0]).toContain('Šaban')
+    expect(poslano[0]).toContain('Robi')
+    expect(poslano[0]).toContain('Pomoćnik')
     expect(konzola.some(k => k.includes('napomena'))).toBe(true)
     // Nedopušteni nikad ne dobiva napomenu.
     sat.t += 3 * 3600_000
-    r.primi(por({ posiljateljId: '9', posiljateljIme: 'Neki', posiljateljKorisnickoIme: 'neki', tekst: 'Goran, bok' }), kanal)
+    r.primi(por({ posiljateljId: '9', posiljateljIme: 'Neki', posiljateljKorisnickoIme: 'neki', tekst: 'Ivan, bok' }), kanal)
     await r.mirno()
     expect(poslano.length).toBe(1)
     // Nova sesija (iza neaktivnosti) → opet jedna napomena.
-    r.primi(por({ tekst: 'Bubi, a sad?' }), kanal)
+    r.primi(por({ tekst: 'Robi, a sad?' }), kanal)
     await r.mirno()
     expect(poslano.length).toBe(2)
   })
@@ -160,7 +160,7 @@ describe('sklopiRazgovor — vlasnik iz primatelja koda ide u postavke filtra', 
       jePauza: () => false, kvotaPuna: () => false, tmHome: mapa, home: mapa, port: 1,
       plocaUrl: 'http://x', instalacija: 't', env: {}, log: () => {},
     }
-    expect(sklopiRazgovor({ ...osnova, vlasnici: () => [GORAN] }).ulaz.postavke().vlasnici).toEqual([GORAN])
+    expect(sklopiRazgovor({ ...osnova, vlasnici: () => [VLASNIK] }).ulaz.postavke().vlasnici).toEqual([VLASNIK])
     expect(sklopiRazgovor({ ...osnova, vlasnici: () => { throw new Error('x') } }).ulaz.postavke().vlasnici).toEqual([])
     expect(sklopiRazgovor(osnova).ulaz.postavke().vlasnici).toEqual([])
   })
