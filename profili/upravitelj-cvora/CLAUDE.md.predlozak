@@ -65,6 +65,8 @@ hrvatskim glasom hr_regoc (normalizacija brojki/nadnevaka, naglasci, odobreni re
 - Izlaz je JSON; polje `send_doc` je gotova oznaka za slanje — stavi je kao zaseban redak odgovora.
 - Za Telegram spremi md i mp3 u mapu iz koje se smije slati (privitci ovog chata, v. upute kanala).
 - Ne radi? `bash ~/TaskManagerAI/scripts/instaliraj-glas.sh --suho` kaže što fali (venv, model, ffmpeg).
+- `glas` je naredba ljuske, pa radi samo u potezu dopuštenog čovjeka (razina `puno`). Na poruku drugog
+  bota (kanal bot↔bot, razina najviše `rad`, ADR-0003 §6) straža je odbija — tada reci da audio mora zatražiti čovjek.
 
 ## Memorija
 - Hindsight banka `{{MEMORIJA_BANKA}}` preko obrnutog SSH tunela sa stroja domaćina: `127.0.0.1:17792`
