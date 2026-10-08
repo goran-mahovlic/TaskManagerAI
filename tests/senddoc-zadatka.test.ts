@@ -96,8 +96,11 @@ describe('ingest iz Telegrama nosi chat:<id>', () => {
     expect(o.zadatak?.tags).toContain('chat:-5112799687')
   })
   test('ne-telegram izvor ne dobiva chat oznaku', () => {
-    const o = procijeniIngest({ source: 'email', text: PORUKA, replyTo: 'a@b.c', externalId: 'x' }, cfg)
-    expect(o.zadatak?.tags.some(t => t.startsWith('chat:'))).toBe(false)
+    // TASK-5371: e-pošta pod `*: on` je samo sjena — izričit ključ `email` otvara zadatak.
+    const o = procijeniIngest({ source: 'email', text: PORUKA, replyTo: 'a@b.c', externalId: 'x' },
+      { ...cfg, perSource: { ...cfg.perSource, email: 'on' } })
+    expect(o.zadatak).toBeDefined()
+    expect(o.zadatak!.tags.some(t => t.startsWith('chat:'))).toBe(false)
   })
 })
 
