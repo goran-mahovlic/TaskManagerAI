@@ -1023,5 +1023,13 @@
   "tajne_korak2": "Upiši lozinku u polje ispod i klikni „Spremi”.",
   "tajne_korak3": "Bot ti u privatni chat pošalje kod od 8 znamenki (vrijedi 5 min) — upiši ga ovdje i klikni „Potvrdi”.",
   "tajne_primatelj": "Kod ide vlasniku čvora: {uid} ({izvor}).",
-  "tajne_bot_cvora": "čvora"
+  "tajne_bot_cvora": "čvora",
+  "posta_iskljucena": "isključena (imap.obavijest)",
+  "posta_radi": "radi",
+  "posta_ne_radi": "petlja ne radi",
+  "posta_provjera": "Provjera pošte",
+  "posta_zadnja_provjera": "zadnja provjera",
+  "posta_obavijesti": "obavijesti",
+  "posta_zadnja_poruka": "Zadnja primljena",
+  "posta_zadnja_greska": "Zadnja greška"
 }

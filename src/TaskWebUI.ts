@@ -62,8 +62,9 @@ import {
 } from './NextcloudConfig'
 import {
   loadEmailConfig, validateEmailPatch, saveEmailConfig, stanjeEmail, probajEmail, EMAIL_CONFIG_PATH,
-  emailKonfigModul, posaljiOdgovorEmail,
+  emailKonfigModul, posaljiOdgovorEmail, posaljiEmail, obavijestiZadatakEmail,
 } from './EmailConfig'
+import { odlukaPrijenosa } from './TajneApi'
 import {
   loadGitLabConfig, validateGitLabPatch, saveGitLabConfig, stanjeGitLab, probajGitLab, GITLAB_CONFIG_PATH,
   gitlabKonfigModul,
@@ -9402,12 +9403,26 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
           '<button class="cfg-btn" onclick="probajIntegraciju(\\'' + ime + '\\', this)">' + _T('cfg_int_probaj', 'Probaj konekciju') + '</button>' +
           ' <span id="int-' + ime + '-ishod" style="font-size:.7rem"></span>',
           zadnja);
+        if (ime === 'email' && p.posta) h += _redPosta(p.posta);
         h += '</tbody></table>';
         h += '<div style="font-size:.68rem;color:var(--text-secondary);margin-top:0.3rem">' +
           _T('cfg_datoteka', 'datoteka') + ': <code>' + _esc(p.putanja) + '</code></div>';
         h += '</div>';
       }
       return h;
+    }
+
+    // TASK-5371: stanje provjere pošte (GET /api/email/config → posta) — radi li, zadnja provjera,
+    // zadnja primljena poruka i zadnja greška (ostaje vidljiva i nakon oporavka).
+    function _redPosta(ps) {
+      var t = function (x) { return x ? _esc(String(x).slice(0, 19).replace('T', ' ')) : '—'; };
+      var stanje = !ps.ukljucena ? _T('posta_iskljucena', 'isključena (imap.obavijest)')
+        : (ps.radi ? (ps.greska ? '❌ ' + _esc(ps.greska.poruka) : '✅ ' + _T('posta_radi', 'radi')) : '⏸ ' + _T('posta_ne_radi', 'petlja ne radi'));
+      var zp = ps.zadnjaPoruka ? t(ps.zadnjaPoruka.ts) + ' — ' + _esc(ps.zadnjaPoruka.od || '') + ': „' + _esc(ps.zadnjaPoruka.predmet || '') + '"' : '—';
+      var zg = ps.zadnjaGreska ? t(ps.zadnjaGreska.ts) + ' — ' + _esc(ps.zadnjaGreska.poruka) : '—';
+      return _red(_T('posta_provjera', 'Provjera pošte'), stanje, _T('posta_zadnja_provjera', 'zadnja provjera') + ': ' + t(ps.zadnjaProvjera) + ' · ' + _T('posta_obavijesti', 'obavijesti') + ': ' + (ps.obavijesti || 0)) +
+        _red(_T('posta_zadnja_poruka', 'Zadnja primljena'), zp, '') +
+        _red(_T('posta_zadnja_greska', 'Zadnja greška'), zg, '');
     }
 
     function _zakrpaZaStazu(staza, vrijednost) {
@@ -11597,6 +11612,15 @@ const postaOpcije: PetljaOpcije = {
       tg: token ? telegramObavjestac(token, telegramApiBaza()) : null,
     }
   },
+  // TASK-5371: svaka nova poruka je i JEDAN zapis ulaza (source 'email') — isti put kao Telegram,
+  // pa vrata ulaza (`perSource.email`) odlučuju otvara li se zadatak; zadano samo bilježi.
+  ingest: async z => {
+    const r = await handleIngest(new Request('http://localhost/api/ingest', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(z),
+    }))
+    const j: any = await r.json().catch(() => ({}))
+    return r.ok && j?.ok !== false ? { ok: true } : { ok: false, greska: String(j?.error || `HTTP ${r.status}`) }
+  },
   konzola: postaKonzola,
   log: (r: string) => console.log(r),
 }
@@ -11892,6 +11916,8 @@ function handleIntegracijaGet(ime: string): Response {
       ime, naziv: zapis.naziv, postavke, stanje: zapis.stanje(postavke),
       shema: zapis.shema(),
       putanja: zapis.putanja(), zadnjaProba: citajIshodeProba()[ime] || null,
+      // TASK-5371: stvarno stanje provjere pošte na kartici (bez tijela mailova)
+      ...(ime === 'email' ? { posta: (() => { try { return stanjePoste() } catch { return null } })() } : {}),
     })
   } catch (err) {
     return json({ error: String(err) }, 500)
@@ -14086,6 +14112,16 @@ async function handleUpdateTask(taskId: string, req: Request): Promise<Response>
         console.warn(`[TELEGRAM] greška pri slanju obavijesti: ${String(e && e.message ? e.message : e)}`)
       }
     }
+      // TASK-5371: isti prijelaz i e-poštom — samo kad je izlaz uključen i ima primatelja
+      // (DIZAJN-integracije §3); bez čekanja, PUT ne smije visjeti na SMTP-u.
+      try {
+        const ec = loadEmailConfig()
+        if (ec.ukljucen && ec.smjer !== 'ulaz' && ec.primatelji.length) {
+          void obavijestiZadatakEmail(taskId, String(task.title || ''), task.status)
+            .then(r => console.log(`[EMAIL] obavijest ${taskId} → ${task.status}: ${r.ok ? 'poslana' : 'nije — ' + r.greska}`))
+            .catch(e => console.warn(`[EMAIL] obavijest pala: ${String(e)}`))
+        }
+      } catch { /* obavijest nikad ne ruši PUT */ }
 
     // Broadcast to WebSocket clients
     const message = JSON.stringify({ type: 'task_updated', task })
@@ -18077,6 +18113,29 @@ async function obradiZahtjev(req: Request): Promise<Response | undefined> {
       } catch (e) {
         return new Response(JSON.stringify({ error: String(e) }), { status: 500, headers: { 'Content-Type': 'application/json' } })
       }
+    }
+
+    // POST /api/email/posalji — slanje na zahtjev (agent/Šaban, TASK-5371). Samo na adrese iz
+    // `primatelji` (kartica E-pošta) — ploča nije otvoreni relej za bilo koju adresu.
+    if (url.pathname === '/api/email/posalji' && req.method === 'POST') {
+      const json = (o: unknown, st = 200) => new Response(JSON.stringify(o), { status: st, headers: { 'Content-Type': 'application/json' } })
+      // Bez prijave → samo s ovog stroja (agent/bot na čvoru), i samo JSON (preglednik s tuđe
+      // stranice ne može poslati JSON bez CORS predupita, a predupit ploča ne odobrava).
+      const pr = odlukaPrijenosa(ipZahtjeva(req), false, { dopustiLanHttp: false })
+      if (!pr.dopusten || pr.vrsta !== 'loopback'
+        || !(req.headers.get('content-type') || '').toLowerCase().startsWith('application/json')) {
+        console.log(`[EMAIL] slanje na zahtjev odbijeno (${pr.vrsta}) s ${ipZahtjeva(req) || '?'}`)
+        return json({ ok: false, greska: 'slanje pošte je dopušteno samo s ovog stroja (localhost), JSON-om' }, 403)
+      }
+      let b: any
+      try { b = await req.json() } catch { return json({ ok: false, greska: 'Neispravan JSON' }, 400) }
+      const predmet = String(b?.predmet || '').trim()
+      const tekst = String(b?.tekst || '')
+      if (!predmet || !tekst.trim()) return json({ ok: false, greska: 'predmet i tekst su obavezni' }, 400)
+      const r = await posaljiEmail(predmet.replace(/[\r\n]+/g, ' ').slice(0, 300), tekst.slice(0, 20000), undefined,
+        Array.isArray(b?.prima) ? b.prima.map(String) : (b?.prima ? [String(b.prima)] : undefined))
+      console.log(`[EMAIL] slanje na zahtjev: ${r.ok ? 'POSLANO ' + String(r.detalj?.messageId || '') : 'NIJE — ' + r.greska}`)
+      return json(r, r.ok ? 200 : (r.greska?.startsWith('primatelj') ? 400 : 200))
     }
 
     // GET /api/integracije — sažetak četiriju integracija za skupinu na Config stranici

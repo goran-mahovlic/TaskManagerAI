@@ -1,3 +1,18 @@
+## 2026-10-08 — e-pošta do kraja: zapis u ulaz, slanje na zahtjev, stanje na kartici (TASK-5371)
+
+- Nadogradnja `PostaUlaz` (TASK-5358): svaka nova poruka je, uz obavijest u grupu čvora, i JEDAN
+  `POST /api/ingest` sa `source: 'email'` (externalId = Message-ID, inače `imap:<uidvalidity>:<uid>`).
+  Zove se nakon što je stanje pomaknuto, pa restart ploče ne ponavlja ni obavijest ni zapis.
+- Dedup i po Message-ID-u (zadnjih 500): ista poruka pod novim UID-om ne daje drugu obavijest.
+- Sigurnost: izvor `email` NE nasljeđuje `perSource['*']: 'on'`. Bez izričitog `perSource.email`
+  mail se u ulazu bilježi kao sjena i ne otvara zadatak sam. Zadatak se otvara odlukom čovjeka
+  u grupi (`zadatak`).
+- Novo: `POST /api/email/posalji {predmet, tekst, prima?}` je slanje na zahtjev (agent/bot) i vraća
+  Message-ID. Adrese se biraju samo s popisa `primatelji`, pa ploča nije otvoreni relej.
+- Obavijest o zadatku (completed/failed) ide i e-poštom kad je izlaz uključen i ima primatelja.
+- Kartica E-pošta pokazuje provjeru pošte (radi/greška, zadnja provjera, broj obavijesti), zadnju
+  primljenu poruku i zadnju grešku (ona ostaje vidljiva i nakon oporavka).
+
 ## 2026-10-07 — razgovor: SEND_DOC iz privitaka chata, trag na ploči, trajna konzola (TASK-5337)
 
 - Popravak (node-A 07.10.): oznaka `[[SEND_DOC: /put | opis]]` smije slati i iz mape privitaka
