@@ -48,8 +48,9 @@ Ploča ima ugrađenu konzolu koja preko web utičnice (`/stream`) uživo pokazuj
 promjene zadataka, poruke među agentima, zapise iz dnevnika. Ne treba osvježavati stranicu.
 
 Konzola može i **pokrenuti naredbu** na stroju (`POST /api/konzola/exec`). To je korisno kad
-ploču koristiš kao upravljačku ploču vlastitog sustava, ali znači da vrata ne smiju biti
-dostupna izvan tvoje mreže. Vidi upozorenje u [API.md](API.md#konzola).
+ploču koristiš kao upravljačku ploču vlastitog sustava. Naredbe prima samo s ovog stroja
+(localhost) ili preko Tailscalea — s LAN-a je zatvorena (ADR-0007) — i ne čita sadržaj
+datoteka. Vidi [API.md](API.md#konzola).
 
 ## Vlastiti agent
 
