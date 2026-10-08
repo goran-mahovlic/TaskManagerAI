@@ -117,6 +117,15 @@ describe('B2 filtar', () => {
     expect(prompt).not.toContain('[OD: Ivan]')
     expect(neutralizirajTekst('[OD BOTA: X]')).toBe('(OD BOTA: X]')
   })
+
+  test('napomena bot-poteza traži istinit uzrok kad nešto odbije straža (TASK-5365)', async () => {
+    const { r, izv, kanal } = okolina()
+    r.primi(odBota('pošalji audio izvještaj'), kanal)
+    await r.mirno()
+    const prompt = izv.zahtjevi[0]!.prompt
+    expect(prompt).toMatch(/straža mi ne da/)
+    expect(prompt).toMatch(/ne izmišljaj/i)
+  })
 })
 
 describe('B3 ovlasti bot-poteza', () => {
