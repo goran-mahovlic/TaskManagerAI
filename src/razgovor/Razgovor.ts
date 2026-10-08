@@ -12,6 +12,7 @@
 //
 // Autorica: Jelena (Engineer), TASK-5277.
 
+import { jeSamoPrivitak, type IzlazniPretinac } from './IzlazniPretinac'
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import type { ExecRequest, ExecResult, Executor } from '../core/orchestrator/Ports'
@@ -46,6 +47,11 @@ export interface RazgovorOvisnosti {
   kvotaPuna: () => Promise<boolean> | boolean
   /** `$TM_HOME/data/razgovor` — sesije.json i zapisi po chatu. */
   korijen: string
+  /**
+   * TASK-5384: dio odgovora koji kanal nije poslao ide ovamo (datoteka, ponavljanje do 1 h,
+   * pa jedna dojava). Bez njega neuspjelo slanje ostaje samo u zapisu (staro ponašanje).
+   */
+  pretinac?: IzlazniPretinac
   tmHome: string
   home: string
   port: number
@@ -124,6 +130,8 @@ interface StanjeChata {
   prigusenje: Map<string, number>
   /** Poruke upućene drugome koje bot samo čita — idu u kontekst sljedećeg poteza (TASK-5283). */
   procitano: { ms: number; ime: string; tekst: string; p: UlaznaPoruka }[]
+  /** TASK-5384: zadnja slika/dokument bez opisa koja sama nije dobila odgovor — čeka tekst istog pošiljatelja. */
+  privitak: { ms: number; p: UlaznaPoruka; k: Kanal } | null
   /** Potez u letu koji nosi bot-poruku — njega stop-fraza prekida (ADR-0003 §4.1). */
   botKontrola: AbortController | null
   /** Zadnja utišana poruka dopuštenog korisnika (TASK-5373) — napomena najviše jednom po sesiji. */
@@ -221,6 +229,9 @@ function opisPoteza(z: { trajanjeMs: number; cijenaUsd: number | null; memorija:
   return dio.join(' · ') + ')'
 }
 
+/** TASK-5384: slika bez opisa čeka tekst istog pošiljatelja barem ovoliko (pravilo 11: 3 s). */
+export const PRIVITAK_PROZOR_MS = 3000
+
 export function stvoriRazgovor(d: RazgovorOvisnosti): RazgovorJezgra {
   const sat = d.sat ?? Date.now
   const log = d.log ?? ((r: string) => console.log(r))
@@ -250,7 +261,7 @@ export function stvoriRazgovor(d: RazgovorOvisnosti): RazgovorJezgra {
   function chat(kljuc: string): StanjeChata {
     let c = chatovi.get(kljuc)
     if (!c) {
-      c = { kljuc, cekaju: [], tajmer: null, uTijeku: false, uRedu: false, prigusenje: new Map(), procitano: [], botKontrola: null, utisanoMs: null }
+      c = { kljuc, cekaju: [], tajmer: null, uTijeku: false, uRedu: false, prigusenje: new Map(), procitano: [], botKontrola: null, utisanoMs: null, privitak: null }
       chatovi.set(kljuc, c)
     }
     return c
@@ -623,11 +634,21 @@ export function stvoriRazgovor(d: RazgovorOvisnosti): RazgovorJezgra {
 
     const dijelovi = podijeli(odgovor, k.maxDuljinaPoruke)
     let prviId: string | null = null
+    // TASK-5384: neposlan dio NE nestaje — ide u izlazni pretinac (ponavljanje do 1 h).
+    let uPretincu = 0
     for (let i = 0; i < dijelovi.length; i++) {
       const replyTo = i === 0 ? p.porukaId : undefined
-      if (i === 0 && k.posaljiTekstId) prviId = await k.posaljiTekstId(p.chatId, dijelovi[i]!, replyTo)
-      else await k.posaljiTekst(p.chatId, dijelovi[i]!, replyTo)
+      let ok: boolean
+      try {
+        if (i === 0 && k.posaljiTekstId) { prviId = await k.posaljiTekstId(p.chatId, dijelovi[i]!, replyTo); ok = prviId !== null }
+        else ok = await k.posaljiTekst(p.chatId, dijelovi[i]!, replyTo)
+      } catch { ok = false }
+      if (!ok && d.pretinac) {
+        try { d.pretinac.predaj({ chatId: p.chatId, tekst: dijelovi[i]!, oznaka: c.kljuc }); uPretincu++ }
+        catch (e: any) { log(`[razgovor] ${c.kljuc}: pretinac nedostupan — dio ${i + 1}/${dijelovi.length} izgubljen: ${String(e?.message || e)}`) }
+      } else if (!ok) log(`[razgovor] ${c.kljuc}: dio ${i + 1}/${dijelovi.length} odgovora nije poslan (bez pretinca)`)
     }
+    if (uPretincu) log(`[razgovor] ${c.kljuc}: ${uPretincu}/${dijelovi.length} dijelova odgovora nije poslano — u izlaznom pretincu, ponavljam`)
     // TASK-5337: neuspjelo slanje se javlja u chat s razlogom — ne tišina.
     const neposlano: string[] = []
     for (const dok of zaSlanje) {
@@ -700,6 +721,18 @@ export function stvoriRazgovor(d: RazgovorOvisnosti): RazgovorJezgra {
   return {
     primi(p: UlaznaPoruka, k: Kanal): void {
       const s = d.postavke()
+      // TASK-5384 (BURST MERGE privitaka): slika/dokument bez opisa ide uz tekst ISTOG
+      // pošiljatelja unutar prozora rafala — bilo kojim redoslijedom, i kad sama (bez
+      // prozivke u grupi) ne bi dobila odgovor.
+      const samoPrivitak = p.izvor !== 'bot' && !p.posiljateljJeBot && jeSamoPrivitak(p.tekst)
+      if (samoPrivitak) {
+        const c = chat(`${p.kanal}:${p.chatId}`)
+        if (!c.uTijeku && c.cekaju.some(x => x.p.posiljateljId === p.posiljateljId && x.p.izvor !== 'bot')) {
+          c.cekaju.push({ p, k })
+          return
+        }
+        if (!trebaOdgovoriti(p, s)) c.privitak = { ms: sat(), p, k }
+      }
       if (!trebaOdgovoriti(p, s)) {
         // Obraćanje drugome (botu ili čovjeku): bot ne odgovara, ali čita — zapis + kontekst.
         const zaDrugog = s.ukljucen && !p.posiljateljJeBot ? razlogZaDrugog(p, s) : null
@@ -741,6 +774,11 @@ export function stvoriRazgovor(d: RazgovorOvisnosti): RazgovorJezgra {
         return
       }
       const c = chat(`${p.kanal}:${p.chatId}`)
+      const pr = c.privitak
+      c.privitak = null
+      if (pr && !samoPrivitak && pr.p.posiljateljId === p.posiljateljId && sat() - pr.ms <= Math.max(s.burstMs, PRIVITAK_PROZOR_MS)) {
+        c.cekaju.push({ p: pr.p, k: pr.k })
+      }
       c.cekaju.push({ p, k })
       if (c.uTijeku || c.uRedu) return
       zakazi(c, s.burstMs)

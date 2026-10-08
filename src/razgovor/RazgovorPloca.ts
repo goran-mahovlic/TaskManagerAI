@@ -5,6 +5,7 @@
 //
 // Autorica: Jelena (Engineer), TASK-5277.
 
+import { IzlazniPretinac } from './IzlazniPretinac'
 import { Database } from 'bun:sqlite'
 import { existsSync, readFileSync } from 'fs'
 import { join } from 'path'
@@ -174,8 +175,23 @@ export function sklopiRazgovor(o: SklapanjeOpcije): RazgovorSloj {
     const t = setInterval(() => { try { zadaci.provjeriRokove() } catch { /* sljedeći krug */ } }, 60_000)
     if (typeof (t as any)?.unref === 'function') (t as any).unref()
   }
+  // TASK-5384: neposlan odgovor ide u datoteku i ponavlja se (10 s/30 s/2 min/10 min, do 1 h,
+  // pa jedna dojava); preživi restart ploče jer je mapa u `dataDir`.
+  const pretinac = new IzlazniPretinac({ dir: join(o.dataDir, 'razgovor', 'izlazni_pretinac') })
+  let pretinacRadi = false
+  const tp = setInterval(async () => {
+    const kanal = ulaz?.aktivniKanal
+    if (pretinacRadi || !kanal) return
+    pretinacRadi = true
+    try {
+      const posalji = (chatId: string, tekst: string) => kanal.posaljiTekst(chatId, tekst)
+      await pretinac.obradi(posalji, posalji, r => o.log?.(r))
+    } catch { /* sljedeći krug */ } finally { pretinacRadi = false }
+  }, 5000)
+  if (typeof (tp as any)?.unref === 'function') (tp as any).unref()
   jezgra = stvoriRazgovor({
     ...o,
+    pretinac,
     postavke,
     izvrsitelj: izvrsiteljRazgovora(),
     korijen: join(o.dataDir, 'razgovor'),
