@@ -1023,5 +1023,13 @@
   "tajne_korak2": "Type the password in the field below and click “Save”.",
   "tajne_korak3": "The bot sends an 8-digit code to your private chat (valid 5 min) — type it here and click “Confirm”.",
   "tajne_primatelj": "The code goes to the node owner: {uid} ({izvor}).",
-  "tajne_bot_cvora": "of this node"
+  "tajne_bot_cvora": "of this node",
+  "posta_iskljucena": "off (imap.obavijest)",
+  "posta_radi": "running",
+  "posta_ne_radi": "loop not running",
+  "posta_provjera": "Mail check",
+  "posta_zadnja_provjera": "last check",
+  "posta_obavijesti": "notifications",
+  "posta_zadnja_poruka": "Last received",
+  "posta_zadnja_greska": "Last error"
 }

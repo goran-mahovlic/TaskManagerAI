@@ -220,13 +220,18 @@ export interface Ishod { ok: boolean; greska?: string; detalj?: Record<string, u
  * te knjižnice je normalno stanje, a ne kvar.
  */
 export async function posaljiEmail(
-  naslov: string, tekst: string, path?: string,
+  naslov: string, tekst: string, path?: string, prima?: string[],
 ): Promise<Ishod> {
   const cfg = loadEmailConfig(path)
   if (!cfg.ukljucen) return { ok: false, greska: 'e-pošta je isključena' }
   if (cfg.smjer === 'ulaz') return { ok: false, greska: 'postavljen je samo ulazni smjer' }
   if (!cfg.smtp.host) return { ok: false, greska: 'SMTP poslužitelj nije upisan' }
   if (!cfg.primatelji.length) return { ok: false, greska: 'nijedan primatelj nije upisan' }
+  // TASK-5371: slanje na zahtjev smije birati SAMO među upisanim primateljima (nije relej).
+  const dopusteni = new Set(cfg.primatelji.map(a => a.toLowerCase()))
+  const kome = prima && prima.length ? prima.map(a => String(a).trim()) : cfg.primatelji
+  const tudji = kome.filter(a => !dopusteni.has(a.toLowerCase()))
+  if (tudji.length) return { ok: false, greska: `primatelj nije na popisu primatelja (kartica E-pošta): ${tudji.join(', ').slice(0, 200)}` }
 
   const { procitajTajnu } = await import('./core/ConfigModul')
   const lozinka = procitajTajnu(cfg.smtp.lozinkaEnv)
@@ -248,7 +253,7 @@ export async function posaljiEmail(
     })
     const info = await prijenos.sendMail({
       from: cfg.smtp.posiljatelj,
-      to: cfg.primatelji.join(', '),
+      to: kome.join(', '),
       subject: naslov,
       text: tekst,
     })

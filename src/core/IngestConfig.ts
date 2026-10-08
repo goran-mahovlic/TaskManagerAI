@@ -333,6 +333,15 @@ export function nacinZaIzvor(
   cfg: IngestPostavke, source: string, externalId?: string | number | null,
 ): Nacin {
   if (!cfg.enabled) return 'off'
+  // TASK-5371: e-pošta je tuđi tekst (i spam) — zamjenski `*: on` je ne pušta da sama otvara
+  // zadatke. Bez izričitog `email` / `email:<id>` ključa najviše je sjena (zapis bez zadatka).
+  if (String(source || '').trim().toLowerCase() === 'email') {
+    const e = externalId == null ? '' : String(externalId).trim()
+    const izricit = prvaVrijednost(cfg.perSource, [...(e ? [`email:${e}`] : []), 'email'])
+    if (izricit) return izricit
+    const sirok = prvaVrijednost(cfg.perSource, ['*']) ?? 'off'
+    return sirok === 'on' ? 'shadow' : sirok
+  }
   return prvaVrijednost(cfg.perSource, kljuceviIzvora(source, externalId)) ?? 'off'
 }
 

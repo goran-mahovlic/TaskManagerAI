@@ -31,6 +31,7 @@ import { loadEmailConfig, type EmailPostavke } from './EmailConfig'
 export const POSTA_STANJE_PUTANJA = stanjePutanja('posta.json')
 export const NAJVISE_U_PROLAZU = 10
 export const NAJVISE_ZAPISA = 300
+export const NAJVISE_VIDJENIH = 500
 export const NAJVISE_TIJELA = 4000
 /** Veće poruke se ne preuzimaju cijele — obavijest tada nosi samo zaglavlja i popis privitaka. */
 export const NAJVISE_BAJTA_PORUKE = 15 * 1024 * 1024
@@ -100,6 +101,11 @@ export interface StanjePoste {
   obavijesti: number
   /** Ključ = `message_id` obavijesti u grupi. */
   poruke: Record<string, ZapisMaila>
+  /** TASK-5371: zadnja primljena poruka i zadnja greška (ostaje i nakon oporavka) — za karticu. */
+  zadnjaPoruka?: { uid: number; od: string; predmet: string; datum: string | null; ts: string } | null
+  zadnjaGreska?: { poruka: string; ts: string } | null
+  /** TASK-5371: Message-ID već obavijenih poruka (dedup kad ista poruka dođe pod novim UID-om). */
+  vidjeni?: string[]
 }
 
 export const ZADANO_STANJE_POSTE: StanjePoste = {
@@ -242,12 +248,19 @@ export interface ProlazOpcije {
   bezLozinke?: string
   najviseUProlazu?: number
   zona?: string
+  /**
+   * TASK-5371: svaka nova poruka = JEDAN `POST /api/ingest` sa `source: 'email'` (zapis u
+   * dnevniku ulaza; otvara li zadatak, odlučuju vrata ulaza za izvor `email`). Zove se NAKON
+   * što je stanje pomaknuto, pa restart ne ponavlja zapis; pad ingesta ne blokira obavijest.
+   */
+  ingest?: (z: { source: 'email'; externalId: string; senderName: string; text: string; receivedAt?: string }) => Promise<{ ok: boolean; greska?: string }>
 }
 
 export interface IshodPoste { init: boolean; poslano: number; greska?: string; dojava: boolean }
 
 async function dojaviGresku(o: ProlazOpcije, poruka: string, ishod: IshodPoste): Promise<void> {
   ishod.greska = poruka
+  promijeni(o.spremiste, x => { x.zadnjaGreska = { poruka, ts: new Date().toISOString() } })
   const s = o.spremiste.ucitaj()
   if (s.greska) return                                   // već dojavljeno — tišina do oporavka
   const tekst = `⚠️ Provjera pošte (${adresaSanducica(o.cfg) || o.cfg.imap.host}) ne radi: ${poruka}\n` +
@@ -302,6 +315,11 @@ export async function jedanProlazPoste(o: ProlazOpcije): Promise<IshodPoste> {
     const adresa = adresaSanducica(o.cfg)
     for (const m of [...novi].sort((a, b) => a.uid - b.uid)) {
       if (m.uid <= s0.zadnji) continue
+      if (m.messageId && (o.spremiste.ucitaj().vidjeni || []).includes(m.messageId)) {
+        promijeni(o.spremiste, x => { x.zadnji = Math.max(x.zadnji, m.uid) })
+        o.konzola?.(`📧 mail ${m.uid}: Message-ID već obavijesten — preskačem duplikat`, 'info')
+        continue
+      }
       const id = await o.tg.posalji(o.chatId, tekstObavijesti(m, adresa, o.zona))
       if (id === null) {
         ishod.greska = `slanje obavijesti za mail ${m.uid} u grupu nije uspjelo`
@@ -318,9 +336,29 @@ export async function jedanProlazPoste(o: ProlazOpcije): Promise<IshodPoste> {
           ...(m.messageId ? { messageId: m.messageId } : {}),
           poslano: new Date().toISOString(),
         }
+        if (m.messageId) x.vidjeni = [...(x.vidjeni || []), m.messageId].slice(-NAJVISE_VIDJENIH)
+        x.zadnjaPoruka = { uid: m.uid, od: m.od || m.odAdresa, predmet: m.predmet, datum: m.datum, ts: new Date().toISOString() }
         obreziZapise(x)
       })
       ishod.poslano++
+      if (o.ingest) {
+        let r: { ok: boolean; greska?: string }
+        try {
+          r = await o.ingest({
+            source: 'email',
+            externalId: m.messageId || `imap:${ses.uidValidity}:${m.uid}`,
+            senderName: (m.od || m.odAdresa || '').slice(0, 120),
+            // Izvadak, ne cijelo tijelo: tuđi tekst ulazi u ulaz što kraće (tijelo je u stanju pošte).
+            text: `📧 ${m.predmet || '(bez predmeta)'}\nOd: ${m.od || m.odAdresa}\n\n${sazetakTijela(m.tijelo) || '(prazno tijelo)'}`,
+            ...(m.datum ? { receivedAt: m.datum } : {}),
+          })
+        } catch (e: any) { r = { ok: false, greska: String(e?.message || e) } }
+        if (!r.ok) {
+          const g = `zapis maila ${m.uid} u ulaz nije uspio: ${String(r.greska || 'nepoznato').slice(0, 200)}`
+          promijeni(o.spremiste, x => { x.zadnjaGreska = { poruka: g, ts: new Date().toISOString() } })
+          o.konzola?.(`📧 ⚠ ${g}`, 'greska')
+        }
+      }
       o.konzola?.(`📧 ⇢ mail ${m.uid} od ${m.od || m.odAdresa}: „${m.predmet || '(bez predmeta)'}" → obavijest u grupu ${o.chatId}`, 'ok')
     }
     promijeni(o.spremiste, x => { x.zadnjaProvjera = new Date().toISOString() })
@@ -597,6 +635,7 @@ export function trebaProvjera(cfg: EmailPostavke): boolean {
 export interface PetljaOpcije {
   /** Svjež izvor ovisnosti za svaki prolaz — postavke i tajne se mijenjaju s ploče bez restarta. */
   pripremi(): { cfg: EmailPostavke; chatId: string; imap: ImapKlijent | null; tg: Obavjestac | null; bezLozinke?: string } | null
+  ingest?: ProlazOpcije['ingest']
   spremiste?: Spremiste
   konzola?: ProlazOpcije['konzola']
   log?: (r: string) => void
@@ -628,7 +667,7 @@ export function pokreniPostaPoller(o: PetljaOpcije): { pokrenut: boolean; razlog
       if (!pr || !pr.tg || !pr.chatId) {
         log('[posta] nema Telegram bota ili grupe za obavijesti — preskačem prolaz')
       } else {
-        const r = await jedanProlazPoste({ cfg: pr.cfg, chatId: pr.chatId, imap: pr.imap, tg: pr.tg, spremiste: sp, konzola: o.konzola, bezLozinke: pr.bezLozinke })
+        const r = await jedanProlazPoste({ cfg: pr.cfg, chatId: pr.chatId, imap: pr.imap, tg: pr.tg, spremiste: sp, konzola: o.konzola, bezLozinke: pr.bezLozinke, ingest: o.ingest })
         zadnjiIshod = { ...r, ts: new Date().toISOString() }
         if (r.greska) log(`[posta] ${r.greska}`)
         else if (r.poslano) log(`[posta] obavijesti u grupu: ${r.poslano}`)
@@ -669,5 +708,6 @@ export function stanjePoste(sp: Spremiste = datotecnoSpremiste(), configPath?: s
     radi: !!aktivnaPetlja?.ziv(),
     uidValidity: s.uidValidity, zadnjiUid: s.zadnji, zadnjaProvjera: s.zadnjaProvjera,
     obavijesti: s.obavijesti, greska: s.greska, zadnjiIshod, zadnje,
+    zadnjaPoruka: s.zadnjaPoruka || null, zadnjaGreska: s.zadnjaGreska || null,
   }
 }

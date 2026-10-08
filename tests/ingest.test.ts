@@ -30,9 +30,10 @@ const TMP_KORIJEN = join(process.env.HOME || '/tmp', '.tmp')
 beforeEach(() => { mkdirSync(TMP_KORIJEN, { recursive: true }); tmp = mkdtempSync(join(TMP_KORIJEN, 'ingest-test-')) })
 afterEach(() => { try { rmSync(tmp, { recursive: true, force: true }) } catch { /* */ } })
 
+// `email: 'on'` izričito: od TASK-5371 e-pošta ne nasljeđuje `*` (testovi pragova je koriste kao ogledni izvor).
 const cfg = (over: Record<string, unknown> = {}) => ({
   ...ZADANE_POSTAVKE,
-  perSource: { '*': 'on' as const },
+  perSource: { '*': 'on' as const, email: 'on' as const },
   projectBySource: {},
   ...over,
 })
@@ -307,5 +308,19 @@ describe('Ingest — pragovi B i C', () => {
     expect(o.zadatak!.tags).toContain('izvor:email')
     expect(o.zadatak!.tags.some(t => t.startsWith('tezina:'))).toBe(true)
     expect(o.zadatak!.createdBy).toBe('ingest:email')
+  })
+})
+
+// TASK-5371: e-pošta je tuđi tekst — zamjenski ključ `*` je ne uključuje. Bez izričitog
+// `perSource.email` (ili `email:<id>`) mail se bilježi u sjeni i NE otvara zadatak sam.
+describe('TASK-5371 — e-pošta ne nasljeđuje *', () => {
+  const baza = { enabled: true, perSource: { '*': 'on' }, projectBySource: {}, defaultProject: 'PRJ-033', pragA: 16, pragB: 36, pragC: 81 }
+  test('* = on → email je sjena', () => {
+    expect(nacinZaIzvor(baza as any, 'email', '<a@b>')).toBe('shadow')
+    expect(nacinZaIzvor(baza as any, 'telegram', '-1')).toBe('on')
+  })
+  test('izričit perSource.email vrijedi', () => {
+    expect(nacinZaIzvor({ ...baza, perSource: { '*': 'on', email: 'on' } } as any, 'email', '<a@b>')).toBe('on')
+    expect(nacinZaIzvor({ ...baza, perSource: { '*': 'shadow', email: 'off' } } as any, 'email', 'x')).toBe('off')
   })
 })

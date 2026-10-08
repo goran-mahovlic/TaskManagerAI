@@ -350,3 +350,61 @@ describe('tijelo maila je podatak, ne upute (sigurnosni pregled TASK-5358)', () 
     expect(opis).toMatch(/skraćen/)
   })
 })
+
+// ─── TASK-5371: zapis u ingest, dedup po Message-ID, stanje za karticu ──────────
+describe('TASK-5371 — ingest i dedup', () => {
+  test('svaka nova poruka = JEDAN ingest (source email) nakon obavijesti, restart ne ponavlja', async () => {
+    const { imap, tg, sp, o } = okolina()
+    const ulaz: any[] = []
+    const oi = { ...o, ingest: async (z: any) => { ulaz.push(z); return { ok: true } } }
+    imap.posta = [mail(1)]
+    await jedanProlazPoste(oi)
+    imap.posta.push(mail(2, { messageId: '<a@b>' }), mail(3))
+    await jedanProlazPoste(oi)
+    expect(ulaz).toHaveLength(2)
+    expect(ulaz[0]).toMatchObject({ source: 'email', externalId: '<a@b>', senderName: 'Ana Anić <ana@primjer.test>' })
+    expect(ulaz[0].text).toContain('Ponuda 2')
+    expect(ulaz[1].externalId).toBe('imap:111:3')
+    // „restart": novo spremište nad istim stanjem, isti sandučić
+    await jedanProlazPoste(oi)
+    expect(ulaz).toHaveLength(2)
+    expect(tg.poslane).toHaveLength(2)
+    expect(sp.ucitaj().zadnjaPoruka).toMatchObject({ uid: 3, predmet: 'Ponuda 3' })
+  })
+
+  test('pad ingesta ne blokira obavijest ni stanje; greška se pamti za karticu', async () => {
+    const { imap, tg, sp, o } = okolina()
+    const oi = { ...o, ingest: async () => ({ ok: false, greska: 'HTTP 500' }) }
+    imap.posta = [mail(1)]
+    await jedanProlazPoste(oi)
+    imap.posta.push(mail(2))
+    await jedanProlazPoste(oi)
+    expect(tg.poslane).toHaveLength(1)
+    expect(sp.ucitaj().zadnji).toBe(2)
+    expect(sp.ucitaj().zadnjaGreska?.poruka).toContain('HTTP 500')
+  })
+
+  test('isti Message-ID pod novim UID-om ne daje drugu obavijest', async () => {
+    const { imap, tg, sp, o } = okolina()
+    imap.posta = [mail(1)]
+    await jedanProlazPoste(o)
+    imap.posta.push(mail(2, { messageId: '<isti@x>' }))
+    await jedanProlazPoste(o)
+    imap.posta.push(mail(3, { messageId: '<isti@x>' }))
+    await jedanProlazPoste(o)
+    expect(tg.poslane).toHaveLength(1)
+    expect(sp.ucitaj().zadnji).toBe(3)
+  })
+
+  test('greška prijave ostaje vidljiva kao zadnjaGreska i nakon oporavka', async () => {
+    const { imap, sp, o } = okolina()
+    imap.posta = [mail(1)]
+    imap.greska = Object.assign(new Error('x'), { authenticationFailed: true })
+    await jedanProlazPoste(o)
+    imap.greska = null
+    await jedanProlazPoste(o)
+    const s = sp.ucitaj()
+    expect(s.greska).toBeNull()
+    expect(s.zadnjaGreska?.poruka).toContain('prijava odbijena')
+  })
+})
