@@ -154,4 +154,19 @@ describe.skipIf(!imaNodemailer())('obavijest o zadatku e-poštom na ploči', () 
     expect(mailovi.length).toBe(mPrije)
     expect(telegram.length).toBe(tPrije)
   }, 20_000)
+
+  test('kartica E-pošta: in_progress se ne može spremiti (400, ništa zapisano), completed+blocked može', async () => {
+    const los = await zahtjev('PUT', '/api/config/skupina/email', { polja: { obavijestZadatak: { statusi: ['completed', 'in_progress'] } }, by: 'test' })
+    expect(los.status).toBe(400)
+    const d = await (await fetch(`${p!.url}/api/email/config`)).json() as any
+    const post = d.postavke || d.config || d
+    expect(post.obavijestZadatak.statusi).toEqual(['completed'])
+    // shema ide preko žice s dopuštenim vrijednostima — kartica iz nje crta kvačice
+    const sh = JSON.stringify(d.shema || d)
+    expect(sh).toContain('cancelled')
+    const dobar = await zahtjev('PUT', '/api/config/skupina/email', { polja: { obavijestZadatak: { statusi: ['completed', 'blocked'] } }, by: 'test' })
+    expect(dobar.status).toBe(200)
+    const d2 = await (await fetch(`${p!.url}/api/email/config`)).json() as any
+    expect((d2.postavke || d2.config || d2).obavijestZadatak.statusi).toEqual(['completed', 'blocked'])
+  }, 20_000)
 })

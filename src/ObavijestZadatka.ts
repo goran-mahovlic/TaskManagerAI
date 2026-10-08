@@ -13,7 +13,7 @@
  * Primatelji su isključivo `primatelji` s kartice E-pošta (v. `posaljiEmail`) — ovaj put
  * nikad ne šalje na adresu koju nije upisao vlasnik.
  *
- * Autorica: Jelena (Engineer), TASK-5378.
+ * TASK-5378.
  */
 
 import { STATUSI_OBAVIJESTI, loadEmailConfig, posaljiEmail, type Ishod } from './EmailConfig'
@@ -22,8 +22,14 @@ import { STATUSI_OBAVIJESTI, loadEmailConfig, posaljiEmail, type Ishod } from '.
 
 /** Oznake po kojima je zadatak proba (točno ime ili prefiks `<ime>-`, npr. `qa-5312`). */
 export const PROBNE_OZNAKE = ['qa', 'proba', 'fixture'] as const
-/** Autori čiji su zadaci probe — QA agent paketa (`#qa` → potjeh u ModeClassifier). */
-export const PROBNI_AUTORI = ['qa', 'potjeh'] as const
+/**
+ * Autori čiji su zadaci probe. Ime QA agenta je konfiguracija čvora, ne kod (ADR-0001 N1):
+ * `TM_PROBNI_AUTORI` (zarezom, npr. u `config/postavke.env`); zadano samo `qa`.
+ */
+export function probniAutori(env: string | undefined = process.env.TM_PROBNI_AUTORI): string[] {
+  const s = String(env ?? '').split(',').map(x => x.trim().toLowerCase()).filter(Boolean)
+  return s.length ? s : ['qa']
+}
 
 function oznake(tags: unknown): string[] {
   let t = tags
@@ -32,7 +38,7 @@ function oznake(tags: unknown): string[] {
 }
 
 /**
- * Je li zadatak proba? `biljeg` je vrijednost zaglavlja `x-regoc-proba` zahtjeva koji je
+ * Je li zadatak proba? `biljeg` je vrijednost zaglavlja probe (v. TaskWebUI) zahtjeva koji je
  * promijenio status — isti biljeg kojim QA već traži „provjeru, ne posao" (POST /api/tasks).
  */
 export function jeProbniZadatak(
@@ -40,7 +46,7 @@ export function jeProbniZadatak(
 ): boolean {
   if (o.biljeg === '1') return true
   const autor = String(t.createdBy ?? '').trim().toLowerCase()
-  if ((PROBNI_AUTORI as readonly string[]).includes(autor)) return true
+  if (autor && probniAutori().includes(autor)) return true
   return oznake(t.tags).some(x => (PROBNE_OZNAKE as readonly string[]).some(p => x === p || x.startsWith(`${p}-`)))
 }
 

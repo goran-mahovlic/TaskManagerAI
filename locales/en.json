@@ -1147,5 +1147,11 @@
   "cfg_vrijednost_completed": "completed",
   "cfg_vrijednost_failed": "failed",
   "cfg_vrijednost_blocked": "blocked",
-  "cfg_vrijednost_cancelled": "cancelled"
+  "cfg_vrijednost_cancelled": "cancelled",
+  "sk_nespremljeno": "unsaved changes",
+  "sk_odbaci_potvrda": "The Config page has unsaved changes. Reload and discard them?",
+  "sk_spremam": "saving…",
+  "sk_nije_spremljeno": "Not saved — nothing was written",
+  "sk_spremljeno": "Saved ({n} fields) — {vrijeme}",
+  "tajne_otvori_bota": "open @{bot} and press Start, then Save again"
 }

@@ -14,7 +14,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { ZADANE_POSTAVKE, validateEmailPatch } from '../src/EmailConfig'
-import { Obavjestavac, jeProbniZadatak } from '../src/ObavijestZadatka'
+import { Obavjestavac, jeProbniZadatak, probniAutori } from '../src/ObavijestZadatka'
 
 let mapa: string, put: string
 const SAT = 3600_000
@@ -113,8 +113,14 @@ describe('probni zadatak ne šalje NIŠTA', () => {
     expect(jeProbniZadatak({ tags: ['qa', 'qa-5312'] })).toBe(true)
     expect(jeProbniZadatak({ tags: '["proba"]' })).toBe(true)
     expect(jeProbniZadatak({ tags: ['QA-5312b'] })).toBe(true)
-    expect(jeProbniZadatak({ tags: [], createdBy: 'potjeh' })).toBe(true)
     expect(jeProbniZadatak({ tags: [], createdBy: 'qa' })).toBe(true)
+    // ime QA agenta čvora dolazi iz konfiguracije (TM_PROBNI_AUTORI), ne iz koda
+    expect(probniAutori(undefined)).toEqual(['qa'])
+    expect(probniAutori('ispitivac, QA')).toEqual(['ispitivac', 'qa'])
+    const staro = process.env.TM_PROBNI_AUTORI
+    process.env.TM_PROBNI_AUTORI = 'ispitivac'
+    try { expect(jeProbniZadatak({ tags: [], createdBy: 'Ispitivac' })).toBe(true) }
+    finally { if (staro === undefined) delete process.env.TM_PROBNI_AUTORI; else process.env.TM_PROBNI_AUTORI = staro }
     expect(jeProbniZadatak({ tags: ['nalog'] }, { biljeg: '1' })).toBe(true)
     expect(jeProbniZadatak({ tags: ['nalog', 'kvaliteta'], createdBy: 'vlasnik' })).toBe(false)
     expect(jeProbniZadatak({ tags: ['nalog'] }, { biljeg: null })).toBe(false)
@@ -123,7 +129,7 @@ describe('probni zadatak ne šalje NIŠTA', () => {
   test('QA proba (oznake kao TASK-341 na node-A) uz uključenu obavijest → 0 mailova', async () => {
     zapisi({ ukljucena: true, statusi: ['completed', 'blocked'], najviseNaSat: 10 })
     const { o, poslano } = napravi()
-    const r = await o.obavijesti(zad('TASK-341', 'completed', { tags: ['qa', 'qa-5312', 'nalog'], createdBy: 'potjeh' }), 'in_progress')
+    const r = await o.obavijesti(zad('TASK-341', 'completed', { tags: ['qa', 'qa-5312', 'nalog'], createdBy: 'ispitivac' }), 'in_progress')
     expect(r.razlog).toContain('prob')
     await o.obavijesti(zad('TASK-340', 'blocked', { tags: ['qa'] }), 'in_progress')
     await o.obavijesti(zad('TASK-9', 'completed'), 'in_progress', { biljeg: '1' })

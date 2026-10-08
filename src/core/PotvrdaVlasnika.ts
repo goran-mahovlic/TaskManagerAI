@@ -23,14 +23,18 @@ export interface OpcijePotvrde {
   sat?: () => number
   /** Brojčani Telegram uid-ovi vlasnika (nisu tajna). Prazno = upis s ploče isključen. */
   primatelji: () => string[]
-  /** Šalje u privatni chat; vraća je li poslano. */
-  posalji: (uid: string, tekst: string) => Promise<boolean>
+  /**
+   * Šalje u privatni chat; vraća je li poslano. Može vratiti i `{ ok, opis }` — opis je razlog
+   * iz Telegrama (npr. 403 „bot can't initiate conversation"), da ploča i audit kažu ZAŠTO.
+   */
+  posalji: (uid: string, tekst: string) => Promise<boolean | { ok: boolean; opis?: string }>
   cvor: string
 }
 
 export type IshodZahtjeva =
   | { ok: true; zahtjevId: string; istjece: string; poslanoNa: number }
-  | { ok: false; greska: 'potvrda_nije_podesena' | 'zakljucano' | 'slanje_nije_uspjelo' }
+  | { ok: false; greska: 'potvrda_nije_podesena' | 'zakljucano' }
+  | { ok: false; greska: 'slanje_nije_uspjelo'; opis?: string }
 
 export type IshodProvjere = { ok: true } | { ok: false; greska: 'kod_pogresan' | 'zahtjev_nevazeci' | 'zakljucano' }
 
@@ -64,8 +68,16 @@ export class PotvrdaVlasnika {
     const istjece = this.sat() + VIJEK_MS
     const tekst = `Kod za ${radnja === 'upis' ? 'upis' : 'brisanje'} tajne ${ime} na ${this.o.cvor}: ${kod} (5 min). Ako to nisi ti, ne upisuj ga.`
     let poslano = 0
-    for (const uid of uidovi) { try { if (await this.o.posalji(uid, tekst)) poslano++ } catch { /* sljedeći */ } }
-    if (!poslano) return { ok: false, greska: 'slanje_nije_uspjelo' }
+    let opis: string | undefined
+    for (const uid of uidovi) {
+      try {
+        const r = await this.o.posalji(uid, tekst)
+        const ok = typeof r === 'boolean' ? r : !!r?.ok
+        if (ok) poslano++
+        else if (typeof r === 'object' && r?.opis) opis = r.opis
+      } catch { /* sljedeći */ }
+    }
+    if (!poslano) return opis ? { ok: false, greska: 'slanje_nije_uspjelo', opis } : { ok: false, greska: 'slanje_nije_uspjelo' }
     this.zahtjevi.set(zahtjevId, { sazetak: sazmi(zahtjevId, ime, radnja, kod), ime, radnja, istjece, pokusaja: 0 })
     return { ok: true, zahtjevId, istjece: new Date(istjece).toISOString(), poslanoNa: poslano }
   }

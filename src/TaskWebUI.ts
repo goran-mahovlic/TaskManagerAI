@@ -101,6 +101,7 @@ import { readPauseState, writePauseState, describePause } from './core/PauseCont
 import { parseInstructionInput } from './core/TaskInstructions'
 import { parseConcurrencyInput, formatConcurrencyChange, CONCURRENCY_ENV, CONCURRENCY_MIN, CONCURRENCY_MAX, CONCURRENCY_DEFAULT } from './core/ConcurrencySetting'
 import { parseAutonomyInput, formatAutonomyChanges, usageZone, AUTONOMY_DEFAULTS, AUTONOMY_MIN, AUTONOMY_MAX, AUTONOMY_KEYS, AUTONOMY_CACHE_MS } from './core/AutonomyThresholdSetting'
+import { spremiSkupinu, upisiAuditSkupine, type SkupinaZapis } from './core/SkupinaPostavki'
 import { parsirajZahtjev as parsirajRasporedZahtjev, klijentskaLogikaJS as rasporedKlijentskaLogikaJS } from './core/ConfigRaspored'
 // TASK-3461: stanje MJERILA potrošnje (razlikuje „čekam kvotu" od „mjerilo ne radi").
 import { readWaitingQueue } from './core/AutonomyQueue'
@@ -2117,6 +2118,14 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
        (kartica Integracije mjerila je 2565 px). */
     .info-table td.cfg-kontrola { white-space: nowrap; width: 1%; }
     .cfg-obavezno { color: var(--accent-yellow); font-weight: 700; margin-left: 0.15rem; }
+    /* TASK-5346: jedna skupina = jedan Spremi. Oznaka nespremljenih izmjena i pogreška uz polje. */
+    .sk-podnozje { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin-top: 0.5rem; }
+    .sk-oznaka { display: none; font-size: 0.7rem; color: var(--accent-yellow); }
+    .sk-skupina.sk-prljava .sk-oznaka { display: inline; }
+    .sk-skupina.sk-prljava > .sk-podnozje .sk-spremi:enabled { border-color: var(--accent-yellow); }
+    .sk-poruka { font-size: 0.7rem; }
+    .sk-greska { border-color: var(--accent-red) !important; outline: 1px solid var(--accent-red); }
+    .sk-greska-tekst { font-size: 0.66rem; color: var(--accent-red); white-space: normal; margin-top: 2px; }
     /* Podnaslov skupine unutar kartice: bez njega su se dva polja imena Host (SMTP i IMAP)
        nizala jedno ispod drugoga bez ičega što bi reklo koje je koje. */
     .info-table tr.cfg-skupina td { padding-top: 0.8rem; color: var(--accent-blue); font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700; border-bottom-color: var(--border-color); }
@@ -8512,6 +8521,8 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
 
 
     async function fetchInfoData() {
+      // TASK-5346: osvježavanje preko nespremljenih izmjena skupine traži potvrdu — inače ih tiho briše.
+      if (!skupinaSmijeOsvjeziti()) return;
       try {
         const [r, rAgents, rMetrics, rModels] = await Promise.all([
           fetch('/api/info'),
@@ -8617,24 +8628,197 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       var ttl = isLocal ? ' title="' + _esc(_T('cfg_lokalni_model_naslov', 'Lokalni model (Ollama) preko API spawna — radi, ali tekstualno (bez alata: Bash/datoteke/MCP).')) + '"' : '';
       var style = 'font-size:0.72rem;padding:2px 4px;border-radius:4px;background:var(--bg-primary,#111);color:var(--text-primary,#ddd);border:1px solid var(--border-color,#333)';
       if (cur) style += ';border-color:' + (isLocal ? '#f59e0b' : 'var(--accent-blue,#3b82f6)');
-      return '<select style="' + style + '"' + ttl + ' onchange="setAgentModel(\\'' + a.id + '\\', this.value, this)">' + opts + '</select>' +
+      return '<select style="' + style + '"' + ttl + _sk(a.id) + '>' + opts + '</select>' +
         (cur ? ' <span style="font-size:0.65rem;color:' + (isLocal?'#f59e0b':'var(--accent-blue)') + '">' + _T('cfg_override', 'override') + (isLocal? ' (' + _T('cfg_lokalno', 'lokalno') + ')' : '') + '</span>' : '');
     }
 
-    async function setAgentModel(agentId, spec, el) {
-      try {
-        if (el) el.disabled = true;
-        var res = await fetch('/api/agents/' + encodeURIComponent(agentId) + '/model', {
-          method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ model: spec })
+    // ── TASK-5346: jedna skupina postavki = jedan „Spremi” ───────────────────────────────
+    // Skupina je <div class="sk-skupina" data-sk-ime="email" data-sk-osvjezi="loadIntegracije">.
+    // Polja nose data-sk="staza" (npr. smtp.port) i data-sk-tip (bool | broj | popis | cijev |
+    // tajna | skup | null | zamjena); bez tipa vrijednost je tekst. Gumb .sk-spremi je neaktivan
+    // dok nema izmjena; skupina s izmjenama dobiva oznaku i upozorenje pri napuštanju stranice.
+    // Spremanje je JEDAN poziv PUT /api/config/skupina/<ime> s promijenjenim poljima; nevaljano
+    // polje vraća pogrešku uz sebe i ništa se ne zapisuje. Tajna poslana prazna = ne mijenjaj.
+    // Kartice koje već imaju vlastiti put spremanja (data-sk-vlastiti="ime funkcije") dobivaju
+    // isto praćenje izmjena nad svim svojim poljima, a spremaju kao i prije.
+    function _sk(staza, tip) {
+      return ' data-sk="' + _esc(staza) + '"' + (tip ? ' data-sk-tip="' + tip + '"' : '');
+    }
+    function _skPodnozje(tekst) {
+      return '<div class="sk-podnozje">' +
+        '<button type="button" class="cfg-btn sk-spremi" disabled onclick="skupinaSpremi(this)">' + (tekst || _T('tel_spremi', 'Spremi')) + '</button>' +
+        '<span class="sk-oznaka">&#9679; ' + _T('sk_nespremljeno', 'nespremljene izmjene') + '</span>' +
+        '<span class="sk-poruka"></span></div>';
+    }
+    /** Kartica s vlastitim putem spremanja: isto praćenje izmjena nad svim njezinim poljima. */
+    function _skVlastita(h) {
+      return '<div class="sk-skupina" data-sk-vlastiti="1">' + h + '</div>';
+    }
+    function _skOznaka() {
+      return '<span class="sk-oznaka">&#9679; ' + _T('sk_nespremljeno', 'nespremljene izmjene') + '</span>';
+    }
+    function _skPolja(g) {
+      return Array.prototype.slice.call(g.querySelectorAll('input,select,textarea')).filter(function (el) {
+        return !el.hasAttribute('data-sk-izuzmi') && el.closest('.sk-skupina') === g;
+      });
+    }
+    function _skVrijednostPolja(el) {
+      var tip = el.getAttribute('data-sk-tip') || '';
+      if (tip === 'bool' || el.type === 'checkbox') return !!el.checked;
+      var v = el.value;
+      if (tip === 'broj') return v === '' ? null : Number(v);
+      if (tip === 'popis') return v.split(',').map(function (x) { return x.trim(); }).filter(Boolean);
+      if (tip === 'cijev') return v.split('|').map(function (x) { return x.trim(); }).filter(Boolean);
+      if (tip === 'null') return v === '' ? null : v;
+      return v;
+    }
+    /** Vrijednosti skupine: staza → vrijednost. Vlastite skupine prate SVA polja redom. */
+    function _skVrijednosti(g) {
+      var van = {};
+      var polja = _skPolja(g);
+      if (g.hasAttribute('data-sk-vlastiti')) {
+        polja.forEach(function (el, i) {
+          van['#' + i] = (el.type === 'checkbox' || el.type === 'radio') ? !!el.checked : el.value;
         });
-        var d = await res.json();
-        if (!res.ok || d.error) throw new Error(d.error || 'save failed');
-        fetchInfoData();
-      } catch(e) {
-        alert(_T('cfg_greska_spremanje_modela', 'Greška pri spremanju modela') + ': ' + e.message);
-        if (el) el.disabled = false;
+        return van;
+      }
+      polja.forEach(function (el) {
+        var s = el.getAttribute('data-sk');
+        if (!s) return;
+        var tip = el.getAttribute('data-sk-tip') || '';
+        if (el.type === 'radio') { if (el.checked) van[s] = el.value; else if (!(s in van)) van[s] = undefined; return; }
+        if (tip === 'skup') { if (!van[s]) van[s] = []; if (el.checked) van[s].push(el.value); return; }
+        if (tip === 'zamjena') { if (el.value.trim()) van[s] = el.value.trim(); return; }
+        van[s] = _skVrijednostPolja(el);
+      });
+      return van;
+    }
+    function _skVezi(g) {
+      if (g.dataset.skVezano) return;
+      g.dataset.skVezano = '1';
+      g.dataset.skPocetno = JSON.stringify(_skVrijednosti(g));
+      _skProvjeri(g);
+    }
+    /** Promijenjene staze (tajna: svaka upisana vrijednost). */
+    function _skPromijenjene(g) {
+      var poc = JSON.parse(g.dataset.skPocetno || '{}');
+      var sada = _skVrijednosti(g);
+      var tajne = {};
+      _skPolja(g).forEach(function (el) { if (el.getAttribute('data-sk-tip') === 'tajna') tajne[el.getAttribute('data-sk')] = 1; });
+      return Object.keys(sada).filter(function (s) {
+        if (tajne[s]) return !!sada[s];
+        return JSON.stringify(sada[s]) !== JSON.stringify(poc[s]);
+      });
+    }
+    function _skProvjeri(g) {
+      var prljava = _skPromijenjene(g).length > 0;
+      g.classList.toggle('sk-prljava', prljava);
+      g.querySelectorAll('.sk-spremi').forEach(function (b) {
+        if (b.closest('.sk-skupina') !== g) return;
+        b.disabled = !prljava || b.hasAttribute('data-sk-blokiran') || g.dataset.skSprema === '1';
+      });
+    }
+    function skupinaImaNespremljeno() {
+      return !!document.querySelector('.sk-skupina.sk-prljava');
+    }
+    /** Osvježavanje Configa preko nespremljenih izmjena traži potvrdu (inače se izmjene tiho brišu). */
+    function skupinaSmijeOsvjeziti() {
+      if (!skupinaImaNespremljeno()) return true;
+      return confirm(_T('sk_odbaci_potvrda', 'Na Config stranici ima nespremljenih izmjena. Osvježiti i odbaciti ih?'));
+    }
+    function _skPostavi(o, staza, v) {
+      var d = staza.split('.');
+      var t = o;
+      for (var i = 0; i < d.length - 1; i++) { if (!t[d[i]] || typeof t[d[i]] !== 'object') t[d[i]] = {}; t = t[d[i]]; }
+      t[d[d.length - 1]] = v;
+    }
+    function _skPoruka(g, tekst, boja) {
+      var p = g.querySelector('.sk-poruka');
+      if (p) { p.textContent = tekst || ''; p.style.color = boja || 'var(--text-secondary)'; }
+    }
+    function _skOcistiGreske(g) {
+      g.querySelectorAll('.sk-greska-tekst').forEach(function (x) { x.remove(); });
+      g.querySelectorAll('.sk-greska').forEach(function (x) { x.classList.remove('sk-greska'); });
+    }
+    function _skPokaziGreske(g, poPolju) {
+      Object.keys(poPolju || {}).forEach(function (s) {
+        var polja = _skPolja(g).filter(function (el) { return el.getAttribute('data-sk') === s; });
+        if (!polja.length) return;
+        polja.forEach(function (el) { el.classList.add('sk-greska'); });
+        var zadnje = polja[polja.length - 1];
+        var t = document.createElement('div');
+        t.className = 'sk-greska-tekst';
+        t.textContent = poPolju[s].join('; ');
+        (zadnje.closest('td,.sk-polje-omot') || zadnje.parentNode).appendChild(t);
+      });
+    }
+    async function skupinaSpremi(btn) {
+      var g = btn.closest('.sk-skupina');
+      if (!g) return;
+      var vlastiti = g.getAttribute('data-sk-vlastiti');
+      if (vlastiti) { if (typeof window[vlastiti] === 'function') return window[vlastiti](btn); return; }
+      var ime = g.getAttribute('data-sk-ime');
+      var sada = _skVrijednosti(g);
+      var polja = {};
+      _skPromijenjene(g).forEach(function (s) { if (sada[s] !== undefined) _skPostavi(polja, s, sada[s]); });
+      _skOcistiGreske(g);
+      g.dataset.skSprema = '1';
+      _skProvjeri(g);
+      _skPoruka(g, _T('sk_spremam', 'spremam…'));
+      try {
+        var r = await fetch('/api/config/skupina/' + encodeURIComponent(ime), {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ polja: polja, by: 'ploca' }),
+        });
+        var d = await r.json().catch(function () { return {}; });
+        g.dataset.skSprema = '';
+        if (!r.ok || !d.ok) {
+          _skPokaziGreske(g, d.greskePoPolju);
+          var opce = (d.opce && d.opce.length) ? d.opce.join('; ') : (Object.keys(d.greskePoPolju || {}).length ? '' : (d.error || ('HTTP ' + r.status)));
+          _skPoruka(g, _T('sk_nije_spremljeno', 'Nije spremljeno — ništa nije zapisano') + (opce ? ': ' + opce : '.'), 'var(--accent-red,#ef4444)');
+          _skProvjeri(g);
+          return;
+        }
+        var poruka = _Tv('sk_spremljeno', 'Spremljeno ({n} polja) — {vrijeme}', { n: (d.promijenjeno || []).length, vrijeme: _sat() });
+        // Tajna se nakon slanja prazni; ostale izmjene postaju nova početna točka.
+        _skPolja(g).forEach(function (el) { if (el.getAttribute('data-sk-tip') === 'tajna') el.value = ''; });
+        var kartica = g.closest('.info-card') || document;
+        var drugeNespremljene = Array.prototype.some.call(kartica.querySelectorAll('.sk-skupina.sk-prljava'), function (x) { return x !== g; });
+        var osvjezi = g.getAttribute('data-sk-osvjezi');
+        var id = g.getAttribute('data-sk-id') || ime;
+        if (osvjezi && typeof window[osvjezi] === 'function' && !drugeNespremljene) {
+          await window[osvjezi]();
+          var nova = document.querySelector('.sk-skupina[data-sk-id="' + id + '"]') || document.querySelector('.sk-skupina[data-sk-ime="' + ime + '"]');
+          if (nova) _skPoruka(nova, poruka, 'var(--accent-green,#22c55e)');
+        } else {
+          g.dataset.skPocetno = JSON.stringify(_skVrijednosti(g));
+          _skProvjeri(g);
+          _skPoruka(g, poruka, 'var(--accent-green,#22c55e)');
+        }
+      } catch (e) {
+        g.dataset.skSprema = '';
+        _skProvjeri(g);
+        _skPoruka(g, _T('sk_nije_spremljeno', 'Nije spremljeno — ništa nije zapisano') + ': ' + e.message, 'var(--accent-red,#ef4444)');
       }
     }
+    (function () {
+      var promjena = function (ev) {
+        var g = ev.target && ev.target.closest && ev.target.closest('.sk-skupina');
+        if (g && g.dataset.skVezano) _skProvjeri(g);
+      };
+      document.addEventListener('input', promjena, true);
+      document.addEventListener('change', promjena, true);
+      // Kartice se iscrtavaju kroz innerHTML — svaka nova skupina se snimi čim se pojavi.
+      var vezi = function () { document.querySelectorAll('.sk-skupina').forEach(_skVezi); };
+      new MutationObserver(vezi).observe(document.body, { childList: true, subtree: true });
+      vezi();
+      window.addEventListener('beforeunload', function (e) {
+        if (!skupinaImaNespremljeno()) return;
+        e.preventDefault();
+        e.returnValue = '';
+        return '';
+      });
+    })();
 
     // ── Dežurni (D4/TASK-4633) — model se bira ovdje, ne uređivanjem dezurni.json ────────
     var _dezurniGranice = null;
@@ -8724,12 +8908,11 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
 
       h += '<table class="info-table"><tbody>';
       h += _red(_T('dez_davatelj', 'Davatelj'),
-        '<select style="' + _stil() + ';min-width:220px" onchange="spremiDezurni({provider:this.value}, this)">' + provOpts + '</select>',
+        '<select style="' + _stil() + ';min-width:220px"' + _sk('provider') + '>' + provOpts + '</select>',
         opisDavatelja);
       h += _red(_T('dez_model', 'Model dežurnog'),
-        '<select style="' + _stil() + ';min-width:220px" onchange="spremiDezurni({model:this.value}, this)">' + opts + '</select>' +
-        ' <input id="dez-model-rucno" placeholder="' + _esc(_T('dez_upisi_ime_modela', 'ili upiši ime modela')) + '" style="' + _stil() + ';width:150px">' +
-        ' <button class="cfg-btn" onclick="spremiDezurni({model:document.getElementById(\\'dez-model-rucno\\').value}, this)">' + _T('dez_spremi', 'Spremi') + '</button>',
+        '<select style="' + _stil() + ';min-width:220px"' + _sk('model') + '>' + opts + '</select>' +
+        ' <input id="dez-model-rucno" placeholder="' + _esc(_T('dez_upisi_ime_modela', 'ili upiši ime modela')) + '" style="' + _stil() + ';width:150px"' + _sk('model', 'zamjena') + '>',
         izvor);
       h += _red(_T('dez_provjera', 'Provjera'),
         '<button id="dez-proba" class="cfg-btn" onclick="probajDezurnog(this)">' + _T('dez_probni_poziv', 'Probni poziv') + '</button>' +
@@ -8744,11 +8927,10 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
           : '<button class="cfg-btn" onclick="simulirajPadDezurnog(5, this)">' + _T('dez_simuliraj', 'Simuliraj pad (5 min)') + '</button>'),
         _T('dez_simulacija_opis', 'Razgovor i agenti preskaču primarni model i odgovaraju preko dežurnog. Sama prestaje nakon roka; zapis ide u Konzolu.'));
       h += _red(_T('dez_ollama_posluzitelj', 'Ollama poslužitelj'),
-        '<input id="dez-baseurl" value="' + _esc(p.baseUrl) + '" style="' + _stil() + ';min-width:220px">' +
-        ' <button class="cfg-btn" onclick="spremiDezurni({baseUrl:document.getElementById(\\'dez-baseurl\\').value}, this)">' + _T('dez_spremi', 'Spremi') + '</button>',
+        '<input id="dez-baseurl" value="' + _esc(p.baseUrl) + '" style="' + _stil() + ';min-width:220px"' + _sk('baseUrl') + '>',
         _T('dez_ollama_posluzitelj_opis', 'Odakle se vuče popis modela i kamo idu pitanja dežurnog.'));
       h += _red(_T('dez_ukljuceno', 'Dežurstvo uključeno'),
-        '<input type="checkbox"' + (p.ukljucen ? ' checked' : '') + ' onchange="spremiDezurni({ukljucen:this.checked}, this)">',
+        '<input type="checkbox"' + (p.ukljucen ? ' checked' : '') + _sk('ukljucen', 'bool') + '>',
         _T('dez_ukljuceno_opis', 'Isključeno: greške se prijavljuju kao i prije, dežurni se ne javlja.'));
       if (davatelj !== 'ollama') {
         h += _red(_T('dez_napomena', 'Napomena'),
@@ -8758,17 +8940,18 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
             '— nikad tiho ne prelazi na Ollamu, jer bi korisnik dobio tuđi odgovor pod tuđim potpisom.'));
       }
       h += _red(_T('dez_smije_podici', 'Smije podići servise'),
-        '<input type="checkbox"' + (p.smije_podici ? ' checked' : '') + ' onchange="spremiDezurni({smije_podici:this.checked}, this)">',
+        '<input type="checkbox"' + (p.smije_podici ? ' checked' : '') + _sk('smije_podici', 'bool') + '>',
         _T('dez_smije_podici_opis', 'Jedina radnja dežurnog s posljedicom. Isključeno: tipka <code>podigni</code> odbija restart i to kaže.'));
       h += _red(_T('dez_prag_gresaka', 'Prag uzastopnih grešaka'),
-        '<input type="number" min="' + g.okidac_uzastopnih_gresaka.min + '" max="' + g.okidac_uzastopnih_gresaka.max + '" value="' + (p.okidac_uzastopnih_gresaka||2) + '" style="' + _stil() + ';width:70px" onchange="spremiDezurni({okidac_uzastopnih_gresaka:Number(this.value)}, this)">',
+        '<input type="number" min="' + g.okidac_uzastopnih_gresaka.min + '" max="' + g.okidac_uzastopnih_gresaka.max + '" value="' + (p.okidac_uzastopnih_gresaka||2) + '" style="' + _stil() + ';width:70px"' + _sk('okidac_uzastopnih_gresaka', 'broj') + '>',
         _Tv('dez_prag_gresaka_opis', 'Jedna prolazna greška ne diže dežurstvo; {min}–{max}.',
                { min: g.okidac_uzastopnih_gresaka.min, max: g.okidac_uzastopnih_gresaka.max }));
       h += _red(_T('dez_razmak_straze', 'Razmak straže (min)'),
-        '<input type="number" min="' + g.razmak_straze_min.min + '" max="' + g.razmak_straze_min.max + '" value="' + (p.razmak_straze_min||30) + '" style="' + _stil() + ';width:70px" onchange="spremiDezurni({razmak_straze_min:Number(this.value)}, this)">',
+        '<input type="number" min="' + g.razmak_straze_min.min + '" max="' + g.razmak_straze_min.max + '" value="' + (p.razmak_straze_min||30) + '" style="' + _stil() + ';width:70px"' + _sk('razmak_straze_min', 'broj') + '>',
         _T('dez_razmak_straze_opis', 'Koliko često straža provjerava je li se primarni put vratio.'));
-      h += '</tbody></table><div id="dez-poruka" style="font-size:.7rem;margin-top:.4rem;min-height:1em"></div>';
-      return h;
+      h += '</tbody></table>';
+      // TASK-5346: jedan „Spremi" za cijelu skupinu dežurnog.
+      return '<div class="sk-skupina" data-sk-ime="dezurni" data-sk-osvjezi="loadDezurni">' + h + _skPodnozje() + '</div>';
     }
 
     function _stil() {
@@ -8820,32 +9003,6 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       loadDezurni();
     }
 
-    async function spremiDezurni(zakrpa, el) {
-      var poruka = document.getElementById('dez-poruka');
-      if (el) el.disabled = true;
-      try {
-        var res = await fetch('/api/dezurni/config', {
-          method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(zakrpa)
-        });
-        var d = await res.json();
-        if (!res.ok || d.error) throw new Error(d.error || _T('dez_spremanje_nije_uspjelo', 'spremanje nije uspjelo'));
-        // Potvrda se pise TEK nakon ponovnog iscrtavanja: loadDezurni mijenja innerHTML
-        // cijele kartice, pa bi poruka ispisana prije toga nestala u istom dahu.
-        // (Backtick u komentaru ovdje zatvara predlozak u kojem cijela ploca zivi.)
-        await loadDezurni();
-        var svjeza = document.getElementById('dez-poruka');
-        if (svjeza) svjeza.innerHTML = '<span style="color:var(--accent-green,#22c55e)">' +
-          _Tv('dez_spremljeno', 'Spremljeno — vrijedi odmah, bez restarta ({vrijeme})',
-                 { vrijeme: _sat() }) + '</span>';
-      } catch(e) {
-        if (poruka) poruka.innerHTML = '<span style="color:var(--accent-red,#ef4444)">' +
-          _Tv('dez_nije_spremljeno', 'Nije spremljeno: {greska}',
-                 { greska: _esc(e.message) }) + '</span>';
-        if (el) el.disabled = false;
-      }
-    }
-
-
     // ── Tajne (TASK-5343, ADR-0007) — upis lozinki i tokena čvora s ploče, samo-za-pisanje ──
     // Vrijednost se NIKAD ne čita s poslužitelja (ne postoji ruta koja je vraća). Polja su u
     // VLASTITOM <form> (TASK-4722), type=password + autocomplete=new-password, ime polja nasumično
@@ -8884,7 +9041,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         var d = await r.json();
         if (!r.ok) throw new Error(_tajneGreska(d.greska));
         _tajneZadnji = d;
-        el.innerHTML = renderTajne(d);
+        el.innerHTML = _skVlastita(renderTajne(d));
         _tajneDubokaVeza();
       } catch (e) { el.innerHTML = '<div class="empty">' + _esc(e.message) + '</div>'; }
     }
@@ -8900,7 +9057,9 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         var bot = d.potvrda.bot ? '@' + d.potvrda.bot : _T('tajne_bot_cvora', 'čvora');
         h += '<div style="font-size:.74rem;margin:.2rem 0 .5rem;padding:.4rem .6rem;border:1px solid var(--border-color);border-radius:6px">' +
           '<b>' + _esc(_T('tajne_koraci', 'Kako upisati lozinku (bez ijedne naredbe na stroju):')) + '</b><ol style="margin:.3rem 0 .2rem 1.1rem;padding:0">' +
-          '<li>' + _esc(_Tv('tajne_korak1', 'U Telegramu otvori privatni chat s botom {bot} i pošalji /start (samo prvi put).', { bot: bot })) + '</li>' +
+          '<li>' + _esc(_Tv('tajne_korak1', 'U Telegramu otvori privatni chat s botom {bot} i pošalji /start (samo prvi put).', { bot: bot })) +
+            // Uputa #198: poveznica otvara baš tog bota (getMe).
+            (d.bot ? ' <a href="' + _esc(d.bot.poveznica) + '" target="_blank" rel="noopener">' + _esc(d.bot.poveznica.replace('https://', '')) + '</a>' : '') + '</li>' +
           '<li>' + _esc(_T('tajne_korak2', 'Upiši lozinku u polje ispod i klikni „Spremi”.')) + '</li>' +
           '<li>' + _esc(_T('tajne_korak3', 'Bot ti u privatni chat pošalje kod od 8 znamenki (vrijedi 5 min) — upiši ga ovdje i klikni „Potvrdi”.')) + '</li></ol>' +
           ((d.potvrda.primatelji || []).length ? '<div style="color:var(--text-secondary)">' + _esc(_Tv('tajne_primatelj', 'Kod ide vlasniku čvora: {uid} ({izvor}).', { uid: d.potvrda.primatelji.join(', '), izvor: d.potvrda.izvor || '' })) + '</div>' : '') +
@@ -8927,9 +9086,9 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       });
       h += '</table>';
       h += '<div style="display:flex;gap:6px;align-items:center;margin-top:.5rem;flex-wrap:wrap">' +
-        '<button type="button" class="cfg-btn" id="tajne-spremi" onclick="tajneSpremi()" ' + (mozeUpis ? '' : 'disabled') + '>' + _esc(_T('tajne_spremi', 'Spremi')) + '</button>' +
+        '<button type="button" class="cfg-btn sk-spremi" id="tajne-spremi" onclick="tajneSpremi()" disabled' + (mozeUpis ? '' : ' data-sk-blokiran') + '>' + _esc(_T('tajne_spremi', 'Spremi')) + '</button>' + _skOznaka() +
         '<span id="tajne-potvrda" style="display:none;gap:6px;align-items:center">' +
-          '<input type="text" id="tajne-kod" inputmode="numeric" maxlength="8" autocomplete="one-time-code" name="k-' + _tajneNasumicno() + '" data-form-type="other" data-lpignore="true" data-1p-ignore data-bwignore placeholder="' + _esc(_T('tajne_kod_ph', 'kod iz Telegrama')) + '" class="cfg-polje" style="width:120px">' +
+          '<input type="text" id="tajne-kod" data-sk-izuzmi inputmode="numeric" maxlength="8" autocomplete="one-time-code" name="k-' + _tajneNasumicno() + '" data-form-type="other" data-lpignore="true" data-1p-ignore data-bwignore placeholder="' + _esc(_T('tajne_kod_ph', 'kod iz Telegrama')) + '" class="cfg-polje" style="width:120px">' +
           ' <button type="button" class="cfg-btn" onclick="tajnePotvrdi()">' + _esc(_T('tajne_potvrdi', 'Potvrdi')) + '</button>' +
           ' <button type="button" class="cfg-btn" onclick="tajneOdustani()">' + _esc(_T('tajne_odustani', 'Odustani')) + '</button>' +
         '</span>' +
@@ -8941,7 +9100,19 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     async function _tajneTraziKod(radnja, imena) {
       var r = await fetch('/api/tajne/kod', { method: 'POST', headers: TAJNE_ZAG, body: JSON.stringify({ imena: imena, radnja: radnja }) });
       var d = await r.json().catch(function () { return {}; });
-      if (!r.ok) { _tajnePoruka(_tajneGreska(d.greska), 'var(--accent-red)'); return; }
+      if (!r.ok) {
+        _tajnePoruka(_tajneGreska(d.greska) + (d.telegram ? ' (Telegram: ' + d.telegram + ')' : ''), 'var(--accent-red)');
+        // Uputa #198: kod ne stiže dok vlasnik botu nije pisao privatno — poveznica otvara baš tog bota.
+        var b = d.bot || (_tajneZadnji && _tajneZadnji.bot);
+        var p = document.getElementById('tajne-poruka');
+        if (p && b && d.greska === 'slanje_nije_uspjelo') {
+          var a = document.createElement('a');
+          a.href = b.poveznica; a.target = '_blank'; a.rel = 'noopener';
+          a.textContent = ' → ' + _Tv('tajne_otvori_bota', 'otvori @{bot} i stisni Start, pa ponovo Spremi', { bot: b.ime });
+          p.appendChild(a);
+        }
+        return;
+      }
       _tajneCeka = { radnja: radnja, imena: imena, zahtjevId: d.zahtjevId };
       var p = document.getElementById('tajne-potvrda'); if (p) p.style.display = 'inline-flex';
       var k = document.getElementById('tajne-kod'); if (k) { k.value = ''; k.focus(); }
@@ -9057,29 +9228,26 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
 
       h += '<table class="info-table"><tbody>';
       h += _red(_T('tel_ukljuceno', 'Telegram uključen'),
-        '<input type="checkbox"' + (p.ukljucen ? ' checked' : '') + ' onchange="spremiTelegram({ukljucen:this.checked}, this)">',
+        '<input type="checkbox"' + (p.ukljucen ? ' checked' : '') + _sk('ukljucen', 'bool') + '>',
         _T('tel_ukljuceno_opis', 'Isključeno: nikakve poruke se ne šalju.'));
       h += _red(_T('tel_bot_token', 'Bot token'),
-        '<input id="tel-token" type="password" value="" style="' + _stil() + ';min-width:280px" placeholder="' +
-          (st.tokenPostavljen ? _T('tel_token_zamjena', 'upisi novi token samo ako ga mijenjas') : '123456:ABC-DEF...') + '">' +
-        ' <button class="cfg-btn" onclick="spremiTelegram({botToken:document.getElementById(\\'tel-token\\').value}, this)">' + _T('tel_spremi', 'Spremi') + '</button>',
+        '<input id="tel-token" type="password" autocomplete="new-password" data-form-type="other" data-lpignore="true" data-1p-ignore value="" style="' + _stil() + ';min-width:280px" placeholder="' +
+          (st.tokenPostavljen ? _T('tel_token_zamjena', 'upisi novi token samo ako ga mijenjas') : '123456:ABC-DEF...') + '"' + _sk('botToken', 'tajna') + '>',
         tokenPrikaz);
       h += _red(_T('tel_chat_id', 'Chat ID'),
-        '<input id="tel-chatid" value="' + _esc(p.chatId || '') + '" style="' + _stil() + ';min-width:220px" placeholder="-1001234567890">' +
-        ' <button class="cfg-btn" onclick="spremiTelegram({chatId:document.getElementById(\\'tel-chatid\\').value}, this)">' + _T('tel_spremi', 'Spremi') + '</button>',
+        '<input id="tel-chatid" value="' + _esc(p.chatId || '') + '" style="' + _stil() + ';min-width:220px" placeholder="-1001234567890"' + _sk('chatId') + '>',
         _T('tel_chat_id_opis', 'ID grupe ili kanala kojem se šalju obavijesti.'));
       h += _red(_T('tel_obavijest_zavrseno', 'Obavijest: završeno'),
-        '<input type="checkbox"' + (p.obavijestZavrseno ? ' checked' : '') + ' onchange="spremiTelegram({obavijestZavrseno:this.checked}, this)">',
+        '<input type="checkbox"' + (p.obavijestZavrseno ? ' checked' : '') + _sk('obavijestZavrseno', 'bool') + '>',
         _T('tel_obavijest_zavrseno_opis', 'Šalje poruku kad zadatak prijeđe u completed.'));
       h += _red(_T('tel_obavijest_greska', 'Obavijest: greška'),
-        '<input type="checkbox"' + (p.obavijestGreska ? ' checked' : '') + ' onchange="spremiTelegram({obavijestGreska:this.checked}, this)">',
+        '<input type="checkbox"' + (p.obavijestGreska ? ' checked' : '') + _sk('obavijestGreska', 'bool') + '>',
         _T('tel_obavijest_greska_opis', 'Šalje poruku kad zadatak prijeđe u failed/error.'));
       h += _red(_T('tel_prefix', 'Prefix poruke'),
-        '<input id="tel-prefix" value="' + _esc(p.prefix || '') + '" style="' + _stil() + ';width:80px">' +
-        ' <button class="cfg-btn" onclick="spremiTelegram({prefix:document.getElementById(\\'tel-prefix\\').value}, this)">' + _T('tel_spremi', 'Spremi') + '</button>',
+        '<input id="tel-prefix" value="' + _esc(p.prefix || '') + '" style="' + _stil() + ';width:80px"' + _sk('prefix') + '>',
         _T('tel_prefix_opis', 'Emoji ili kratki tekst koji prethodi poruci.'));
       h += _red(_T('tel_stil', 'Stil izlaza'),
-        '<select onchange="spremiTelegram({stil:this.value}, this)" style="' + _stil() + '">' +
+        '<select' + _sk('stil') + ' style="' + _stil() + '">' +
         '<option value="kratko"' + ((p.stil || 'kratko') === 'kratko' ? ' selected' : '') + '>' + _T('tel_stil_kratko', 'kratko') + '</option>' +
         '<option value="puno"' + (p.stil === 'puno' ? ' selected' : '') + '>' + _T('tel_stil_puno', 'puno') + '</option></select>',
         _T('tel_stil_opis', 'Kratko: prvi redak ishod (✅/⚠️/❌), do 5 točaka, poveznica za detalje. Vrijedi za obavijesti, poruke daemona i razgovor.'));
@@ -9090,7 +9258,8 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       h += '</tbody></table>';
       h += renderTelegramUlaz(d);
       h += renderTelegramPrivitci(d);
-      return h;
+      // TASK-5346: cijela kartica (obavijesti, ulaz, privitci) je jedna skupina s jednim „Spremi".
+      return '<div class="sk-skupina" data-sk-ime="telegram" data-sk-osvjezi="loadTelegram">' + h + _skPodnozje() + '</div>';
     }
 
     // ── Telegram PRIVITCI (TASK-5282) — slika, dokument, glas… spremaju se lokalno ──────
@@ -9115,29 +9284,21 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       h += '<table class="info-table"><tbody>';
       h += _red(_T('tel_priv_ukljucen', 'Spremaj privitke'),
         '<input type="checkbox"' + (p.ukljucen ? ' checked' : '') +
-        ' onchange="spremiTelegram({privitci:{ukljucen:this.checked}}, this)">',
+        _sk('privitci.ukljucen', 'bool') + '>',
         _T('tel_priv_ukljucen_opis', 'Isključeno: poruka samo s privitkom se preskače kao i prije.'));
       h += _red(_T('tel_priv_mapa', 'Mapa'),
-        '<input id="tel-priv-mapa" value="' + _esc(p.mapa || '') + '" style="' + _stil() + ';min-width:260px" placeholder="$TM_HOME/privitci">' +
-        ' <button class="cfg-btn" onclick="spremiTelegram({privitci:{mapa:document.getElementById(\\'tel-priv-mapa\\').value}}, this)">' + _T('tel_spremi', 'Spremi') + '</button>',
+        '<input id="tel-priv-mapa" value="' + _esc(p.mapa || '') + '" style="' + _stil() + ';min-width:260px" placeholder="$TM_HOME/privitci"' + _sk('privitci.mapa') + '>',
         _esc(_T('tel_priv_mapa_opis', 'Apsolutna putanja; prazno = $TM_HOME/privitci. Ispod se slaže mapa po chatu (<chatId>/).')));
       h += _red(_T('tel_priv_max', 'Najveća veličina (MB)'),
-        '<input id="tel-priv-max" type="number" min="1" max="20" value="' + (p.maxMB || 20) + '" style="' + _stil() + ';width:80px">' +
-        ' <button class="cfg-btn" onclick="spremiTelegram({privitci:{maxMB:Number(document.getElementById(\\'tel-priv-max\\').value)}}, this)">' + _T('tel_spremi', 'Spremi') + '</button>',
+        '<input id="tel-priv-max" type="number" min="1" max="20" value="' + (p.maxMB || 20) + '" style="' + _stil() + ';width:80px"' + _sk('privitci.maxMB', 'broj') + '>',
         _T('tel_priv_max_opis', '1–20 (Bot API ne daje preuzeti više od 20 MB).'));
       var kv = _TEL_VRSTE.map(function (v) {
         return '<label style="margin-right:.6rem;font-size:.72rem"><input type="checkbox" class="tel-priv-vrsta" value="' + v + '"' +
-          (vrste.indexOf(v) >= 0 ? ' checked' : '') + ' onchange="spremiTelegramVrste(this)"> ' + _T('tel_priv_v_' + v, v) + '</label>';
+          (vrste.indexOf(v) >= 0 ? ' checked' : '') + _sk('privitci.vrste', 'skup') + '> ' + _T('tel_priv_v_' + v, v) + '</label>';
       }).join('');
       h += _red(_T('tel_priv_vrste', 'Vrste'), kv, _T('tel_priv_vrste_opis', 'Koje se vrste privitaka spremaju.'));
       h += '</tbody></table></div>';
       return h;
-    }
-
-    function spremiTelegramVrste(el) {
-      var vrste = Array.prototype.slice.call(document.querySelectorAll('.tel-priv-vrsta'))
-        .filter(function (x) { return x.checked; }).map(function (x) { return x.value; });
-      return spremiTelegram({ privitci: { vrste: vrste } }, el);
     }
 
     // ── Telegram ULAZ (TASK-4800) — poruka → POST /api/ingest ──────────────────────────
@@ -9162,27 +9323,23 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       h += '<table class="info-table"><tbody>';
       h += _red(_T('tel_ulaz_ukljucen', 'Ulaz uključen'),
         '<input type="checkbox"' + (u.ukljucen ? ' checked' : '') +
-        ' onchange="spremiTelegram({ulaz:{ukljucen:this.checked}}, this)">',
+        _sk('ulaz.ukljucen', 'bool') + '>',
         _T('tel_ulaz_ukljucen_opis', 'Odvojeno od izlaznih obavijesti.'));
       h += _red(_T('tel_ulaz_interval', 'Razmak (s)'),
-        '<input id="tel-ulaz-interval" type="number" value="' + (u.intervalSek || 3) + '" style="' + _stil() + ';width:80px">' +
-        ' <button class="cfg-btn" onclick="spremiTelegram({ulaz:{intervalSek:Number(document.getElementById(\\'tel-ulaz-interval\\').value)}}, this)">' + _T('tel_spremi', 'Spremi') + '</button>',
+        '<input id="tel-ulaz-interval" type="number" value="' + (u.intervalSek || 3) + '" style="' + _stil() + ';width:80px"' + _sk('ulaz.intervalSek', 'broj') + '>',
         '1–60');
       h += _red(_T('tel_ulaz_okidac', 'Okidač'),
-        '<input id="tel-ulaz-okidac" value="' + _esc(u.okidac || '') + '" style="' + _stil() + ';width:160px" placeholder="/zadatak">' +
-        ' <button class="cfg-btn" onclick="spremiTelegram({ulaz:{okidac:document.getElementById(\\'tel-ulaz-okidac\\').value}}, this)">' + _T('tel_spremi', 'Spremi') + '</button>',
+        '<input id="tel-ulaz-okidac" value="' + _esc(u.okidac || '') + '" style="' + _stil() + ';width:160px" placeholder="/zadatak"' + _sk('ulaz.okidac') + '>',
         _T('tel_ulaz_okidac_opis', 'Prazno = svaka poruka. Inače samo poruke koje počinju ovim nizom.'));
       h += _red(_T('tel_ulaz_chatovi', 'Dopušteni chatovi'),
-        '<input id="tel-ulaz-chatovi" value="' + _esc((u.dopusteniChatovi || []).join(', ')) + '" style="' + _stil() + ';min-width:260px" placeholder="-1001234567890">' +
-        ' <button class="cfg-btn" onclick="spremiTelegramChatovi(this)">' + _T('tel_spremi', 'Spremi') + '</button>',
+        '<input id="tel-ulaz-chatovi" value="' + _esc((u.dopusteniChatovi || []).join(', ')) + '" style="' + _stil() + ';min-width:260px" placeholder="-1001234567890"' + _sk('ulaz.dopusteniChatovi', 'popis') + '>',
         _T('tel_ulaz_chatovi_opis', 'Prazno = sve što bot vidi. Chat ID doznaješ gumbom „Probaj ulaz".'));
       h += _red(_T('tel_ulaz_potvrda', 'Potvrda u chat'),
         '<input type="checkbox"' + (u.potvrdaUChat ? ' checked' : '') +
-        ' onchange="spremiTelegram({ulaz:{potvrdaUChat:this.checked}}, this)">',
+        _sk('ulaz.potvrdaUChat', 'bool') + '>',
         _T('tel_ulaz_potvrda_opis', 'Vrati broj otvorenog zadatka u isti razgovor.'));
       h += _red(_T('tel_ulaz_izvrsitelj', 'Zadani izvršitelj'),
-        '<input id="tel-ulaz-izvrsitelj" value="' + _esc(u.zadaniIzvrsitelj || '') + '" style="' + _stil() + ';width:160px">' +
-        ' <button class="cfg-btn" onclick="spremiTelegram({ulaz:{zadaniIzvrsitelj:document.getElementById(\\'tel-ulaz-izvrsitelj\\').value}}, this)">' + _T('tel_spremi', 'Spremi') + '</button>',
+        '<input id="tel-ulaz-izvrsitelj" value="' + _esc(u.zadaniIzvrsitelj || '') + '" style="' + _stil() + ';width:160px"' + _sk('ulaz.zadaniIzvrsitelj') + '>',
         _T('tel_ulaz_izvrsitelj_opis', 'Tko radi zadatak iz chata kad ga ruting (config/agents.json) ni vrsta posla ne odrede. Nalog dopuštenog korisnika ide odmah, bez čekanja kvote.'));
       h += _red(_T('tel_ulaz_stanje', 'Stanje petlje'),
         '<span style="font-family:monospace;font-size:.7rem">offset ' + (s.offset || 0) +
@@ -9196,12 +9353,6 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         _T('tel_ulaz_probaj_opis', 'Pokaže koliko poruka čeka i iz kojih chatova — bez otvaranja zadatka.'));
       h += '</tbody></table></div>';
       return h;
-    }
-
-    function spremiTelegramChatovi(btn) {
-      var el = document.getElementById('tel-ulaz-chatovi');
-      var popis = el.value.split(',').map(function (x) { return x.trim(); }).filter(Boolean);
-      return spremiTelegram({ ulaz: { dopusteniChatovi: popis } }, btn);
     }
 
     async function probajTelegramUlaz(btn) {
@@ -9225,23 +9376,6 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         if (ishod) { ishod.textContent = '❌ ' + e.message; ishod.style.color = '#ef4444'; }
       }
       btn.disabled = false;
-    }
-
-    async function spremiTelegram(zakrpa, btn) {
-      if (btn) btn.disabled = true;
-      try {
-        var res = await fetch('/api/telegram/config', {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(zakrpa),
-        });
-        var d = await res.json();
-        if (d.error) throw new Error(d.error);
-        await loadTelegram();
-      } catch(e) {
-        alert('Telegram: ' + e.message);
-      }
-      if (btn) btn.disabled = false;
     }
 
     async function probajTelegram(btn) {
@@ -9335,61 +9469,47 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
      */
     function _intPolje(ime, kljuc, vrijednost, staza, shemaPolja) {
       var sp = shemaPolja || {};
-      // DVOSTRUKI backslash: predlozak u kojem ova skripta zivi pojede jednostruki, pa
-      // bi u stranicu otisao izraz /./g — koji pogada SVAKI znak. Mjereno prije ispravka:
-      // sva su polja dobila id od samih crtica (int-nextcloud--------), pa su se poklopila
-      // dva razlicita polja iste duljine imena i „Spremi" je citao TUDU vrijednost.
-      var id = 'int-' + ime + '-' + staza.replace(/\\./g, '-');
       var naziv = _T('cfg_polje_' + kljuc, kljuc) + (sp.obavezno
         ? '<span class="cfg-obavezno" title="' + _esc(_T('cfg_obavezno_naslov', 'obavezno polje')) + '">*</span>'
         : '');
-      var poziv = function (tip) {
-        return 'spremiIntegracijuIzPolja(\\'' + ime + '\\', \\'' + staza + '\\', \\'' + id + '\\', \\'' + tip + '\\', this)';
-      };
-      var spremi = function (tip) {
-        return ' <button class="cfg-btn" onclick="' + poziv(tip) + '">' + _T('tel_spremi', 'Spremi') + '</button>';
-      };
-
+      // TASK-5346: polje više nema vlastiti „Spremi" — sprema se cijela skupina jednim gumbom.
       if (sp.tip === 'izbor' && sp.vrijednosti) {
         var opcije = sp.vrijednosti.map(function (v) {
           return '<option value="' + _esc(v) + '"' + (v === vrijednost ? ' selected' : '') + '>' +
             _esc(_T('cfg_vrijednost_' + v, v)) + '</option>';
         }).join('');
         return _red(naziv,
-          '<select style="' + _stil() + ';min-width:150px" onchange="spremiIntegraciju(\\'' + ime + '\\', \\'' + staza + '\\', this.value, this)">' + opcije + '</select>',
+          '<select style="' + _stil() + ';min-width:150px"' + _sk(staza) + '>' + opcije + '</select>',
           _T('cfg_polje_izbor_opis', 'Vrijednost iz zadanog popisa.'));
       }
       if (sp.tip === 'bool' || typeof vrijednost === 'boolean') {
-        return _red(naziv,
-          '<input type="checkbox"' + (vrijednost ? ' checked' : '') +
-          ' onchange="spremiIntegraciju(\\'' + ime + '\\', \\'' + staza + '\\', this.checked, this)">', '');
+        return _red(naziv, '<input type="checkbox"' + (vrijednost ? ' checked' : '') + _sk(staza, 'bool') + '>', '');
       }
       if (sp.tip === 'broj' || typeof vrijednost === 'number') {
         var granice = (sp.min != null ? ' min="' + sp.min + '"' : '') + (sp.max != null ? ' max="' + sp.max + '"' : '');
         return _red(naziv,
-          '<input id="' + id + '" type="number"' + granice + ' value="' + vrijednost + '" style="' + _stil() + ';width:110px">' + spremi('broj'),
+          '<input type="number"' + granice + ' value="' + vrijednost + '" style="' + _stil() + ';width:110px"' + _sk(staza, 'broj') + '>',
           sp.min != null && sp.max != null ? sp.min + '–' + sp.max : '');
       }
       // TASK-5378: popis s dopuštenim vrijednostima (npr. statusi obavijesti) = kvačice, ne slobodan tekst.
       if (sp.tip === 'popis' && sp.vrijednosti) {
         var odabrano = vrijednost || [];
         var kvacice = sp.vrijednosti.map(function (v) {
-          return '<label style="margin-right:0.8rem;white-space:nowrap"><input type="checkbox" name="' + id + '" value="' + _esc(v) + '"' +
-            (odabrano.indexOf(v) >= 0 ? ' checked' : '') +
-            ' onchange="spremiIntegracijuKvacice(\\'' + ime + '\\', \\'' + staza + '\\', \\'' + id + '\\', this)"> ' +
+          return '<label style="margin-right:0.8rem;white-space:nowrap"><input type="checkbox" value="' + _esc(v) + '"' +
+            (odabrano.indexOf(v) >= 0 ? ' checked' : '') + _sk(staza, 'skup') + '> ' +
             _esc(_T('cfg_vrijednost_' + v, v)) + '</label>';
         }).join('');
         return _red(naziv, kvacice, _T('cfg_polje_' + kljuc + '_opis', ''));
       }
       if (sp.tip === 'popis' || Object.prototype.toString.call(vrijednost) === '[object Array]') {
         return _red(naziv,
-          '<input id="' + id + '" value="' + _esc((vrijednost || []).join(', ')) + '" style="' + _stil() + ';min-width:260px" placeholder="' + _T('cfg_zarezom', 'odvojeno zarezom') + '">' + spremi('popis'),
+          '<input value="' + _esc((vrijednost || []).join(', ')) + '" style="' + _stil() + ';min-width:260px" placeholder="' + _T('cfg_zarezom', 'odvojeno zarezom') + '"' + _sk(staza, 'popis') + '>',
           _T('cfg_zarezom', 'odvojeno zarezom'));
       }
       var tajna = sp.tajnaEnv || /Env$/.test(kljuc);
       var opis = tajna ? _T('cfg_polje_env_opis', 'IME varijable okoline s tajnom — sama tajna NIKAD ne ide ovdje.') : '';
       return _red(naziv,
-        '<input id="' + id + '" value="' + _esc(String(vrijednost == null ? '' : vrijednost)) + '" style="' + _stil() + ';min-width:260px">' + spremi('tekst'),
+        '<input value="' + _esc(String(vrijednost == null ? '' : vrijednost)) + '" style="' + _stil() + ';min-width:260px"' + _sk(staza) + '>',
         opis);
     }
 
@@ -9408,7 +9528,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         var p = d.puni[i];
         var s = d.sazetak[i];
         var ime = p.ime;
-        h += '<div class="cfg-odjeljak">';
+        h += '<div class="cfg-odjeljak sk-skupina" data-sk-ime="' + ime + '" data-sk-osvjezi="loadIntegracije">';
         h += '<div class="cfg-odjeljak-glava">' +
           '<span>' + INT_IKONA[ime] + '</span><strong>' + _esc(p.naziv) + '</strong>' +
           _intZnacka(s.znacka) +
@@ -9440,6 +9560,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
           zadnja);
         if (ime === 'email' && p.posta) h += _redPosta(p.posta);
         h += '</tbody></table>';
+        h += _skPodnozje();
         h += '<div style="font-size:.68rem;color:var(--text-secondary);margin-top:0.3rem">' +
           _T('cfg_datoteka', 'datoteka') + ': <code>' + _esc(p.putanja) + '</code></div>';
         h += '</div>';
@@ -9458,47 +9579,6 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       return _red(_T('posta_provjera', 'Provjera pošte'), stanje, _T('posta_zadnja_provjera', 'zadnja provjera') + ': ' + t(ps.zadnjaProvjera) + ' · ' + _T('posta_obavijesti', 'obavijesti') + ': ' + (ps.obavijesti || 0)) +
         _red(_T('posta_zadnja_poruka', 'Zadnja primljena'), zp, '') +
         _red(_T('posta_zadnja_greska', 'Zadnja greška'), zg, '');
-    }
-
-    function _zakrpaZaStazu(staza, vrijednost) {
-      var dijelovi = staza.split('.');
-      if (dijelovi.length === 1) { var o = {}; o[dijelovi[0]] = vrijednost; return o; }
-      var vanjski = {}; var unutarnji = {};
-      unutarnji[dijelovi[1]] = vrijednost;
-      vanjski[dijelovi[0]] = unutarnji;
-      return vanjski;
-    }
-
-    async function spremiIntegraciju(ime, staza, vrijednost, btn) {
-      if (btn) btn.disabled = true;
-      try {
-        var res = await fetch('/api/' + ime + '/config', {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(_zakrpaZaStazu(staza, vrijednost))
-        });
-        var d = await res.json();
-        if (d.error) throw new Error(d.error);
-        await loadIntegracije();
-      } catch (e) {
-        alert(ime + ': ' + e.message);
-        if (btn) btn.disabled = false;
-      }
-    }
-
-    function spremiIntegracijuIzPolja(ime, staza, id, tip, btn) {
-      var el = document.getElementById(id);
-      if (!el) return;
-      var v = el.value;
-      if (tip === 'broj') v = Number(v);
-      if (tip === 'popis') v = v.split(',').map(function (x) { return x.trim(); }).filter(Boolean);
-      return spremiIntegraciju(ime, staza, v, btn);
-    }
-
-    function spremiIntegracijuKvacice(ime, staza, id, btn) {
-      var v = Array.prototype.slice.call(document.querySelectorAll('input[name="' + id + '"]'))
-        .filter(function (x) { return x.checked; }).map(function (x) { return x.value; });
-      return spremiIntegraciju(ime, staza, v, btn);
     }
 
     async function probajIntegraciju(ime, btn) {
@@ -9556,19 +9636,17 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       h += '<table class="info-table"><tbody>';
       h += _red(_T('orc_ukljucen', 'Orkestrator uključen'),
         '<input type="checkbox"' + (p.enabled ? ' checked' : '') +
-        ' onchange="spremiOrkestrator({enabled:this.checked}, this)">',
+        _sk('enabled', 'bool') + '>',
         _T('orc_ukljucen_opis', 'Isključeno: nijedan agent se ne pokreće sam.'));
       h += _red(_T('orc_strop', 'Najviše usporednih agenata'),
         '<b>' + (d.strop != null ? d.strop : '') + '</b>',
         _T('cfg_usp_napomena', 'Promjena vrijedi odmah (daemon je čita najkasnije za 5 s). Smanjenje ne prekida agente koji rade — samo ne pušta nove. Vrata autonomije (70/85 %) i dalje nadjačavaju strop.') +
         ' → ' + _T('cfg_kartica_usporedni', 'Usporedni agenti (1–10)'));
       h += _red(_T('orc_ploca', 'Adresa ploče'),
-        '<input id="orc-api" value="' + _esc(p.api ? p.api.baseUrl : '') + '" style="' + _stil() + ';min-width:240px">' +
-        ' <button class="cfg-btn" onclick="spremiOrkestrator({api:{baseUrl:document.getElementById(\\'orc-api\\').value}}, this)">' + _T('tel_spremi', 'Spremi') + '</button>',
+        '<input id="orc-api" value="' + _esc(p.api ? p.api.baseUrl : '') + '" style="' + _stil() + ';min-width:240px"' + _sk('api.baseUrl') + '>',
         _T('orc_ploca_opis', 'Adresa preko koje orkestrator i agenti pišu na ploču.'));
       h += _red(_T('orc_cinjenice', 'Činjenice o infrastrukturi'),
-        '<input id="orc-facts" value="' + _esc((p.prompt && p.prompt.systemFacts ? p.prompt.systemFacts : []).join(' | ')) + '" style="' + _stil() + ';min-width:320px" placeholder="' + _T('orc_cinjenice_ph', 'npr. Ollama: http://…:11434 | RAG: http://…:8000') + '">' +
-        ' <button class="cfg-btn" onclick="spremiOrkestratorCinjenice(this)">' + _T('tel_spremi', 'Spremi') + '</button>',
+        '<input id="orc-facts" value="' + _esc((p.prompt && p.prompt.systemFacts ? p.prompt.systemFacts : []).join(' | ')) + '" style="' + _stil() + ';min-width:320px" placeholder="' + _T('orc_cinjenice_ph', 'npr. Ollama: http://…:11434 | RAG: http://…:8000') + '"' + _sk('prompt.systemFacts', 'cijev') + '>',
         _T('orc_cinjenice_opis', 'Rečenice koje ulaze u prompt agenta. Odvoji ih znakom |. Paket svoje nema.'));
       h += _red(_T('orc_agenti', 'Agenata u registru'),
         '<strong>' + (d.agenata || 0) + '</strong>',
@@ -9583,32 +9661,10 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         '<span style="font-family:monospace">' + _esc((w.zombie ? w.zombie.mode : '?') + ' / ' + (w.stale ? w.stale.mode : '?')) + '</span>',
         _T('orc_cistaci_opis', 'off → shadow → live. U sjeni se sud zapisuje, ali se ništa ne dira.'));
       h += '</tbody></table>';
+      h += _skPodnozje();
       h += '<div style="font-size:.68rem;color:var(--text-secondary);margin-top:0.3rem">' +
         _T('cfg_datoteka', 'datoteka') + ': <code>' + _esc(d.putanja || '') + '</code></div>';
-      return h;
-    }
-
-    async function spremiOrkestrator(zakrpa, btn) {
-      if (btn) btn.disabled = true;
-      try {
-        var res = await fetch('/api/orchestrator/config', {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(zakrpa)
-        });
-        var d = await res.json();
-        if (d.error) throw new Error(d.error);
-        await loadOrkestrator();
-      } catch (e) {
-        alert('Orkestrator: ' + e.message);
-        if (btn) btn.disabled = false;
-      }
-    }
-
-    function spremiOrkestratorCinjenice(btn) {
-      var el = document.getElementById('orc-facts');
-      var popis = el.value.split('|').map(function (x) { return x.trim(); }).filter(Boolean);
-      return spremiOrkestrator({ prompt: { systemFacts: popis } }, btn);
+      return '<div class="sk-skupina" data-sk-ime="orkestrator" data-sk-osvjezi="loadOrkestrator">' + h + '</div>';
     }
 
     // ── Razgovor (ADR-0002, TASK-5277) — bot odgovara u chatu; postavke vrijede uživo ────
@@ -9618,7 +9674,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       try {
         var d = await (await fetch('/api/config/razgovor')).json();
         if (d.error) throw new Error(d.error);
-        el.innerHTML = renderRazgovor(d) + '<div id="info-botkanal-content" style="margin-top:14px"></div>';
+        el.innerHTML = _skVlastita(renderRazgovor(d)) + '<div id="info-botkanal-content" style="margin-top:14px"></div>';
         loadBotKanal();
       } catch(e) {
         el.innerHTML = '<div class="empty">' + _T('cfg_razg_greska', 'Greška pri čitanju postavki razgovora') + ': ' + _esc(e.message) + '</div>';
@@ -9632,7 +9688,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       try {
         var d = await (await fetch('/api/config/razgovor/bot-kanal')).json();
         if (d.error) throw new Error(d.error);
-        el.innerHTML = renderBotKanal(d);
+        el.innerHTML = _skVlastita(renderBotKanal(d));
       } catch(e) {
         el.innerHTML = '<div class="empty">Bot↔bot: ' + _esc(e.message) + '</div>';
       }
@@ -9680,7 +9736,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         _razgPolje('bk-stop', _T('cfg_bk_stop', 'Stop-korisnici (brojčani id, zarezom; prazno = dopušteni)'), '<input id="bk-stop" type="text" value="' + csv(p.stopKorisnici) + '">') +
         _razgPolje('bk-strop', _T('cfg_bk_strop', 'Strop prijenosa bez čovjeka (1–20)'), '<input id="bk-strop" type="number" min="1" max="20" value="' + p.strop + '">') +
         _razgPolje('bk-prozor', _T('cfg_bk_prozor', 'Prozor stropa (min, 1–120)'), '<input id="bk-prozor" type="number" min="1" max="120" value="' + p.prozorMin + '">') +
-        '<div style="margin-top:8px"><button class="cfg-btn" onclick="spremiBotKanal(this)">' + _T('tel_spremi', 'Spremi') + '</button> ' + gumbi + '</div>';
+        '<div style="margin-top:8px"><button class="cfg-btn sk-spremi" disabled onclick="spremiBotKanal(this)">' + _T('tel_spremi', 'Spremi') + '</button> ' + _skOznaka() + ' ' + gumbi + '</div>';
     }
 
     async function spremiBotKanal(btn) {
@@ -9772,7 +9828,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         _razgPolje('razg-glasglas', _T('cfg_razg_glasglas', 'Glas (ime modela servisa; prazno = zadani)'), '<input id="razg-glasglas" type="text" maxlength="100" value="' + _esc(p.glasGlas || '') + '">' +
           (d.glas && d.glas.glasovi && d.glas.glasovi.length ? ' <small>' + _T('cfg_razg_glasovi', 'dostupno') + ': ' + d.glas.glasovi.map(_esc).join(', ') + '</small>' : '')) +
         _razgPolje('razg-glasrok', _T('cfg_razg_glasrok', 'Rok glasa (s, 10–600)'), '<input id="razg-glasrok" type="number" min="10" max="600" value="' + (p.glasRokSek || 120) + '">') +
-        '<div style="margin-top:8px"><button class="cfg-btn" onclick="spremiRazgovor(this)">' + _T('tel_spremi', 'Spremi') + '</button></div>' +
+        '<div style="margin-top:8px"><button class="cfg-btn sk-spremi" disabled onclick="spremiRazgovor(this)">' + _T('tel_spremi', 'Spremi') + '</button> ' + _skOznaka() + '</div>' +
         _razgPosiljatelji(d.posiljatelji || [], p.dopusteniKorisnici || []) +
         (h ? '<ul class="cfg-povijest">' + h + '</ul>' : '');
     }
@@ -9850,7 +9906,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       try {
         var d = await (await fetch('/api/config/revizija-blokiranih')).json();
         if (d.error) throw new Error(d.error);
-        el.innerHTML = renderRevizija(d);
+        el.innerHTML = _skVlastita(renderRevizija(d));
         var o = await (await fetch('/api/odlucitelj/config')).json();
         var ima = ((o.postavke || {}).rizicno_covjeku) || [];
         document.getElementById('rev-odluc-rizici').innerHTML = ['novac', 'tajne', 'brisanje', 'vanjski učinak', 'nepovratno'].map(function (r) {
@@ -9876,7 +9932,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       return '<div class="usp-red">' + nac + '</div>' +
         '<div class="usp-red">Klase uživo: ' + kl + '</div>' +
         '<div class="usp-red">Odlučitelj — rizici koje model nikad ne odlučuje: <span id="rev-odluc-rizici">…</span></div>' +
-        '<div class="usp-red"><button class="cfg-btn" onclick="spremiReviziju(this)">Spremi</button></div>' +
+        '<div class="usp-red"><button class="cfg-btn sk-spremi" disabled onclick="spremiReviziju(this)">Spremi</button>' + _skOznaka() + '</div>' +
         '<div class="cfg-napomena">Sjena = samo zapis (revizija_blokiranih.jsonl daemona), nula puštanja. Uživo pušta samo označene klase; ' +
           'odluka, čovjek, sustav, sigurnost, novac i vanjski učinak uvijek idu tebi. Stropovi: ' + _esc(String(c.maxRedrive)) + ' puštanja po zadatku, ' +
           _esc(String(c.maxPustanjaPoProlazu)) + ' po prolazu, ' + _esc(String(c.maxUsdPoPustanju)) + ' USD po puštanju, ' + _esc(String(c.maxUsdPoZadatku)) + ' USD po zadatku, ' +
@@ -9911,7 +9967,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       try {
         var d = await (await fetch('/api/config/concurrency')).json();
         if (d.error) throw new Error(d.error);
-        el.innerHTML = renderConcurrency(d);
+        el.innerHTML = _skVlastita(renderConcurrency(d));
       } catch(e) {
         el.innerHTML = '<div class="empty">' + _T('cfg_usp_greska', 'Greška pri čitanju stropa') + ': ' + _esc(e.message) + '</div>';
       }
@@ -9927,7 +9983,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         '<input id="usp-strop" type="range" min="' + d.min + '" max="' + d.max + '" value="' + d.maxConcurrent + '" ' +
           'oninput="document.getElementById(&quot;usp-vrijednost&quot;).textContent=this.value">' +
         '<span class="usp-broj" id="usp-vrijednost">' + d.maxConcurrent + '</span>' +
-        '<button class="cfg-btn" onclick="spremiConcurrency(this)">' + _T('tel_spremi', 'Spremi') + '</button>' +
+        '<button class="cfg-btn sk-spremi" disabled onclick="spremiConcurrency(this)">' + _T('tel_spremi', 'Spremi') + '</button>' + _skOznaka() +
         '<span id="usp-zauzeto" class="usp-zauzeto" title="' + _T('cfg_usp_zauzeto_title', 'zauzeta mjesta / strop') + '">' +
           _T('cfg_usp_zauzeto', 'Zauzeto') + ': <b>' + d.active + '/' + d.maxConcurrent + '</b></span>' +
         '</div>' +
@@ -9991,7 +10047,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         var ru = await fetch('/api/session-usage');
         if (ru.ok) potrosnja = await ru.json();
       } catch(e) { /* potrošnja nije nužna za prikaz pragova */ }
-      el.innerHTML = renderAutonomija(d, api, potrosnja);
+      el.innerHTML = _skVlastita(renderAutonomija(d, api, potrosnja));
     }
 
     function _vrataSada(postotak, min, max, sOznakom) {
@@ -10044,7 +10100,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       });
       h += '</div>';
       h += '<div class="usp-red" style="margin-top:0.6rem">' +
-        '<button class="cfg-btn" id="vr-spremi" onclick="spremiAutonomiju(this)"' + (api ? '' : ' disabled') + '>' + _T('tel_spremi', 'Spremi') + '</button>' +
+        '<button class="cfg-btn sk-spremi" id="vr-spremi" disabled onclick="spremiAutonomiju(this)"' + (api ? '' : ' data-sk-blokiran') + '>' + _T('tel_spremi', 'Spremi') + '</button>' + _skOznaka() +
         '<span class="usp-zauzeto">' + _Tv('cfg_vr_potrosnja', 'Potrošnja: sesija {s} · tjedan {t}', {
           s: sp == null ? '—' : Math.round(sp) + ' %', t: wp == null ? '—' : Math.round(wp) + ' %' }) + '</span>' +
         '</div>';
@@ -10124,7 +10180,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         h += '<label title="' + _esc(_ulazOpisNacina(n)) + '" style="cursor:pointer;font-size:.68rem;padding:2px 8px;border-radius:4px;background:' + boja +
           ';color:' + (sel ? '#0b1720' : 'var(--text-secondary,#8aa0b2)') + (sel ? ';font-weight:700' : '') + (ugasen ? ';opacity:.55' : '') + '">' +
           '<input type="radio" style="display:none" name="ulaz-' + _esc(chat) + '" data-chat="' + _esc(chat) + '" value="' + n + '"' +
-          (sel ? ' checked' : '') + ' onchange="spremiUlazNacin(this)">' + nazivi[n] + '</label>';
+          (sel ? ' checked' : '') + _sk('perGroup.' + chat) + ' onchange="ulazOboji(this)">' + nazivi[n] + '</label>';
       });
       return h + '</span>';
     }
@@ -10154,20 +10210,18 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
 
       h += '<table class="info-table"><tbody>';
       h += _red(_T('cfg_ulaz_ukljucena', 'Ulazna vrata uključena'),
-        '<input type="checkbox"' + (p.enabled ? ' checked' : '') + ' onchange="spremiUlaz({enabled:this.checked}, this)">',
+        '<input type="checkbox"' + (p.enabled ? ' checked' : '') + _sk('enabled', 'bool') + '>',
         _T('cfg_ulaz_ukljucena_opis', 'Isključeno: sve grupe rade kao danas, bez obzira na položaj prekidača ispod.'));
       h += '</tbody></table>';
 
       h += '<table class="info-table" style="margin-top:.4rem"><thead><tr>' +
         '<th style="text-align:left;font-size:.68rem;width:215px">' + _T('cfg_ulaz_stupac_grupa', 'Grupa') + '</th>' +
         '<th style="text-align:left;font-size:.68rem;width:290px">' + _T('cfg_ulaz_stupac_prekidac', 'Prekidač') + '</th>' +
-        '<th style="text-align:left;font-size:.68rem">' + _T('cfg_ulaz_stupac_projekt', 'Zadani projekt grupe') + '</th></tr></thead><tbody>';
+        '<th style="text-align:left;font-size:.68rem">' + _T('cfg_ulaz_stupac_projekt', 'Zadani projekt grupe') + '</th></tr></thead><tbody id="ulaz-grupe-tijelo">';
+      _ulazZadnji = d;
       kljucevi.forEach(function(chat) {
         var naziv = grupe[chat] ? grupe[chat] : _T('cfg_ulaz_grupa', 'grupa');
-        var nacin = perGroup[chat] || 'off';
-        h += '<tr><td><strong>' + _esc(naziv) + '</strong><br><span style="font-size:.66rem;color:var(--text-secondary)">' + _esc(chat) + '</span></td>' +
-          '<td>' + _ulazPrekidac(chat, nacin, ugasen) + '</td>' +
-          '<td>' + _ulazProjektIzbor(chat, projPoGrupi[chat] || '', d.projekti || []) + '</td></tr>';
+        h += _ulazRedGrupe(chat, naziv, perGroup[chat] || 'off', projPoGrupi[chat] || '', d.projekti || [], ugasen);
       });
       h += '</tbody></table>';
 
@@ -10178,18 +10232,39 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
 
       h += '<table class="info-table" style="margin-top:.5rem"><tbody>';
       h += _red(_T('cfg_ulaz_prag_a', 'Prag A — otvara se zadatak'),
-        '<input type="number" min="' + g.pragA.min + '" max="' + g.pragA.max + '" value="' + p.pragA + '" style="' + _stil() + ';width:70px" onchange="spremiUlaz({pragA:Number(this.value)}, this)">',
+        '<input type="number" min="' + g.pragA.min + '" max="' + g.pragA.max + '" value="' + p.pragA + '" style="' + _stil() + ';width:70px"' + _sk('pragA', 'broj') + '>',
         _T('cfg_ulaz_prag_a_opis', 'Ispod praga (pozdrav, pitanje) odgovor ide odmah i ploča ostaje čista. Zadano 16 (E2).'));
       h += _red(_T('cfg_ulaz_prag_b', 'Prag B — puni lanac'),
-        '<input type="number" min="' + g.pragB.min + '" max="' + g.pragB.max + '" value="' + p.pragB + '" style="' + _stil() + ';width:70px" onchange="spremiUlaz({pragB:Number(this.value)}, this)">',
+        '<input type="number" min="' + g.pragB.min + '" max="' + g.pragB.max + '" value="' + p.pragB + '" style="' + _stil() + ';width:70px"' + _sk('pragB', 'broj') + '>',
         _T('cfg_ulaz_prag_b_opis', 'Ispod praga zadatak dobiva jednog izvršitelja; iznad ide istraživanje → plan → izvedba → provjera. Zadano 36 (E3).'));
       h += _red(_T('cfg_ulaz_prag_c', 'Prag C — potvrda plana'),
-        '<input type="number" min="' + g.pragC.min + '" max="' + g.pragC.max + '" value="' + p.pragC + '" style="' + _stil() + ';width:70px" onchange="spremiUlaz({pragC:Number(this.value)}, this)">',
+        '<input type="number" min="' + g.pragC.min + '" max="' + g.pragC.max + '" value="' + p.pragC + '" style="' + _stil() + ';width:70px"' + _sk('pragC', 'broj') + '>',
         _T('cfg_ulaz_prag_c_opis', 'Iznad praga plan se šalje na odobrenje, zadatci se otvaraju tek na approve. Zadano 81 (E5).'));
       h += '</tbody></table>';
       h += '<div style="font-size:.66rem;color:var(--text-secondary);margin-top:.3rem">' + _T('cfg_ulaz_pragovi_rastu', 'Pragovi moraju rasti: A ≤ B ≤ C.') + '</div>';
       h += '<div id="ulaz-poruka" style="font-size:.7rem;margin-top:.4rem;min-height:1em"></div>';
-      return h;
+      // TASK-5346: prekidači, projekti, nove grupe i pragovi spremaju se ZAJEDNO jednim „Spremi".
+      return '<div class="sk-skupina" data-sk-ime="ulaz" data-sk-osvjezi="loadUlaznaVrata">' + h + _skPodnozje() + '</div>';
+    }
+
+    var _ulazZadnji = null;
+    function _ulazRedGrupe(chat, naziv, nacin, projekt, projekti, ugasen) {
+      return '<tr><td><strong>' + _esc(naziv) + '</strong><br><span style="font-size:.66rem;color:var(--text-secondary)">' + _esc(chat) + '</span></td>' +
+        '<td>' + _ulazPrekidac(chat, nacin, ugasen) + '</td>' +
+        '<td>' + _ulazProjektIzbor(chat, projekt, projekti) + '</td></tr>';
+    }
+    /** Položaj prekidača se boji odmah na klijentu — spremanje je tek na „Spremi". */
+    function ulazOboji(el) {
+      var omot = el.closest('span');
+      if (!omot) return;
+      omot.querySelectorAll('label').forEach(function (l) {
+        var r = l.querySelector('input');
+        var sel = r && r.checked;
+        var n = r ? r.value : '';
+        l.style.background = sel ? (n === 'on' ? '#22c55e' : (n === 'shadow' ? '#f59e0b' : '#64748b')) : 'transparent';
+        l.style.color = sel ? '#0b1720' : 'var(--text-secondary,#8aa0b2)';
+        l.style.fontWeight = sel ? '700' : '';
+      });
     }
 
     function _ulazProjektIzbor(chat, trenutni, projekti) {
@@ -10199,49 +10274,29 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       popis.forEach(function(pid) {
         opts += '<option value="' + _esc(pid) + '"' + (pid === trenutni ? ' selected' : '') + '>' + _esc(pid) + '</option>';
       });
-      return '<select data-chat="' + _esc(chat) + '" style="' + _stil() + ';min-width:220px" onchange="spremiUlazProjekt(this)">' + opts + '</select>';
+      return '<select data-chat="' + _esc(chat) + '" style="' + _stil() + ';min-width:220px"' + _sk('projectByGroup.' + chat, 'null') + '>' + opts + '</select>';
     }
 
     // chatId ide kroz data-atribut, ne kroz onclick argument — tako u predlošku nema
     // ugniježđenih navodnika koje bi minus u chatId-u ionako preživio, ali čitatelj ne bi.
-    function spremiUlazNacin(el) {
-      var m = {}; m[el.getAttribute('data-chat')] = el.value;
-      spremiUlaz({ perGroup: m }, el);
-    }
-    function spremiUlazProjekt(el) {
-      var m = {}; m[el.getAttribute('data-chat')] = el.value === '' ? null : el.value;
-      spremiUlaz({ projectByGroup: m }, el);
-    }
+    // Nova grupa se dodaje kao redak na „isključeno" i sprema zajedno s ostatkom skupine.
     function dodajUlazGrupu(btn) {
       var polje = document.getElementById('ulaz-nova-grupa');
       var chat = polje ? String(polje.value || '').trim() : '';
+      var pk = document.getElementById('ulaz-poruka');
       if (!/^-?[0-9]{5,20}$/.test(chat)) {
-        var pk = document.getElementById('ulaz-poruka');
         if (pk) pk.innerHTML = '<span style="color:var(--accent-red,#ef4444)">' + _T('cfg_ulaz_chatid_broj', 'chatId mora biti broj (npr. -5245252755)') + '</span>';
         return;
       }
-      var m = {}; m[chat] = 'off';
-      spremiUlaz({ perGroup: m }, btn);
-    }
-
-    async function spremiUlaz(zakrpa, el) {
-      var poruka = document.getElementById('ulaz-poruka');
-      if (el) el.disabled = true;
-      try {
-        var res = await fetch('/api/ingest-gate', {
-          method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(zakrpa)
-        });
-        var d = await res.json();
-        if (!res.ok || d.error) throw new Error(d.error || _T('spremanje_nije_uspjelo', 'spremanje nije uspjelo'));
-        // Potvrda se ispisuje TEK nakon ponovnog iscrtavanja — loadUlaznaVrata mijenja
-        // innerHTML cijele kartice, pa bi ranija poruka nestala u istom dahu.
-        await loadUlaznaVrata();
-        var svjeza = document.getElementById('ulaz-poruka');
-        if (svjeza) svjeza.innerHTML = '<span style="color:var(--accent-green,#22c55e)">' + _T('cfg_ulaz_spremljeno', 'Spremljeno — vrijedi odmah, bez restarta') + ' (' + _sat() + ')</span>';
-      } catch(e) {
-        if (poruka) poruka.innerHTML = '<span style="color:var(--accent-red,#ef4444)">' + _T('cfg_ulaz_nije_spremljeno', 'Nije spremljeno') + ': ' + _esc(e.message) + '</span>';
-        if (el) el.disabled = false;
-      }
+      var tijelo = document.getElementById('ulaz-grupe-tijelo');
+      if (!tijelo) return;
+      if (tijelo.querySelector('input[data-chat="' + chat + '"]')) { if (pk) pk.textContent = ''; return; }
+      var d = _ulazZadnji || {};
+      tijelo.insertAdjacentHTML('beforeend', _ulazRedGrupe(chat, _T('cfg_ulaz_grupa', 'grupa'), 'off', '', d.projekti || [], !(d.postavke || {}).enabled));
+      polje.value = '';
+      if (pk) pk.textContent = '';
+      var g = tijelo.closest('.sk-skupina');
+      if (g) _skProvjeri(g);
     }
 
     async function loadLoginProviders() {
@@ -10408,7 +10463,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       try {
         var d = await (await fetch('/api/models/classifier')).json();
         if (d.error && !d.models) throw new Error(d.error);
-        el.innerHTML = renderClassifier(d);
+        el.innerHTML = _skVlastita(renderClassifier(d));
       } catch(e) {
         el.innerHTML = '<div class="empty">' + _T('cfg_klas_greska_citanje', 'Greška pri čitanju klasifikatora') + ': ' + _esc(e.message) + '</div>';
       }
@@ -10430,7 +10485,8 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         opts += '<option value="' + _esc(m) + '"' + (m === d.model ? ' selected' : '') + '>' + _esc(m) + '</option>';
       });
       h += '<select id="classifier-select" style="font-size:0.72rem;padding:3px 5px;border-radius:4px;background:var(--bg-primary,#111);color:var(--text-primary,#ddd);border:1px solid var(--border-color,#333)" ' +
-        'onchange="setClassifier(this.value, this)">' + opts + '</select>';
+        '>' + opts + '</select>' +
+        '<button type="button" class="cfg-btn sk-spremi" disabled onclick="setClassifier(document.getElementById(\\'classifier-select\\').value, this)">' + _T('tel_spremi', 'Spremi') + '</button>' + _skOznaka();
       h += '<span class="info-badge ' + (d.source === 'default' ? 'disabled' : 'enabled') + '" title="' + _esc(_T('cfg_klas_izvor_naslov', 'Odakle vrijednost stvarno dolazi')) + '">' + _esc(izvor) + '</span>';
       h += '</div>';
       if (!d.reachable) {
@@ -10466,12 +10522,12 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         var dot = p.enabled ? (p.reachable ? 'online' : 'offline') : 'offline';
         var statusTxt = !p.enabled ? _T('cfg_prov_iskljucen', 'isključen') : (p.kind === 'subscription' ? _T('cfg_prov_pretplata', 'pretplata') : (p.reachable ? _Tv('cfg_prov_broj_modela', '{broj} modela', { broj: p.models.length }) : _T('cfg_prov_nedostupan', 'nedostupan')));
         var statusBadge = (p.enabled && (p.reachable || p.kind === 'subscription')) ? 'enabled' : 'disabled';
-        h += '<div style="border:1px solid var(--border-color);border-radius:6px;padding:0.6rem;margin-bottom:0.6rem">';
+        h += '<div class="sk-skupina" data-sk-ime="provider-' + p.id + '" data-sk-osvjezi="loadModelSetup" style="border:1px solid var(--border-color);border-radius:6px;padding:0.6rem;margin-bottom:0.6rem">';
         h += '<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.4rem;flex-wrap:wrap">' +
           '<span class="info-dot ' + dot + '"></span>' +
           '<strong>' + _T(p.nameKey, p.name) + '</strong>' +
           '<span class="info-badge ' + statusBadge + '">' + statusTxt + '</span>' +
-          '<label style="margin-left:auto;font-size:0.72rem;cursor:pointer"><input type="checkbox" ' + (p.enabled ? 'checked' : '') + ' onchange="setProviderEnabled(\\'' + p.id + '\\', this.checked)"> ' + _T('cfg_prov_omogucen', 'omogućen') + '</label>' +
+          '<label style="margin-left:auto;font-size:0.72rem;cursor:pointer"><input type="checkbox" ' + (p.enabled ? 'checked' : '') + _sk('enabled', 'bool') + '> ' + _T('cfg_prov_omogucen', 'omogućen') + '</label>' +
           '</div>';
         if (p.needsSetup) {
           var inpStyle = 'font-size:0.72rem;padding:3px 5px;background:var(--bg-primary,#111);color:var(--text-primary,#ddd);border:1px solid var(--border-color,#333);border-radius:4px';
@@ -10481,15 +10537,14 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
           h += '<div style="display:flex;gap:0.6rem;flex-wrap:wrap;align-items:flex-end;font-size:0.72rem">';
           // Server IP:port samo za lokalne (Ollama)
           if (p.kind === 'local') {
-            h += '<div><div style="color:var(--text-secondary)">' + _T('cfg_prov_server', 'Server (IP:port)') + '</div><input id="prov-' + p.id + '-url" value="' + (p.baseUrl || '') + '" placeholder="http://127.0.0.1:11434" style="width:230px;' + inpStyle + '"></div>';
+            h += '<div><div style="color:var(--text-secondary)">' + _T('cfg_prov_server', 'Server (IP:port)') + '</div><input id="prov-' + p.id + '-url" value="' + (p.baseUrl || '') + '" placeholder="http://127.0.0.1:11434" style="width:230px;' + inpStyle + '"' + _sk('baseUrl') + '></div>';
           }
           // Ključ + 👁 prikaži (maskiran dok se ne stisne)
           h += '<div><div style="color:var(--text-secondary)">' + keyLabel + '</div>' +
             '<div style="display:flex;align-items:center;gap:4px">' +
-            '<input id="prov-' + p.id + '-key" type="password" autocomplete="new-password" data-form-type="other" data-lpignore="true" data-1p-ignore placeholder="' + keyPh + '" style="width:' + (isCloud ? '250' : '170') + 'px;' + inpStyle + '">' +
+            '<input id="prov-' + p.id + '-key" type="password" autocomplete="new-password" data-form-type="other" data-lpignore="true" data-1p-ignore placeholder="' + keyPh + '" style="width:' + (isCloud ? '250' : '170') + 'px;' + inpStyle + '"' + _sk('apiKey', 'tajna') + '>' +
             '<button type="button" title="' + _esc(_T('cfg_prov_prikazi_sakrij', 'Prikaži/sakrij')) + '" class="cfg-btn" onclick="toggleKeyVis(\\'' + p.id + '\\', this)">&#9678;</button>' +
             '</div></div>';
-          h += '<button class="cfg-btn" onclick="saveProvider(\\'' + p.id + '\\')">' + _T('cfg_spremi', 'Spremi') + (p.kind === 'local' ? ' + test' : '') + '</button>';
           h += '</div>';
           h += '<div style="font-size:0.66rem;color:var(--text-secondary);margin-top:0.3rem">' + _T(p.authNoteKey, p.authNote || '') + (p.error ? (' <span style="color:var(--accent-red)">— ' + p.error + '</span>') : '') + '</div>';
         } else {
@@ -10499,18 +10554,15 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
           h += '<div style="font-size:0.66rem;color:var(--text-secondary);margin-top:0.35rem;line-height:1.6">' + _T('cfg_prov_modeli', 'Modeli') + ': ' +
             p.models.map(function(m) { return '<span style="font-family:monospace">' + m.model + '</span> <span class="info-badge ' + m.tier + '">' + m.tier + '</span>' + (m.spawnable ? '' : ' <span style="color:#f59e0b">' + _T('cfg_lokalno', 'lokalno') + '</span>'); }).join(' · ') + '</div>';
         }
+        h += _skPodnozje(_T('cfg_spremi', 'Spremi') + (p.kind === 'local' ? ' + test' : ''));
         h += '</div>';
       });
       el.innerHTML = h;
     }
 
-    async function setProviderEnabled(id, enabled) {
-      try {
-        var r = await fetch('/api/models/providers/' + encodeURIComponent(id), { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ enabled: enabled }) });
-        var d = await r.json();
-        if (!r.ok || d.error) throw new Error(d.error || 'save failed');
-        fetchInfoData();
-      } catch(e) { alert(_T('cfg_greska', 'Greška') + ': ' + e.message); }
+    async function loadModelSetup() {
+      var r = await fetch('/api/models/available').catch(function () { return null; });
+      renderModelSetup(r && r.ok ? await r.json() : null);
     }
 
     function toggleKeyVis(id, btn) {
@@ -10518,20 +10570,6 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       if (!el) return;
       if (el.type === 'password') { el.type = 'text'; if (btn) btn.style.opacity = '1'; }
       else { el.type = 'password'; if (btn) btn.style.opacity = '0.55'; }
-    }
-
-    async function saveProvider(id) {
-      var urlEl = document.getElementById('prov-' + id + '-url');
-      var keyEl = document.getElementById('prov-' + id + '-key');
-      var body = {};
-      if (urlEl) body.baseUrl = urlEl.value;
-      if (keyEl && keyEl.value !== '') body.apiKey = keyEl.value;
-      try {
-        var r = await fetch('/api/models/providers/' + encodeURIComponent(id), { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
-        var d = await r.json();
-        if (!r.ok || d.error) throw new Error(d.error || 'save failed');
-        fetchInfoData();
-      } catch(e) { alert(_T('cfg_prov_greska_spremanje', 'Greška pri spremanju providera') + ': ' + e.message); }
     }
 
     function renderInfoAgents(d, modelsData) {
@@ -10566,7 +10604,16 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
           '<td style="font-size:0.7rem;color:var(--text-secondary)">' + _T(a.notesKey, a.notes || '') + '</td></tr>';
       });
       h += '</tbody></table>';
-      document.getElementById('info-agents-content').innerHTML = h;
+      // TASK-5346: modeli svih agenata spremaju se jednim „Spremi" (jedan upis model-config.json).
+      document.getElementById('info-agents-content').innerHTML =
+        '<div class="sk-skupina" data-sk-ime="agenti" data-sk-osvjezi="loadAgentiModeli">' + h + _skPodnozje() + '</div>';
+    }
+
+    async function loadAgentiModeli() {
+      var r = await Promise.all([fetch('/api/info'), fetch('/api/models/available').catch(function () { return null; })]);
+      var d = await r[0].json();
+      var md = r[1] && r[1].ok ? await r[1].json() : null;
+      renderInfoAgents(d, md);
     }
 
     function renderInfoModules(d) {
@@ -10892,8 +10939,9 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         '<option value="pgvector"' + (cur === 'pgvector' ? ' selected' : '') + (pg.connected ? '' : ' disabled') + '>pgvector</option>' +
         '<option value="dual"' + (cur === 'dual' ? ' selected' : '') + (pg.connected ? '' : ' disabled') + '>dual (oba)</option>';
       h += _red(_T('rag_backend', 'Aktivni backend'),
-        '<select id="rag-backend-select" style="' + _stil() + ';min-width:150px" onchange="setRagBackend(this.value, this)">' + backendOpts + '</select>' +
-        ' <span id="rag-backend-status" style="font-size:0.68rem;margin-left:0.5rem"></span>',
+        '<span class="sk-skupina" data-sk-vlastiti="1"><select id="rag-backend-select" style="' + _stil() + ';min-width:150px">' + backendOpts + '</select>' +
+        ' <button type="button" class="cfg-btn sk-spremi" disabled onclick="setRagBackend(document.getElementById(\\'rag-backend-select\\').value, this)">' + _T('tel_spremi', 'Spremi') + '</button> ' + _skOznaka() +
+        ' <span id="rag-backend-status" style="font-size:0.68rem;margin-left:0.5rem"></span></span>',
         _T('rag_backend_opis', 'ChromaDB = postojeći; pgvector = PostgreSQL (brži, HNSW indeksi); dual = oba paralelno (za migraciju).'));
 
       h += '</tbody></table>';
@@ -10901,7 +10949,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       // pgvector konfiguracija (sklopivo)
       h += '<details style="margin-bottom:1rem"><summary style="cursor:pointer;font-weight:600;font-size:0.8rem;color:var(--accent-blue)">' +
         _T('rag_pg_config', '🔧 pgvector konfiguracija') + '</summary>';
-      h += '<div style="padding:0.75rem;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:0 0 6px 6px;margin-top:-1px">';
+      h += '<div class="sk-skupina" data-sk-vlastiti="1" style="padding:0.75rem;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:0 0 6px 6px;margin-top:-1px">';
       h += '<table class="info-table"><tbody>';
       h += _red('Host',
         '<input id="rag-pg-host" value="' + _esc(pg.host) + '" style="' + _stil() + ';width:150px">',
@@ -10916,13 +10964,13 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         '<input id="rag-pg-user" value="' + _esc(pg.user || '') + '" style="' + _stil() + ';width:100px">',
         'Korisničko ime');
       h += _red('Password',
-        '<input id="rag-pg-password" type="password" placeholder="••••••••" style="' + _stil() + ';width:150px">' +
+        '<input id="rag-pg-password" type="password" data-sk-izuzmi autocomplete="new-password" placeholder="••••••••" style="' + _stil() + ';width:150px">' +
         ' <span style="font-size:0.68rem;color:var(--text-secondary)">' + _T('rag_pass_hint', '(iz TM_PGVECTOR_PASSWORD ili datoteke tajni)') + '</span>',
         'Lozinka se čita iz TM_PGVECTOR_PASSWORD (okolina ili datoteka tajni)');
       h += '</tbody></table>';
       h += '<div style="margin-top:0.75rem;display:flex;gap:0.5rem">' +
         '<button style="font-size:0.72rem;padding:4px 12px" onclick="testRagPgConnection(this)">' + _T('rag_test', 'Test konekcije') + '</button>' +
-        '<button style="font-size:0.72rem;padding:4px 12px" onclick="saveRagPgConfig(this)">' + _T('rag_spremi', 'Spremi postavke') + '</button>' +
+        '<button class="sk-spremi" disabled style="font-size:0.72rem;padding:4px 12px" onclick="saveRagPgConfig(this)">' + _T('rag_spremi', 'Spremi postavke') + '</button>' + _skOznaka() +
         '<span id="rag-pg-status" style="font-size:0.68rem;line-height:2"></span></div>';
       h += '</div></details>';
 
@@ -11781,6 +11829,7 @@ async function handleRazgovorPut(req: Request): Promise<Response> {
   const r = razgovorPut(TM_DB, tijelo)
   if (r.status === 200) {
     const promjene = ((r.tijelo as any).promjene || []).filter((c: any) => c.changed)
+    auditSkupine('razgovor', promjene.map((c: any) => String(c.kljuc)), (tijelo as any)?.by)
     console.log(`[RAZGOVOR] postavke promijenjene: ${promjene.map((c: any) => `${c.kljuc}=${c.novo}`).join(', ') || '(bez promjene)'}`)
     // Kao TASK-5274: paljenje razgovora pokreće petlju odmah, bez restarta.
     try {
@@ -11847,6 +11896,7 @@ async function handleBotKanalConfigPut(req: Request): Promise<Response> {
   const r = botKanalPut(TM_DB, tijelo, ipZahtjeva(req))
   if (r.status === 200) {
     const promjene = ((r.tijelo as any).promjene || []).filter((c: any) => c.changed).map((c: any) => c.kljuc)
+    auditSkupine('bot-kanal', promjene.map(String), (tijelo as any)?.by)
     console.log(`[bot-kanal] postavke promijenjene: ${promjene.join(', ') || '(bez promjene)'}`)
   }
   return razgovorOdgovor(r)
@@ -12186,6 +12236,150 @@ async function handleIngestGatePut(req: Request): Promise<Response> {
   } catch (err) {
     return json({ error: String(err) }, 500)
   }
+}
+
+// ── TASK-5346: jedna skupina postavki = jedan „Spremi” ───────────────────────────────────
+// PUT /api/config/skupina/<ime>  {"polja": {...}, "by": "..."} — cijela skupina jednim pozivom:
+// sve se provjeri prije prvog upisa (nevaljano polje → 400, ništa zapisano, pogreška uz polje),
+// jedan upis, JEDAN redak u settings_history s popisom promijenjenih ključeva (bez vrijednosti).
+// Prazno polje tajne = ne mijenjaj. Stari PUT-ovi po kartici ostaju radi kompatibilnosti.
+const PROVIDERI_PLOCE = ['anthropic', 'ollama', 'openai', 'google', 'openrouter']
+
+function skupinaProvidera(id: string): SkupinaZapis {
+  const citaj = () => {
+    const mc = existsSync(MODEL_CONFIG_PATH) ? JSON.parse(readFileSync(MODEL_CONFIG_PATH, 'utf-8')) : {}
+    return { ...(mc.providers?.[id] || {}) }
+  }
+  return {
+    load: citaj,
+    validate: (t: any) => {
+      const greske: string[] = []
+      const z = t && typeof t === 'object' && !Array.isArray(t) ? t : {}
+      for (const k of Object.keys(z)) if (!['enabled', 'baseUrl', 'apiKey'].includes(k)) greske.push(`Nepoznato polje: ${k} (dopušteno: enabled, baseUrl, apiKey)`)
+      if (z.enabled !== undefined && typeof z.enabled !== 'boolean') greske.push('enabled mora biti true ili false')
+      if (z.baseUrl !== undefined && (typeof z.baseUrl !== 'string' || (z.baseUrl.trim() && !/^https?:\/\/[^\s]+$/.test(z.baseUrl.trim())))) greske.push('baseUrl mora biti adresa (http://host:port)')
+      if (z.apiKey !== undefined && typeof z.apiKey !== 'string') greske.push('apiKey mora biti tekst')
+      if (!greske.length && !Object.keys(z).length) greske.push('Nijedna postavka nije poslana')
+      return { ok: greske.length === 0, greske, zakrpa: z }
+    },
+    save: (z: any) => {
+      if (!existsSync(MODEL_CONFIG_PATH)) throw new Error('model-config.json not found')
+      saveModelConfig(MODEL_CONFIG_PATH, mc => {
+        if (!mc.providers) mc.providers = {}
+        const p = mc.providers[id] || (mc.providers[id] = {})
+        if (z.enabled !== undefined) p.enabled = z.enabled
+        if (typeof z.baseUrl === 'string' && z.baseUrl.trim()) p.baseUrl = z.baseUrl.trim()
+        if (typeof z.apiKey === 'string' && z.apiKey) p.apiKey = z.apiKey
+      }, 'ploca')
+      return citaj()
+    },
+    tajne: ['apiKey'],
+    odgovor: (p: any) => ({ enabled: p.enabled !== false, baseUrl: p.baseUrl || null, hasAuth: !!p.apiKey }),
+  }
+}
+
+/** Model po agentu (model-config.json → agentOverrides). `poznati` = statički + živi modeli. */
+function skupinaAgenata(poznati: Set<string>): SkupinaZapis {
+  const citaj = () => {
+    const mc = existsSync(MODEL_CONFIG_PATH) ? JSON.parse(readFileSync(MODEL_CONFIG_PATH, 'utf-8')) : {}
+    return { ...(mc.agentOverrides && typeof mc.agentOverrides === 'object' ? mc.agentOverrides : {}) }
+  }
+  const brise = (v: unknown) => v === null || v === '' || v === 'default' || v === 'zadano'
+  return {
+    load: citaj,
+    validate: (t: any) => {
+      const greske: string[] = []
+      const z = t && typeof t === 'object' && !Array.isArray(t) ? t : {}
+      for (const [id, v] of Object.entries(z)) {
+        if (!/^[a-z0-9_-]+$/.test(id)) { greske.push(`${id}: neispravan id agenta`); continue }
+        if (v !== null && typeof v !== 'string') { greske.push(`${id}: model mora biti tekst`); continue }
+        const raw = String(v ?? '').trim()
+        if (brise(raw)) continue
+        if (FIXED_INTERFACE_AGENTS.has(id)) greske.push(`${id}: interface/glavna petlja — model override se ne primjenjuje`)
+        else if (!poznati.has(raw)) greske.push(`${id}: nepoznat model '${raw}'`)
+      }
+      if (!greske.length && !Object.keys(z).length) greske.push('Nijedna postavka nije poslana')
+      return { ok: greske.length === 0, greske, zakrpa: z }
+    },
+    save: (z: any) => {
+      if (!existsSync(MODEL_CONFIG_PATH)) throw new Error('model-config.json not found')
+      saveModelConfig(MODEL_CONFIG_PATH, mc => {
+        if (!mc.agentOverrides || typeof mc.agentOverrides !== 'object') mc.agentOverrides = {}
+        for (const [id, v] of Object.entries(z)) {
+          const raw = String(v ?? '').trim()
+          if (brise(raw)) delete mc.agentOverrides[id]
+          else mc.agentOverrides[id] = raw
+        }
+      }, 'ploca')
+      return citaj()
+    },
+    odgovor: p => p,
+  }
+}
+
+async function skupinaPostavki(ime: string): Promise<SkupinaZapis | null> {
+  if (ime === 'agenti') {
+    const poznati = new Set(getEffectiveModels().map(m => m.spec))
+    try { (await buildModelsAvailable()).models.forEach((m: any) => poznati.add(m.spec)) } catch { /* živi popis je dodatak */ }
+    return skupinaAgenata(poznati)
+  }
+  const integracija = INTEGRACIJE[ime]
+  if (integracija) {
+    return { load: integracija.load, validate: z => integracija.validate(z), save: integracija.save, odgovor: p => p }
+  }
+  if (ime === 'telegram') {
+    return {
+      load: loadTelegramConfig, validate: z => validateTelegramPatch(z), save: saveTelegramConfig,
+      tajne: ['botToken'],
+      odgovor: p => odgovorTelegramPloci(p, TELEGRAM_CONFIG_PATH).postavke,
+      poslije: (_p, prije) => {
+        const u = uskladiTelegramPoller({ plocaBase: `http://localhost:${PORT}`, prijasnjiToken: telegramBotToken(prije), razgovor: razgovorSloj().ulaz })
+        if (u.radnja !== 'nista' && u.radnja !== 'vec_radi') console.log(`[telegram-poller] uskladeno s ploce (skupina): ${u.radnja}`)
+      },
+    }
+  }
+  if (ime === 'dezurni') {
+    return {
+      load: loadDezurniConfig, validate: z => validateDezurniPatch(z), save: saveDezurniConfig, odgovor: p => p,
+      // isto kao PUT /api/dezurni/config: novi davatelj bez modela dobiva svoj zadani model
+      pripremi: (z, staro) => (z.provider && z.provider !== staro.provider && !z.model
+        ? { ...z, model: zadaniModelZa(z.provider) || String(staro.model || '') } : z),
+    }
+  }
+  if (ime === 'orkestrator') {
+    return { load: loadOrchestratorConfig, validate: z => validateOrchestratorPatch(z), save: saveOrchestratorConfig, odgovor: p => p }
+  }
+  if (ime === 'ulaz') {
+    return { load: loadIngestConfig, validate: (z, trenutno) => validateIngestPatch(z, trenutno), save: saveIngestConfig, odgovor: p => p }
+  }
+  const prov = /^provider-(.+)$/.exec(ime)
+  if (prov && PROVIDERI_PLOCE.includes(prov[1]!)) return skupinaProvidera(prov[1]!)
+  return null
+}
+
+/**
+ * Kartice s vlastitim putem spremanja (strop, autonomija, revizija, razgovor, bot↔bot) i dalje pišu
+ * povijest VRIJEDNOSTI po ključu (prikaz povijesti na kartici, izvor vrijednosti). Uz to dobivaju
+ * isti zapis kao ostale skupine: JEDAN `skupina.<ime>` redak po spremanju s popisom ključeva.
+ */
+function auditSkupine(ime: string, kljucevi: string[], by: unknown): void {
+  if (!kljucevi.length) return
+  const tko = typeof by === 'string' && by.trim() ? by.trim().slice(0, 64) : 'config'
+  try { revDb(db => upisiAuditSkupine(db, ime, kljucevi, tko), false) } catch (e) { console.log(`[SKUPINA] audit ${ime} nije zapisan: ${String(e)}`) }
+}
+
+async function handleSkupinaPut(ime: string, req: Request): Promise<Response> {
+  const json = (o: unknown, s = 200) =>
+    new Response(JSON.stringify(o), { status: s, headers: { 'Content-Type': 'application/json' } })
+  const zapis = await skupinaPostavki(ime)
+  if (!zapis) return json({ ok: false, error: `nepoznata skupina: ${ime}` }, 404)
+  let tijelo: unknown
+  try { tijelo = await req.json() } catch { return json({ ok: false, error: 'Neispravan JSON' }, 400) }
+  const r = revDb(db => spremiSkupinu(ime, zapis, tijelo, db), false)
+  // Dnevnik nosi IMENA promijenjenih polja, nikad vrijednosti (tajne, korisnička imena).
+  if (r.status === 200) console.log(`[SKUPINA] ${ime}: ${(r.tijelo.promijenjeno || []).join(', ') || '(bez promjene)'}`)
+  else console.log(`[SKUPINA] ${ime}: odbijeno (${r.status}) — ${Object.keys(r.tijelo.greskePoPolju || {}).join(', ') || 'opća pogreška'}`)
+  return json(r.tijelo, r.status)
 }
 
 // ── POST /api/ingest — generički ulaz (U6 / TASK-4266) ────────────────────────────────────
@@ -15282,6 +15476,7 @@ async function handleConcurrencyPut(req: Request): Promise<Response> {
   const by = typeof body.by === 'string' && body.by.trim() ? body.by.trim() : 'config'
   const source = typeof body.source === 'string' && body.source.trim() ? body.source.trim().slice(0, 32) : 'config'
   const ch = taskManager.setConcurrencySetting(p.value, by, source)
+  if (ch.oldValue !== ch.newValue) auditSkupine('usporedni', ['maxConcurrent'], by)
   console.log(`[API] ${formatConcurrencyChange({ oldValue: ch.oldValue, newValue: ch.newValue, changedBy: ch.changedBy, source })}`)
   const message = JSON.stringify({ type: 'concurrency_changed', concurrency: { maxConcurrent: ch.newValue, by: ch.changedBy } })
   wsClients.forEach(client => { try { client.send(message) } catch { wsClients.delete(client) } })
@@ -15335,6 +15530,7 @@ async function handleAutonomyPut(req: Request): Promise<Response> {
     return new Response(JSON.stringify({ error: e instanceof Error ? e.message : String(e) }), { status: 400, headers: { 'Content-Type': 'application/json' } })
   }
   if (ch.changes.length) console.log(`[API] 🎚️ ${formatAutonomyChanges(ch.changes, ch.changedBy, source)}`)
+  auditSkupine('autonomija', ch.changes.map((c: any) => String(c.field)), by)
   const message = JSON.stringify({ type: 'autonomy_changed', autonomy: { ...ch.values, by: ch.changedBy } })
   wsClients.forEach(client => { try { client.send(message) } catch { wsClients.delete(client) } })
   return new Response(JSON.stringify({ ...(await autonomyPayload()), change: ch }), { headers: { 'Content-Type': 'application/json' } })
@@ -15427,6 +15623,7 @@ async function handleRevizijaConfigPut(req: Request): Promise<Response> {
       for (const p of promjene) ins.run(p.kljuc, p.staro, p.novo, by, source)
     }, false)
   }
+  auditSkupine('revizija', promjene.map(p => p.kljuc), by)
   console.log(`[API] Revizija blokiranih: ${promjene.map(p => `${p.kljuc} ${p.staro}→${p.novo}`).join(', ') || 'bez promjene'} (${by}, ${source})`)
   const message = JSON.stringify({ type: 'revizija_changed', promjene, by })
   wsClients.forEach(client => { try { client.send(message) } catch { wsClients.delete(client) } })
@@ -17919,6 +18116,7 @@ async function obradiZahtjev(req: Request): Promise<Response | undefined> {
     if (url.pathname === '/api/config/concurrency' && req.method === 'PUT') return handleConcurrencyPut(req)
     if (url.pathname === '/api/config/autonomy' && req.method === 'GET') return handleAutonomyGet()
     if (url.pathname === '/api/config/autonomy' && req.method === 'PUT') return handleAutonomyPut(req)
+    { const m = /^\/api\/config\/skupina\/([a-z0-9-]+)$/.exec(url.pathname); if (m && req.method === 'PUT') return handleSkupinaPut(m[1]!, req) }
     if (url.pathname === '/api/config/raspored' && req.method === 'GET') return handleRasporedGet()
     if (url.pathname === '/api/config/raspored' && req.method === 'PUT') return handleRasporedPut(req)
     if (url.pathname === '/config-raspored.js' && req.method === 'GET') return handleRasporedJs()

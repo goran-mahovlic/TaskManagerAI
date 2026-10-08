@@ -1147,5 +1147,11 @@
   "cfg_vrijednost_completed": "završen (completed)",
   "cfg_vrijednost_failed": "neuspio (failed)",
   "cfg_vrijednost_blocked": "blokiran (blocked)",
-  "cfg_vrijednost_cancelled": "otkazan (cancelled)"
+  "cfg_vrijednost_cancelled": "otkazan (cancelled)",
+  "sk_nespremljeno": "nespremljene izmjene",
+  "sk_odbaci_potvrda": "Na Config stranici ima nespremljenih izmjena. Osvježiti i odbaciti ih?",
+  "sk_spremam": "spremam…",
+  "sk_nije_spremljeno": "Nije spremljeno — ništa nije zapisano",
+  "sk_spremljeno": "Spremljeno ({n} polja) — {vrijeme}",
+  "tajne_otvori_bota": "otvori @{bot} i stisni Start, pa ponovo Spremi"
 }
