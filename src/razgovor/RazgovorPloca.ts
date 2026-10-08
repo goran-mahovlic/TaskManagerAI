@@ -14,6 +14,7 @@ import {
 } from './RazgovorPostavke'
 import { stvoriRazgovor, type RazgovorJezgra, type RazgovorOvisnosti } from './Razgovor'
 import { izvrsiteljRazgovora } from './Izvrsitelj'
+import { dezurniRazgovora } from '../Dezurni'
 import { ucitajAgente, ucitajUpute } from './Identitet'
 import { loadMemoryConfig } from '../rag/memory-config'
 import { stvoriZadatkeRazgovora, type PlocaRazgovora } from './ZadatakRazgovora'
@@ -169,6 +170,8 @@ export function sklopiRazgovor(o: SklapanjeOpcije): RazgovorSloj {
     botKanal: () => ({ jeZaustavljen: c => botKanal.jeZaustavljen(c), prenesi: u => botKanal.prenesi(u), ovlasti: () => bkPostavke().ovlasti }),
     ragUkljucen: () => { try { return loadMemoryConfig().rag.enabled } catch { return null } },
     zadaci,
+    // TASK-5359: rezervni model iz `dezurni.json` paketa — bez mosta glavnog sustava.
+    dezurni: o.dezurni || dezurniRazgovora(),
   })
   const put = posiljateljiPut(o.dataDir)
   ulaz = { razgovor: jezgra, postavke, zabiljezi: p => zabiljeziPosiljatelja(put, p), konzola: o.konzola, botKanal }

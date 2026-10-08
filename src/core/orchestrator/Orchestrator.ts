@@ -18,6 +18,13 @@ import { SpawnQueue } from './SpawnQueue'
 import { Watchdogs, type Nalaz } from './Watchdogs'
 import { orkestratorUkljucen, promptApiBase, type OrchestratorPostavke } from './OrchestratorConfig'
 
+/** Okolina za dežurni potez: preusmjeren CLI ne smije nositi prijavu pretplate. */
+function okolinaDezurnog(env: Record<string, string>): Record<string, string> {
+  const o: Record<string, string> = { ...(process.env as Record<string, string>), ...env }
+  delete o.CLAUDE_CODE_OAUTH_TOKEN
+  return o
+}
+
 export interface IshodProlaza {
   poruka: { procitano: number; otvoreno: number; preskoceno: number }
   spawn: { pokrenuto: number; odbijeno: number }
@@ -179,16 +186,44 @@ export class Orchestrator {
       systemFacts: this.cfg.prompt.systemFacts || [],
     })
 
-    let rezultat: ExecResult
-    try {
-      rezultat = await this.p.executor.run({
-        agentId: agent.id,
-        model: agent.model,
-        prompt,
-        taskId: t.id,
-      })
-    } catch (e: any) {
-      rezultat = { exitCode: 1, resultText: '', greska: String(e?.message || e) }
+    const dz = this.p.dezurni?.ukljucen() ? this.p.dezurni : null
+    const simulirano = !!dz?.simulacija()
+    const pokreni = async (rez?: { model?: string; env: Record<string, string> }): Promise<ExecResult> => {
+      try {
+        return await this.p.executor.run({
+          agentId: agent.id,
+          model: rez ? rez.model : agent.model,
+          prompt,
+          taskId: t.id,
+          ...(rez ? { extra: { env: okolinaDezurnog(rez.env) } } : {}),
+        })
+      } catch (e: any) {
+        return { exitCode: 1, resultText: '', greska: String(e?.message || e) }
+      }
+    }
+
+    let rezultat: ExecResult = simulirano
+      ? { exitCode: 1, resultText: '', greska: 'simulirani pad primarnog modela (429 rate limit — simulacija s ploče)' }
+      : await pokreni()
+
+    // TASK-5359: primarni model pao (429/401/limit/nedostupan) → isti agent, isti prompt, na
+    // dežurnom modelu kroz isti CLI (ANTHROPIC_BASE_URL). Alati agenta ostaju.
+    let dezurniOpis: string | null = null
+    const pad = dz && rezultat.exitCode !== 0 ? dz.jePad(`${rezultat.greska || ''}\n${rezultat.resultText || ''}`) : null
+    if (dz && pad) {
+      dz.greska()
+      const rez = dz.cilj()
+      const uzrok = `${simulirano ? 'SIMULIRAN pad' : pad.vrsta}: ${pad.razlog}`
+      if (rez) {
+        this.p.logger.log(`[orchestrator] ${t.id} (${agent.id}): primarni model pao (${uzrok}) — ponavljam na dežurnom ${rez.spec}`)
+        const r2 = await pokreni(rez)
+        if (r2.exitCode === 0 && !r2.greska) { rezultat = r2; dezurniOpis = `${rez.spec} (primarni: ${uzrok})` }
+        else rezultat = { ...r2, greska: `primarni pao (${uzrok}); dežurni ${rez.spec}: ${r2.greska || `exit ${r2.exitCode}`}` }
+      } else {
+        this.p.logger.log(`[orchestrator] ${t.id} (${agent.id}): primarni model pao (${uzrok}) — dežurni nema put kroz CLI (davatelj bez Anthropic-kompatibilnog endpointa ili ključa)`)
+      }
+    } else if (dz && rezultat.exitCode === 0) {
+      dz.uspjeh()
     }
 
     const uspjeh = rezultat.exitCode === 0 && !rezultat.greska
@@ -199,7 +234,8 @@ export class Orchestrator {
       // i mora doći od onoga tko ga je radio (i proći vratara ploče). Ovdje se bilježi
       // samo da je izvođač završio.
       await this.p.board.update(t.id, {
-        progressNotes: [`orkestrator: izvođač ${this.p.executor.ime} završio (${agent.id})`],
+        progressNotes: [`orkestrator: izvođač ${this.p.executor.ime} završio (${agent.id})` +
+          (dezurniOpis ? ` — 🔻 preko dežurnog ${dezurniOpis}` : '')],
       })
     } else {
       await this.p.board.update(t.id, {

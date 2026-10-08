@@ -1031,5 +1031,10 @@
   "posta_zadnja_provjera": "last check",
   "posta_obavijesti": "notifications",
   "posta_zadnja_poruka": "Last received",
-  "posta_zadnja_greska": "Last error"
+  "posta_zadnja_greska": "Last error",
+  "dez_simulacija": "Failure simulation",
+  "dez_simuliraj": "Simulate failure (5 min)",
+  "dez_ugasi_simulaciju": "Stop simulation",
+  "dez_simulacija_do": "primary \"down\" until {vrijeme}",
+  "dez_simulacija_opis": "Conversation and agents skip the primary model and answer through the standby. Stops by itself after the deadline; logged to the Console."
 }

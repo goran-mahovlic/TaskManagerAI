@@ -28,6 +28,7 @@ import { GLAS_ZADANI_URL, OZNAKA_TTS_KVAR, sintetizirajGovor, tekstZaGovor, treb
 import { ocistiStareZapise, zapisiPotez } from './Zapis'
 import type { ZadaciRazgovora } from './ZadatakRazgovora'
 import type { PrijenosIshod, PrijenosUlaz } from './BotKanal'
+import type { DezurniRazgovora } from '../Dezurni'
 
 /** Što jezgra treba od kanala bot↔bot (ADR-0003) — bez njega razgovor radi kao prije. */
 export interface BotKanalJezgre {
@@ -94,6 +95,8 @@ export interface RazgovorOvisnosti {
    * ploče, BEZ modela (tajna nikad ne ide kroz razgovor, ADR-0007 §8.3). `null` = običan potez.
    */
   tajneUputa?: (p: UlaznaPoruka) => string | null
+  /** Rezervni model kad primarni padne (429/401/limit/nedostupan) — TASK-5359. */
+  dezurni?: DezurniRazgovora
 }
 
 export interface RazgovorJezgra extends Razgovor {
@@ -437,9 +440,15 @@ export function stvoriRazgovor(d: RazgovorOvisnosti): RazgovorJezgra {
     const okolinaPoteza = { ...okolinaRazgovora(d.env, oznaka), ...cilj.env }
     // Preusmjereni poziv (ANTHROPIC_BASE_URL) ne smije nositi prijavu pretplate.
     if (cilj.env.ANTHROPIC_BASE_URL) delete okolinaPoteza.CLAUDE_CODE_OAUTH_TOKEN
-    const zahtjev = (resume?: string): ExecRequest => ({
+    // `rez` = dežurni kroz isti CLI (TASK-5359): drugi model i preusmjerena okolina, alati ostaju.
+    const okolinaDezurnog = (env: Record<string, string>) => {
+      const o: Record<string, string | undefined> = { ...okolinaRazgovora(d.env, oznaka), ...env }
+      delete o.CLAUDE_CODE_OAUTH_TOKEN
+      return o
+    }
+    const zahtjev = (resume?: string, rez?: { model?: string; env: Record<string, string> }): ExecRequest => ({
       agentId: 'razgovor',
-      model: cilj.model,
+      model: rez ? rez.model : cilj.model,
       prompt,
       systemPrompt: resume ? undefined : sastaviIdentitet({
         ime: s.ime, instalacija: d.instalacija, ovlasti, plocaUrl: d.plocaUrl, port: d.port,
@@ -465,7 +474,7 @@ export function stvoriRazgovor(d: RazgovorOvisnosti): RazgovorJezgra {
           // drugi bot donio ostaje u sesiji i sljedeći ljudski potez (na `puno`) ga nosi kao svoj.
           ...(botPotez && resume ? ['--fork-session'] : []),
         ],
-        env: okolinaPoteza,
+        env: rez ? okolinaDezurnog(rez.env) : okolinaPoteza,
         ...(kontrola ? { signal: kontrola.signal } : {}),
       },
     })
@@ -484,13 +493,46 @@ export function stvoriRazgovor(d: RazgovorOvisnosti): RazgovorJezgra {
 
     let novaSesija = !ses
     let res: ExecResult
+    // TASK-5359: dežurni — opis modela kad je odgovor dao rezervni, inače null.
+    let dezurniPotez: string | null = null
+    const dz = d.dezurni?.ukljucen() ? d.dezurni : null
+    const simulirano = !!dz?.simulacija()
     try {
-      res = await d.izvrsitelj.run(zahtjev(ses?.sessionId))
-      if (res.exitCode !== 0 && ses?.sessionId && NEVAZECA_SESIJA.test(res.greska || '') && !kontrola?.signal.aborted) {
-        log(`[razgovor] ${c.kljuc}: sesija ${ses.sessionId} više ne postoji — nova sesija`)
-        ses = undefined
-        novaSesija = true
-        res = await d.izvrsitelj.run(zahtjev(undefined))
+      if (simulirano) {
+        // Simulacija s ploče: primarni se ne zove, potez ide kao da je vratio 429.
+        res = { exitCode: 1, resultText: '', greska: 'simulirani pad primarnog modela (429 rate limit — simulacija s ploče)' }
+      } else {
+        res = await d.izvrsitelj.run(zahtjev(ses?.sessionId))
+        if (res.exitCode !== 0 && ses?.sessionId && NEVAZECA_SESIJA.test(res.greska || '') && !kontrola?.signal.aborted) {
+          log(`[razgovor] ${c.kljuc}: sesija ${ses.sessionId} više ne postoji — nova sesija`)
+          ses = undefined
+          novaSesija = true
+          res = await d.izvrsitelj.run(zahtjev(undefined))
+        }
+      }
+      const pad = dz && res.exitCode !== 0 && !kontrola?.signal.aborted
+        ? dz.jePad(`${res.greska || ''}\n${res.resultText || ''}`) : null
+      if (dz && pad) {
+        dz.greska()
+        const rez = dz.cilj()
+        const uzrok = `${simulirano ? 'SIMULIRAN pad' : pad.vrsta}: ${zaKonzolu(pad.razlog, 80)}`
+        log(`[razgovor] ${c.kljuc}: primarni model pao (${uzrok}) — dežurni ${dz.opis()} preuzima`)
+        konzola(`🔻 ${s.ime || 'bot'} [${p.kanal}:${p.chatId}] primarni model pao (${uzrok}) — dežurni ${dz.opis()} preuzima ${rez ? '(claude CLI, alati ostaju)' : '(samo tekst)'}`, 'greska')
+        if (rez) {
+          const r2 = await d.izvrsitelj.run(zahtjev(undefined, rez))
+          if (r2.exitCode === 0 && (r2.resultText || '').trim()) { res = r2; dezurniPotez = dz.opis() }
+          else log(`[razgovor] ${c.kljuc}: dežurni kroz CLI nije uspio — ${zaKonzolu(r2.greska || `exit ${r2.exitCode}`, 200)}`)
+        }
+        if (!dezurniPotez && !kontrola?.signal.aborted) {
+          const sustav = `Ti si ${s.ime || 'bot'} na instalaciji ${d.instalacija}. Primarni model trenutačno ne radi ` +
+            `(${pad.vrsta}), pa odgovaraš kao dežurni rezervni model, bez alata. Odgovaraj kratko i istinito; ` +
+            'ne izmišljaj stanje sustava ni rezultate koje nisi vidio.'
+          const t = await dz.pitaj(sustav, prompt)
+          if (t) { res = { exitCode: 0, resultText: t, numTurns: 1 }; dezurniPotez = dz.opis() }
+        }
+        if (!dezurniPotez) konzola(`🔻 dežurni ${dz.opis()} nije odgovorio — korisnik dobiva poruku o kvaru`, 'greska')
+      } else if (dz && res.exitCode === 0 && dz.uspjeh().zavrsilo) {
+        konzola(`✅ ${s.ime || 'bot'}: primarni model je natrag — dežurstvo završeno`, 'ok')
       }
     } finally {
       if (tipka) clearInterval(tipka)
@@ -509,7 +551,7 @@ export function stvoriRazgovor(d: RazgovorOvisnosti): RazgovorJezgra {
 
     const zajednicko = {
       sessionId: res.sessionId || ses?.sessionId || null, novaSesija,
-      model: specPoteza(s) || null,
+      model: dezurniPotez ? `dežurni ${dezurniPotez}` : specPoteza(s) || null,
       trajanjeMs: sat() - t0,
       tokeni: { ul: res.usage?.inputTokens ?? null, izl: res.usage?.outputTokens ?? null },
       cijenaUsd: res.usage?.costUsd ?? null,
@@ -531,7 +573,8 @@ export function stvoriRazgovor(d: RazgovorOvisnosti): RazgovorJezgra {
 
     const sessionId = res.sessionId || ses?.sessionId
     // Bot-potez (vlastita, odvojena sesija) ne postaje sesija chata — v. `--fork-session` gore.
-    if (sessionId && !botPotez) {
+    // Potez dežurnog (drugi model) ne postaje sesija chata — primarni nastavlja svoju.
+    if (sessionId && !botPotez && !dezurniPotez) {
       sesije[c.kljuc] = {
         sessionId,
         zadnjiMs: sat(),
@@ -542,6 +585,7 @@ export function stvoriRazgovor(d: RazgovorOvisnosti): RazgovorJezgra {
     }
 
     let odgovor = (res.resultText || '').trim()
+    if (dezurniPotez) odgovor = `🔻 ${odgovor}`
     const zaSlanje: { putanja: string; opis: string }[] = []
     if (s.dokumenti) {
       const iz = izvuciDokumente(odgovor)
@@ -624,7 +668,7 @@ export function stvoriRazgovor(d: RazgovorOvisnosti): RazgovorJezgra {
       ...(lanac ? { lanac: { lanacId: lanac.lanacId, skok: lanac.skok } } : {}),
       ...(prijenos && prijenos !== 'bez-spomena' && prijenos !== 'iskljuceno' ? { prijenos } : {}),
     })
-    konzola(`💬 ⇠ ${s.ime || 'bot'} [${p.kanal}:${p.chatId}] ${opisPoteza(zajednicko)}: „${zaKonzolu(odgovor)}"${zaSlanje.length ? ` · 📎 ${zaSlanje.length}` : ''}`, 'ok')
+    konzola(`💬 ⇠ ${s.ime || 'bot'} [${p.kanal}:${p.chatId}] ${opisPoteza(zajednicko)}: „${zaKonzolu(odgovor)}"${zaSlanje.length ? ` · 📎 ${zaSlanje.length}` : ''}${dezurniPotez ? ` · 🔻 dežurni ${dezurniPotez}` : ''}`, 'ok')
 
     zaustaviTajmer()
     if (zr) {
