@@ -11,9 +11,12 @@ Redoslijed je bitan: stavke 1–3 traži sam rad ploče, 4–6 traže razgovor, 
 GitHub/GitLab, pgvector, ključevi davatelja, bot token) upisuju se na ploči čvora:
 **Config → Tajne**. Vrijednost je samo-za-pisanje (ploča pokazuje samo postoji/ne, otisak i
 tko/kada), a svaki upis potvrđuje vlasnik kodom koji bot pošalje u njegov **privatni** Telegram.
-Preduvjet je jednokratno, na stroju: `bun scripts/tajna.ts podesi --potvrda-uid <Telegram uid vlasnika>`
-(`config/tajne.json`, nije tajna; ploča je ne smije mijenjati). Upis ide samo preko loopbacka,
-Tailscalea ili HTTPS-a. Dok bot nije podešen (stavka 1), tajne se upisuju CLI-jem na stroju:
+Bez ijedne naredbe na stroju (TASK-5357): kod ide vlasniku iz profila instance (`VLASNIK_UID`,
+inače jedini privatni chat iz `TG_DOPUSTENI_CHATOVI` koji je i dopušteni sugovornik), a upis radi preko loopbacka, Tailscalea,
+HTTPS-a i iz privatnog LAN-a (čisti HTTP s javne adrese nikad). Vlasnik jednom pošalje `/start`
+botu čvora u privatnom chatu. Može i napisati botu „upiši lozinku za mail" i dobit će poveznicu
+na obrazac. `bun scripts/tajna.ts podesi --potvrda-uid …` služi samo za izričitu promjenu
+primatelja. Dok bot nije podešen (stavka 1), tajne se upisuju CLI-jem na stroju:
 `bun scripts/tajna.ts postavi IME` (vrijednost na upit, bez ispisa; nikad kao argument).
 
 | # | Stavka | Kako se unosi | Kako se provjerava (bez otkrivanja) | Zašto čovjek |

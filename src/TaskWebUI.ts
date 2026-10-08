@@ -105,7 +105,7 @@ import { getMessageQueue } from './core/MessageQueue'
 import { getRAGService, ragPodesen } from './RAGService'
 import { kljucPrisutan, kljucPrisutanUDatoteci, postaviTajnu, ukloniKljucIzDatoteke } from './LoginCreds'
 // TASK-5343 (ADR-0007): upis tajni s ploče — samo-za-pisanje, kod u vlasnikov privatni Telegram.
-import { obradiTajneZahtjev } from './TajnePloca'
+import { obradiTajneZahtjev, osvjeziImeBota, uputaTajniZaPoruku } from './TajnePloca'
 import { odlukaNaredbe, vrataKonzole } from './KonzolaVrata'
 import { ocistiLoginKod, izvuciLoginUrl, maskirajLoginTail, loginOauthGreska, LOGIN_POTVRDA } from './LoginUnos'
 import { capguardPostavke, stanjeCapguarda, zatraziSposobnost } from './Capguard'
@@ -294,7 +294,9 @@ const ALLOW_PRIVATE_HOSTS = process.env.TM_ALLOW_PRIVATE_HOSTS === '1'
 const PRIVATE_IPV4_RE = /^(10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3})$/
 
 function isHostAllowed(req: Request): boolean {
-  const host = req.headers.get('host') || ''
+  return hostDopusten(req.headers.get('host') || '')
+}
+function hostDopusten(host: string): boolean {
   const hostWithoutPort = host.split(':')[0]
   if (ALLOWED_HOSTS.includes(host) || ALLOWED_HOSTS.includes(hostWithoutPort)) return true
   return ALLOW_PRIVATE_HOSTS && PRIVATE_IPV4_RE.test(hostWithoutPort)
@@ -8824,12 +8826,13 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     function _tajneNasumicno() { var a = new Uint8Array(6); crypto.getRandomValues(a); return Array.prototype.map.call(a, function (b) { return ('0' + b.toString(16)).slice(-2); }).join(''); }
     function _tajneGreska(g) {
       var poruke = {
-        tajne_lan_http: _T('tajne_g_lan_http', 'Upis tajni ide samo preko Tailscalea, HTTPS-a ili sa samog stroja. Čisti HTTP kroz LAN je isključen (vlasnik ga može dopustiti postavkom dopustiLanHttp u config/tajne.json).'),
-        potvrda_nije_podesena: _T('tajne_g_potvrda', 'Upis s ploče je isključen dok na stroju nije postavljen primatelj koda: bun scripts/tajna.ts podesi --potvrda-uid <tvoj Telegram uid>.'),
+        tajne_lan_http: _T('tajne_g_lan_http', 'Vlasnik je isključio upis preko čistog HTTP-a u lokalnoj mreži ("dopustiLanHttp": false u config/tajne.json). Otvori ploču preko Tailscalea ili sa samog stroja.'),
+        potvrda_nije_podesena: _T('tajne_g_potvrda', 'Ploča ne zna kome poslati kod: u profilu čvora nema vlasnika (VLASNIK_UID ili privatni chat u TG_DOPUSTENI_CHATOVI). Javi instalateru čvora.'),
+        tajne_javni_http: _T('tajne_g_javni_http', 'S javne adrese upis tajni ide samo preko HTTPS-a ili Tailscalea. Iz lokalne mreže (LAN) i preko Tailscalea radi bez ikakve postavke.'),
         kod_pogresan: _T('tajne_g_kod', 'Kod nije točan. Nakon 5 pogrešaka zahtjev se poništava.'),
         zahtjev_nevazeci: _T('tajne_g_zahtjev', 'Kod je istekao ili je već iskorišten — klikni ponovo.'),
         zakljucano: _T('tajne_g_zakljucano', 'Previše pogrešnih kodova — upis je zaključan 15 minuta.'),
-        slanje_nije_uspjelo: _T('tajne_g_slanje', 'Bot nije uspio poslati kod. Je li Telegram bot podešen i jesi li mu barem jednom pisao privatno (/start)?'),
+        slanje_nije_uspjelo: _T('tajne_g_slanje', 'Bot ti nije uspio poslati kod u privatni chat. Otvori privatni chat s botom čvora, pošalji /start i ponovo klikni Spremi.'),
         ime_nije_dopusteno: _T('tajne_g_ime', 'To ime tajne nije dopušteno.'),
         vrijednost_prazna: _T('tajne_g_prazno', 'Vrijednost je prazna.'),
         vrijednost_nedopusten_znak: _T('tajne_g_znak', 'Vrijednost ne smije imati prijelaz retka ni nul-znak.'),
@@ -8859,8 +8862,19 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         _esc(_T('tajne_opis', 'Lozinke i tokeni čvora. Vrijednost se samo upisuje — ploča je nikad ne prikazuje. Svaki upis potvrđuješ kodom koji bot pošalje u tvoj privatni Telegram.')) + '</div>';
       if (!d.potvrda || !d.potvrda.podesena) h += '<div style="color:var(--accent-yellow);font-size:.74rem;margin-bottom:.4rem">' + _esc(_tajneGreska('potvrda_nije_podesena')) + '</div>';
       if (d.prijenos && !d.prijenos.dopusten) h += '<div style="color:var(--accent-yellow);font-size:.74rem;margin-bottom:.4rem">' + _esc(_tajneGreska(d.prijenos.razlog || 'tajne_lan_http')) + '</div>';
-      if (d.prijenos && d.prijenos.vrsta === 'lan-http' && d.prijenos.dopusten) h += '<div style="color:var(--accent-red);font-size:.74rem;margin-bottom:.4rem">' + _esc(_T('tajne_upoz_lan', 'Upozorenje: upis preko čistog HTTP-a kroz LAN je dopušten — lozinka putuje nešifrirano.')) + '</div>';
+      if (d.prijenos && d.prijenos.vrsta === 'lan-http' && d.prijenos.dopusten) h += '<div style="color:var(--accent-yellow);font-size:.74rem;margin-bottom:.4rem">' + _esc(_T('tajne_upoz_lan', 'Spojen si čistim HTTP-om kroz lokalnu mrežu — lozinka do čvora putuje nešifrirano unutar LAN-a. Šifrirano: otvori ploču preko Tailscalea.')) + '</div>';
       var mozeUpis = d.potvrda && d.potvrda.podesena && d.prijenos && d.prijenos.dopusten;
+      // TASK-5357: koraci za vlasnika — bez ijedne naredbe na stroju.
+      if (mozeUpis) {
+        var bot = d.potvrda.bot ? '@' + d.potvrda.bot : _T('tajne_bot_cvora', 'čvora');
+        h += '<div style="font-size:.74rem;margin:.2rem 0 .5rem;padding:.4rem .6rem;border:1px solid var(--border-color);border-radius:6px">' +
+          '<b>' + _esc(_T('tajne_koraci', 'Kako upisati lozinku (bez ijedne naredbe na stroju):')) + '</b><ol style="margin:.3rem 0 .2rem 1.1rem;padding:0">' +
+          '<li>' + _esc(_Tv('tajne_korak1', 'U Telegramu otvori privatni chat s botom {bot} i pošalji /start (samo prvi put).', { bot: bot })) + '</li>' +
+          '<li>' + _esc(_T('tajne_korak2', 'Upiši lozinku u polje ispod i klikni „Spremi”.')) + '</li>' +
+          '<li>' + _esc(_T('tajne_korak3', 'Bot ti u privatni chat pošalje kod od 8 znamenki (vrijedi 5 min) — upiši ga ovdje i klikni „Potvrdi”.')) + '</li></ol>' +
+          ((d.potvrda.primatelji || []).length ? '<div style="color:var(--text-secondary)">' + _esc(_Tv('tajne_primatelj', 'Kod ide vlasniku čvora: {uid} ({izvor}).', { uid: d.potvrda.primatelji.join(', '), izvor: d.potvrda.izvor || '' })) + '</div>' : '') +
+          '</div>';
+      }
       h += '<form id="tajne-obrazac" autocomplete="off" onsubmit="return false;">';
       h += '<table style="width:100%;font-size:.74rem;border-collapse:collapse">';
       (d.tajne || []).forEach(function (t) {
@@ -8947,13 +8961,20 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       var upoz = (d.upozorenja || []).join(' · ');
       _tajnePoruka((c.radnja === 'brisanje' ? _T('tajne_obrisano', 'Obrisano.') : _T('tajne_upisano', 'Upisano.')) + (upoz ? ' ' + upoz : ''), upoz ? 'var(--accent-yellow)' : 'var(--accent-green)');
     }
-    // Duboka veza #config/tajne?ime=SMTP_PASSWORD (bot šalje vezu umjesto da traži lozinku, §8.3).
+    // Duboka veza #tajne&ime=SMTP_PASSWORD,IMAP_PASSWORD (bot šalje vezu umjesto da traži lozinku, §8.3).
+    // Jednom po učitavanju: kasnije osvježavanje kartice ne smije krasti fokus.
+    var _tajneVezaGotova = false;
     function _tajneDubokaVeza() {
-      var h = location.hash || ''; if (h.indexOf('tajne') < 0) return;
+      var h = location.hash || ''; if (_tajneVezaGotova || h.indexOf('tajne') < 0) return;
+      _tajneVezaGotova = true;
       var card = document.getElementById('info-tajne-card'); if (card) card.scrollIntoView({ block: 'start' });
       var m = h.split('ime=')[1]; if (!m) return;
-      var ime = decodeURIComponent(m.split('&')[0]);
-      _tajnePolja().forEach(function (i) { if (i.getAttribute('data-tajna-ime') === ime) i.focus(); });
+      var imena = decodeURIComponent(m.split('&')[0]).split(',');
+      var prvo = null;
+      _tajnePolja().forEach(function (i) {
+        if (imena.indexOf(i.getAttribute('data-tajna-ime')) >= 0) { i.style.outline = '2px solid var(--accent-yellow)'; if (!prvo) prvo = i; }
+      });
+      if (prvo) prvo.focus();
     }
 
     // ── Telegram obavijesti (Kosjenka, 09.09.2026.) — bot token + chat id u paketu ──────
@@ -10993,6 +11014,8 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     // ============================================
 
     initTabNavigation();
+    // TASK-5357: poveznica iz Telegrama (#tajne&ime=…) otvara Config → Tajne.
+    if ((location.hash || '').indexOf('tajne') >= 0) switchTab('info');
 
     // TASK-3053: PLOCA SE PUNI NEOVISNO O WEBSOCKETU.
     //
@@ -11533,7 +11556,13 @@ function razgovorSloj(): RazgovorSloj {
     },
     stil: () => loadTelegramConfig().stil,
     ingestLog: INGEST_LOG_PATH,
+    // TASK-5357: „upiši lozinku za mail" od vlasnika → poveznica na Config → Tajne, bez modela.
+    tajneUputa: p => uputaTajniZaPoruku(p, {
+      port: PORT, davatelji: LOGIN_PROVIDERS,
+      dopusten: hostDopusten,
+    }),
   })
+  void osvjeziImeBota()
   return _razgovor
 }
 

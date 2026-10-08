@@ -89,6 +89,11 @@ export interface RazgovorOvisnosti {
   stil?: () => Stil
   /** Dnevnik ulaza koji sesija uz `rad` smije čitati. */
   ingestLog?: string
+  /**
+   * TASK-5357: vlasnikova molba „upiši lozinku za mail" → gotova uputa s poveznicom na obrazac
+   * ploče, BEZ modela (tajna nikad ne ide kroz razgovor, ADR-0007 §8.3). `null` = običan potez.
+   */
+  tajneUputa?: (p: UlaznaPoruka) => string | null
 }
 
 export interface RazgovorJezgra extends Razgovor {
@@ -659,6 +664,13 @@ export function stvoriRazgovor(d: RazgovorOvisnosti): RazgovorJezgra {
             posiljateljIme: p.posiljateljIme, tekst: p.tekst,
           })
         }
+        return
+      }
+      let uputa: string | null = null
+      if (p.izvor !== 'bot' && !p.posiljateljJeBot) { try { uputa = d.tajneUputa?.(p) ?? null } catch { uputa = null } }
+      if (uputa) {
+        konzola(`💬 ⇢ ${oznakaPosiljatelja(p)} [${p.kanal}:${p.chatId}]: zahtjev za upis tajne → uputa s poveznicom na ploču (bez modela)`, 'ok')
+        void prati(k.posaljiTekst(p.chatId, uputa, p.porukaId).catch(() => false))
         return
       }
       const c = chat(`${p.kanal}:${p.chatId}`)

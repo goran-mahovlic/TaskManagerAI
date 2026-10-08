@@ -5,7 +5,7 @@
  * nosi ime, postoji/ne, HMAC otisak, oblik retka, zasjenjenost i zadnji događaj (tko/kada).
  *
  * Brane, redom (§4): CSRF (X-TM-Tajne, JSON, Sec-Fetch-Site, vlastiti Origin) → prijenos
- * (loopback / Tailscale / HTTPS; čisti LAN HTTP samo uz `dopustiLanHttp`; IP peera, nikad
+ * (loopback / Tailscale / HTTPS / privatni LAN; javni HTTP nikad; IP peera, nikad
  * X-Forwarded-For) → popis imena (§6) → kod iz vlasnikova privatnog Telegrama (§4.2) →
  * JEDINI pisač `LoginCreds.upisiTajnu/ukloniTajnu`.
  *
@@ -20,7 +20,13 @@ import {
 } from './LoginCreds'
 import type { PotvrdaVlasnika, RadnjaTajne } from './core/PotvrdaVlasnika'
 
-export interface PostavkeTajni { potvrdaUid: string[]; dopustiLanHttp: boolean }
+export interface PostavkeTajni {
+  /** Razriješeni primatelji koda (v. `TajneVlasnik.primateljiKoda`). */
+  potvrdaUid: string[]
+  dopustiLanHttp: boolean
+  /** Odakle su primatelji: `tajne.json`, `profil.VLASNIK_UID`, `profil.TG_DOPUSTENI_CHATOVI`, `nema`. */
+  potvrdaIzvor?: string
+}
 
 export interface KontekstTajni {
   spremiste: string
@@ -35,6 +41,8 @@ export interface KontekstTajni {
   sat?: () => number
   /** `false` na glavnom: mapa spremišta je zajednička mapa sustava (v. LoginCreds). */
   stegniMapu?: boolean
+  /** @ime bota koji šalje kod — za korak „pošalji /start" na ploči (TASK-5357). */
+  imeBota?: () => string | null
 }
 
 export interface ZahtjevTajni {
@@ -55,8 +63,24 @@ const kljucSkupine = (imena: string[]): string => [...new Set(imena)].sort().joi
 
 // ─── Prijenos (§4.3) ─────────────────────────────────────────────────────────
 
-export type VrstaPrijenosa = 'loopback' | 'tailscale' | 'https' | 'lan-http' | 'nepoznat'
+export type VrstaPrijenosa = 'loopback' | 'tailscale' | 'https' | 'lan-http' | 'javni-http' | 'nepoznat'
 
+/** Privatna adresa (RFC 1918, link-local, IPv6 ULA/link-local) — bez Tailscalea i loopbacka. */
+export function privatnaAdresa(ip: string): boolean {
+  const a = ip.toLowerCase().replace(/^::ffff:/, '')
+  const v4 = /^(\d+)\.(\d+)\.\d+\.\d+$/.exec(a)
+  if (v4) {
+    const [x, y] = [Number(v4[1]), Number(v4[2])]
+    return x === 10 || (x === 172 && y >= 16 && y <= 31) || (x === 192 && y === 168) || (x === 169 && y === 254)
+  }
+  return /^f[cd][0-9a-f]{0,2}:/.test(a) || /^fe[89ab][0-9a-f]?:/.test(a)
+}
+
+/**
+ * `dopustiLanHttp` = čisti HTTP s PRIVATNE adrese. Za tajne je zadano uključen (TASK-5357,
+ * §4.3): kod u vlasnikov privatni Telegram je brana, ne prijenos. Konzola ga zove s `false`.
+ * Javna adresa preko čistog HTTP-a nikad ne prolazi.
+ */
 export function odlukaPrijenosa(ip: string | null, tls: boolean, p: { dopustiLanHttp: boolean }):
   { dopusten: boolean; vrsta: VrstaPrijenosa; razlog?: string } {
   if (!ip) return { dopusten: false, vrsta: 'nepoznat', razlog: 'tajne_prijenos_nepoznat' }
@@ -66,6 +90,7 @@ export function odlukaPrijenosa(ip: string | null, tls: boolean, p: { dopustiLan
   if (v4 && Number(v4[1]) === 100 && Number(v4[2]) >= 64 && Number(v4[2]) <= 127) return { dopusten: true, vrsta: 'tailscale' }
   if (/^fd7a:115c:a1e0:/.test(a)) return { dopusten: true, vrsta: 'tailscale' }
   if (tls) return { dopusten: true, vrsta: 'https' }
+  if (!privatnaAdresa(a)) return { dopusten: false, vrsta: 'javni-http', razlog: 'tajne_javni_http' }
   if (p.dopustiLanHttp) return { dopusten: true, vrsta: 'lan-http' }
   return { dopusten: false, vrsta: 'lan-http', razlog: 'tajne_lan_http' }
 }
@@ -164,7 +189,12 @@ export async function obradiTajne(z: ZahtjevTajni, ctx: KontekstTajni): Promise<
     })
     return odg(200, {
       tajne,
-      potvrda: { podesena: postavke.potvrdaUid.length > 0, primatelja: postavke.potvrdaUid.length },
+      potvrda: {
+        podesena: postavke.potvrdaUid.length > 0, primatelja: postavke.potvrdaUid.length,
+        // uid nije tajna, ali ploča pokazuje samo kraj — dovoljno da vlasnik prepozna svoj.
+        izvor: postavke.potvrdaIzvor || null, primatelji: postavke.potvrdaUid.map(u => '…' + u.slice(-4)),
+        bot: ctx.imeBota?.() ?? null,
+      },
       prijenos,
       zakljucano: ctx.potvrda.zakljucano(),
     })

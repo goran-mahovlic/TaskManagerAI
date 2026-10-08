@@ -14,6 +14,7 @@
       "ZADANI_IZVRSITELJ"
     ],
     "neobavezno": [
+      "VLASNIK_UID",
       "RAZGOVOR_PRESKOCI_AKO_SADRZI",
       "RAZGOVOR_RADNI_DIR",
       "BOTKANAL_ADRESE",

@@ -8,6 +8,9 @@
  *   bun scripts/tajna.ts popis                  # ime, postoji/ne, otisak — nikad vrijednost
  *   bun scripts/tajna.ts podesi --potvrda-uid <uid> [--dopusti-lan-http da|ne] [--dodatno IME_TOKEN]
  *
+ * `podesi` NIJE potreban za upis s ploče (TASK-5357): primatelj koda je vlasnik iz profila
+ * čvora, privatni LAN je dopušten. Služi samo da se to izričito promijeni.
+ *
  * Vrijednost u argv se ODBIJA (izlaz 2): bila bi vidljiva u `ps`, /proc/<pid>/cmdline i
  * povijesti ljuske. Izlaz: 0 uspjeh, 1 greška spremišta, 2 pogrešna uporaba.
  */
@@ -82,7 +85,7 @@ if (radnja === 'postavi' || radnja === 'obrisi') {
   console.log(`spremište: ${spremiste}`)
   for (const [ime, v] of vidjeno) console.log(`${ime.padEnd(32)} ${v ? 'postoji' : 'prazno '}  ${v ? otisak(v, kljuc) : ''}`)
   const p = ucitajPostavkeTajni()
-  console.log(`potvrda s ploče: ${p.potvrdaUid.length ? `${p.potvrdaUid.length} primatelj(a)` : 'NIJE podešena (upis s ploče isključen)'} · LAN HTTP: ${p.dopustiLanHttp ? 'dopušten' : 'ne'}`)
+  console.log(`potvrda s ploče: ${p.potvrdaUid.length ? `${p.potvrdaUid.length} primatelj(a), izvor ${p.potvrdaIzvor}` : 'NIJE podešena (nema vlasnika ni u profilu čvora)'} · privatni LAN HTTP: ${p.dopustiLanHttp ? 'dopušten' : 'isključen'}`)
   process.exit(0)
 } else if (radnja === 'podesi') {
   const put = konfigPutanjaZaPisanje('tajne.json', 'TM_TAJNE_POSTAVKE')

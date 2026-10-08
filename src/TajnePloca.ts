@@ -3,18 +3,22 @@
  * pošiljatelj koda u privatni Telegram vlasnika. Logika je u `TajneApi.ts`, pisač u
  * `LoginCreds.ts`, kod u `core/PotvrdaVlasnika.ts`.
  *
- * POSTAVKE (`config/tajne.json`, NIJE tajna, ploča ih NE mijenja):
- *   { "potvrdaUid": ["<telegram uid>"], "dopustiLanHttp": false, "dodatnaImena": ["X_TOKEN"] }
- * Upisuju se CLI-jem na stroju (`bun scripts/tajna.ts podesi …`). Da ih ploča smije mijenjati,
- * uređaj iz LAN-a bi postavio SVOJ uid kao primatelja koda i zaobišao potvrdu (A1, §4.2).
+ * POSTAVKE (`config/tajne.json`, NIJE tajna, ploča ih NE mijenja, datoteka NIJE obavezna):
+ *   { "potvrdaUid": ["<telegram uid>"], "dopustiLanHttp": true, "dodatnaImena": ["X_TOKEN"] }
+ * Bez datoteke (TASK-5357): primatelj koda je vlasnik iz profila instance čvora
+ * (`TajneVlasnik.primateljiKoda`), a privatni LAN HTTP je dopušten. Da ploča smije mijenjati
+ * primatelja, uređaj iz LAN-a bi postavio SVOJ uid i zaobišao potvrdu (A1, §4.2).
  */
 import { existsSync, readFileSync } from 'fs'
-import { hostname } from 'os'
+import { hostname, networkInterfaces } from 'os'
 import { dopustenaImena, type DopustenoIme } from './LoginCreds'
 import { PotvrdaVlasnika } from './core/PotvrdaVlasnika'
+import { adresePloce, citajInstancu, prepoznajZahtjevTajne, primateljiKoda, uputaZaUpis } from './TajneVlasnik'
+import type { UlaznaPoruka } from './razgovor/Kanal'
 import { obradiTajne, type KontekstTajni, type OdgovorTajni, type PostavkeTajni } from './TajneApi'
 import { datotekaTajniZaPisanje } from './core/ConfigModul'
-import { konfigPutanja, stanjePutanja } from './core/paths'
+import { konfigPutanja, stanjePutanja, TM_ROOT } from './core/paths'
+import { join } from 'path'
 import { loadEmailConfig } from './EmailConfig'
 import { loadNextcloudConfig } from './NextcloudConfig'
 import { loadGitHubConfig } from './GitHubConfig'
@@ -24,13 +28,22 @@ import { ENV_LOZINKE } from './rag/rag-backend-config'
 
 export const tajnePostavkePutanja = (): string => konfigPutanja('tajne.json', 'TM_TAJNE_POSTAVKE')
 
-export function ucitajPostavkeTajni(put: string = tajnePostavkePutanja()): PostavkeTajni & { dodatnaImena: string[] } {
+/** Profil instance čvora (ADR-0004) — odatle vlasnik kad `tajne.json` nema `potvrdaUid`. */
+export const profilInstancePutanja = (): string =>
+  process.env.TM_PROFIL_INSTANCA || join(TM_ROOT, 'config', 'profil.instanca.env')
+
+export function ucitajPostavkeTajni(
+  put: string = tajnePostavkePutanja(), instanca: string = profilInstancePutanja(),
+): PostavkeTajni & { dodatnaImena: string[] } {
   let j: any = {}
-  try { if (existsSync(put)) j = JSON.parse(readFileSync(put, 'utf-8')) } catch { /* pokvarena datoteka = zadano (isključeno) */ }
+  try { if (existsSync(put)) j = JSON.parse(readFileSync(put, 'utf-8')) } catch { /* pokvarena datoteka = zadano */ }
   const popis = (x: unknown): string[] => Array.isArray(x) ? x.map(v => String(v).trim()).filter(Boolean) : []
+  const p = primateljiKoda(popis(j.potvrdaUid), citajInstancu(instanca))
   return {
-    potvrdaUid: popis(j.potvrdaUid).filter(u => /^\d{1,20}$/.test(u)),
-    dopustiLanHttp: j.dopustiLanHttp === true,
+    potvrdaUid: p.uid,
+    potvrdaIzvor: p.izvor,
+    // TASK-5357: privatni LAN je zadano dopušten; vlasnik ga gasi samo izričitim `false`.
+    dopustiLanHttp: j.dopustiLanHttp !== false,
     dodatnaImena: popis(j.dodatnaImena),
   }
 }
@@ -71,9 +84,40 @@ async function posaljiPrivatno(uid: string, tekst: string): Promise<boolean> {
 
 let kontekst: KontekstTajni | null = null
 
+const imeCvora = (): string => (process.env.TM_CVOR || process.env.REGOC_NODE_NAME || hostname()).slice(0, 40)
+
+/** @korisničko ime bota čvora (`getMe`), jednom po procesu — za uputu „pokreni bota". */
+let imeBota: string | null = null
+export async function osvjeziImeBota(): Promise<string | null> {
+  const token = telegramBotToken(loadTelegramConfig())
+  if (!token) return null
+  try {
+    const r = await fetch(`${telegramApiBaza()}/bot${token}/getMe`, { signal: AbortSignal.timeout(8000) })
+    const d = await r.json().catch(() => ({})) as any
+    if (typeof d?.result?.username === 'string') imeBota = d.result.username
+  } catch { /* uputa tada kaže „ovog bota" */ }
+  return imeBota
+}
+
+/**
+ * TASK-5357: vlasnikova molba s Telegrama („upiši lozinku za mail") → uputa korak po korak s
+ * poveznicom na obrazac. Samo pošiljatelj koji je primatelj koda; ostali idu na običan potez.
+ */
+export function uputaTajniZaPoruku(p: UlaznaPoruka, o: {
+  port: number; dopusten: (host: string) => boolean; davatelji: { id: string; envKey?: string }[]
+}): string | null {
+  const z = prepoznajZahtjevTajne(p.tekst || '')
+  if (!z) return null
+  if (!ucitajPostavkeTajni().potvrdaUid.includes(String(p.posiljateljId))) return null
+  return uputaZaUpis({
+    izvor: z.izvor, imena: imenaTajniPloce(o.davatelji), cvor: imeCvora(), bot: imeBota,
+    adrese: adresePloce({ port: o.port, dopusten: o.dopusten, sucelja: networkInterfaces(), javniUrl: process.env.TM_JAVNI_URL }),
+  })
+}
+
 export function kontekstTajni(davatelji: { id: string; envKey?: string }[]): KontekstTajni {
   if (kontekst) return kontekst
-  const cvor = (process.env.TM_CVOR || process.env.REGOC_NODE_NAME || hostname()).slice(0, 40)
+  const cvor = imeCvora()
   kontekst = {
     get spremiste() { return datotekaTajniZaPisanje() },
     auditPut: stanjePutanja('tajne_audit.jsonl'),
@@ -82,7 +126,9 @@ export function kontekstTajni(davatelji: { id: string; envKey?: string }[]): Kon
     postavke: () => ucitajPostavkeTajni(),
     imena: () => imenaTajniPloce(davatelji),
     log: s => console.log(s),
+    imeBota: () => imeBota,
   }
+  if (!imeBota) void osvjeziImeBota()
   return kontekst
 }
 
