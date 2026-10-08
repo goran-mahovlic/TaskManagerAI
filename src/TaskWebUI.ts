@@ -10749,8 +10749,9 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       let h = '<table class="info-table"><thead><tr><th>#</th><th>Rule</th><th>Summary</th></tr></thead><tbody>';
       rules.forEach(function(r, i) {
         h += '<tr><td style="font-weight:700;color:var(--accent-blue)">' + r.number + '</td>' +
-          '<td><strong>' + r.name + '</strong></td>' +
-          '<td style="font-size:0.75rem;color:var(--text-secondary)">' + r.summary + '</td></tr>';
+          '<td><strong>' + _esc(r.name) + '</strong></td>' +
+          // TASK-5368: pravilo 9 nosi adrese iz postavki (glasUrl upisuje korisnik) — escape.
+          '<td style="font-size:0.75rem;color:var(--text-secondary)">' + _esc(r.summary) + '</td></tr>';
       });
       h += '</tbody></table>';
       document.getElementById('info-rules-content').innerHTML = h;

@@ -148,6 +148,13 @@ describe('Jezik — svaki ključ koji ploča koristi postoji u oba rječnika', (
     expect(stvarni.filter(k => !(k in hr))).toEqual([])
   })
 
+  test('kartice koje nose adrese iz postavki escapeaju ih (glasUrl upisuje korisnik)', () => {
+    const ui = readFileSync(join(KORIJEN, 'src/TaskWebUI.ts'), 'utf-8')
+    expect(ui).toContain("'<td><strong>' + _esc(r.name) + '</strong></td>'")
+    expect(ui).toContain("+ _esc(r.summary) + '</td></tr>'")
+    expect(ui).toContain("const adresa = s.endpoint ? _esc(s.endpoint) : '—';")
+  })
+
   test('naslovi kartica Config su prevodivi (nema tvrdog teksta u naslovu)', () => {
     const ui = readFileSync(join(KORIJEN, 'src/TaskWebUI.ts'), 'utf-8')
     const naslovi = [...ui.matchAll(/<div class="info-card-title"><span class="icon">[^<]*<\/span>\s*([^\n]*)<\/div>/g)].map(m => m[1])
