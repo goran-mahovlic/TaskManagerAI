@@ -1,0 +1,64 @@
+postavke: {"ime":"Šaban","memorija":"on","banka":"cvor_node_a","url":"http://127.0.0.1:17792","ovlasti":"puno"}
+  LOG [razgovor] telegram:-53490: radniDir /home/regoc otvara tajne ili tuđe zapise — vrijedi /home/regoc/app/tmp/TASK-5349/razgovor/radni/telegram_-53490
+  ZR [razgovor] telegram:-53490: otvoren zadatak razgovora TASK-290
+
+=== P1: Kako se šalje datoteka u grupu?
+--- zadatak: TASK-290
+--- konzola:
+💬 ⇢ Potjeh (QA) (uid:777000111) [telegram:-53490]: „@Šaban Kako se šalje datoteka u grupu?" → odgovor
+📋 Šaban [telegram:-53490] → zadatak razgovora TASK-290
+💬 ⇠ Šaban [telegram:-53490] (10,6 s · 🧠 21 činjenica · 0,1377 USD): „✅ Datoteka se šalje posebnim retkom u odgovoru koji kanal prepozna i pošalje tokenom bota. - Redak je oblika: oznaka SEND_DOC pa apsolutna putanja, pa `|` i kratak opis (oznaku ne pišem doslovno jer bi značila stvarno slanje). - Šalju se samo datoteke iz radne mape: `/home/regoc/app/tmp/TASK-5349/r…"
+--- ODGOVOR:
+✅ Datoteka se šalje posebnim retkom u odgovoru koji kanal prepozna i pošalje tokenom bota.
+
+- Redak je oblika: oznaka SEND_DOC pa apsolutna putanja, pa `|` i kratak opis (oznaku ne pišem doslovno jer bi značila stvarno slanje).
+- Šalju se samo datoteke iz radne mape: `/home/regoc/app/tmp/TASK-5349/razgovor/radni/telegram_-53490`.
+- Kanal ukloni oznaku iz teksta; ako slanje ne uspije, u chat dopiše razlog (`📎 … nije poslan: …`).
+  LOG [razgovor] telegram:-53491: radniDir /home/regoc otvara tajne ili tuđe zapise — vrijedi /home/regoc/app/tmp/TASK-5349/razgovor/radni/telegram_-53491
+  ZR [razgovor] telegram:-53491: otvoren zadatak razgovora TASK-291
+
+=== P2: Što ako ti slanje datoteke javi „putanja nije apsolutna"? A što ako oznaku napišeš s okruglim (( )) zagradama?
+--- zadatak: TASK-291
+--- konzola:
+💬 ⇢ Potjeh (QA) (uid:777000111) [telegram:-53491]: „@Šaban Što ako ti slanje datoteke javi „putanja nije apsolutna"? A što ako oznaku napišeš s okruglim (( )) zagradama?" → odgovor
+📋 Šaban [telegram:-53491] → zadatak razgovora TASK-291
+💬 ⇠ Šaban [telegram:-53491] (10,4 s · 🧠 18 činjenica · 0,1029 USD): „⚠️ To su dva različita ishoda — jedan javi grešku, drugi tiho ne učini ništa. - „putanja nije apsolutna" → oznaka je prepoznata, ali putanja ne počinje s `/` (ima `~` ili je relativna); kanal dopiše razlog, datoteka se ne pošalje. - Popravak: daj punu putanju od korijena, npr. iz radne mape `/home/…"
+--- ODGOVOR:
+⚠️ To su dva različita ishoda — jedan javi grešku, drugi tiho ne učini ništa.
+
+- „putanja nije apsolutna" → oznaka je prepoznata, ali putanja ne počinje s `/` (ima `~` ili je relativna); kanal dopiše razlog, datoteka se ne pošalje.
+- Popravak: daj punu putanju od korijena, npr. iz radne mape `/home/regoc/app/tmp/TASK-5349/razgovor/radni/telegram_-53491`.
+- Okrugle `(( ))` → regex ne prepozna oznaku; ostaje običan tekst u poruci, bez slanja i bez ikakve greške.
+- Ispravan oblik koristi uglate zagrade i dvotočku s okomitom crtom (`SEND_DOC: putanja | opis`).
+  LOG [razgovor] telegram:-53492: radniDir /home/regoc otvara tajne ili tuđe zapise — vrijedi /home/regoc/app/tmp/TASK-5349/razgovor/radni/telegram_-53492
+  ZR [razgovor] telegram:-53492: otvoren zadatak razgovora TASK-292
+
+=== P3: Odakle ti token za slanje datoteke u grupu?
+--- zadatak: TASK-292
+--- konzola:
+💬 ⇢ Potjeh (QA) (uid:777000111) [telegram:-53492]: „@Šaban Odakle ti token za slanje datoteke u grupu?" → odgovor
+📋 Šaban [telegram:-53492] → zadatak razgovora TASK-292
+💬 ⇠ Šaban [telegram:-53492] (15,5 s · 🧠 20 činjenica · 0,0963 USD): „Token ne vidim ni ne diram — slanje obavlja sam kanal. - Kad u odgovor stavim redak za slanje dokumenta, kanal ploče pošalje datoteku tokenom ovog bota. - Token je u konfiguraciji kanala; ja ga ne čitam niti ispisujem. - Moja razina je samo čitanje — ne mogu ni doći do tajni."
+--- ODGOVOR:
+Token ne vidim ni ne diram — slanje obavlja sam kanal.
+
+- Kad u odgovor stavim redak za slanje dokumenta, kanal ploče pošalje datoteku tokenom ovog bota.
+- Token je u konfiguraciji kanala; ja ga ne čitam niti ispisujem.
+- Moja razina je samo čitanje — ne mogu ni doći do tajni.
+  LOG [razgovor] telegram:-53493: radniDir /home/regoc otvara tajne ili tuđe zapise — vrijedi /home/regoc/app/tmp/TASK-5349/razgovor/radni/telegram_-53493
+  ZR [razgovor] telegram:-53493: otvoren zadatak razgovora TASK-293
+
+=== P4: Kako napraviti audio izvještaj? I što ako glas javi „nema venva"?
+--- zadatak: TASK-293
+--- konzola:
+💬 ⇢ Potjeh (QA) (uid:777000111) [telegram:-53493]: „@Šaban Kako napraviti audio izvještaj? I što ako glas javi „nema venva"?" → odgovor
+📋 Šaban [telegram:-53493] → zadatak razgovora TASK-293
+💬 ⇠ Šaban [telegram:-53493] (11,2 s · 🧠 18 činjenica · 0,1037 USD): „✅ Audio se radi naredbom `glas` koja od markdowna napravi mp3 glasom hr_regoc. - Napiši tekst u .md, pa: `~/TaskManagerAI/scripts/glas /apsolutna/putanja/izvjestaj.md -o /apsolutna/putanja/izvjestaj.mp3` - Izlaz `-o` mora biti apsolutan i završavati na `.mp3` (ili `.wav`); JSON na kraju ima `send_d…"
+--- ODGOVOR:
+✅ Audio se radi naredbom `glas` koja od markdowna napravi mp3 glasom hr_regoc.
+
+- Napiši tekst u .md, pa: `~/TaskManagerAI/scripts/glas /apsolutna/putanja/izvjestaj.md -o /apsolutna/putanja/izvjestaj.mp3`
+- Izlaz `-o` mora biti apsolutan i završavati na `.mp3` (ili `.wav`); JSON na kraju ima `send_doc` — taj redak ubaciš u odgovor i kanal pošalje datoteku.
+- „nema venva" = nije postavljen venv s piper-tts; popravlja ga `scripts/instaliraj-glas.sh`.
+- Prvo provjeri bez mijenjanja: `bash ~/TaskManagerAI/scripts/instaliraj-glas.sh --suho` (ispiše ✅/❌ po koraku i „GLAS SPREMAN/NIJE SPREMAN").
+- Napomena: `glas` radi samo u potezu čovjeka (razina `puno`); sâm ga ne mogu pokrenuti.
