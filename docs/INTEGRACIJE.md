@@ -79,20 +79,33 @@ opsegu — za to postoji `rclone` i ne treba mu naša lošija preslika.
 | `izlaz` | SMTP | `smtp.host`, `smtp.korisnik`, `smtp.posiljatelj`, `primatelji`, knjižnica `nodemailer` |
 | `ulaz` | IMAP | `imap.host`, `imap.korisnik`, `imap.mapa` (zadano `INBOX`) |
 
-Slanje traži neobaveznu knjižnicu (Bun nema ugrađen SMTP klijent):
+Knjižnice (`nodemailer` za slanje, `imapflow` + `mailparser` za provjeru) su neobavezne
+ovisnosti paketa: instalacija (`scripts/install.sh`, `tm-cvor-azuriraj.sh` → `scripts/sposobnosti.ts`)
+ih sama povuče kad je e-pošta uključena. Bez njih kartica kaže što nedostaje, a **ostatak
+paketa radi normalno**.
 
-```bash
-bun add nodemailer
-```
+**Korisnik = PUNA adresa** (`sabanAI@intergalaktik.hr`, ne `sabanAI`): poslužitelj
+mail.intergalaktik.hr golo ime odbija s `535 Incorrect authentication data` (izmjereno na
+node-A 08.10.2026., TASK-5371). Lozinke se upisuju samo na čvoru: Config → Tajne
+(`SMTP_PASSWORD`, `IMAP_PASSWORD`).
 
-Bez nje kartica jasno kaže što nedostaje, a **ostatak paketa radi normalno** — isti obrazac
-kao `chromadb` i `ollama`.
+**Provjera pošte** (`imap.obavijest: true`, TASK-5358/5371) radi u procesu ploče: nova poruka →
+obavijest u grupu čvora (`imap.obavijestChat`, inače Telegram `chatId`) + jedan zapis u ulaz.
+Stanje (`data/posta.json`: UIDVALIDITY, zadnji UID, Message-ID-ovi) preživi restart, pa se
+obavijest ne ponavlja; prvi prolaz staru poštu samo zapamti. Kartica E-pošta i `GET /api/posta`
+pokazuju radi li, zadnju primljenu poruku i zadnju grešku.
+
+**Slanje na zahtjev**: `POST /api/email/posalji {"predmet","tekst","prima"?}`. Dopušteno je samo s
+ovog stroja (localhost) i samo na adrese iz `primatelji`. Vraća `messageId` iz SMTP odgovora.
 
 **`imap.filtar`** je jedino polje koje bi bez provjere pustilo tvoj niz u IMAP naredbu, pa
 se odbija sve što sadrži navodnik ili prijelaz retka (CRLF injekcija).
 
 Ulazna poruka postaje **jedan** `POST /api/ingest` sa `source: "email"`. Hoće li od nje
 nastati zadatak odlučuju **Ulazna vrata** (pragovi i položaj po izvoru), ne modul e-pošte.
+Iznimka (TASK-5371): izvor `email` **ne nasljeđuje** `perSource["*"]: "on"`. Tijelo maila piše
+stranac, pa bez izričitog `perSource.email` poruka ide u sjenu (zapis bez zadatka). Zadatak
+otvara čovjek odgovorom „zadatak" na obavijest u grupi.
 
 ---
 
