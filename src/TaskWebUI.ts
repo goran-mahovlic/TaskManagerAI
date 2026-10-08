@@ -78,6 +78,7 @@ import {
   zadnjiPosiljatelji, plocaIzTaskManagera, type RazgovorSloj,
 } from './razgovor/RazgovorPloca'
 import { citajKonzolu, zapisiKonzolu } from './razgovor/Zapis'
+import { probaModela as probaDezurnog, simulirajPad as simulirajPadPrimarnog, citajStanje as citajStanjeDezurnog } from './Dezurni'
 import { ZADANI_PRIVITCI as ZADANI_PRIVITCI_RAZG, mapaPrivitaka as mapaPrivitakaRazg } from './TelegramPrivitci'
 import { GLAS_ZADANI_URL, stanjeGlasa, type StanjeGlasa } from './razgovor/Glas'
 import { ucitajAgente } from './razgovor/Identitet'
@@ -8718,6 +8719,14 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         '<button id="dez-proba" class="cfg-btn" onclick="probajDezurnog(this)">' + _T('dez_probni_poziv', 'Probni poziv') + '</button>' +
         ' <span id="dez-proba-ishod" style="font-size:.7rem"></span>',
         _T('dez_provjera_opis', 'Stvarno pozove odabranog davatelja preko istog mosta koji odgovara na Telegramu. Bez ovoga se pogrešan izbor otkrije tek u kvaru.'));
+      // TASK-5359: simulirani pad primarnog — razgovor i agenti idu ravno na dežurnog.
+      var simAktivna = st.simulacijaDo && Date.parse(st.simulacijaDo) > Date.now();
+      h += _red(_T('dez_simulacija', 'Simulacija pada'),
+        (simAktivna
+          ? '<span class="info-badge disabled">' + _Tv('dez_simulacija_do', 'primarni „pao" do {vrijeme}', { vrijeme: _esc(new Date(st.simulacijaDo).toLocaleTimeString()) }) + '</span> ' +
+            '<button class="cfg-btn" onclick="simulirajPadDezurnog(0, this)">' + _T('dez_ugasi_simulaciju', 'Ugasi simulaciju') + '</button>'
+          : '<button class="cfg-btn" onclick="simulirajPadDezurnog(5, this)">' + _T('dez_simuliraj', 'Simuliraj pad (5 min)') + '</button>'),
+        _T('dez_simulacija_opis', 'Razgovor i agenti preskaču primarni model i odgovaraju preko dežurnog. Sama prestaje nakon roka; zapis ide u Konzolu.'));
       h += _red(_T('dez_ollama_posluzitelj', 'Ollama poslužitelj'),
         '<input id="dez-baseurl" value="' + _esc(p.baseUrl) + '" style="' + _stil() + ';min-width:220px">' +
         ' <button class="cfg-btn" onclick="spremiDezurni({baseUrl:document.getElementById(\\'dez-baseurl\\').value}, this)">' + _T('dez_spremi', 'Spremi') + '</button>',
@@ -8785,6 +8794,14 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
                  { greska: _esc(e.message) }) + '</span>';
       }
       if (el) el.disabled = false;
+    }
+
+    async function simulirajPadDezurnog(minuta, el) {
+      if (el) el.disabled = true;
+      try {
+        await fetch('/api/dezurni/simuliraj', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ minuta: minuta }) });
+      } catch (e) { /* kartica se osvježi i pokaže stvarno stanje */ }
+      loadDezurni();
     }
 
     async function spremiDezurni(zakrpa, el) {
@@ -11403,42 +11420,47 @@ async function handleDezurniConfigGet(): Promise<Response> {
 
 /**
  * Probni poziv dežurnog — jedini dokaz da odabrani davatelj STVARNO odgovara.
- * Zove se sam most (`tools/Telegram/dezurni.ts`), ne preslika njegove logike: preslika bi
- * mogla proći dok pravi put ne radi, a to je točno kvar koji ovo treba otkriti.
+ * TASK-5359: most je u paketu (`src/Dezurni.ts`). Prije se uvozio most glavnog sustava
+ * (`tools/Telegram/dezurni.ts` pod $HOME), kojeg na tuđoj instalaciji nema.
  */
 async function handleDezurniProba(): Promise<Response> {
   const json = (o: unknown, s = 200) =>
     new Response(JSON.stringify(o), { status: s, headers: { 'Content-Type': 'application/json' } })
-  const put = join(process.env.HOME || homedir(), '.claude/tools/Telegram/dezurni.ts')
-  if (!existsSync(put)) {
-    return json({ ok: false, greska: `most dežurnog nije na ovom stroju (${put})` }, 200)
-  }
   try {
-    const most = await import(put)
-    if (typeof most.probaModela !== 'function') {
-      return json({ ok: false, greska: 'most nema probaModela() — stara inačica datoteke' }, 200)
-    }
-    const r = await most.probaModela()
-    console.log(`[DEZURNI] proba: ${r.ok ? 'RADI' : 'NE RADI'} ${r.provider}/${r.model} (${r.ms} ms)`)
+    const r = await probaDezurnog()
+    const redak = `🔻 dežurni — proba: ${r.ok ? 'RADI' : 'NE RADI'} ${r.provider}/${r.model} (${r.ms} ms)` +
+      (r.ok ? `: „${String(r.odgovor || '').slice(0, 80)}"` : ` — ${r.greska}`)
+    console.log(`[DEZURNI] ${redak}`)
+    zapisiKonzolu(join(TM_DATA, 'razgovor'), redak, r.ok ? 'ok' : 'greska')
     return json(r)
   } catch (e: any) {
     return json({ ok: false, greska: String(e && e.message ? e.message : e) }, 200)
   }
 }
 
-/** Radi li dežurstvo upravo sada — isti zapis koji piše `dezurni.ts` (data/dezurni.stanje.json). */
-function citajDezurniStanje(): { dezurstvo: boolean; uzastopnihGresaka: number; od?: string } {
-  try {
-    const p = stanjePutanja('dezurni.stanje.json')
-    const s = JSON.parse(readFileSync(p, 'utf-8'))
-    return {
-      dezurstvo: !!s.dezurstvo,
-      uzastopnihGresaka: Number(s.uzastopnihGresaka) || 0,
-      od: s.od,
-    }
-  } catch {
-    return { dezurstvo: false, uzastopnihGresaka: 0 }
+/** Simulacija pada primarnog (TASK-5359): `{minuta: 1..60}` uključi, `0` ugasi. Razgovor i
+ *  orkestrator tada preskaču primarni model i idu ravno na dežurnog — provjera rezerve bez
+ *  stvarnog kvara. Rok je obavezan, da zaboravljena simulacija sama prestane. */
+async function handleDezurniSimuliraj(req: Request): Promise<Response> {
+  const json = (o: unknown, s = 200) =>
+    new Response(JSON.stringify(o), { status: s, headers: { 'Content-Type': 'application/json' } })
+  let tijelo: any
+  try { tijelo = await req.json() } catch { return json({ error: 'Neispravan JSON' }, 400) }
+  const m = tijelo?.minuta
+  if (typeof m !== 'number' || !Number.isFinite(m) || m < 0 || m > 60) {
+    return json({ error: 'minuta: broj 0..60 (0 = ugasi simulaciju)' }, 400)
   }
+  const stanje = simulirajPadPrimarnog(m)
+  const redak = m ? `🔻 dežurni — SIMULACIJA pada primarnog modela uključena do ${stanje.simulacijaDo}`
+    : '🔻 dežurni — simulacija pada primarnog modela ugašena'
+  console.log(`[DEZURNI] ${redak}`)
+  zapisiKonzolu(join(TM_DATA, 'razgovor'), redak, 'info')
+  return json({ ok: true, stanje })
+}
+
+/** Radi li dežurstvo upravo sada — isti zapis koji piše most (`data/dezurni.stanje.json`). */
+function citajDezurniStanje(): ReturnType<typeof citajStanjeDezurnog> {
+  return citajStanjeDezurnog()
 }
 
 async function handleDezurniConfigPut(req: Request): Promise<Response> {
@@ -17956,6 +17978,11 @@ async function obradiZahtjev(req: Request): Promise<Response | undefined> {
     // ne može isprobati nije izbor nego obećanje koje se provjerava tek u kvaru.
     if (url.pathname === '/api/dezurni/proba' && req.method === 'POST') {
       return handleDezurniProba()
+    }
+
+    // POST /api/dezurni/simuliraj {minuta} — simulirani pad primarnog modela (TASK-5359)
+    if (url.pathname === '/api/dezurni/simuliraj' && req.method === 'POST') {
+      return handleDezurniSimuliraj(req)
     }
 
     // GET /api/telegram/config — postavke Telegram integracije (Kosjenka, 09.09.2026.)

@@ -1014,5 +1014,10 @@
   "tajne_promijenjeno": "The fields changed after the code was sent — enter them again and click Save.",
   "tajne_obrisano": "Deleted.",
   "tajne_upisano": "Saved.",
-  "cfg_kartica_tajne": "Secrets — node passwords and tokens (write-only)"
+  "cfg_kartica_tajne": "Secrets — node passwords and tokens (write-only)",
+  "dez_simulacija": "Failure simulation",
+  "dez_simuliraj": "Simulate failure (5 min)",
+  "dez_ugasi_simulaciju": "Stop simulation",
+  "dez_simulacija_do": "primary \"down\" until {vrijeme}",
+  "dez_simulacija_opis": "Conversation and agents skip the primary model and answer through the standby. Stops by itself after the deadline; logged to the Console."
 }

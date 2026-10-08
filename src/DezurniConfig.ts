@@ -5,7 +5,7 @@
  * je na sva tri stroja, ali se model dosad mijenjao ručnim uređivanjem te datoteke. Ovdje je
  * jedini put kojim ploča smije u nju pisati.
  *
- * ZAŠTO BEZ RESTARTA: i most (`tools/Telegram/dezurni.ts` → `postavke()`) i alat
+ * ZAŠTO BEZ RESTARTA: i most (`src/Dezurni.ts`, TASK-5359) i alat
  * (`tools/dezurni.py` → `postavke()`) čitaju datoteku pri SVAKOM pozivu — nitko je ne kešira
  * u memoriji procesa. Zato je zapis na disk dovoljan, i zato ovaj modul ne smije uvesti keš:
  * keš bi bio jedina stvar koja bi zahtijevala restart.
@@ -51,7 +51,7 @@ export const ZADANE_POSTAVKE: DezurniPostavke = {
 
 // ── Davatelji (TASK-4709) ───────────────────────────────────────────────────────────────
 // Vlasnik, 06.09.2026.: ploča je nudila samo Ollamu jer je most znao samo njezin `/api/chat`.
-// Most sada zna pet oblika poziva (`dezurni.ts → NACIN_POZIVA_MOSTA`), pa se popis davatelja
+// Most sada zna pet oblika poziva (`src/Dezurni.ts → NACIN_POZIVA_MOSTA`), pa se popis davatelja
 // više NE piše rukom nego IZVODI iz `models/model-config.json`. Ručni popis je jednom već
 // zaostao za mostom; izvod ne može.
 
@@ -59,7 +59,7 @@ export const MODEL_CONFIG_PATH = konfigPutanja('model-config.json', 'TM_MODEL_CO
 /** Datoteka s tajnama (`IME=vrijednost`). Prava 0600; nikad u repozitorij. */
 export const CREDENTIALS_PATH = konfigPutanja('credentials.env', 'TM_CREDENTIALS')
 
-/** Oblici poziva koje most implementira. Ista imena moraju postojati u `dezurni.ts`
+/** Oblici poziva koje most implementira. Ista imena moraju postojati u `src/Dezurni.ts`
  *  (`NACIN_POZIVA_MOSTA`) — to čuva test `DezurniDavatelji.test.ts → BRANA`. */
 export type NacinPoziva = 'ollama' | 'claude-cli' | 'openai' | 'anthropic' | 'google'
 

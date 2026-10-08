@@ -29,6 +29,7 @@ import { loadOrchestratorConfig, type OrchestratorPostavke } from './Orchestrato
 import type { OrchestratorPorts } from './Ports'
 import { createConcurrencyReader, formatConcurrencyChange } from '../ConcurrencySetting'
 import { TM_DB } from '../paths'
+import { dezurniRazgovora } from '../../Dezurni'
 
 export interface Sastav {
   orkestrator: Orchestrator | null
@@ -73,6 +74,8 @@ export function sastaviOrkestrator(
     notifier: portovi.notifier || new TelegramNotifier(),
     clock: portovi.clock || SistemskiSat,
     logger: portovi.logger || new DatotecniLogger(),
+    // TASK-5359: rezervni model iz `dezurni.json` paketa kad primarni padne.
+    dezurni: portovi.dezurni || dezurniRazgovora(),
   }
   // Strop usporednih agenata je POSTAVKA TaskManagera (tablica `settings`, Config stranica),
   // ne polje orchestrator.json: čita se uživo (keš ≤5 s), pa promjena ne traži restart.

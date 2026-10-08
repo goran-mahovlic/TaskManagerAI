@@ -1014,5 +1014,10 @@
   "tajne_promijenjeno": "Polja su se promijenila nakon slanja koda — upiši ponovo i klikni Spremi.",
   "tajne_obrisano": "Obrisano.",
   "tajne_upisano": "Upisano.",
-  "cfg_kartica_tajne": "Tajne — lozinke i tokeni čvora (samo upis)"
+  "cfg_kartica_tajne": "Tajne — lozinke i tokeni čvora (samo upis)",
+  "dez_simulacija": "Simulacija pada",
+  "dez_simuliraj": "Simuliraj pad (5 min)",
+  "dez_ugasi_simulaciju": "Ugasi simulaciju",
+  "dez_simulacija_do": "primarni „pao\" do {vrijeme}",
+  "dez_simulacija_opis": "Razgovor i agenti preskaču primarni model i odgovaraju preko dežurnog. Sama prestaje nakon roka; zapis ide u Konzolu."
 }

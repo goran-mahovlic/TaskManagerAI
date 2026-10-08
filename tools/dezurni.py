@@ -93,7 +93,7 @@ def postavke() -> dict:
 # Vlasnik, 06.09.2026.: „config stranica nudi samo Ollamu, a ne sve providere iz
 # model-config.json." Uzrok nije bio popis nego most: znao je samo Ollamin `/api/chat`.
 #
-# Ovdje je ISTO pravilo kao u `tools/Telegram/dezurni.ts` (`NACIN_POZIVA_MOSTA`), jer isti
+# Ovdje je ISTO pravilo kao u `src/Dezurni.ts` (`NACIN_POZIVA_MOSTA`), jer isti
 # posao rade dva jezika — TS most odgovara na Telegramu, a ova skripta mjeri stanje i služi
 # kao provjera s ploče (`proba`). Kad se jedan promijeni, mora i drugi; brana je test
 # `DezurniDavatelji.test.ts → BRANA` na TS strani i `proba` ovdje.
