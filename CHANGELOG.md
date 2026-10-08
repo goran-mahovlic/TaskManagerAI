@@ -1,3 +1,16 @@
+## 2026-10-08 — naredba `pdf`: PDF s hrvatskim slovima, provjeren prije slanja (TASK-5369)
+
+- Povod (TASK-5360): node-A je poslao PDF iz vlastite reportlab skripte s Helveticom (WinAnsi,
+  font nije ugrađen) i pdftotext je čitao „■vor" umjesto „čvor". md2pdf glavnog sustava traži
+  Chromium kojeg na čvoru nema.
+- Novo: `scripts/pdf` + `tools/pdf/pdf.py` — md/tekst → PDF (A4) s ugrađenim DejaVu Sans
+  (i za tablice, popise i početni font platna, pa nijedan font u PDF-u nije neugrađen). Nakon
+  izrade izvadi tekst (pdftotext, inače pypdf); ako fali ijedno č ć ž š đ iz izvora ili se pojavi
+  zamjenski znak, PDF briše i vraća 5. Izlaz je JSON sa `send_doc` oznakom.
+- `scripts/instaliraj-pdf.sh` (font, poppler-utils, venv s reportlab + pypdf, veza
+  `~/.local/bin/pdf`, proba s č ć ž š đ); poziva ga `scripts/install.sh`.
+- Upute čvora (`profili/upravitelj-cvora/CLAUDE.md.predlozak`): PDF samo naredbom `pdf`.
+
 ## 2026-10-08 — e-pošta do kraja: zapis u ulaz, slanje na zahtjev, stanje na kartici (TASK-5371)
 
 - Nadogradnja `PostaUlaz` (TASK-5358): svaka nova poruka je, uz obavijest u grupu čvora, i JEDAN

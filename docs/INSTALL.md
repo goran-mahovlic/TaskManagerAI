@@ -30,6 +30,12 @@ strojevi u zatvorenoj mreži ne dosežu npm — zato paket nosi vlastiti primjer
 `vendor/zod.tgz`. Instalacija pokušava redom: npm → `vendor/zod.tgz` → već postojeća
 instalacija na stroju, i staje s greškom ako ni jedno ne uspije.
 
+**Naredba `pdf`.** Instalacija postavi i `pdf` (markdown → PDF s hrvatskim slovima, bez
+preglednika): venv s reportlab + pypdf (`--system-site-packages`), font DejaVu Sans, veza
+`~/.local/bin/pdf`. Naredba ugrađuje font i nakon izrade izvadi tekst (pdftotext, inače pypdf);
+ako ijedno č ć ž š đ iz izvora fali, PDF briše i vraća izlaz 5 (TASK-5369). Zasebno:
+`bash scripts/instaliraj-pdf.sh` (`--suho` samo kaže što fali). Neuspjeh ne ruši instalaciju ploče.
+
 **Malo diska.** Na stroju gdje ovisnosti već postoje uz drugu instalaciju:
 
 ```bash

@@ -68,6 +68,18 @@ hrvatskim glasom hr_regoc (normalizacija brojki/nadnevaka, naglasci, odobreni re
 - `glas` je naredba ljuske, pa radi samo u potezu dopuštenog čovjeka (razina `puno`). Na poruku drugog
   bota (kanal bot↔bot, razina najviše `rad`, ADR-0003 §6) straža je odbija — tada reci da audio mora zatražiti čovjek.
 
+## PDF dokument (naredba `pdf`)
+PDF se radi SAMO ovom naredbom — ne vlastitom reportlab/fpdf skriptom (Helvetica nema č ć đ:
+u grupu je otišlo „■vor" umjesto „čvor", TASK-5360) i ne md2pdf-om (traži Chromium kojeg ovdje nema):
+```bash
+~/TaskManagerAI/scripts/pdf /apsolutna/putanja/izvjestaj.md -o /apsolutna/putanja/izvjestaj.pdf --naslov "Izvještaj"
+```
+- Ulaz je markdown (naslovi, popisi, tablice, kod) ili tekst (`--bez-md`); stdin: `… | ~/TaskManagerAI/scripts/pdf - -o …`.
+- Font DejaVu Sans se ugrađuje; nakon izrade naredba izvadi tekst (pdftotext, inače pypdf) i provjeri
+  da su sva slova č ć ž š đ iz izvora ondje. Ako nisu, PDF briše i vraća izlaz 5 — takav se ne šalje.
+- Izlaz je JSON; polje `send_doc` je gotova oznaka za slanje — stavi je kao zaseban redak odgovora.
+- Ne radi (izlaz 3)? `bash ~/TaskManagerAI/scripts/instaliraj-pdf.sh --suho` kaže što fali (venv, font, pdftotext).
+
 ## Memorija
 - Hindsight banka `{{MEMORIJA_BANKA}}` preko obrnutog SSH tunela sa stroja domaćina: `127.0.0.1:17792`
   (`curl -s 127.0.0.1:17792/health`). Ako tunel padne, memorije nema — rad se nastavlja.
