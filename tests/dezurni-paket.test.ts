@@ -8,7 +8,7 @@
  *   3. razgovor: primarni padne → odgovor stiže preko dežurnog, s redom u konzoli;
  *   4. orkestrator: agent čiji spawn padne s 429 ponavlja se na dežurnom modelu (claude CLI
  *      preusmjeren preko ANTHROPIC_BASE_URL) — alati agenta ostaju;
- *   5. nijedna putanja glavnog sustava (`~/.claude/tools`, `~/.claude/regoc`) u mostu.
+ *   5. nijedna putanja glavnog sustava (alati i raspored mapa domaćina pod $HOME) u mostu.
  */
 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
@@ -201,7 +201,7 @@ function razgovor(dez: Record<string, unknown>) {
   const izv = new Izv()
   const kanal = new Kanalic()
   const konzola: string[] = []
-  const postavke: RazgovorPostavke = { ...RAZGOVOR_ZADANO, ime: 'Šaban', dopusteniKorisnici: ['1'], ukljucen: true, burstMs: 10, radniDir: join(mapa, 'radni') }
+  const postavke: RazgovorPostavke = { ...RAZGOVOR_ZADANO, ime: 'Asistent', dopusteniKorisnici: ['1'], ukljucen: true, burstMs: 10, radniDir: join(mapa, 'radni') }
   const j = stvoriRazgovor({
     postavke: () => postavke, izvrsitelj: izv, jePauza: () => false, kvotaPuna: () => false,
     korijen: join(mapa, 'razg'), tmHome: mapa, home: mapa, port: 1, plocaUrl: 'http://x', instalacija: 'node-A',
@@ -209,7 +209,7 @@ function razgovor(dez: Record<string, unknown>) {
     dezurni: dezurniRazgovora({ ...o }),
   })
   const poruka = (tekst: string): UlaznaPoruka => ({
-    kanal: 'telegram', chatId: '-5', porukaId: String(Math.random()), posiljateljId: '1', posiljateljIme: 'Goran',
+    kanal: 'telegram', chatId: '-5', porukaId: String(Math.random()), posiljateljId: '1', posiljateljIme: 'Korisnik',
     posiljateljJeBot: false, tekst, ts: new Date().toISOString(), privatno: true, obracanjeBotu: true,
   })
   return { j, izv, kanal, konzola, poruka, o }
@@ -282,7 +282,7 @@ describe('orkestrator — agent ponovljen na dežurnom kad primarni padne', () =
     const ports: any = {
       board: { update: async (id: string, p: any) => { azuriranja.push({ id, ...p }) }, list: async () => [] },
       bus: {}, executor: izv,
-      agents: { list: () => [{ id: 'jelena' }], get: () => ({ id: 'jelena', model: 'opus' }), route: () => null },
+      agents: { list: () => [{ id: 'inzenjer' }], get: () => ({ id: 'inzenjer', model: 'opus' }), route: () => null },
       prompt: { build: () => 'PROMPT' },
       liveness: {}, notifier: { notify: async () => {} },
       clock: { now: () => Date.now() }, logger: { log: (r: string) => log.push(r) },
@@ -302,7 +302,7 @@ describe('orkestrator — agent ponovljen na dežurnom kad primarni padne', () =
     izv.odgovori.push({ exitCode: 1, resultText: '', greska: 'API Error: 429 rate_limit_error' })
     izv.odgovori.push({ exitCode: 0, resultText: 'gotovo' })
     const { orc, azuriranja, log } = orkestrator(izv, { provider: 'lazni', model: 'glm-4.6' })
-    const r = await orc.pokreniZadatak({ id: 'TASK-1', title: 't', status: 'pending' } as any, { id: 'jelena', model: 'opus' } as any)
+    const r = await orc.pokreniZadatak({ id: 'TASK-1', title: 't', status: 'pending' } as any, { id: 'inzenjer', model: 'opus' } as any)
     expect(r.exitCode).toBe(0)
     expect(izv.zahtjevi.length).toBe(2)
     expect(izv.zahtjevi[1].model).toBe('glm-4.6')
@@ -318,7 +318,7 @@ describe('orkestrator — agent ponovljen na dežurnom kad primarni padne', () =
     const izv = new Izv()
     izv.odgovori.push({ exitCode: 1, resultText: '', greska: 'exit 1' })
     const { orc, azuriranja } = orkestrator(izv, { provider: 'lazni', model: 'glm-4.6' })
-    await orc.pokreniZadatak({ id: 'TASK-2', title: 't', status: 'pending' } as any, { id: 'jelena', model: 'opus' } as any)
+    await orc.pokreniZadatak({ id: 'TASK-2', title: 't', status: 'pending' } as any, { id: 'inzenjer', model: 'opus' } as any)
     expect(izv.zahtjevi.length).toBe(1)
     expect(azuriranja.some(a => a.status === 'blocked')).toBe(true)
   })

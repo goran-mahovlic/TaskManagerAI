@@ -1,7 +1,7 @@
 /**
  * Dežurni — most do rezervnog modela, U PAKETU (TASK-5359).
  *
- * Goran, 08.10.2026.: na node-A Test dežurnog je javljao „most dežurnog nije na ovom stroju"
+ * vlasnik, 08.10.2026.: na node-A Test dežurnog je javljao „most dežurnog nije na ovom stroju"
  * jer je ploča uvozila most našeg glavnog sustava (`tools/Telegram/dezurni.ts` pod $HOME).
  * Paket ga nije nosio, pa ni razgovor ni agenti u zadatcima na tuđoj instalaciji nisu imali
  * rezervu. Ovdje je isti posao, ali sve putanje dolaze iz paketa:
@@ -15,7 +15,7 @@
  *
  * Dva puta rezerve:
  *   • `ciljDezurnog()` — davatelj s Anthropic-kompatibilnim endpointom (OpenRouter, GLM, Kimi…)
- *     vozi ISTI `claude` CLI preusmjeren preko ANTHROPIC_BASE_URL: agent i Šaban zadržavaju
+ *     vozi ISTI `claude` CLI preusmjeren preko ANTHROPIC_BASE_URL: agent i razgovorni asistent zadržavaju
  *     alate i identitet.
  *   • `pitajModel()` — pet oblika poziva (Ollama, OpenAI, Anthropic-poruke, Google, claude-cli),
  *     samo tekst: za Test na ploči i za razgovor kad CLI puta nema (npr. Ollama).
