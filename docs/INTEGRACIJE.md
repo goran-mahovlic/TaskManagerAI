@@ -98,6 +98,21 @@ pokazuju radi li, zadnju primljenu poruku i zadnju grešku.
 **Slanje na zahtjev**: `POST /api/email/posalji {"predmet","tekst","prima"?}`. Dopušteno je samo s
 ovog stroja (localhost) i samo na adrese iz `primatelji`. Vraća `messageId` iz SMTP odgovora.
 
+**Obavijest o zadatku mailom** (`obavijestZadatak`, TASK-5378) je zasebna postavka, **zadano
+isključena** — uključena e-pošta ne znači da svaki zadatak ide mailom:
+
+| Polje | Zadano | Značenje |
+|---|---|---|
+| `obavijestZadatak.ukljucena` | `false` | šalje li se uopće |
+| `obavijestZadatak.statusi` | `["completed"]` | prijelazi koji šalju; dopušteno `completed`, `failed`, `blocked`, `cancelled` — `in_progress` se odbija |
+| `obavijestZadatak.najviseNaSat` | `10` | strop po primatelju; višak stiže kao JEDAN sažetak kad se prozor od sat vremena otvori |
+
+Mail ide samo na **promjenu** statusa (ponovljeni PUT ne šalje) i samo na `primatelji`.
+**Probni zadaci nikad ne javljaju ništa** — ni mail ni Telegram: oznaka `qa`/`proba`/`fixture`
+(ili `qa-…`), autor iz `TM_PROBNI_AUTORI` (`config/postavke.env`, zadano `qa`) ili zahtjev sa
+zaglavljem `x-regoc-proba: 1`. Uzrok: na node-A (08.10.2026.) QA probe i svaki in_progress
+punili su vlasnikov sandučić.
+
 **`imap.filtar`** je jedino polje koje bi bez provjere pustilo tvoj niz u IMAP naredbu, pa
 se odbija sve što sadrži navodnik ili prijelaz retka (CRLF injekcija).
 
