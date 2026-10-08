@@ -105,6 +105,7 @@ import { getRAGService, ragPodesen } from './RAGService'
 import { kljucPrisutan, kljucPrisutanUDatoteci, postaviTajnu, ukloniKljucIzDatoteke } from './LoginCreds'
 // TASK-5343 (ADR-0007): upis tajni s ploče — samo-za-pisanje, kod u vlasnikov privatni Telegram.
 import { obradiTajneZahtjev } from './TajnePloca'
+import { odlukaNaredbe, vrataKonzole } from './KonzolaVrata'
 import { ocistiLoginKod, izvuciLoginUrl, maskirajLoginTail, loginOauthGreska, LOGIN_POTVRDA } from './LoginUnos'
 import { capguardPostavke, stanjeCapguarda, zatraziSposobnost } from './Capguard'
 import { tecajOdgovor } from './Tecaj'
@@ -456,31 +457,7 @@ async function buildDaemonBlock(): Promise<Record<string, unknown>> {
 let logFilePosition = 0
 let logStreamInterval: ReturnType<typeof setInterval> | null = null
 
-// Command execution allowlist
-const ALLOWED_COMMANDS = new Set([
-  'ls', 'cat', 'head', 'tail', 'wc', 'grep', 'find',
-  'git', 'bun', 'node',
-  'date', 'uptime', 'whoami', 'hostname', 'df', 'free',
-  'ps', 'top',
-])
-
-// Commands allowed ONLY in work mode
-const WORK_MODE_COMMANDS = new Set(['bun', 'node'])
-
-// Blocked patterns (security)
-const BLOCKED_PATTERNS = [
-  /rm\s+-rf/i,
-  /sudo/i,
-  /chmod/i,
-  /chown/i,
-  /curl.*\|\s*(bash|sh)/i,
-  /wget.*\|\s*(bash|sh)/i,
-  />\s*\/etc\//i,
-  /\.\.\/\.\.\//,
-  /\$\(/,
-  /`[^`]+`/,
-  /[;&|]{2,}/,
-]
+// Popis naredbi, blokade i vrata konzole: src/KonzolaVrata.ts (TASK-5352, ADR-0007)
 
 // Command aliases
 const COMMAND_ALIASES: Record<string, string[]> = {
@@ -8069,7 +8046,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         appendToKonzolaLog('  services [cmd]          Service management', 'log-system');
         appendToKonzolaLog('  logs [source] [lines]   Tail log (daemon|klaudio|voiceserver|razgovor)', 'log-system');
         appendToKonzolaLog('  history                 Command history', 'log-system');
-        appendToKonzolaLog('  ls, cat, head, tail     File reading', 'log-system');
+        appendToKonzolaLog('  ls, wc, ps, df, free    Pregled (samo localhost/Tailscale)', 'log-system');
         appendToKonzolaLog('  git status/log/diff     Git operations', 'log-system');
         appendToKonzolaLog('', '');
         appendToKonzolaLog('Live streams (auto):', 'log-info');
@@ -8169,7 +8146,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         appendToKonzolaLog('SYSTEM MODE switched to: ' + (d.mode || targetMode) + ' (system-wide — all agents)', 'log-info');
         // Also update old konzola mode for backward compat
         fetch('/api/konzola/mode', {
-          method: 'POST', headers: {'Content-Type':'application/json'},
+          method: 'POST', headers: {'Content-Type':'application/json', 'X-TM-Konzola':'1'},
           body: JSON.stringify({ mode: konzolaMode })
         }).catch(() => {});
       } catch(e) { appendToKonzolaLog('Mode switch failed: ' + e.message, 'log-error'); }
@@ -8229,7 +8206,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
             const execCmd = cmd.startsWith('/') ? cmd.substring(1) : cmd;
             try {
               const r = await fetch('/api/konzola/exec', {
-                method: 'POST', headers: {'Content-Type':'application/json'},
+                method: 'POST', headers: {'Content-Type':'application/json', 'X-TM-Konzola':'1'},
                 body: JSON.stringify({ command: execCmd })
               });
               const d = await r.json();
@@ -16114,60 +16091,13 @@ async function handleKonzolaStatus(): Promise<Response> {
 async function handleKonzolaExec(req: Request): Promise<Response> {
   try {
     const body = await req.json()
-    const rawCommand = body.command?.trim()
-
-    if (!rawCommand) {
-      return new Response(JSON.stringify({ error: 'No command provided' }), {
-        status: 400, headers: { 'Content-Type': 'application/json' }
+    const odluka = odlukaNaredbe(body?.command, konzolaMode, COMMAND_ALIASES)
+    if ('status' in odluka) {
+      return new Response(JSON.stringify({ error: odluka.error, greska: odluka.greska }), {
+        status: odluka.status, headers: { 'Content-Type': 'application/json' }
       })
     }
-
-    // Check blocked patterns
-    for (const pattern of BLOCKED_PATTERNS) {
-      if (pattern.test(rawCommand)) {
-        return new Response(JSON.stringify({ error: `Command blocked by security policy` }), {
-          status: 403, headers: { 'Content-Type': 'application/json' }
-        })
-      }
-    }
-
-    // Check command aliases
-    const alias = COMMAND_ALIASES[rawCommand]
-    if (alias) {
-      return executeKonzolaCommand(alias)
-    }
-
-    // Parse command
-    const parts = rawCommand.split(/\s+/)
-    const executable = parts[0]
-    const args = parts.slice(1)
-
-    // Validate allowlist
-    if (!ALLOWED_COMMANDS.has(executable) && !rawCommand.startsWith('regoc-services')) {
-      return new Response(JSON.stringify({ error: `Command not allowed: "${executable}". Type 'help' for allowed commands.` }), {
-        status: 403, headers: { 'Content-Type': 'application/json' }
-      })
-    }
-
-    // Plan mode: block mutating commands
-    if (konzolaMode === 'plan' && WORK_MODE_COMMANDS.has(executable)) {
-      return new Response(JSON.stringify({ error: `Command "${executable}" requires WORK mode. Switch with: mode work` }), {
-        status: 403, headers: { 'Content-Type': 'application/json' }
-      })
-    }
-
-    // Git: only read-only in plan mode
-    if (executable === 'git' && konzolaMode === 'plan') {
-      const gitSubCmd = args[0]
-      const readOnlyGitCmds = ['status', 'log', 'diff', 'show', 'branch', 'remote', 'tag']
-      if (gitSubCmd && !readOnlyGitCmds.includes(gitSubCmd)) {
-        return new Response(JSON.stringify({ error: `Git "${gitSubCmd}" requires WORK mode.` }), {
-          status: 403, headers: { 'Content-Type': 'application/json' }
-        })
-      }
-    }
-
-    return executeKonzolaCommand([executable, ...args])
+    return executeKonzolaCommand(odluka.argv)
   } catch (error) {
     return new Response(JSON.stringify({ error: error instanceof Error ? error.message : String(error) }), {
       status: 500, headers: { 'Content-Type': 'application/json' }
@@ -17894,6 +17824,18 @@ async function obradiZahtjev(req: Request): Promise<Response | undefined> {
     // GET /api/konzola/status - Aggregated status
     if (url.pathname === '/api/konzola/status' && req.method === 'GET') {
       return handleKonzolaStatus()
+    }
+
+    // TASK-5352 (ADR-0007): konzola izvodi naredbe — samo loopback/Tailscale + X-TM-Konzola.
+    // S LAN-a je čitala spremište tajni (cat/grep/tail, ps e) bez ikakve prijave.
+    if ((url.pathname === '/api/konzola/exec' || url.pathname === '/api/konzola/mode') && req.method === 'POST') {
+      const odbijeno = vrataKonzole({ metoda: req.method, zaglavlja: req.headers, ip: ipZahtjeva(req) })
+      if (odbijeno) {
+        console.log(`[KONZOLA] odbijeno ${url.pathname} ${odbijeno.greska} s ${ipZahtjeva(req) || '?'}`)
+        return new Response(JSON.stringify({ error: odbijeno.error, greska: odbijeno.greska }), {
+          status: odbijeno.status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
+        })
+      }
     }
 
     // POST /api/konzola/exec - Execute command

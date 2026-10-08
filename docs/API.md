@@ -554,9 +554,17 @@ nije dio ovog paketa i nije obavezan.
 | `POST /api/konzola/exec` | pokretanje naredbe (vidi upozorenje niže) |
 | `GET /api/files/download?path=…` | preuzimanje dokumenta na koji zadatak upućuje; ograničeno na `$HOME` |
 
-> `POST /api/konzola/exec` izvršava naredbu na stroju. Nema prijave, pa vrata ne smiju biti
-> dostupna izvan tvoje mreže. Ako ti ta mogućnost ne treba, najsigurnije je zatvoriti pristup
-> vratima vatrozidom i ploču koristiti preko SSH tunela.
+> `POST /api/konzola/exec` i `POST /api/konzola/mode` primaju zahtjev SAMO s ovog stroja
+> (loopback) ili preko Tailscalea, i samo uz zaglavlje `X-TM-Konzola: 1` + `Content-Type:
+> application/json` (+ vlastiti `Origin`). S LAN-a vraćaju 403 `konzola_prijenos_lan-http` —
+> bez iznimke, i kad je `dopustiLanHttp` za tajne uključen (tajne iza toga traže kod u Telegramu,
+> konzola nema prijavu). S drugog računala: `ssh -L 17781:localhost:17781 <stroj>`.
+>
+> Konzola ne čita sadržaj datoteka (nema `cat`, `head`, `tail`, `grep`, `find`), `ps` ne ispisuje
+> okolinu procesa (`ps e`, `-o environ`), `git` ne izlazi iz repozitorija (`--no-index`, `-C`,
+> `--output`, apsolutni put), a nijedan argument ne smije ciljati spremište tajni ni
+> `/proc/<pid>/environ` (TASK-5352, ADR-0007). `bun`/`node` u WORK načinu i dalje izvode
+> proizvoljan kod — zato su vrata iznad obavezna.
 
 ## Primjer: agent koji sam uzima posao
 
