@@ -204,10 +204,10 @@ def _ucitaj_kljuc(ime: str) -> str:
     if os.environ.get(ime):
         return os.environ[ime]
     try:
-        for red in CREDENTIALS.read_text(encoding="utf-8").splitlines():
-            red = red.strip()
-            if red.startswith(f"{ime}=") and not red.startswith("#"):
-                return red.split("=", 1)[1].strip().strip("\"'")
+        # ADR-0007 §5.2: zajednički parser (IME='…', stari goli i export oblik).
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        from tajne_parser import procitaj
+        return procitaj(CREDENTIALS.read_text(encoding="utf-8"), ime) or ""
     except Exception:
         pass
     return ""

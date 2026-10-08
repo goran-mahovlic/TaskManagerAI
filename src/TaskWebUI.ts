@@ -102,7 +102,9 @@ import { unverifiedBoardState } from './core/UnverifiedReport'
 import { getProjectManager } from './core/ProjectManager'
 import { getMessageQueue } from './core/MessageQueue'
 import { getRAGService, ragPodesen } from './RAGService'
-import { kljucPrisutanUDatoteci, ukloniKljucIzDatoteke } from './LoginCreds'
+import { kljucPrisutan, kljucPrisutanUDatoteci, postaviTajnu, ukloniKljucIzDatoteke } from './LoginCreds'
+// TASK-5343 (ADR-0007): upis tajni s ploče — samo-za-pisanje, kod u vlasnikov privatni Telegram.
+import { obradiTajneZahtjev } from './TajnePloca'
 import { ocistiLoginKod, izvuciLoginUrl, maskirajLoginTail, loginOauthGreska, LOGIN_POTVRDA } from './LoginUnos'
 import { capguardPostavke, stanjeCapguarda, zatraziSposobnost } from './Capguard'
 import { tecajOdgovor } from './Tecaj'
@@ -2807,6 +2809,11 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         <div class="info-card" id="info-telegram-card">
           <div class="info-card-title"><span class="icon">&#9993;</span> <span data-i18n="cfg_kartica_telegram">Telegram obavijesti &mdash; bot token + chat id (u paketu)</span></div>
           <div id="info-telegram-content"><div class="empty" data-i18n="loading">Loading...</div></div>
+        </div>
+        <!-- TASK-5343 (ADR-0007): upis tajni čvora — samo-za-pisanje, potvrda kodom u privatni Telegram. -->
+        <div class="info-card info-full" id="info-tajne-card">
+          <div class="info-card-title"><span class="icon">&#128273;</span> <span data-i18n="cfg_kartica_tajne">Tajne &mdash; lozinke i tokeni &#269;vora (samo upis)</span></div>
+          <div id="info-tajne-content"><div class="empty" data-i18n="loading">Loading...</div></div>
         </div>
         <div class="info-card" id="info-integracije-card">
           <div class="info-card-title"><span class="icon">&#8853;</span> <span data-i18n="cfg_kartica_integracije">Integracije &mdash; Nextcloud, e-po&#353;ta, GitLab, GitHub</span></div>
@@ -8537,6 +8544,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         loadUlaznaVrata();
         loadRazgovor();
         loadIntegracije();
+        loadTajne();
         loadOrkestrator();
         renderInfoModules(d);
         renderInfoInfra(d);
@@ -8826,6 +8834,149 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       }
     }
 
+
+    // ── Tajne (TASK-5343, ADR-0007) — upis lozinki i tokena čvora s ploče, samo-za-pisanje ──
+    // Vrijednost se NIKAD ne čita s poslužitelja (ne postoji ruta koja je vraća). Polja su u
+    // VLASTITOM <form> (TASK-4722), type=password + autocomplete=new-password, ime polja nasumično
+    // po prikazu. Vrijednost se čita tek na „Potvrdi" i polje se prazni PRIJE slanja.
+    // Uputa #194: jedan „Spremi" za cijelu skupinu — jedan kod u Telegram za sva upisana imena.
+    var _tajneCeka = null; // { radnja, imena[], zahtjevId } — nikad vrijednost
+    var _tajneZadnji = null;
+    var TAJNE_ZAG = { 'Content-Type': 'application/json', 'X-TM-Tajne': '1' };
+    function _tajneNasumicno() { var a = new Uint8Array(6); crypto.getRandomValues(a); return Array.prototype.map.call(a, function (b) { return ('0' + b.toString(16)).slice(-2); }).join(''); }
+    function _tajneGreska(g) {
+      var poruke = {
+        tajne_lan_http: _T('tajne_g_lan_http', 'Upis tajni ide samo preko Tailscalea, HTTPS-a ili sa samog stroja. Čisti HTTP kroz LAN je isključen (vlasnik ga može dopustiti postavkom dopustiLanHttp u config/tajne.json).'),
+        potvrda_nije_podesena: _T('tajne_g_potvrda', 'Upis s ploče je isključen dok na stroju nije postavljen primatelj koda: bun scripts/tajna.ts podesi --potvrda-uid <tvoj Telegram uid>.'),
+        kod_pogresan: _T('tajne_g_kod', 'Kod nije točan. Nakon 5 pogrešaka zahtjev se poništava.'),
+        zahtjev_nevazeci: _T('tajne_g_zahtjev', 'Kod je istekao ili je već iskorišten — klikni ponovo.'),
+        zakljucano: _T('tajne_g_zakljucano', 'Previše pogrešnih kodova — upis je zaključan 15 minuta.'),
+        slanje_nije_uspjelo: _T('tajne_g_slanje', 'Bot nije uspio poslati kod. Je li Telegram bot podešen i jesi li mu barem jednom pisao privatno (/start)?'),
+        ime_nije_dopusteno: _T('tajne_g_ime', 'To ime tajne nije dopušteno.'),
+        vrijednost_prazna: _T('tajne_g_prazno', 'Vrijednost je prazna.'),
+        vrijednost_nedopusten_znak: _T('tajne_g_znak', 'Vrijednost ne smije imati prijelaz retka ni nul-znak.'),
+        vrijednost_preduga: _T('tajne_g_duga', 'Vrijednost je dulja od 4096 bajtova.'),
+        tajne_csrf: _T('tajne_g_csrf', 'Zahtjev je odbijen (zaštita od tuđih stranica).'),
+      };
+      return poruke[g] || (_T('cfg_greska', 'Greška') + ': ' + g);
+    }
+    function _tajnePoruka(t, boja) {
+      var p = document.getElementById('tajne-poruka');
+      if (p) { p.textContent = t || ''; p.style.color = boja || 'var(--text-secondary)'; }
+    }
+    async function loadTajne() {
+      var el = document.getElementById('info-tajne-content');
+      if (!el) return;
+      try {
+        var r = await fetch('/api/tajne', { headers: TAJNE_ZAG, cache: 'no-store' });
+        var d = await r.json();
+        if (!r.ok) throw new Error(_tajneGreska(d.greska));
+        _tajneZadnji = d;
+        el.innerHTML = renderTajne(d);
+        _tajneDubokaVeza();
+      } catch (e) { el.innerHTML = '<div class="empty">' + _esc(e.message) + '</div>'; }
+    }
+    function renderTajne(d) {
+      var h = '<div style="font-size:.74rem;color:var(--text-secondary);margin-bottom:.4rem">' +
+        _esc(_T('tajne_opis', 'Lozinke i tokeni čvora. Vrijednost se samo upisuje — ploča je nikad ne prikazuje. Svaki upis potvrđuješ kodom koji bot pošalje u tvoj privatni Telegram.')) + '</div>';
+      if (!d.potvrda || !d.potvrda.podesena) h += '<div style="color:var(--accent-yellow);font-size:.74rem;margin-bottom:.4rem">' + _esc(_tajneGreska('potvrda_nije_podesena')) + '</div>';
+      if (d.prijenos && !d.prijenos.dopusten) h += '<div style="color:var(--accent-yellow);font-size:.74rem;margin-bottom:.4rem">' + _esc(_tajneGreska(d.prijenos.razlog || 'tajne_lan_http')) + '</div>';
+      if (d.prijenos && d.prijenos.vrsta === 'lan-http' && d.prijenos.dopusten) h += '<div style="color:var(--accent-red);font-size:.74rem;margin-bottom:.4rem">' + _esc(_T('tajne_upoz_lan', 'Upozorenje: upis preko čistog HTTP-a kroz LAN je dopušten — lozinka putuje nešifrirano.')) + '</div>';
+      var mozeUpis = d.potvrda && d.potvrda.podesena && d.prijenos && d.prijenos.dopusten;
+      h += '<form id="tajne-obrazac" autocomplete="off" onsubmit="return false;">';
+      h += '<table style="width:100%;font-size:.74rem;border-collapse:collapse">';
+      (d.tajne || []).forEach(function (t) {
+        var stanje = t.postoji
+          ? '<span style="color:var(--accent-green)">&#10003; ' + _esc(_T('tajne_postoji', 'postoji')) + '</span> <code title="' + _esc(_T('tajne_otisak_title', 'otisak (HMAC s ključem čvora) — mijenja se kad se vrijednost promijeni')) + '">' + _esc(t.otisak || '') + '</code>'
+          : '<span style="color:var(--text-secondary)">&mdash; ' + _esc(_T('tajne_nema', 'nije upisana')) + '</span>';
+        if (t.zasjenjena) stanje += ' <span style="color:var(--accent-yellow)" title="' + _esc(_T('tajne_zasjenjena_title', 'Ista varijabla postoji u okolini procesa i ima prednost pred spremištem.')) + '">&#9888; ' + _esc(_T('tajne_zasjenjena', 'zasjenjena okolinom')) + '</span>';
+        if (t.postoji && t.opasan) stanje += ' <span style="color:var(--accent-red)">&#9888; ' + _esc(_T('tajne_opasan', 'stari zapis s posebnim znakovima — upiši je ponovo')) + '</span>';
+        var zadnje = t.zadnje ? (_esc(t.zadnje.radnja) + ' ' + _esc(new Date(t.zadnje.kada).toLocaleString()) + ' &middot; ' + _esc(t.zadnje.ip || '?') + ' (' + _esc(t.zadnje.prijenos || '') + ')') : '';
+        h += '<tr style="border-top:1px solid var(--border-color)">' +
+          '<td style="padding:4px 4px 4px 0;vertical-align:top"><code>' + _esc(t.ime) + '</code><div style="color:var(--text-secondary)">' + _esc(t.izvor) + '</div></td>' +
+          '<td style="padding:4px;vertical-align:top">' + stanje + (zadnje ? '<div style="color:var(--text-secondary)">' + zadnje + '</div>' : '') + '</td>' +
+          '<td style="padding:4px;vertical-align:top;white-space:nowrap">' +
+            '<input type="password" class="cfg-polje" data-tajna-ime="' + _esc(t.ime) + '" name="t-' + _tajneNasumicno() + '" autocomplete="new-password" spellcheck="false" ' +
+            'data-form-type="other" data-lpignore="true" data-1p-ignore data-bwignore ' + (mozeUpis ? '' : 'disabled ') +
+            'placeholder="' + _esc(t.postoji ? _T('tajne_ph_zamijeni', 'nova vrijednost (zamjena)') : _T('tajne_ph_upisi', 'upiši vrijednost')) + '" style="width:190px">' +
+            (t.postoji && mozeUpis ? ' <button type="button" class="cfg-btn" onclick="tajneObrisi(\\'' + _esc(t.ime) + '\\')">' + _esc(_T('tajne_obrisi', 'Obriši')) + '</button>' : '') +
+          '</td></tr>';
+      });
+      h += '</table>';
+      h += '<div style="display:flex;gap:6px;align-items:center;margin-top:.5rem;flex-wrap:wrap">' +
+        '<button type="button" class="cfg-btn" id="tajne-spremi" onclick="tajneSpremi()" ' + (mozeUpis ? '' : 'disabled') + '>' + _esc(_T('tajne_spremi', 'Spremi')) + '</button>' +
+        '<span id="tajne-potvrda" style="display:none;gap:6px;align-items:center">' +
+          '<input type="text" id="tajne-kod" inputmode="numeric" maxlength="8" autocomplete="one-time-code" name="k-' + _tajneNasumicno() + '" data-form-type="other" data-lpignore="true" data-1p-ignore data-bwignore placeholder="' + _esc(_T('tajne_kod_ph', 'kod iz Telegrama')) + '" class="cfg-polje" style="width:120px">' +
+          ' <button type="button" class="cfg-btn" onclick="tajnePotvrdi()">' + _esc(_T('tajne_potvrdi', 'Potvrdi')) + '</button>' +
+          ' <button type="button" class="cfg-btn" onclick="tajneOdustani()">' + _esc(_T('tajne_odustani', 'Odustani')) + '</button>' +
+        '</span>' +
+        '<span id="tajne-poruka" style="font-size:.74rem"></span></div>';
+      h += '</form>';
+      return h;
+    }
+    function _tajnePolja() { return Array.prototype.slice.call(document.querySelectorAll('#tajne-obrazac input[data-tajna-ime]')); }
+    async function _tajneTraziKod(radnja, imena) {
+      var r = await fetch('/api/tajne/kod', { method: 'POST', headers: TAJNE_ZAG, body: JSON.stringify({ imena: imena, radnja: radnja }) });
+      var d = await r.json().catch(function () { return {}; });
+      if (!r.ok) { _tajnePoruka(_tajneGreska(d.greska), 'var(--accent-red)'); return; }
+      _tajneCeka = { radnja: radnja, imena: imena, zahtjevId: d.zahtjevId };
+      var p = document.getElementById('tajne-potvrda'); if (p) p.style.display = 'inline-flex';
+      var k = document.getElementById('tajne-kod'); if (k) { k.value = ''; k.focus(); }
+      _tajnePoruka(_T('tajne_kod_poslan', 'Kod je poslan u tvoj privatni Telegram (vrijedi 5 min).') + ' ' + imena.join(', '));
+    }
+    async function tajneSpremi() {
+      var imena = _tajnePolja().filter(function (i) { return i.value.length > 0; }).map(function (i) { return i.getAttribute('data-tajna-ime'); });
+      if (!imena.length) { _tajnePoruka(_T('tajne_nista', 'Upiši barem jednu vrijednost.'), 'var(--accent-yellow)'); return; }
+      _tajnePolja().forEach(function (i) { if (imena.indexOf(i.getAttribute('data-tajna-ime')) >= 0) i.readOnly = true; });
+      await _tajneTraziKod('upis', imena);
+      if (!_tajneCeka) _tajnePolja().forEach(function (i) { i.readOnly = false; });
+    }
+    async function tajneObrisi(ime) {
+      if (!confirm(_T('tajne_obrisi_pitanje', 'Obrisati tajnu') + ' ' + ime + '?')) return;
+      await _tajneTraziKod('brisanje', [ime]);
+    }
+    function tajneOdustani() {
+      _tajneCeka = null;
+      _tajnePolja().forEach(function (i) { i.value = ''; i.readOnly = false; });
+      var p = document.getElementById('tajne-potvrda'); if (p) p.style.display = 'none';
+      _tajnePoruka('');
+    }
+    async function tajnePotvrdi() {
+      var c = _tajneCeka; if (!c) return;
+      var kEl = document.getElementById('tajne-kod'); var kod = kEl ? kEl.value.trim() : ''; if (kEl) kEl.value = '';
+      var r;
+      if (c.radnja === 'brisanje') {
+        r = await fetch('/api/tajne/' + encodeURIComponent(c.imena[0]), { method: 'DELETE', headers: TAJNE_ZAG, body: JSON.stringify({ zahtjevId: c.zahtjevId, kod: kod }) });
+      } else {
+        // Vrijednosti se čitaju TEK SAD i polja se prazne prije slanja; tijelo živi samo u ovom pozivu.
+        var vr = {}; var fali = [];
+        _tajnePolja().forEach(function (i) {
+          var ime = i.getAttribute('data-tajna-ime');
+          if (c.imena.indexOf(ime) >= 0) { if (i.value.length) vr[ime] = i.value; else fali.push(ime); }
+          i.value = ''; i.readOnly = false;
+        });
+        if (fali.length) { _tajneCeka = null; _tajnePoruka(_T('tajne_promijenjeno', 'Polja su se promijenila nakon slanja koda — upiši ponovo i klikni Spremi.'), 'var(--accent-red)'); return; }
+        var tijelo = JSON.stringify({ vrijednosti: vr, zahtjevId: c.zahtjevId, kod: kod }); vr = null;
+        r = await fetch('/api/tajne', { method: 'PUT', headers: TAJNE_ZAG, body: tijelo }); tijelo = null;
+      }
+      var d = await r.json().catch(function () { return {}; });
+      if (!r.ok) {
+        if (d.greska === 'kod_pogresan') { if (kEl) kEl.focus(); _tajnePoruka(_tajneGreska(d.greska), 'var(--accent-red)'); if (c.radnja === 'upis') { _tajneCeka = null; var p0 = document.getElementById('tajne-potvrda'); if (p0) p0.style.display = 'none'; } return; }
+        _tajneCeka = null; _tajnePoruka(_tajneGreska(d.greska), 'var(--accent-red)'); return;
+      }
+      _tajneCeka = null;
+      await loadTajne();
+      var upoz = (d.upozorenja || []).join(' · ');
+      _tajnePoruka((c.radnja === 'brisanje' ? _T('tajne_obrisano', 'Obrisano.') : _T('tajne_upisano', 'Upisano.')) + (upoz ? ' ' + upoz : ''), upoz ? 'var(--accent-yellow)' : 'var(--accent-green)');
+    }
+    // Duboka veza #config/tajne?ime=SMTP_PASSWORD (bot šalje vezu umjesto da traži lozinku, §8.3).
+    function _tajneDubokaVeza() {
+      var h = location.hash || ''; if (h.indexOf('tajne') < 0) return;
+      var card = document.getElementById('info-tajne-card'); if (card) card.scrollIntoView({ block: 'start' });
+      var m = h.split('ime=')[1]; if (!m) return;
+      var ime = decodeURIComponent(m.split('&')[0]);
+      _tajnePolja().forEach(function (i) { if (i.getAttribute('data-tajna-ime') === ime) i.focus(); });
+    }
 
     // ── Telegram obavijesti (Kosjenka, 09.09.2026.) — bot token + chat id u paketu ──────
     var _telegramZadnji = null;
@@ -11069,7 +11220,7 @@ function getEffectiveModels(): typeof AVAILABLE_MODELS {
   try {
     const H = process.env.HOME || ''
     const _cf = datotekaTajni()
-    const _geminiKey = existsSync(_cf) && /^GEMINI_API_KEY=.+/m.test(readFileSync(_cf, 'utf-8'))
+    const _geminiKey = kljucPrisutanUDatoteci(_cf, 'GEMINI_API_KEY')
     if (existsSync(join(H, '.gemini/oauth_creds.json')) || _geminiKey) {
       extra.push(
         { spec: 'geminicli:gemini-2.5-pro',   provider: 'geminicli', model: 'gemini-2.5-pro',   tier: 'frontier', label: 'Gemini 2.5 Pro (Google API key)',   spawnable: true },
@@ -13414,12 +13565,11 @@ async function handleLoginApikey(req: Request): Promise<Response> {
     const { id, key } = await req.json() as { id: string; key: string }
     const def = LOGIN_PROVIDERS.find(d => d.id === id)
     if (!def || !def.envKey) return json({ error: 'Provider ne podržava API ključ' }, 400)
-    if (!key || !key.trim()) return json({ error: 'Prazan ključ' }, 400)
-    const f = osigurajMapu(datotekaTajniZaPisanje())
-    let txt = existsSync(f) ? readFileSync(f, 'utf-8') : ''
-    const line = `${def.envKey}=${key.trim()}`
-    txt = new RegExp('^' + def.envKey + '=.*$', 'm').test(txt) ? txt.replace(new RegExp('^' + def.envKey + '=.*$', 'm'), line) : (txt.replace(/\s*$/, '') + '\n' + line + '\n')
-    writeFileSync(f, txt, { mode: 0o600 })
+    if (typeof key !== 'string' || !key.trim()) return json({ error: 'Prazan ključ' }, 400)
+    // ADR-0007 §5.3 (N1): JEDINI pisač — oblik IME='…' (ljuska ga ne izvršava), odbija \0\r\n,
+    // brava + atomičan zapis. Ključ se ne citira ni u grešci.
+    const upis = postaviTajnu(def.envKey, key.trim(), { spremiste: datotekaTajniZaPisanje() })
+    if (!upis.ok) return json({ error: `Ključ nije upisan (${upis.greska})` }, 400)
     // Gemini: prebaci auth na API-key (OAuth Code Assist je Google ukinuo) + trust workspace.
     if (id === 'geminicli') {
       try {
@@ -13471,7 +13621,8 @@ function handleFileDownload(url: URL): Response {
 async function handleUpdateTask(taskId: string, req: Request): Promise<Response> {
   try {
     const body = await req.json()
-    console.log(`[API] Updating task ${taskId} with:`, JSON.stringify(body))
+    // ADR-0007 N3: samo IMENA polja — vrijednost (npr. tajna zalijepljena u zadatak) ne ide u dnevnik.
+    console.log(`[API] Updating task ${taskId} polja:`, Object.keys(body || {}).join(','))
 
     // ─── Nazivi polja (D6 / TASK-2976) ─────────────────────────────────────
     // Prompt-predložak koji daemon šalje SVAKOM agentu piše snake_case, shema je
@@ -14082,7 +14233,7 @@ async function handleReopen(taskId: string, req: Request): Promise<Response> {
 async function handleUpdateTaskProgress(taskId: string, req: Request): Promise<Response> {
   try {
     const body = await req.json()
-    console.log(`[API] Updating task ${taskId} progress with:`, JSON.stringify(body))
+    console.log(`[API] Updating task ${taskId} progress polja:`, Object.keys(body || {}).join(','))
 
     // Validate progressPercent
     if (typeof body.progressPercent !== 'number' || body.progressPercent < 0 || body.progressPercent > 100) {
@@ -14341,8 +14492,7 @@ function odluciteljDavatelji(): Record<string, any> {
     spremiste = fs.readFileSync(datotekaTajni(), 'utf-8')
   } catch { /* nema spremišta — tada odlučuje samo okolina */ }
   // Provjerava se SAMO postoji li redak s tim imenom; vrijednost se nikad ne čita ni ne šalje.
-  const imaKljuc = (ime: string) =>
-    !!process.env[ime] || new RegExp('^' + ime + '=\\S', 'm').test(spremiste)
+  const imaKljuc = (ime: string) => !!process.env[ime] || kljucPrisutan(spremiste, ime)
 
   const out: Record<string, any> = {}
   for (const [ime, v] of Object.entries(konf)) {
@@ -17382,6 +17532,11 @@ async function obradiZahtjev(req: Request): Promise<Response | undefined> {
     // Preflight
     if (req.method === 'OPTIONS') {
       return new Response(null, { headers })
+    }
+
+    // TASK-5343 (ADR-0007 §8.1): tajne se obrađuju PRIJE ičega što bi moglo ispisati tijelo.
+    if (url.pathname === '/api/tajne' || url.pathname.startsWith('/api/tajne/')) {
+      return obradiTajneZahtjev(req, url.pathname, ipZahtjeva(req), LOGIN_PROVIDERS)
     }
 
     // WebSocket upgrade

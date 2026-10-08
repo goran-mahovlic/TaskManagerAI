@@ -16,6 +16,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'fs'
 import { dirname } from 'path'
 import { konfigPutanja } from './core/paths'
+import { kljucPrisutan } from './LoginCreds'
 
 /**
  * ADR-0001 O1.4: `TM_DEZURNI_CONFIG` → `$TM_HOME/config/dezurni.json` → `config/` uz paket.
@@ -124,7 +125,7 @@ function imaKljuc(ime: string, credPath: string): boolean {
   if (!ime) return true
   if (process.env[ime]) return true
   try {
-    return new RegExp('^' + ime + '=\\S', 'm').test(readFileSync(credPath, 'utf-8'))
+    return kljucPrisutan(readFileSync(credPath, 'utf-8'), ime)
   } catch {
     return false
   }

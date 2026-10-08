@@ -17,6 +17,7 @@
  * koji spremište učitava u okolinu dobiva istu vrijednost nakon restarta.
  */
 import { readFileSync, writeFileSync, existsSync, chmodSync } from 'fs'
+import { postaviTajnu, procitajIzTeksta, ukloniTajnu } from '../../LoginCreds'
 import { join } from 'path'
 import { konfigPutanja } from '../paths'
 
@@ -94,8 +95,7 @@ function readStoreValue(HOME: string): string | null {
   try {
     const p = classifierStorePath(HOME)
     if (!existsSync(p)) return null
-    const m = readFileSync(p, 'utf-8').match(new RegExp('^' + CLASSIFIER_ENV_KEY + '=(.*)$', 'm'))
-    return m ? m[1].trim() || null : null
+    return procitajIzTeksta(readFileSync(p, 'utf-8'), CLASSIFIER_ENV_KEY)?.trim() || null
   } catch { return null }
 }
 
@@ -139,11 +139,11 @@ function writeConfigClassifier(HOME: string, spec: string | null): { ok: true } 
   return { ok: true }
 }
 
-function writeStore(HOME: string, mutate: (txt: string) => string): void {
-  const f = classifierStorePath(HOME)
-  const txt = existsSync(f) ? readFileSync(f, 'utf-8') : ''
-  writeFileSync(f, mutate(txt), { mode: 0o600 })
-  try { chmodSync(f, 0o600) } catch {}   // postojeća datoteka zadržava stara prava bez ovoga
+// ADR-0007 §5.3 (TASK-5343): spremište ima JEDNOG pisača — `LoginCreds` (brava, atomično, 0600).
+function writeStore(HOME: string, model: string | null): void {
+  const o = { spremiste: classifierStorePath(HOME) }
+  const r = model === null ? ukloniTajnu(CLASSIFIER_ENV_KEY, o) : postaviTajnu(CLASSIFIER_ENV_KEY, model, o)
+  if (!r.ok) throw new Error(`spremište nije upisano (${r.greska})`)
 }
 
 /** Postavi klasifikacijski model (config = odmah, spremište = za appliance/restart). */
@@ -152,7 +152,7 @@ export function writeClassifier(HOME: string, raw: string): WriteResult {
   if (!parsed.ok) return parsed
   const cfg = writeConfigClassifier(HOME, parsed.spec)   // prvo config: ako padne, spremište ostaje čisto
   if (!cfg.ok) return { ok: false, error: cfg.error }
-  writeStore(HOME, txt => upsertEnvLine(txt, CLASSIFIER_ENV_KEY, parsed.model))
+  writeStore(HOME, parsed.model)
   return { ok: true, spec: parsed.spec, model: parsed.model }
 }
 
@@ -161,7 +161,7 @@ export function clearClassifier(HOME: string): { ok: true } | { ok: false; error
   const cfg = writeConfigClassifier(HOME, null)
   if (!cfg.ok) return cfg
   if (existsSync(classifierStorePath(HOME))) {
-    writeStore(HOME, txt => removeEnvLine(txt, CLASSIFIER_ENV_KEY))
+    writeStore(HOME, null)
   }
   return { ok: true }
 }

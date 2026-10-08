@@ -1,0 +1,67 @@
+{
+  "kljucHex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+  "otisci": [
+    {
+      "vrijednost": "lozinka",
+      "otisak": "b8ae3fcb"
+    },
+    {
+      "vrijednost": "it's",
+      "otisak": "b072ef65"
+    },
+    {
+      "vrijednost": "é€ž🔑",
+      "otisak": "990c0f7d"
+    },
+    {
+      "vrijednost": " razmak ",
+      "otisak": "f4e7748a"
+    },
+    {
+      "vrijednost": "x$(id)`y`",
+      "otisak": "afcf3fc3"
+    }
+  ],
+  "retci": [
+    {
+      "redak": "A='lozinka'",
+      "vrijednost": "lozinka"
+    },
+    {
+      "redak": "A='it'\\''s'",
+      "vrijednost": "it's"
+    },
+    {
+      "redak": "A='é€ž🔑'",
+      "vrijednost": "é€ž🔑"
+    },
+    {
+      "redak": "A=' razmak '",
+      "vrijednost": " razmak "
+    },
+    {
+      "redak": "A='x$(id)`y`'",
+      "vrijednost": "x$(id)`y`"
+    },
+    {
+      "redak": "export B='a'\\''b'",
+      "vrijednost": "a'b"
+    },
+    {
+      "redak": "C=\"x y\"",
+      "vrijednost": "x y"
+    },
+    {
+      "redak": "D=  goli  ",
+      "vrijednost": "goli"
+    },
+    {
+      "redak": "# E=x",
+      "vrijednost": null
+    },
+    {
+      "redak": "mala=x",
+      "vrijednost": null
+    }
+  ]
+}

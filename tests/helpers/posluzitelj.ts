@@ -27,10 +27,14 @@ function napraviDom(features: Record<string, { enabled: boolean }>): string {
   throw new Error('nedostižno')
 }
 
-export async function podigni(zastavice: Record<string, boolean> = {}, dodatnaOkolina: Record<string, string> = {}): Promise<Posluzitelj> {
+export async function podigni(
+  zastavice: Record<string, boolean> = {}, dodatnaOkolina: Record<string, string> = {},
+  opcije: { izlaz?: 'pipe' | 'ignore'; priprema?: (dom: string) => void } = {},
+): Promise<Posluzitelj> {
   const features: Record<string, { enabled: boolean }> = {}
   for (const [k, v] of Object.entries(zastavice)) features[k] = { enabled: v }
   const dom = napraviDom(features)
+  opcije.priprema?.(dom)
   const najmovi = join(dom, 'najmovi')
   const env = {
     ...process.env, TM_HOME: dom, REGOC_SPAWN_LEASE_DIR: najmovi,
@@ -41,7 +45,7 @@ export async function podigni(zastavice: Record<string, boolean> = {}, dodatnaOk
   const port = 20000 + Math.floor(Math.random() * 20000)
   const proc = Bun.spawn(['bun', 'src/TaskWebUI.ts'], {
     cwd: KORIJEN, env: { ...env, TM_PORT: String(port), REGOC_TASKWEBUI_PORT: String(port) },
-    stdout: 'ignore', stderr: 'ignore',
+    stdout: opcije.izlaz || 'ignore', stderr: opcije.izlaz || 'ignore',
   })
   const url = `http://127.0.0.1:${port}`
   for (let i = 0; i < 100; i++) {
