@@ -55,6 +55,9 @@ config/agents.json
 # (`git rm --cached`, 10.09.2026., revizija TASK-4801 nalaz B4.)
 config/ingest-gate.json
 config/ingest.json
+# Postavke upisa tajni (`scripts/tajna.ts podesi`, TASK-5357): kao nepraćenu datoteku ju je
+# `git clean` pri deployu (tm-cvor-azuriraj.sh) brisao s čvora.
+config/tajne.json
 config/credentials.env
 
 # ── Uređivači i sustav ─────────────────────────────────────────────────────
