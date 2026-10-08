@@ -54,10 +54,14 @@ export function imenaTajniPloce(davatelji: { id: string; envKey?: string }[]): D
   })
 }
 
-/** Kod ide IZRAVNO iz ploče u privatni chat (ne kroz agenta ni red poruka, §4.2). */
-async function posaljiPrivatno(uid: string, tekst: string): Promise<boolean> {
+/**
+ * Kod ide IZRAVNO iz ploče u privatni chat (ne kroz agenta ni red poruka, §4.2).
+ * Neuspjeh nosi `description` iz Telegrama (uputa #198: 403 „bot can't initiate conversation"
+ * znači da vlasnik botu još nije pisao /start) — bez toga je audit znao samo „nije poslano".
+ */
+async function posaljiPrivatno(uid: string, tekst: string): Promise<{ ok: boolean; opis?: string }> {
   const token = telegramBotToken(loadTelegramConfig())
-  if (!token) return false
+  if (!token) return { ok: false, opis: 'Telegram bot token nije postavljen' }
   try {
     const r = await fetch(`${telegramApiBaza()}/bot${token}/sendMessage`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -65,8 +69,25 @@ async function posaljiPrivatno(uid: string, tekst: string): Promise<boolean> {
       signal: AbortSignal.timeout(8000),
     })
     const d = await r.json().catch(() => ({})) as any
-    return r.ok && d?.ok !== false
-  } catch { return false }
+    if (r.ok && d?.ok !== false) return { ok: true }
+    return { ok: false, opis: `HTTP ${r.status}${d?.description ? `: ${String(d.description)}` : ''}` }
+  } catch (e: any) { return { ok: false, opis: String(e?.name || 'greška mreže') } }
+}
+
+/** Korisničko ime bota (getMe), pamti se po tokenu — kartica kaže kojem botu pisati /start. */
+let botImeZapis: { token: string; ime: string | null; kada: number } | null = null
+async function imeBota(): Promise<string | null> {
+  const token = telegramBotToken(loadTelegramConfig())
+  if (!token) return null
+  if (botImeZapis && botImeZapis.token === token && Date.now() - botImeZapis.kada < 10 * 60_000) return botImeZapis.ime
+  let ime: string | null = null
+  try {
+    const r = await fetch(`${telegramApiBaza()}/bot${token}/getMe`, { signal: AbortSignal.timeout(5000) })
+    const d = await r.json().catch(() => ({})) as any
+    ime = d?.ok && typeof d.result?.username === 'string' ? d.result.username : null
+  } catch { ime = null }
+  botImeZapis = { token, ime, kada: Date.now() }
+  return ime
 }
 
 let kontekst: KontekstTajni | null = null
@@ -82,6 +103,7 @@ export function kontekstTajni(davatelji: { id: string; envKey?: string }[]): Kon
     postavke: () => ucitajPostavkeTajni(),
     imena: () => imenaTajniPloce(davatelji),
     log: s => console.log(s),
+    bot: imeBota,
   }
   return kontekst
 }

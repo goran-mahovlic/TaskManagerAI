@@ -88,3 +88,14 @@ describe('PotvrdaVlasnika', () => {
     expect(kodovi.size).toBeGreaterThan(15)
   })
 })
+
+describe('TASK-5346 / uputa #198: opis neuspjelog slanja', () => {
+  test('pošiljatelj može vratiti {ok:false, opis} — opis ide u ishod, kod se ne pamti', async () => {
+    const p = new PotvrdaVlasnika({ sat: () => 1, primatelji: () => ['1'], posalji: async () => ({ ok: false, opis: 'Forbidden: bot was blocked by the user' }), cvor: 'x' })
+    expect(await p.zatrazi('SMTP_PASSWORD', 'upis')).toEqual({ ok: false, greska: 'slanje_nije_uspjelo', opis: 'Forbidden: bot was blocked by the user' })
+  })
+  test('{ok:true} vrijedi kao poslano', async () => {
+    const p = new PotvrdaVlasnika({ sat: () => 1, primatelji: () => ['1'], posalji: async () => ({ ok: true }), cvor: 'x' })
+    expect((await p.zatrazi('SMTP_PASSWORD', 'upis')).ok).toBe(true)
+  })
+})
