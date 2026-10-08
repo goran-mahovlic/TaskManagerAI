@@ -9414,7 +9414,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
           }
         }
         var zadnja = p.zadnjaProba
-          ? (p.zadnjaProba.ok ? '✅ ' : '❌ ') + _esc(p.zadnjaProba.ts.slice(0, 19).replace('T', ' ')) +
+          ? (p.zadnjaProba.ok ? '✅ ' : '❌ ') + _esc(_kad(p.zadnjaProba.ts)) +
             (p.zadnjaProba.greska ? ' — ' + _esc(p.zadnjaProba.greska) : '')
           : _T('cfg_int_nema_probe', 'nije još probano');
         h += _red(_T('tel_provjera', 'Provjera'),
@@ -9433,7 +9433,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     // TASK-5371: stanje provjere pošte (GET /api/email/config → posta) — radi li, zadnja provjera,
     // zadnja primljena poruka i zadnja greška (ostaje vidljiva i nakon oporavka).
     function _redPosta(ps) {
-      var t = function (x) { return x ? _esc(String(x).slice(0, 19).replace('T', ' ')) : '—'; };
+      var t = function (x) { return x ? _esc(_kad(x)) : '—'; };
       var stanje = !ps.ukljucena ? _T('posta_iskljucena', 'isključena (imap.obavijest)')
         : (ps.radi ? (ps.greska ? '❌ ' + _esc(ps.greska.poruka) : '✅ ' + _T('posta_radi', 'radi')) : '⏸ ' + _T('posta_ne_radi', 'petlja ne radi'));
       var zp = ps.zadnjaPoruka ? t(ps.zadnjaPoruka.ts) + ' — ' + _esc(ps.zadnjaPoruka.od || '') + ': „' + _esc(ps.zadnjaPoruka.predmet || '') + '"' : '—';
@@ -9621,7 +9621,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       return k.map(function(c) {
         var x = z[c] || {};
         return '<code>' + _esc(c) + '</code> ' + (x.zaustavljen
-          ? '⛔ ' + _T('cfg_bk_zaustavljeno', 'zaustavljeno') + ' ' + _esc(String(x.ts || '').slice(11, 16)) + ' (' + _esc(x.by || '') + ', ' + _esc(x.razlog || '') + ')'
+          ? '⛔ ' + _T('cfg_bk_zaustavljeno', 'zaustavljeno') + ' ' + _esc(x.ts ? _sat(x.ts) : '') + ' (' + _esc(x.by || '') + ', ' + _esc(x.razlog || '') + ')'
           : '🟢 ' + _T('cfg_bk_radi', 'radi'));
       }).join('<br>');
     }
@@ -9709,7 +9709,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       var p = d.postavke || {};
       var st = d.stanje || {};
       var h = (d.povijest || []).slice(0, 8).map(function(r) {
-        return '<li>' + _esc(r.changedAt || '') + ' — ' + _esc(r.kljuc) + ': ' + _esc(String(r.staro == null ? '—' : r.staro)) +
+        return '<li>' + _esc(r.changedAt ? _kad(r.changedAt) : '') + ' — ' + _esc(r.kljuc) + ': ' + _esc(String(r.staro == null ? '—' : r.staro)) +
           ' → ' + _esc(String(r.novo)) + ' (' + _esc(r.changedBy) + ', ' + _esc(r.source) + ')</li>';
       }).join('');
       var upoz = (d.upozorenja || []).map(function(u) { return '<div>⚠️ ' + _esc(u) + '</div>'; }).join('');
@@ -9848,7 +9848,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         return '<label style="margin-right:8px"><input type="checkbox" class="rev-klasa" value="' + k + '"' + ((d.klaseUzivo || []).indexOf(k) >= 0 ? ' checked' : '') + '> ' + k + '</label>';
       }).join('');
       var h = (d.povijest || []).slice(0, 5).map(function (r) {
-        return '<li>' + _esc(r.changed_at || '') + ' — ' + _esc(r.key) + ': ' + _esc(String(r.old_value == null ? '—' : r.old_value)) + ' → ' + _esc(String(r.new_value)) + ' (' + _esc(r.changed_by) + ')</li>';
+        return '<li>' + _esc(r.changed_at ? _kad(r.changed_at) : '') + ' — ' + _esc(r.key) + ': ' + _esc(String(r.old_value == null ? '—' : r.old_value)) + ' → ' + _esc(String(r.new_value)) + ' (' + _esc(r.changed_by) + ')</li>';
       }).join('');
       return '<div class="usp-red">' + nac + '</div>' +
         '<div class="usp-red">Klase uživo: ' + kl + '</div>' +
@@ -9896,7 +9896,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
 
     function renderConcurrency(d) {
       var h = (d.history || []).slice(0, 5).map(function(r) {
-        return '<li>' + _esc(r.changedAt || '') + ' — ' + _esc(String(r.oldValue == null ? '—' : r.oldValue)) +
+        return '<li>' + _esc(r.changedAt ? _kad(r.changedAt) : '') + ' — ' + _esc(String(r.oldValue == null ? '—' : r.oldValue)) +
           ' → ' + _esc(String(r.newValue)) + ' (' + _esc(r.changedBy) + ', ' + _esc(r.source) + ')</li>';
       }).join('');
       return '<div class="usp-red">' +
@@ -9910,7 +9910,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         '</div>' +
         '<div class="cfg-napomena">' +
           _T('cfg_usp_napomena', 'Promjena vrijedi odmah (daemon je čita najkasnije za 5 s). Smanjenje ne prekida agente koji rade — samo ne pušta nove. Vrata autonomije (70/85 %) i dalje nadjačavaju strop.') +
-          (d.updatedBy ? '<br>' + _T('cfg_usp_zadnje', 'Zadnja promjena') + ': ' + _esc(d.updatedBy) + ', ' + _esc(d.updatedAt || '') : '') +
+          (d.updatedBy ? '<br>' + _T('cfg_usp_zadnje', 'Zadnja promjena') + ': ' + _esc(d.updatedBy) + ', ' + _esc(d.updatedAt ? _kad(d.updatedAt) : '') : '') +
           (d.envDeprecated ? '<br>⚠️ ' + _esc(d.envDeprecated) : '') +
         '</div>' +
         (h ? '<ul class="cfg-povijest">' + h + '</ul>' : '');
@@ -10026,7 +10026,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
           s: sp == null ? '—' : Math.round(sp) + ' %', t: wp == null ? '—' : Math.round(wp) + ' %' }) + '</span>' +
         '</div>';
       h += '<div class="cfg-napomena">' + _T('cfg_vr_napomena', 'Redoslijed je obvezan: autonomija < oprez < blokada. Promjena vrijedi odmah, bez ponovnog pokretanja. Kad mjerilo ne radi, vrata ostaju zatvorena bez obzira na pragove.') +
-        (d && d.updatedBy ? '<br>' + _T('cfg_usp_zadnje', 'Zadnja promjena') + ': ' + _esc(d.updatedBy) + ', ' + _esc(d.updatedAt || '') : '') +
+        (d && d.updatedBy ? '<br>' + _T('cfg_usp_zadnje', 'Zadnja promjena') + ': ' + _esc(d.updatedBy) + ', ' + _esc(d.updatedAt ? _kad(d.updatedAt) : '') : '') +
         '</div>';
       return h;
     }

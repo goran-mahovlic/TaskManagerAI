@@ -134,6 +134,16 @@ describe('Vrijeme u pregledniku — ista pravila kao na poslužitelju', () => {
   })
 })
 
+describe('Vrijeme — nijedno vrijeme iz podataka ne ispisuje se sirovo (UTC) na ploči', () => {
+  test('nema rezanja ISO zapisa (.slice(0, 19).replace(\'T\', \' \')) ni sirovog changedAt/updatedAt u ispisu', () => {
+    const ui = readFileSync(join(KORIJEN, 'src/TaskWebUI.ts'), 'utf-8')
+    const tijelo = ui.slice(ui.indexOf('const HTML_TEMPLATE = `'))
+    expect(tijelo).not.toContain(".slice(0, 19).replace('T', ' ')")
+    expect(tijelo).not.toMatch(/_esc\((r|d)\.(changedAt|changed_at|updatedAt) \|\| ''\)/)
+    expect(tijelo).not.toMatch(/new Date\([^)]*\)\.toLocale(Time|Date)?String\(\)/)
+  })
+})
+
 describe('Jezik — svaki ključ koji ploča koristi postoji u oba rječnika', () => {
   test('nijedan _T/_Tv/data-i18n ključ ne fali u en.json ni hr.json', () => {
     const ui = readFileSync(join(KORIJEN, 'src/TaskWebUI.ts'), 'utf-8')
