@@ -17,6 +17,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { dirname } from 'path'
 import { konfigPutanja } from './core/paths'
 import { kljucPrisutan } from './LoginCreds'
+import { MISTRAL_LARGE_4 } from './core/models/IstaknutiModeli'
 
 /**
  * ADR-0001 O1.4: `TM_DEZURNI_CONFIG` → `$TM_HOME/config/dezurni.json` → `config/` uz paket.
@@ -91,7 +92,7 @@ export function nacinPoziva(ime: string, konf: Record<string, unknown> | undefin
 export const POZNATI_MODELI_DEZURNI: Record<string, string[]> = {
   ollama: ['qwen3:8b'],
   anthropic: ['claude-haiku-4-5-20251001', 'claude-sonnet-5', 'claude-opus-5'],
-  openrouter: ['z-ai/glm-4.6', 'google/gemini-2.5-flash', 'deepseek/deepseek-chat'],
+  openrouter: ['z-ai/glm-4.6', 'google/gemini-2.5-flash', 'deepseek/deepseek-chat', MISTRAL_LARGE_4],
   openai: ['gpt-4o-mini', 'gpt-4o'],
   google: ['gemini-2.0-flash', 'gemini-2.5-flash', 'gemini-2.5-pro'],
   glm: ['glm-4.6', 'glm-4.7-flash'],

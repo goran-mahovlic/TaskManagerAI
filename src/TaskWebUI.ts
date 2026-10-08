@@ -35,6 +35,7 @@ import { odlukaGuarda } from './core/SpawnFinalizer'
 // TASK-4894: model-config.json se mijenja SAMO atomno i uz revizijski trag (GAP F14).
 import { saveModelConfig } from './core/models/ModelConfigWriter'
 import { prebaciSve, vratiPrebacivanje, stanjePrebacivanja, IZUZETE_KOMPONENTE } from './core/models/PrebaciSve'
+import { ISTAKNUTI_OPENROUTER, istaknutiNaVrh } from './core/models/IstaknutiModeli'
 // TASK-4967/4972: RAG s dva pozadinska sustava (ChromaDB / pgvector / dual), GAP F13.
 import { getRAGBackendService } from './RAGBackendService'
 // TASK-4815: jedan parser agentova izlaza za ploču i kanale (GAP F5).
@@ -11352,6 +11353,8 @@ async function buildModelsAvailable(): Promise<{ providers: any[]; models: any[]
     { spec: 'openrouter:z-ai/glm-5',   provider: 'openrouter', model: 'z-ai/glm-5',   tier: 'strong', label: 'GLM-5 (OpenRouter)',   spawnable: true },
     { spec: 'openrouter:google/gemini-2.5-flash', provider: 'openrouter', model: 'google/gemini-2.5-flash', tier: 'good', label: 'Gemini 2.5 Flash — alati (OpenRouter)', spawnable: true },
     { spec: 'openrouter:google/gemini-2.5-pro', provider: 'openrouter', model: 'google/gemini-2.5-pro', tier: 'frontier', label: 'Gemini 2.5 Pro — alati (OpenRouter)', spawnable: true },
+    // TASK-5351: istaknuti (Mistral Large 4) — isti popis nude i dežurni i odlučitelj.
+    ...ISTAKNUTI_OPENROUTER.map(m => ({ spec: 'openrouter:' + m.model, provider: 'openrouter', model: m.model, tier: m.tier, label: m.label, spawnable: true })),
   ]
   providers.push({
     id: 'openrouter', name: 'OpenRouter (cloud)', nameKey: 'cfg_prov_ime_openrouter', kind: 'cloud-key',
@@ -11390,8 +11393,10 @@ async function handleDezurniConfigGet(): Promise<Response> {
         greska = String(e && e.message ? e.message : e)
       }
     } else if (davatelj === 'openrouter') {
-      modeli = (await openrouterModeli()).slice(0, 60)
-      dostupno = modeli.length > 0
+      const katalog = await openrouterModeli()
+      // Istaknuti prije reza na 60 — inače skuplji izabrani model (Mistral Large 4) ispadne.
+      modeli = istaknutiNaVrh(katalog).slice(0, 60)
+      dostupno = katalog.length > 0
       if (!dostupno) greska = 'katalog OpenRoutera nije dostupan'
     } else {
       // Ostali davatelji nemaju javni katalog: nudi se poznat popis, a ploča dopušta i
@@ -12225,6 +12230,7 @@ function buildInfoPayload(): Record<string, unknown> {
           { id: 'gemini-2.5-pro', tier: 'frontier' },
           { id: 'gemini-2.5-flash', tier: 'good' },
         ],
+        openrouter: ISTAKNUTI_OPENROUTER.map(m => ({ id: m.model, tier: m.tier })),
         ollama: [
           { id: 'qwen3:8b', tier: 'basic' },
           { id: 'llama3.2:3b', tier: 'classifier' },
@@ -14532,8 +14538,9 @@ async function handleOdluciteljConfigGet(): Promise<Response> {
     }
     catch (e: any) { greska = String(e?.message ?? e) }
   } else if (odabrani === 'openrouter') {
-    modeli = await openrouterModeli()
-    dostupno = modeli.length > 0
+    const katalog = await openrouterModeli()
+    modeli = istaknutiNaVrh(katalog)
+    dostupno = katalog.length > 0
     if (!dostupno) greska = 'katalog OpenRoutera nije dostupan'
   } else {
     modeli = POZNATI_MODELI[odabrani] || []
