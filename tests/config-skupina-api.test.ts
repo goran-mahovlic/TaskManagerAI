@@ -8,7 +8,7 @@
 import { describe, test, expect, afterAll } from 'bun:test'
 import { Database } from 'bun:sqlite'
 import { join } from 'path'
-import { readFileSync, existsSync } from 'fs'
+import { readFileSync, existsSync, writeFileSync } from 'fs'
 import { podigni, spusti, type Posluzitelj } from './helpers/posluzitelj'
 
 let p: Posluzitelj | null = null
@@ -24,7 +24,9 @@ const procitaj = (put: string) => (existsSync(put) ? readFileSync(put, 'utf-8') 
 
 describe('HTTP /api/config/skupina', () => {
   test('mail: skupina jednim pozivom, nevaljana ne zapisuje ništa, jedan audit redak', async () => {
-    p = await podigni()
+    // Vlastiti email.json u TM_HOME: bez njega ploča čita config/email.json uz paket — na čvoru
+    // je to živa postavka (`ukljucen: true`), pa `ukljucen` ne bi bio promjena (TASK-5354, node-A).
+    p = await podigni({}, {}, { priprema: dom => writeFileSync(join(dom, 'config', 'email.json'), JSON.stringify({ ukljucen: false, primatelji: [] })) })
     const g0 = await (await fetch(`${p.url}/api/email/config`)).json() as any
     const putanja = g0.putanja as string
 
