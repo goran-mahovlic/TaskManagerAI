@@ -21,7 +21,7 @@ import { hostname as osHostname, networkInterfaces as osNetworkInterfaces, homed
 // SQL-Only TaskManager (v2.0) - replaces MD+SQLite dual-write
 import { getTaskManagerSQL, INBOX_PROJECT_ID } from './core/TaskManagerSQL'
 import { konfigPutanja, konfigPutanjaZaPisanje, osigurajMapu, PAKET_DIR, stanjePutanja, sustavPutanja, TM_DATA, TM_DB, TM_ROOT } from './core/paths'
-import { datotekaTajni, datotekaTajniZaPisanje } from './core/ConfigModul'
+import { datotekaTajni, datotekaTajniZaPisanje, procitajTajnu } from './core/ConfigModul'
 /**
  * Registar PAI agenata (`REGOC_AGENTS.json`, upisuje ga `scripts/install-agents.sh`).
  * TASK-5108: bio je u rasporedu žive REGOČ instalacije; sada `TM_AGENTS_REGISTRY` ili
@@ -62,7 +62,7 @@ import {
 } from './NextcloudConfig'
 import {
   loadEmailConfig, validateEmailPatch, saveEmailConfig, stanjeEmail, probajEmail, EMAIL_CONFIG_PATH,
-  emailKonfigModul,
+  emailKonfigModul, posaljiOdgovorEmail,
 } from './EmailConfig'
 import {
   loadGitLabConfig, validateGitLabPatch, saveGitLabConfig, stanjeGitLab, probajGitLab, GITLAB_CONFIG_PATH,
@@ -188,7 +188,13 @@ import {
   TELEGRAM_CONFIG_PATH,
   loadTelegramConfig, saveTelegramConfig, validateTelegramPatch, telegramBotToken,
   posaljiTelegramPoruku, obavijestiZadatak, oznakaMemorijeIzZadatka, odgovorTelegramPloci, trebaObavijest,
+  telegramApiBaza,
 } from './TelegramConfig'
+// TASK-5358: provjera e-pošte s obaviješću u grupu čvora i odlukom čovjeka.
+import {
+  datotecnoSpremiste, imapKlijent, obradiOdgovorPoste, pokreniPostaPoller, stanjePoste,
+  telegramObavjestac, uskladiPostaPoller, type OdgovorUGrupi, type PetljaOpcije,
+} from './PostaUlaz'
 // Prigusenje proba (DIZAJN-integracije §1.4 t.3) — jedno mjesto za svih pet kartica.
 import { prigusenje } from './core/ProbeGuard'
 // U6/TASK-4266: generički ulaz `POST /api/ingest` — source/externalId/replyTo/text/senderName.
@@ -11562,8 +11568,54 @@ function razgovorSloj(): RazgovorSloj {
       dopusten: hostDopusten,
     }),
   })
+  // TASK-5358: odgovor u grupi na obavijest o pošti ide kuki pošte prije ingesta.
+  _razgovor.ulaz.posta = postaOdgovor
   void osvjeziImeBota()
   return _razgovor
+}
+
+// ── E-pošta: provjera s obaviješću u grupu i odlukom čovjeka (TASK-5358) ─────────────
+// Poller čita poštu (readonly), javlja u grupu čvora preko VLASTITOG bota i NIŠTA ne
+// odgovara sam. Odluka („zadatak" / „ignoriraj" / „odgovori: …") stiže kao odgovor u grupi
+// kroz Telegram poller (kuka `posta`) i izvršava se ovdje, kroz ploču, s tragom u Konzoli.
+function postaKonzola(r: string, razina: 'info' | 'ok' | 'greska'): void {
+  zapisiKonzolu(join(TM_DATA, 'razgovor'), r, razina)
+  try { broadcastKonzola(r, razina === 'ok' ? 'log-success' : razina === 'greska' ? 'log-error' : 'log-info', 'posta') } catch { /* prikaz */ }
+}
+
+const postaOpcije: PetljaOpcije = {
+  pripremi: () => {
+    const cfg = loadEmailConfig()
+    const tcfg = loadTelegramConfig()
+    const token = telegramBotToken(tcfg)
+    const lozinka = procitajTajnu(cfg.imap.lozinkaEnv)
+    return {
+      cfg,
+      chatId: String(cfg.imap.obavijestChat || tcfg.chatId || '').trim(),
+      imap: lozinka ? imapKlijent(cfg, lozinka) : null,
+      ...(lozinka ? {} : { bezLozinke: cfg.imap.lozinkaEnv }),
+      tg: token ? telegramObavjestac(token, telegramApiBaza()) : null,
+    }
+  },
+  konzola: postaKonzola,
+  log: (r: string) => console.log(r),
+}
+
+async function postaOdgovor(p: OdgovorUGrupi): Promise<string | null> {
+  return obradiOdgovorPoste(datotecnoSpremiste(), p, {
+    stvoriZadatak: async t => {
+      const r = await fetch(`http://localhost:${PORT}/api/tasks`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...t, priority: 3, createdBy: 'eposta' }),
+      })
+      const j: any = await r.json().catch(() => ({}))
+      return r.status === 201 && j?.id ? { taskId: String(j.id) } : { greska: String(j?.error || `HTTP ${r.status}`).slice(0, 200) }
+    },
+    posaljiOdgovor: x => posaljiOdgovorEmail(x),
+    dodajBiljesku: async (id, tekst) => { taskManager.addProgressNote(id, 'eposta', tekst) },
+    zadaniIzvrsitelj: String(loadTelegramConfig().ulaz?.zadaniIzvrsitelj || '').trim() || undefined,
+    konzola: postaKonzola,
+  })
 }
 
 /**
@@ -11859,6 +11911,12 @@ async function handleIntegracijaPut(ime: string, req: Request): Promise<Response
     const postavke = zapis.save(provjera.zakrpa)
     // U dnevnik idu IMENA polja, ne vrijednosti — zakrpa može nositi korisničko ime.
     console.log(`[${ime.toUpperCase()}] postavke promijenjene s ploče: ${Object.keys(provjera.zakrpa).join(', ')}`)
+    if (ime === 'email') {
+      try {
+        const u = uskladiPostaPoller(postaOpcije)
+        if (u === 'pokrenut') console.log('[posta] provjera pošte pokrenuta nakon spremanja postavki')
+      } catch (e) { console.log(`[posta] usklađivanje nije uspjelo: ${String(e)}`) }
+    }
     return json({ ok: true, postavke, stanje: zapis.stanje(postavke) })
   } catch (err) {
     return json({ error: String(err) }, 500)
@@ -18012,6 +18070,15 @@ async function obradiZahtjev(req: Request): Promise<Response | undefined> {
       return handleTelegramUlazProba()
     }
 
+    // GET /api/posta — stanje provjere e-pošte (TASK-5358): radi li, zadnji UID, greška, zadnje odluke
+    if (url.pathname === '/api/posta' && req.method === 'GET') {
+      try {
+        return new Response(JSON.stringify(stanjePoste()), { headers: { 'Content-Type': 'application/json' } })
+      } catch (e) {
+        return new Response(JSON.stringify({ error: String(e) }), { status: 500, headers: { 'Content-Type': 'application/json' } })
+      }
+    }
+
     // GET /api/integracije — sažetak četiriju integracija za skupinu na Config stranici
     if (url.pathname === '/api/integracije' && req.method === 'GET') {
       return handleIntegracijeSazetak()
@@ -18257,4 +18324,10 @@ console.log(`
   if (!p.pokrenut && p.razlog && !/isključen|nije postavljen/.test(p.razlog)) {
     console.log(`[telegram-poller] ${p.razlog}`)
   }
+}
+
+// ── E-pošta (TASK-5358): pokreće se samo uz email.ukljucen + imap.obavijest (profil čvora) ──
+{
+  const p = pokreniPostaPoller(postaOpcije)
+  if (!p.pokrenut && p.razlog && !/isključena/.test(p.razlog)) console.log(`[posta] ${p.razlog}`)
 }

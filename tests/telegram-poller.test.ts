@@ -20,6 +20,7 @@ import {
   ZADANE_POSTAVKE, ZADANI_ULAZ, loadTelegramConfig, saveTelegramConfig, validateTelegramPatch,
   type TelegramPostavke,
 } from '../src/TelegramConfig'
+import { RAZGOVOR_ZADANO } from '../src/razgovor/RazgovorPostavke'
 
 let mapa: string
 beforeEach(() => { mapa = mkdtempSync(join(tmpdir(), 'tm-tgp-')) })
@@ -329,5 +330,41 @@ describe('stanje i konfiguracija', () => {
     const p = put('telegram.json')
     writeFileSync(p, JSON.stringify({ ukljucen: true, botToken: 'x' }), 'utf-8')
     expect(loadTelegramConfig(p).ulaz.intervalSek).toBe(ZADANI_ULAZ.intervalSek)
+  })
+})
+
+// ─── TASK-5358: odgovor na obavijest o pošti ide kuki pošte, ne na ingest ─────
+
+describe('kuka pošte (TASK-5358)', () => {
+  const razg = (posta: any, dopusteni: string[] = ['42']) => ({
+    razgovor: { primi: () => {} },
+    postavke: () => ({ ...RAZGOVOR_ZADANO, dopusteniKorisnici: dopusteni, ukljucen: false }),
+    posta,
+  }) as any
+
+  test('reply na obavijest: kuka dobije reply id i dopuštenje; ingest se ne zove; odgovor ide u chat', async () => {
+    const api = new LazniApi()
+    api.updates = [poruka({ text: 'zadatak', reply_to_message: { message_id: 500, from: { id: 1, is_bot: true } } }, 1)]
+    const pozivi: any[] = []
+    const i = await jedanProlaz(cfg(), stanje(), api, razg(async (p: any) => { pozivi.push(p); return '📋 Otvoren zadatak TASK-9' }))
+    expect(pozivi[0]).toMatchObject({ chatId: '-1001234567890', tekst: 'zadatak', replyTo: '500', dopusten: true })
+    expect(api.ingesti.length).toBe(0)
+    expect(api.poslane[0].tekst).toContain('TASK-9')
+    expect(i.preskoceno).toBe(1)
+  })
+
+  test('kuka vrati null → poruka ide normalnim putem (ingest)', async () => {
+    const api = new LazniApi()
+    api.updates = [poruka({ text: 'treba napraviti nešto' }, 1)]
+    await jedanProlaz(cfg(), stanje(), api, razg(async () => null))
+    expect(api.ingesti.length).toBe(1)
+  })
+
+  test('korisnik izvan popisa → dopusten=false', async () => {
+    const api = new LazniApi()
+    api.updates = [poruka({ text: 'zadatak' }, 1)]
+    const pozivi: any[] = []
+    await jedanProlaz(cfg(), stanje(), api, razg(async (p: any) => { pozivi.push(p); return null }, ['7']))
+    expect(pozivi[0].dopusten).toBe(false)
   })
 })

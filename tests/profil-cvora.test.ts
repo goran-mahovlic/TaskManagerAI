@@ -193,8 +193,8 @@ describe('J1 — shema profila (zod)', () => {
   test('predani profil upravitelj-cvora prolazi shemu', () => {
     const p = ucitajProfil(PROFIL)
     expect(p.profil).toBe('upravitelj-cvora')
-    // 13 iz TASK-5295 + znacajke, kuke, konzola, oporavak (ADR-0004 §13.2) + mogucnosti, znanje (ADR-0006 §9)
-    expect(Object.keys(p.moduli).length).toBe(19)
+    // 13 iz TASK-5295 + znacajke, kuke, konzola, oporavak (ADR-0004 §13.2) + mogucnosti, znanje (ADR-0006 §9) + eposta (TASK-5358)
+    expect(Object.keys(p.moduli).length).toBe(20)
   })
 
   test('neispravan profil → izlaz 3 s porukom koja imenuje polje', async () => {
@@ -785,5 +785,46 @@ describe('J18 — znanje čvora: mogućnosti, korpus u banci, izolacija memorije
     const { service, timer } = jediniceZnanja(p.moduli.znanje, '/paket', '/bun')
     expect(service).toContain('ExecStart=/bun /paket/scripts/znanje-cvora.ts osvjezi --pisi')
     expect(timer).toContain('OnUnitActiveSec=30min')
+  })
+})
+
+describe('J16 — modul eposta (TASK-5358): prekidač iz instance, kroz API ploče, idempotentno', () => {
+  test('prazan EPOSTA_OBAVIJEST → PRESKOČENO, email.json se ne dira', async () => {
+    const r = await d.pokreni(['provjeri', '--modul', 'eposta'])
+    expect(r.izlaz).toMatch(/eposta.*imap\.obavijest|imap\.obavijest[\s\S]*PRESKOČENO/)
+    expect(r.izlaz).not.toMatch(/RAZLIKA.*imap\.obavijest/)
+  })
+
+  test('EPOSTA_OBAVIJEST=true → PUT /api/email/config {imap:{obavijest:true}}; drugi --pisi → 0 promjena', async () => {
+    const ep = join(d.paket, 'config', 'email.json')
+    writeFileSync(ep, JSON.stringify({ ukljucen: true, smjer: 'oba', imap: { host: 'imap.primjer.test', korisnik: 'bot', obavijest: false } }, null, 2))
+    writeFileSync(d.inst, readFileSync(d.inst, 'utf-8') + 'EPOSTA_OBAVIJEST=true\n')
+    const pozivi: any[] = []
+    const { glavna: g } = await import('../scripts/profil-cvora')
+    const ploca: Ploca = {
+      async put(ruta, tijelo) {
+        pozivi.push({ ruta, tijelo })
+        const j = JSON.parse(readFileSync(ep, 'utf-8'))
+        j.imap = { ...j.imap, ...(tijelo as any).imap }
+        writeFileSync(ep, JSON.stringify(j, null, 2))
+        return { status: 200, tijelo: { ok: true } }
+      },
+      async post() { return { status: 200, tijelo: {} } },
+    }
+    const pokreni = async () => {
+      const redovi: string[] = []
+      await g(['primijeni', '--pisi', '--modul', 'eposta', '--paket', d.paket, '--instanca', d.inst, '--bez-sustava'], {
+        home: d.home, ispis: r => redovi.push(r), ploca, hostname: 'cvor-t', sat: () => new Date('2026-10-08T01:00:00Z'),
+      })
+      return redovi.join('\n')
+    }
+    const i1 = await pokreni()
+    expect(pozivi).toEqual([{ ruta: '/api/email/config', tijelo: { imap: { obavijest: true } } }])
+    expect(i1).toMatch(/PRIMIJENJENO: 1 promjena/)
+    const j = JSON.parse(readFileSync(ep, 'utf-8'))
+    expect(j.imap).toMatchObject({ host: 'imap.primjer.test', korisnik: 'bot', obavijest: true })
+    const i2 = await pokreni()
+    expect(i2).toContain('PRIMIJENJENO: 0 promjena')
+    expect(pozivi).toHaveLength(1)
   })
 })

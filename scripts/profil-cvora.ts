@@ -87,6 +87,12 @@ export const ProfilShema = z.object({
       nikadNeIzvozi: Imena.default([]),
       tajneImenom: Imena.default([]),
     }).optional(),
+    // TASK-5358: provjera e-pošte s obaviješću u grupu čvora — samo prekidači, nikad tajne ni host.
+    eposta: s.extend({
+      datoteka: z.string().min(1),
+      ruta: z.string().regex(/^\/api\//).default('/api/email/config'),
+      json: z.record(z.string(), Vrijednost),
+    }).optional(),
     razgovor: s.extend({ settings: Postavke }).optional(),
     glas: s.extend({
       settings: Postavke,
@@ -220,6 +226,7 @@ export type Vrsta = 'OK' | 'RAZLIKA' | 'NEDOSTAJE' | 'TAJNA' | 'TAJNA-NEDOSTAJE'
 export type Primjena =
   | { vrsta: 'env'; kljuc: string; vrijednost: string | null }
   | { vrsta: 'telegram'; put: string[]; vrijednost: unknown }
+  | { vrsta: 'eposta'; put: string[]; vrijednost: unknown }
   | { vrsta: 'settings'; kljuc: string; vrijednost: unknown }
   | { vrsta: 'capguard'; ime: string; desired: boolean }
   | { vrsta: 'hooks'; dogadjaj: string; unos: unknown }
@@ -383,6 +390,21 @@ export function usporedi(k: Kontekst): Stavka[] {
     if (M.razgovor && (M.razgovor.settings as any)['razgovor.ovlasti'] === 'puno') {
       dodaj({ modul: 'okolina', kljuc: 'TM_RAZGOVOR_PUNO', vrsta: stanje.punoDopusteno ? 'OK' : 'ČOVJEK',
         poruka: stanje.punoDopusteno ? 'postavio čovjek' : 'ovlasti=puno traže TM_RAZGOVOR_PUNO=1 — upisuje ga SAMO vlasnik (PROFIL_CVORA_TAJNE.md #5); dotad citanje' })
+    }
+  }
+
+  // eposta (TASK-5358) — prekidači u email.json; prazna varijabla instance = modul se ne dira.
+  if (M.eposta) {
+    const ocek = zamijeni(M.eposta.json, inst)
+    for (const [put, v] of ravno(ocek)) {
+      const kljuc = put.join('.')
+      if (v === PRESKOCI || v === '' || (Array.isArray(v) && !v.length)) {
+        dodaj({ modul: 'eposta', kljuc, vrsta: 'PRESKOČENO', poruka: 'ovisi o praznoj varijabli instance' }); continue
+      }
+      const cvor = stanje.eposta ? dohvati(stanje.eposta, put) : undefined
+      dodaj(jednako(v, cvor)
+        ? { modul: 'eposta', kljuc, vrsta: 'OK' }
+        : { modul: 'eposta', kljuc, vrsta: 'RAZLIKA', profil: v, cvor: cvor ?? null, primjena: { vrsta: 'eposta', put, vrijednost: v } })
     }
   }
 
@@ -877,6 +899,7 @@ export function izvediInstancu(p: Profil, st: StanjeCvora): { inst: Record<strin
   const M = p.moduli
   if (M.okolina) for (const [k, t] of Object.entries(M.okolina.postavkeEnv)) izvediVarijable(t, st.env[k], st.home, inst, sukobi)
   if (M.telegram && st.telegram) izvediVarijable(M.telegram.json, st.telegram, st.home, inst, sukobi)
+  if (M.eposta && st.eposta) izvediVarijable(M.eposta.json, st.eposta, st.home, inst, sukobi)
   for (const ime of ['razgovor', 'glas', 'memorija', 'bot-kanal'] as const) {
     const mod = M[ime]
     if (!mod) continue
@@ -993,6 +1016,23 @@ export async function primijeni(stavke: Stavka[], k: Kontekst, ploca: Ploca, sat
       const r = await ploca.put(ruta, tijelo)
       if (r.status !== 200) ishod.greske.push(`PUT ${ruta} → ${r.status}: ${r.tijelo?.error || ''}`)
       else ishod.promjena += ((r.tijelo?.promjene || []) as any[]).filter(c => c.changed).length
+    } catch (e: any) { ishod.greske.push(`PUT ${ruta}: ${e?.message || e}`) }
+  }
+
+  // eposta: kroz API ploče (ista validacija kao kartica; ploča odmah pokrene/zaustavi provjeru pošte).
+  const ep = po('eposta') as Extract<Primjena, { vrsta: 'eposta' }>[]
+  if (ep.length && k.profil.moduli.eposta) {
+    const zakrpa: Record<string, any> = {}
+    for (const e of ep) {
+      let x = zakrpa
+      for (const p0 of e.put.slice(0, -1)) { if (!x[p0] || typeof x[p0] !== 'object') x[p0] = {}; x = x[p0] }
+      x[e.put[e.put.length - 1]] = e.vrijednost
+    }
+    const ruta = k.profil.moduli.eposta.ruta
+    try {
+      const r = await ploca.put(ruta, zakrpa)
+      if (r.status !== 200) ishod.greske.push(`PUT ${ruta} → ${r.status}: ${r.tijelo?.error || ''}`)
+      else ishod.promjena += ep.length
     } catch (e: any) { ishod.greske.push(`PUT ${ruta}: ${e?.message || e}`) }
   }
 
@@ -1183,6 +1223,7 @@ export function specZaProfil(p: Profil, inst: Record<string, string>, paket: str
     envTajne: [...new Set([...(M.okolina?.tajneImenom || []), ...(M['bot-kanal']?.tajneImenom || [])])],
     envNesmije: M.okolina?.nesmijeBiti || [],
     telegramOblik: M.telegram?.json || {},
+    epostaOblik: M.eposta?.json,
     telegramNikad: M.telegram?.nikadNeIzvozi || [],
     telegramTajne: M.telegram?.tajneImenom || [],
     settingsKljucevi: kljucevi,

@@ -31,6 +31,8 @@ export interface SpecStanja {
   /** Oblik `telegram.json` iz profila — sakupljač vraća samo ta polja. */
   telegramOblik?: unknown
   telegramNikad: string[]
+  /** Oblik `email.json` iz profila (TASK-5358) — sakupljač vraća samo ta polja; bez njega ništa. */
+  epostaOblik?: unknown
   /** Ime tajne u datoteci vjerodajnica (npr. TELEGRAM_BOT_TOKEN) — samo postoji/nema. */
   telegramTajne: string[]
   settingsKljucevi: string[]
@@ -76,6 +78,7 @@ export interface StanjeCvora {
   punoDopusteno: boolean
   telegram: Record<string, unknown> | null
   telegramTajne: Record<string, boolean>
+  eposta: Record<string, unknown> | null
   baza: { putanja: string; postoji: boolean; greska?: string }
   settings: Record<string, string>
   capguard: { postoji: boolean; zastavice: Record<string, boolean>; pending: string[] }
@@ -177,6 +180,14 @@ export async function prikupiStanje(spec: SpecStanja, home = process.env.HOME ||
   const cred = credPut ? citajEnv(credPut) : {}
   const telegramTajne: Record<string, boolean> = {}
   for (const k of spec.telegramTajne) telegramTajne[k] = !!cred[k] || !!(tgSirovo && tgSirovo.botToken)
+
+  // TASK-5358: email.json istim redom kao paket (TM_EMAIL_CONFIG → $TM_HOME/config → paket).
+  let eposta: Record<string, unknown> | null = null
+  if (spec.epostaOblik) {
+    const kandidati = [sveEnv.TM_HOME ? join(sveEnv.TM_HOME, 'config', 'email.json') : '', join(paket, 'config', 'email.json')]
+    const epPut = sveEnv.TM_EMAIL_CONFIG || kandidati.find(x => x && existsSync(x)) || ''
+    try { if (epPut) eposta = poObliku(JSON.parse(readFileSync(epPut, 'utf-8')), spec.epostaOblik, []) as Record<string, unknown> } catch { /* nema datoteke */ }
+  }
 
   const dbPut = sveEnv.TM_DB || join(tmHome, 'data', 'tasks.db')
   const baza: StanjeCvora['baza'] = { putanja: dbPut, postoji: existsSync(dbPut) }
@@ -362,7 +373,7 @@ export async function prikupiStanje(spec: SpecStanja, home = process.env.HOME ||
     znanje,
     home, paket, tmHome, env, envTajne, envNesmije,
     punoDopusteno: sveEnv.TM_RAZGOVOR_PUNO === '1',
-    telegram, telegramTajne, baza, settings, capguard, settingsJson, kuke,
+    telegram, telegramTajne, eposta, baza, settings, capguard, settingsJson, kuke,
     claudePrijava: neprazno(join(home, '.claude', '.credentials.json')),
     upravitelj, grepNema, znacajke, apiKljucevi,
     git: naredba(['git', '-C', paket, 'rev-parse', '--short', 'HEAD']),
