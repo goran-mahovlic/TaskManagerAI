@@ -3,7 +3,8 @@
 // nakon ingesta. Je li poruka upućena botu (spomen, ime, odgovor na bota) računa ADAPTER
 // kanala — ovdje se samo čita `obracanjeBotu`.
 //
-// Autorica: Jelena (Engineer), TASK-5277; dopusteni-sve i tišina za drugoga TASK-5283.
+// Autorica: Jelena (Engineer), TASK-5277; dopusteni-sve i tišina za drugoga TASK-5283;
+// URL/e-mail/kod i vlasnikovo ime TASK-5373.
 
 import type { UlaznaPoruka } from './Kanal'
 import type { RazgovorPostavke } from './RazgovorPostavke'
@@ -51,16 +52,30 @@ const escRe = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const MAX_NASTAVAK = 3
 
 /**
+ * Tekst bez URL-ova, e-mail adresa i `code` odsječaka (TASK-5373): u njima riječ nije
+ * obraćanje — `https://primjer.org/?s=ivan` u vlasnikovom nalogu utišao je bota („Ivan").
+ * Svaki izrezani dio postaje razmak, pa susjedne riječi ostaju odvojene.
+ */
+export function bezAdresaIKoda(tekst: string): string {
+  return tekst
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/`[^`\n]*`/g, ' ')
+    .replace(/\b(?:[a-z][a-z0-9+.-]*:\/\/|www\.)\S+/giu, ' ')
+    .replace(/[\p{L}\p{N}._%+-]+@[\p{L}\p{N}-]+(?:\.[\p{L}\p{N}-]+)+/gu, ' ')
+}
+
+/**
  * Sadrži li tekst riječ s popisa BILO GDJE (odluka vlasnika, 06.10. 18:39), bez obzira na velika
  * slova i dijakritiku:
  *  - `@korisnicko_ime` → točno taj spomen (iza ne smije biti slovo, broj ni `_`);
  *  - ime → riječ koja POČINJE tim korijenom uz najviše 3 slova nastavka (padeži), a ispred
  *    nema slova („Divan" ne pogađa „Ivan", „Ivanovićevi" ne pogađa — predug nastavak).
+ * Ne gleda unutar URL-ova, e-mail adresa ni `code` odsječaka (`bezAdresaIKoda`, TASK-5373).
  */
 export function sadrziRijec(tekst: string, rijec: string): boolean {
   const r = normaliziraj(rijec.trim())
   if (!r || r === '@') return false
-  const t = normaliziraj(tekst)
+  const t = normaliziraj(bezAdresaIKoda(tekst))
   if (r.startsWith('@')) {
     return new RegExp(`(^|[^\\p{L}\\p{N}_@])${escRe(r)}(?![\\p{L}\\p{N}_])`, 'u').test(t)
   }
@@ -75,18 +90,40 @@ export function sadrziRijec(tekst: string, rijec: string): boolean {
  * Izravno obraćanje OVOM botu (spomen, ime na početku, reply, privatni chat) uvijek pobjeđuje.
  * Vrijedi i za ulaz: poruka za drugoga ne otvara zadatak.
  */
-export function jeZaDrugog(p: UlaznaPoruka, s: Pick<RazgovorPostavke, 'preskociAkoSadrzi' | 'tisinaKadDrugom'>): boolean {
+export function jeZaDrugog(p: UlaznaPoruka, s: PostavkeFiltra): boolean {
   return razlogZaDrugog(p, s) !== null
 }
 
+type PostavkeFiltra = Pick<RazgovorPostavke, 'preskociAkoSadrzi' | 'tisinaKadDrugom'> &
+  Partial<Pick<RazgovorPostavke, 'dopusteniKorisnici' | 'vlasnici'>>
+
+/**
+ * Vlasnik čvora = dopušteni korisnik razgovora koji je ujedno primatelj koda za tajne
+ * (`vlasnici`, TASK-5373). Samo on dobiva iznimku za vlastito ime s popisa.
+ */
+export function jeVlasnik(p: Pick<UlaznaPoruka, 'posiljateljId' | 'posiljateljKorisnickoIme'>, s: Partial<Pick<RazgovorPostavke, 'dopusteniKorisnici' | 'vlasnici'>>): boolean {
+  const v = s.vlasnici || []
+  return v.length > 0 && v.includes(String(p.posiljateljId)) && jeDopusten(p, s.dopusteniKorisnici || [])
+}
+
+/** Je li unos s popisa vlastito ime/korisničko ime pošiljatelja („Ivan" u poruci OD Ivana). */
+function vlastitoIme(p: UlaznaPoruka, unos: string): boolean {
+  const e = bezEt(unos)
+  if (p.posiljateljKorisnickoIme && bezEt(p.posiljateljKorisnickoIme) === e) return true
+  return !unos.trim().startsWith('@') && sadrziRijec(p.posiljateljIme || '', unos)
+}
+
 /** Zašto je poruka za drugoga (za zapis i Konzolu, TASK-5285) — `null` kad nije. */
-export function razlogZaDrugog(p: UlaznaPoruka, s: Pick<RazgovorPostavke, 'preskociAkoSadrzi' | 'tisinaKadDrugom'>): string | null {
+export function razlogZaDrugog(p: UlaznaPoruka, s: PostavkeFiltra): string | null {
   if (p.privatno || p.obracanjeBotu || p.izvor === 'bot') return null
   const spomeni = p.spomeni || []
   const o = p.odgovorNa && p.odgovorNa.id !== p.posiljateljId ? p.odgovorNa : undefined
+  const vlasnik = jeVlasnik(p, s)
   for (const unos of s.preskociAkoSadrzi || []) {
     const e = bezEt(unos)
     if (!e) continue
+    // Poruka OD vlasnika koja sadrži njegovo ime nije poruka ZA njega (TASK-5373).
+    if (vlasnik && vlastitoIme(p, unos)) continue
     if (sadrziRijec(p.tekst, unos)) return `sadrži „${unos.trim()}"`
     if (unos.trim().startsWith('@') && spomeni.includes(e)) return `spominje ${unos.trim()}`
     if (o && (o.korisnickoIme === e || (!!o.ime && normaliziraj(o.ime.trim()) === normaliziraj(e)))) return `odgovor na poruku „${unos.trim()}"`

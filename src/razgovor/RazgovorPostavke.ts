@@ -31,6 +31,11 @@ export interface RazgovorPostavke {
   preskociAkoSadrzi: string[]
   /** Svaki tuđi @spomen ili odgovor na tuđu poruku (bot ili čovjek) = tišina i bez zadatka. */
   tisinaKadDrugom: boolean
+  /**
+   * Vlasnik čvora (primatelji koda za tajne, TASK-5373) — NIJE u bazi i ne mijenja se s ploče;
+   * sklapanje razgovora ga dodaje uživo. Vlasnikovo ime s `preskociAkoSadrzi` ne utišava njega.
+   */
+  vlasnici?: string[]
   model: string
   rokSek: number
   maxUsporednih: number

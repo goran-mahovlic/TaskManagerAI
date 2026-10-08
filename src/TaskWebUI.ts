@@ -107,7 +107,7 @@ import { getMessageQueue } from './core/MessageQueue'
 import { getRAGService, ragPodesen } from './RAGService'
 import { kljucPrisutan, kljucPrisutanUDatoteci, postaviTajnu, ukloniKljucIzDatoteke } from './LoginCreds'
 // TASK-5343 (ADR-0007): upis tajni s ploče — samo-za-pisanje, kod u vlasnikov privatni Telegram.
-import { obradiTajneZahtjev, osvjeziImeBota, uputaTajniZaPoruku } from './TajnePloca'
+import { obradiTajneZahtjev, osvjeziImeBota, ucitajPostavkeTajni, uputaTajniZaPoruku } from './TajnePloca'
 import { odlukaNaredbe, vrataKonzole } from './KonzolaVrata'
 import { ocistiLoginKod, izvuciLoginUrl, maskirajLoginTail, loginOauthGreska, LOGIN_POTVRDA } from './LoginUnos'
 import { capguardPostavke, stanjeCapguarda, zatraziSposobnost } from './Capguard'
@@ -11589,6 +11589,8 @@ function razgovorSloj(): RazgovorSloj {
     // TASK-5293: identitet upravitelja — agenti iz registra, vodič vlasnika samo iz okoline stroja.
     agentiPut: AGENTS_REGISTRY_FILE,
     uputePut: process.env.TM_RAZGOVOR_UPUTE || undefined,
+    // TASK-5373: vlasnik = primatelj koda za tajne — njegovo ime s popisa ne utišava njega.
+    vlasnici: () => ucitajPostavkeTajni().potvrdaUid,
     log: (r: string) => console.log(r),
     // TASK-5285: razgovor se vidi u Konzoli (ulaz, odluka, izlaz), oblik odgovora iz
     // `telegram.stil`, a uz `rad` sesija smije čitati dnevnik ulaza.

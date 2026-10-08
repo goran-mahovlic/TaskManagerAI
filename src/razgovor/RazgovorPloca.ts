@@ -121,7 +121,11 @@ export interface SklapanjeOpcije extends Omit<RazgovorOvisnosti, 'postavke' | 'i
   modelConfigPath: string
   /** Registar agenata (`TM_AGENTS_REGISTRY`) — čita se pri svakoj novoj sesiji (TASK-5293). */
   agentiPut?: string
+  /** Vlasnik čvora: primatelji koda za tajne (TASK-5373) — vlastito ime ga ne utišava. */
+  vlasnici?: () => string[]
 }
+
+const VLASNICI_KES_MS = 5000
 
 /** Ime ovog kraja u ugovoru bot↔bot: ime razgovora bez dijakritike („Šaban" → `saban`). */
 export function imeUKanalu(ime: string): string {
@@ -133,7 +137,20 @@ export interface RazgovorSloj { ulaz: RazgovorUlaza; jezgra: RazgovorJezgra; bot
 /** Jedan razgovorni sloj po procesu ploče; poller ga dobiva kroz `RazgovorUlaza`. */
 export function sklopiRazgovor(o: SklapanjeOpcije): RazgovorSloj {
   const citac = createRazgovorReader({ dbPath: o.dbPath })
-  const postavke = () => citac().postavke
+  // TASK-5373: vlasnik nije postavka razgovora (ne mijenja se s ploče) — dodaje se uživo,
+  // uz kratki keš kao i čitač postavki; kvar čitanja = nema vlasnika (staro ponašanje).
+  let vlasniciKes: { ms: number; uid: string[] } = { ms: 0, uid: [] }
+  const vlasnici = (): string[] => {
+    if (!o.vlasnici) return []
+    const t = Date.now()
+    if (t - vlasniciKes.ms > VLASNICI_KES_MS) {
+      let uid: string[] = []
+      try { uid = o.vlasnici().map(String) } catch { uid = [] }
+      vlasniciKes = { ms: t, uid }
+    }
+    return vlasniciKes.uid
+  }
+  const postavke = () => ({ ...citac().postavke, vlasnici: vlasnici() })
   const bkPostavke = createBotKanalReader(o.dbPath)
   let ulaz: RazgovorUlaza
   let jezgra: RazgovorJezgra

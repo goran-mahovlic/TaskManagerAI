@@ -126,6 +126,8 @@ interface StanjeChata {
   procitano: { ms: number; ime: string; tekst: string; p: UlaznaPoruka }[]
   /** Potez u letu koji nosi bot-poruku — njega stop-fraza prekida (ADR-0003 §4.1). */
   botKontrola: AbortController | null
+  /** Zadnja utišana poruka dopuštenog korisnika (TASK-5373) — napomena najviše jednom po sesiji. */
+  utisanoMs: number | null
 }
 
 export interface SesijaChata {
@@ -148,6 +150,15 @@ const KONZOLA_ZNAKOVA = 300
 export function oznakaPosiljatelja(p: Pick<UlaznaPoruka, 'posiljateljIme' | 'posiljateljId'>): string {
   const id = String(p.posiljateljId || '').replace(/[^\w:-]/g, '').slice(0, 32)
   return `${neutralizirajIme(p.posiljateljIme)}${id ? ` (uid:${id})` : ''}`
+}
+
+/**
+ * Napomena dopuštenom korisniku kad ga filtar „za drugoga" utiša (TASK-5373) — kratko:
+ * razlog i kako se obratiti botu. Razlog dolazi iz `razlogZaDrugog` (bez teksta poruke).
+ */
+export function napomenaUtisano(ime: string, razlog: string): string {
+  return `ℹ️ ${ime}: ne odgovaram — poruka mi izgleda upućena drugome (${razlog}). ` +
+    `Ako je za mene, počni s „${ime}, …" ili me spomeni. (Ova napomena dolazi najviše jednom po sesiji.)`
 }
 
 /** Jedan redak za Konzolu: bez prijeloma, zatamnjene tajne, skraćeno. */
@@ -239,7 +250,7 @@ export function stvoriRazgovor(d: RazgovorOvisnosti): RazgovorJezgra {
   function chat(kljuc: string): StanjeChata {
     let c = chatovi.get(kljuc)
     if (!c) {
-      c = { kljuc, cekaju: [], tajmer: null, uTijeku: false, uRedu: false, prigusenje: new Map(), procitano: [], botKontrola: null }
+      c = { kljuc, cekaju: [], tajmer: null, uTijeku: false, uRedu: false, prigusenje: new Map(), procitano: [], botKontrola: null, utisanoMs: null }
       chatovi.set(kljuc, c)
     }
     return c
@@ -707,6 +718,18 @@ export function stvoriRazgovor(d: RazgovorOvisnosti): RazgovorJezgra {
             ts: new Date(sat()).toISOString(), smjer: 'procitano', posiljateljId: p.posiljateljId,
             posiljateljIme: p.posiljateljIme, tekst: p.tekst,
           })
+          // TASK-5373: dopušteni korisnik koji ostane bez odgovora mora znati zašto — kratka
+          // napomena u chat, najviše jednom po sesiji (nova tek iza `sesijaNeaktivnostMin` tišine).
+          if (p.izvor !== 'bot' && jeDopusten(p, s.dopusteniKorisnici)) {
+            const t = sat()
+            const nova = c.utisanoMs === null || t - c.utisanoMs > s.sesijaNeaktivnostMin * 60_000
+            c.utisanoMs = t
+            if (nova) {
+              const ime = s.ime || 'bot'
+              konzola(`💬 ⇢ napomena u chat [${p.kanal}:${p.chatId}]: ${oznakaPosiljatelja(p)} bez odgovora — ${zaDrugog} (jednom po sesiji)`)
+              void prati(k.posaljiTekst(p.chatId, napomenaUtisano(ime, zaDrugog), p.porukaId).catch(() => false))
+            }
+          }
         }
         return
       }
