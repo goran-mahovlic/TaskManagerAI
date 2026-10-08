@@ -35,6 +35,10 @@ export interface IshodSkupine {
 }
 
 const jeObjekt = (v: unknown): v is Record<string, any> => !!v && typeof v === 'object' && !Array.isArray(v)
+/** Dio staze koji bi `postavi` odveo u prototip (JSON.parse daje vlastiti ključ `__proto__`). */
+const ZABRANJENI_DIJELOVI = new Set(['__proto__', 'constructor', 'prototype'])
+const zabranjenaStaza = (o: Record<string, any>): boolean =>
+  Object.keys(o).some(k => ZABRANJENI_DIJELOVI.has(k) || (jeObjekt(o[k]) && zabranjenaStaza(o[k])))
 
 /** Staze listova zakrpe (`smtp.port`); popis je list, kao i prazan objekt. */
 export function listovi(o: Record<string, any>, prefiks = ''): string[] {
@@ -50,7 +54,7 @@ export function listovi(o: Record<string, any>, prefiks = ''): string[] {
 function dohvati(o: any, staza: string): any {
   let t = o
   for (const d of staza.split('.')) {
-    if (!jeObjekt(t)) return undefined
+    if (!jeObjekt(t) || !Object.hasOwn(t, d)) return undefined
     t = t[d]
   }
   return t
@@ -59,7 +63,7 @@ function dohvati(o: any, staza: string): any {
 function postavi(o: Record<string, any>, staza: string, v: unknown): void {
   const d = staza.split('.')
   let t = o
-  for (const k of d.slice(0, -1)) { if (!jeObjekt(t[k])) t[k] = {}; t = t[k] }
+  for (const k of d.slice(0, -1)) { if (!Object.hasOwn(t, k) || !jeObjekt(t[k])) t[k] = {}; t = t[k] }
   t[d[d.length - 1]!] = v
 }
 
@@ -96,6 +100,9 @@ export function upisiAuditSkupine(db: Database, ime: string, kljucevi: string[],
 export function spremiSkupinu(ime: string, zapis: SkupinaZapis, tijelo: unknown, db: Database): IshodSkupine {
   if (!jeObjekt(tijelo) || !jeObjekt(tijelo.polja)) {
     return { status: 400, tijelo: { ok: false, error: 'tijelo mora biti {"polja": {...}}', greske: ['tijelo mora biti {"polja": {...}}'], greskePoPolju: {} } }
+  }
+  if (zabranjenaStaza(tijelo.polja)) {
+    return { status: 400, tijelo: { ok: false, error: 'nedopušteno ime polja', greske: ['nedopušteno ime polja'], greskePoPolju: {} } }
   }
   const by = typeof tijelo.by === 'string' && tijelo.by.trim() ? tijelo.by.trim().slice(0, 64) : 'config'
   const zakrpa = structuredClone(tijelo.polja) as Record<string, any>

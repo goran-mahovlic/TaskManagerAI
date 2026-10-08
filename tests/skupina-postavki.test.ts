@@ -117,6 +117,17 @@ describe('spremiSkupinu', () => {
     expect(m.upisa()).toBe(0)
   })
 
+  test('__proto__ / constructor / prototype u stazi → 400, bez zagađenja prototipa i bez upisa', () => {
+    const m = lazniModul(POCETNO); const db = baza()
+    for (const sirovo of ['{"polja":{"__proto__":{"zagadjeno":1}}}', '{"polja":{"smtp":{"constructor":{"prototype":{"zagadjeno":1}}}}}']) {
+      const r = spremiSkupinu('email', m.zapis, JSON.parse(sirovo), db)
+      expect(r.status).toBe(400)
+    }
+    expect(({} as any).zagadjeno).toBeUndefined()
+    expect(m.upisa()).toBe(0)
+    expect(redovi(db).length).toBe(0)
+  })
+
   test('greška upisa (500) ne ostavlja audit', () => {
     const m = lazniModul(POCETNO); const db = baza()
     m.zapis.save = () => { throw new Error('disk pun') }
