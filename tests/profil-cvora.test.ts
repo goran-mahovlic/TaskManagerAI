@@ -678,6 +678,13 @@ describe('oporavak — PATH usluga sadrži ~/.local/bin (drop-in put.conf)', () 
     expect((await d.pokreni(['primijeni', '--pisi', '--modul', 'oporavak'])).izlaz).toContain('PRIMIJENJENO: 0 promjena')
   })
 
+  test('čvor bez izvornog sustava (SUSTAV_DIR prazan, kao node-B) i dalje dobiva PATH drop-in', async () => {
+    writeFileSync(d.inst, readFileSync(d.inst, 'utf-8').replace(/^SUSTAV_DIR=.*$/m, 'SUSTAV_DIR='))
+    const r = await d.pokreni(['provjeri', '--modul', 'oporavak'])
+    expect(r.izlaz).toContain('RAZLIKA regoc-daemon.PATH')
+    expect(r.izlaz).toContain('RAZLIKA regoc-taskmanager.PATH')
+  })
+
   test('profil traži ~/.local/bin za oba unita', () => {
     const put = ucitajProfil(PROFIL).moduli.oporavak?.put
     expect(put?.vrijednost.split(':')).toContain('%h/.local/bin')

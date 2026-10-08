@@ -762,6 +762,18 @@ function usporediOporavak(k: Kontekst, inst: Record<string, string>, dodaj: Doda
   const mod = k.profil.moduli.oporavak
   const cv = k.stanje.znacajkeCvor
   if (!mod) return
+  // PATH ne ovisi o izvornom sustavu — vrijedi i na čvoru bez njega (node-B), zato prije ranog izlaza.
+  for (const unit of mod.put?.unitovi || []) {
+    const tpl = putDropInPut(unit)
+    const sadrzaj = putDropIn(mod.put!.vrijednost)
+    const cvor = k.stanje.konzola.dropIni[tpl]
+    dodaj(cvor === sadrzaj
+      ? { modul: 'oporavak', kljuc: `${unit}.PATH`, vrsta: 'OK' }
+      : { modul: 'oporavak', kljuc: `${unit}.PATH`, vrsta: 'RAZLIKA', profil: `PATH=${mod.put!.vrijednost}`,
+          cvor: cvor === null || cvor === undefined ? '(PATH unita)' : '(drugačiji drop-in)',
+          poruka: 'bez ~/.local/bin usluga ne nalazi `claude` ni `glas` po imenu (Standby: „no Claude CLI")',
+          primjena: { vrsta: 'dropin', unit, datoteka: zamijeni(tpl, inst) as string, sadrzaj } })
+  }
   if (!cv || !k.profil.moduli.znacajke || zamijeni(k.profil.moduli.znacajke.datoteka, inst) === PRESKOCI) {
     dodaj({ modul: 'oporavak', kljuc: '(modul)', vrsta: 'PRESKOČENO', poruka: 'nema modula znacajke / SUSTAV_DIR' })
     return
@@ -787,17 +799,6 @@ function usporediOporavak(k: Kontekst, inst: Record<string, string>, dodaj: Doda
       : { modul: 'oporavak', kljuc: `${unit}.TZ`, vrsta: 'RAZLIKA', profil: `TZ=${mod.tz!.vrijednost}`,
           cvor: cvor === null || cvor === undefined ? '(zona stroja)' : '(drugačiji drop-in)',
           poruka: 'bez toga se vrijeme ploče (UTC bez zone) čita kao lokalno — siroče i zombie kasne za pomak zone',
-          primjena: { vrsta: 'dropin', unit, datoteka: zamijeni(tpl, inst) as string, sadrzaj } })
-  }
-  for (const unit of mod.put?.unitovi || []) {
-    const tpl = putDropInPut(unit)
-    const sadrzaj = putDropIn(mod.put!.vrijednost)
-    const cvor = k.stanje.konzola.dropIni[tpl]
-    dodaj(cvor === sadrzaj
-      ? { modul: 'oporavak', kljuc: `${unit}.PATH`, vrsta: 'OK' }
-      : { modul: 'oporavak', kljuc: `${unit}.PATH`, vrsta: 'RAZLIKA', profil: `PATH=${mod.put!.vrijednost}`,
-          cvor: cvor === null || cvor === undefined ? '(PATH unita)' : '(drugačiji drop-in)',
-          poruka: 'bez ~/.local/bin usluga ne nalazi `claude` ni `glas` po imenu (Standby: „no Claude CLI")',
           primjena: { vrsta: 'dropin', unit, datoteka: zamijeni(tpl, inst) as string, sadrzaj } })
   }
   const min = k.stanje.konzola.starostMin[mod.dnevnik]
