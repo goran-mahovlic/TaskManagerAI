@@ -12,7 +12,7 @@ import { join } from 'path'
 import {
   parsirajRedak, procitajIzTeksta, kljucPrisutan, kodirajVrijednost, provjeriVrijednost,
   upisiTajnu, ukloniTajnu, ukloniKljucIzDatoteke, otisak, imeZabranjeno, dopustenaImena,
-  naPromjenuTajne, opisStarogRetka,
+  naPromjenuTajne, opisStarogRetka, postaviTajnu,
 } from '../src/LoginCreds'
 import { procitajTajnu, tajnaPostavljena, zapisiTajnu } from '../src/core/ConfigModul'
 
@@ -141,6 +141,14 @@ describe('J5/J6 — prava, simbolička poveznica, bez kopija', () => {
     expect(statSync(f).mode & 0o777).toBe(0o600)
     expect(statSync(mapa).mode & 0o777).toBe(0o700)
     expect(readFileSync(f, 'utf-8')).toBe("A=b\nSMTP_PASSWORD='v'\n")
+  })
+  test('stegniMapu:false i postaviTajnu (glavni stroj) ne diraju prava mape', () => {
+    chmodSync(mapa, 0o775)
+    expect(upisiTajnu('SMTP_PASSWORD', 'v', { spremiste: f, stegniMapu: false }).ok).toBe(true)
+    expect(statSync(mapa).mode & 0o777).toBe(0o775)
+    expect(postaviTajnu(f, 'IMAP_PASSWORD', 'w').ok).toBe(true)
+    expect(statSync(mapa).mode & 0o777).toBe(0o775)
+    expect(statSync(f).mode & 0o777).toBe(0o600)
   })
   test('simbolička poveznica na mjestu spremišta → odbijeno', () => {
     const cilj = join(mapa, 'drugdje'); writeFileSync(cilj, 'X=1\n')

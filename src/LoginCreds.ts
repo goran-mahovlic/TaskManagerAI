@@ -214,7 +214,16 @@ export function otisak(vrijednost: string, kljucPut: string): string {
 
 // ─── Pisač (§5.3) ────────────────────────────────────────────────────────────
 
-export interface OpcijePisaca { spremiste: string; kljucOtiska?: string }
+export interface OpcijePisaca {
+  spremiste: string
+  kljucOtiska?: string
+  /**
+   * Stegni mapu spremišta na 0700 ako je šira (ADR-0007 §5.3). Zadano da — na čvoru je to
+   * `$TM_HOME/config/`. Glavni stroj drži spremište u zajedničkoj `~/.claude/regoc/`, čija se
+   * prava ne smiju mijenjati usput (`false`).
+   */
+  stegniMapu?: boolean
+}
 export interface IshodPisaca { ok: boolean; greska?: string; otisakPrije?: string | null; otisak?: string | null; uklonjen?: boolean }
 
 const pidZiv = (pid: number): boolean => { try { process.kill(pid, 0); return true } catch (e: any) { return e?.code === 'EPERM' } }
@@ -244,13 +253,13 @@ function zakljucaj(spremiste: string): () => void {
 }
 
 /** Spremište mora biti obična datoteka korisnika — ne poveznica (bacila bi upis u tuđu datoteku). */
-function provjeriMjesto(spremiste: string): string | null {
+function provjeriMjesto(spremiste: string, stegni: boolean): string | null {
   const mapa = dirname(spremiste)
   mkdirSync(mapa, { recursive: true, mode: 0o700 })
   const sm = statSync(mapa)
   const uid = typeof process.getuid === 'function' ? process.getuid() : sm.uid
   if (sm.uid !== uid) return 'spremiste_nije_sigurno'
-  if ((sm.mode & 0o077) !== 0) { try { chmodSync(mapa, 0o700) } catch {} }
+  if (stegni && (sm.mode & 0o077) !== 0) { try { chmodSync(mapa, 0o700) } catch {} }
   let st
   try { st = lstatSync(spremiste) } catch { return null } // još ne postoji — stvorit će se
   if (st.isSymbolicLink() || !st.isFile() || st.uid !== uid) return 'spremiste_nije_sigurno'
@@ -280,7 +289,7 @@ function uredi(
 ): IshodPisaca {
   if (!IME_TAJNE_RE.test(ime)) return { ok: false, greska: 'ime_neispravno' }
   let greska: string | null
-  try { greska = provjeriMjesto(o.spremiste) } catch { greska = 'spremiste_nije_sigurno' }
+  try { greska = provjeriMjesto(o.spremiste, o.stegniMapu !== false) } catch { greska = 'spremiste_nije_sigurno' }
   if (greska) return { ok: false, greska }
   const kljucPut = o.kljucOtiska || kljucOtiskaUz(o.spremiste)
   let otkljucaj: () => void
@@ -328,9 +337,12 @@ export function upisiTajnu(ime: string, vrijednost: string, o: OpcijePisaca & { 
   }, vrijednost)
 }
 
-/** JEDINI pisač tajne (TASK-5345 sučelje): `{ok}` ili `{ok:false, greska}`. */
+/**
+ * JEDINI pisač tajne (TASK-5345 sučelje): `{ok}` ili `{ok:false, greska}`. Ne dira prava mape
+ * (zove ga i glavni stroj, v. `stegniMapu`).
+ */
 export function postaviTajnu(putanja: string, ime: string, vrijednost: string): { ok: boolean; greska?: string } {
-  const r = upisiTajnu(ime, vrijednost, { spremiste: putanja, bezOtiska: true })
+  const r = upisiTajnu(ime, vrijednost, { spremiste: putanja, bezOtiska: true, stegniMapu: false })
   return r.ok ? { ok: true } : { ok: false, greska: r.greska }
 }
 
@@ -347,7 +359,7 @@ export function ukloniTajnu(ime: string, o: OpcijePisaca & { bezOtiska?: boolean
 /** Odjava na disku. Vraća je li ključ doista bio ondje (dvostruki klik je bezopasan). */
 export function ukloniKljucIzDatoteke(putanja: string, envKey: string): boolean {
   if (!envKey || !existsSync(putanja)) return false
-  const r = ukloniTajnu(envKey, { spremiste: putanja, bezOtiska: true })
+  const r = ukloniTajnu(envKey, { spremiste: putanja, bezOtiska: true, stegniMapu: false })
   return r.ok && !!r.uklonjen
 }
 

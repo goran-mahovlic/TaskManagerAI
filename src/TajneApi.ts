@@ -33,6 +33,8 @@ export interface KontekstTajni {
   env?: Record<string, string | undefined>
   log?: (redak: string) => void
   sat?: () => number
+  /** `false` na glavnom: mapa spremišta je zajednička `~/.claude/regoc/` (v. LoginCreds). */
+  stegniMapu?: boolean
 }
 
 export interface ZahtjevTajni {
@@ -232,8 +234,8 @@ export async function obradiTajne(z: ZahtjevTajni, ctx: KontekstTajni): Promise<
     const ime = imena[i]!
     const v = upisi[i]![1] as string
     const r = radnja === 'upis'
-      ? upisiTajnu(ime, v, { spremiste: ctx.spremiste, kljucOtiska: kljucPut })
-      : ukloniTajnu(ime, { spremiste: ctx.spremiste, kljucOtiska: kljucPut })
+      ? upisiTajnu(ime, v, { spremiste: ctx.spremiste, kljucOtiska: kljucPut, stegniMapu: ctx.stegniMapu })
+      : ukloniTajnu(ime, { spremiste: ctx.spremiste, kljucOtiska: kljucPut, stegniMapu: ctx.stegniMapu })
     const rubniRazmak = radnja === 'upis' && /^\s|\s$/.test(v)
     upisi[i] = [ime, undefined]
     if (!r.ok) {
