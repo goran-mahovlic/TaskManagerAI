@@ -102,7 +102,7 @@ import { unverifiedBoardState } from './core/UnverifiedReport'
 import { getProjectManager } from './core/ProjectManager'
 import { getMessageQueue } from './core/MessageQueue'
 import { getRAGService, ragPodesen } from './RAGService'
-import { kljucPrisutanUDatoteci, ukloniKljucIzDatoteke } from './LoginCreds'
+import { kljucPrisutan, kljucPrisutanUDatoteci, postaviTajnu, ukloniKljucIzDatoteke } from './LoginCreds'
 import { ocistiLoginKod, izvuciLoginUrl, maskirajLoginTail, loginOauthGreska, LOGIN_POTVRDA } from './LoginUnos'
 import { capguardPostavke, stanjeCapguarda, zatraziSposobnost } from './Capguard'
 import { tecajOdgovor } from './Tecaj'
@@ -13414,12 +13414,11 @@ async function handleLoginApikey(req: Request): Promise<Response> {
     const { id, key } = await req.json() as { id: string; key: string }
     const def = LOGIN_PROVIDERS.find(d => d.id === id)
     if (!def || !def.envKey) return json({ error: 'Provider ne podržava API ključ' }, 400)
-    if (!key || !key.trim()) return json({ error: 'Prazan ključ' }, 400)
-    const f = osigurajMapu(datotekaTajniZaPisanje())
-    let txt = existsSync(f) ? readFileSync(f, 'utf-8') : ''
-    const line = `${def.envKey}=${key.trim()}`
-    txt = new RegExp('^' + def.envKey + '=.*$', 'm').test(txt) ? txt.replace(new RegExp('^' + def.envKey + '=.*$', 'm'), line) : (txt.replace(/\s*$/, '') + '\n' + line + '\n')
-    writeFileSync(f, txt, { mode: 0o600 })
+    if (typeof key !== 'string' || !key.trim()) return json({ error: 'Prazan ključ' }, 400)
+    // Jedini pisač (TASK-5345, ADR-0007 N1): `IME='…'`, odbija \0 \r \n i >4096 B, atomično 0600.
+    // Goli `IME=ključ` u spremištu koje petlja maila učita s `. spremište` bio je naredba ljuske.
+    const upis = postaviTajnu(osigurajMapu(datotekaTajniZaPisanje()), def.envKey, key.trim())
+    if (!upis.ok) return json({ error: 'Ključ nije spremljen', greska: upis.greska }, 400)
     // Gemini: prebaci auth na API-key (OAuth Code Assist je Google ukinuo) + trust workspace.
     if (id === 'geminicli') {
       try {
@@ -14342,7 +14341,7 @@ function odluciteljDavatelji(): Record<string, any> {
   } catch { /* nema spremišta — tada odlučuje samo okolina */ }
   // Provjerava se SAMO postoji li redak s tim imenom; vrijednost se nikad ne čita ni ne šalje.
   const imaKljuc = (ime: string) =>
-    !!process.env[ime] || new RegExp('^' + ime + '=\\S', 'm').test(spremiste)
+    !!process.env[ime] || kljucPrisutan(spremiste, ime)
 
   const out: Record<string, any> = {}
   for (const [ime, v] of Object.entries(konf)) {

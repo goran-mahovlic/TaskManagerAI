@@ -18,6 +18,7 @@
 
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'fs'
 import { konfigPutanja, konfigPutanjaZaPisanje, osigurajMapu } from './paths'
+import { IME_TAJNE_RE, postaviTajnu, procitajIzTeksta } from '../LoginCreds'
 
 // ─── Shema ───────────────────────────────────────────────────────────────────
 
@@ -255,66 +256,37 @@ export const CREDENTIALS_FILE = konfigPutanja(IME_TAJNI, 'TM_CREDENTIALS')
  * odgovor API-ja ili u dnevnik.
  */
 export function tajnaPostavljena(imeVarijable: string, credPath: string = datotekaTajni()): boolean {
-  const ime = String(imeVarijable || '').trim()
-  if (!ime) return false
-  if (process.env[ime]) return true
-  try {
-    if (!existsSync(credPath)) return false
-    const redci = readFileSync(credPath, 'utf-8').split('\n')
-    return redci.some(r => {
-      const t = r.trim()
-      if (!t || t.startsWith('#')) return false
-      const [k, ...ost] = t.split('=')
-      return k?.trim() === ime && ost.join('=').trim().length > 0
-    })
-  } catch {
-    return false
-  }
+  return procitajTajnu(imeVarijable, credPath) !== null
 }
 
-/** Vrijednost tajne za POZIV (ne za prikaz). Vraća `null` ako je nema. */
+/**
+ * Vrijednost tajne za POZIV (ne za prikaz). Vraća `null` ako je nema. Redak čita JEDAN parser
+ * (`LoginCreds.parsirajRedak`): `IME='…'` i stari goli/navodnički oblik (TASK-5345).
+ */
 export function procitajTajnu(imeVarijable: string, credPath: string = datotekaTajni()): string | null {
   const ime = String(imeVarijable || '').trim()
   if (!ime) return null
   if (process.env[ime]) return process.env[ime] as string
   try {
     if (!existsSync(credPath)) return null
-    for (const r of readFileSync(credPath, 'utf-8').split('\n')) {
-      const t = r.trim()
-      if (!t || t.startsWith('#')) continue
-      const i = t.indexOf('=')
-      if (i > 0 && t.slice(0, i).trim() === ime) return t.slice(i + 1).trim().replace(/^["']|["']$/g, '')
-    }
+    return procitajIzTeksta(readFileSync(credPath, 'utf-8'), ime)
   } catch { /* nema datoteke ili nije čitljiva */ }
   return null
 }
 
-/** Zapiši tajnu u `credentials.env` s pravima 0600. JSON i dalje nosi samo IME varijable. */
+/**
+ * Zapiši tajnu (0600, atomično, oblik `IME='…'`). JSON i dalje nosi samo IME varijable.
+ * Tanki omotač oko `LoginCreds.postaviTajnu`, jedinog pisača (TASK-5345, ADR-0007 N1).
+ */
 export function zapisiTajnu(
   imeVarijable: string, vrijednost: string, credPath: string = datotekaTajniZaPisanje(),
 ): { ok: boolean; greska?: string } {
   const ime = String(imeVarijable || '').trim()
-  if (!/^[A-Z][A-Z0-9_]{1,63}$/.test(ime)) {
+  if (!IME_TAJNE_RE.test(ime)) {
     return { ok: false, greska: 'ime varijable mora biti VELIKIM_SLOVIMA (A-Z, 0-9, _)' }
   }
-  if (/[\r\n]/.test(vrijednost)) return { ok: false, greska: 'tajna ne smije sadržavati prijelaz retka' }
-  try {
-    osigurajMapu(credPath)
-    const postojeci = existsSync(credPath) ? readFileSync(credPath, 'utf-8').split('\n') : []
-    const ostali = postojeci.filter(r => {
-      const t = r.trim()
-      if (!t || t.startsWith('#')) return true
-      return t.split('=')[0]?.trim() !== ime
-    })
-    ostali.push(`${ime}=${vrijednost}`)
-    const tekst = ostali.filter((r, i, a) => !(r === '' && a[i - 1] === '')).join('\n').replace(/\n*$/, '\n')
-    const tmp = `${credPath}.tmp-${process.pid}`
-    writeFileSync(tmp, tekst, { encoding: 'utf-8', mode: 0o600 })
-    renameSync(tmp, credPath)
-    return { ok: true }
-  } catch (e: any) {
-    return { ok: false, greska: String(e?.message || e) }
-  }
+  try { osigurajMapu(credPath) } catch (e: any) { return { ok: false, greska: String(e?.message || e) } }
+  return postaviTajnu(credPath, ime, vrijednost)
 }
 
 /** Zajedničko stanje za ploču: što je podešeno, bez ijedne vrijednosti. */
