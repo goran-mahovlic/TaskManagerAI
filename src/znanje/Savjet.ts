@@ -100,7 +100,13 @@ export function procistiSavjet(p: PaketZnanja, privatno: PrivatniIzraz[], o: { t
   }
   if (!Object.keys(cinjenice).length) return { paket: null, izbaceno, redigirano, razlog: 'nakon filtra nije ostala nijedna činjenica' }
 
-  const kljuc = p.kljuc && !brana(p.kljuc).length ? slugTeme(p.kljuc) : undefined
+  // Ključ ide u id dokumenta i na ploču čvora: mora proći branu i kao sirov i kao slug (velikim slovima
+  // za `PRJ-…`, s razmacima za izraze), bez imena vlasnika i bez dugih brojeva (chat id, uid). Inače id iz teme.
+  const slug = p.kljuc ? slugTeme(p.kljuc) : ''
+  const kljucCist = !!p.kljuc?.trim() && /^[a-z][a-z0-9-]{0,59}$/.test(slug) && !/\d{4,}/.test(slug)
+    && [p.kljuc, slug, slug.toUpperCase(), slug.replace(/-/g, ' ')].every(t => !brana(t).length)
+    && !privatno.some(x => x.kat === 'vlasnik' && (x.rx.test(p.kljuc!) || x.rx.test(slug.replace(/-/g, ' '))))
+  const kljuc = kljucCist ? slug : undefined
   const paket: PaketZnanja = { tema, ...(kljuc ? { kljuc } : {}), pitanje, odgovor, cinjenice }
   // Druga linija: ono što izlazi mora proći branu u cijelosti (kanarinac, kao gradiDokument).
   const ostatak = brana([tema, pitanje, odgovor, ...Object.values(cinjenice).flat()].join('\n'))

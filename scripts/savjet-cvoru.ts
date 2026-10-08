@@ -87,9 +87,13 @@ export function argumentiModela(izvori: string[], model?: string): string[] {
   ]
 }
 
+/**
+ * Zadano samo paket: kod, docs i `znanje/sustav/` (karta sustava već provučena kroz tablicu opsega,
+ * ADR-0006 §4.3). Sirova karta glavnog stroja nije zadani izvor — bijelu listu po odjeljku model ne
+ * bi poštovao, a filtar savjeta je crna lista (druga linija). Dodaje se samo izričito `--izvori`.
+ */
 function zadaniIzvori(): string[] {
-  const karta = join(HOME, 'app', ['reg', 'oc_system'].join(''), 'docs', 'system-map')
-  return [KORIJEN, ...(existsSync(karta) ? [karta] : [])]
+  return [KORIJEN]
 }
 
 async function sastavi(a: Argumenti, ispis: (r: string) => void): Promise<PaketZnanja | null> {

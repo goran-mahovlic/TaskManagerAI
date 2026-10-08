@@ -97,6 +97,15 @@ describe('filtar savjeta — isti kao korpus čvora', () => {
     expect(r.paket).toBeNull()
   })
 
+  test('ključ teme prolazi isti filtar (i nakon sluga: prj-999, ime vlasnika) — inače id iz teme', () => {
+    for (const kljuc of ['PRJ-999', 'akme-izvjestaj', 'Ivan', 'chat -1001234567890']) {
+      const r = procistiSavjet({ ...PAKET, kljuc }, PRIVATNO)
+      expect(r.paket).not.toBeNull()
+      expect(r.paket!.kljuc).toBeUndefined()
+    }
+    expect(procistiSavjet({ ...PAKET, kljuc: 'send-doc' }, PRIVATNO).paket!.kljuc).toBe('send-doc')
+  })
+
   test('nepoznat dio paketa se ne upisuje (bijela lista dijelova)', () => {
     const r = procistiSavjet({ ...PAKET, cinjenice: { ...PAKET.cinjenice, 'tajni-dio': ['nešto'] } as any }, PRIVATNO)
     expect(Object.keys(r.paket!.cinjenice).every(k => (DIJELOVI as readonly string[]).includes(k))).toBe(true)
