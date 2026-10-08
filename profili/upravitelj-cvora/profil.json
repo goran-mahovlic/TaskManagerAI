@@ -239,7 +239,7 @@
           "ESPEAK_VOICE": "hr"
         }
       },
-      "napomena": "Servis glasa (TTS/STT) nije u paketu; dolazi s kompletom izvornog sustava. Alat ga samo provjerava. Naredba `glas` (tekst/md → mp3 hr_regoc, TASK-5340) JE u paketu: scripts/glas + tools/glas; postavlja je scripts/instaliraj-glas.sh --model-izvor <mapa modela> (model nije u gitu, sha256 u tools/glas/hr_regoc.sha256)."
+      "napomena": "Servis glasa (TTS/STT) nije u paketu; dolazi s kompletom izvornog sustava. Alat ga samo provjerava. Naredba `glas` (tekst/md → mp3 hr_regoc, TASK-5340) JE u paketu: scripts/glas + tools/glas; postavlja je scripts/instaliraj-glas.sh --model-izvor <mapa modela> (model nije u gitu, sha256 u tools/glas/hr_regoc.sha256). Naredba `pdf` (md → PDF s ugrađenim DejaVu i provjerom dijakritika, TASK-5369) JE u paketu: scripts/pdf + tools/pdf; postavlja je scripts/instaliraj-pdf.sh (poziva ga i scripts/install.sh)."
     },
     "memorija": {
       "vlasnik": "paket",

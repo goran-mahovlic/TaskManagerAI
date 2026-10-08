@@ -108,6 +108,15 @@ else
   bun scripts/sposobnosti.ts --instaliraj || echo "  UPOZORENJE: uključena sposobnost nema knjižnicu (v. gore)"
 fi
 
+# ── 2c. Naredba `pdf` (TASK-5369) ──────────────────────────────────────────────
+# PDF s hrvatskim slovima bez preglednika: reportlab + ugrađen DejaVu, provjera dijakritika
+# nakon izrade. Bez nje je čvor slao vlastitu skriptu s Helveticom („■vor", TASK-5360).
+# Ne ruši instalaciju ploče — samo javi što fali (font, pip bez mreže).
+echo "  naredba pdf…"
+# Venv je s --system-site-packages pa ne nosi drugi primjerak knjižnica (i uz --posudi).
+bash scripts/instaliraj-pdf.sh | sed 's/^/  /' | tail -3 \
+  || echo "  UPOZORENJE: naredba pdf nije spremna — bash scripts/instaliraj-pdf.sh kaže što fali"
+
 # ── 3. Baza ───────────────────────────────────────────────────────────────────
 if [ "$BEZ_BAZE" = "0" ]; then
   BAZA="${TM_DB:-${TM_HOME:-$HOME/.taskmanager}/data/tasks.db}"

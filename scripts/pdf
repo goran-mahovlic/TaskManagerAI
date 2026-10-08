@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# pdf — markdown/tekst u PDF s hrvatskim slovima (ugrađen DejaVu), jednom naredbom (TASK-5369).
+#   pdf izvjestaj.md -o /apsolutna/putanja/izvjestaj.pdf
+# Nakon izrade izvadi tekst (pdftotext, inače pypdf) i provjeri č ć ž š đ; ako fale, PDF briše
+# i vraća 5. Pokreće tools/pdf/pdf.py Pythonom iz venva s reportlab + pypdf
+# (scripts/instaliraj-pdf.sh). Okolina: TM_PDF_VENV (zadano ~/.local/share/regoc-pdf/venv),
+# TM_PDF_FONT_DIR (mapa s DejaVuSans.ttf).
+set -euo pipefail
+PAKET="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
+VENV="${TM_PDF_VENV:-$HOME/.local/share/regoc-pdf/venv}"
+if [ ! -x "$VENV/bin/python" ]; then
+  echo "pdf: nema venva $VENV — pokreni $PAKET/scripts/instaliraj-pdf.sh" >&2
+  exit 3
+fi
+exec "$VENV/bin/python" "$PAKET/tools/pdf/pdf.py" "$@"
