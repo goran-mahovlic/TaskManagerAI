@@ -323,4 +323,8 @@ describe('TASK-5371 — e-pošta ne nasljeđuje *', () => {
     expect(nacinZaIzvor({ ...baza, perSource: { '*': 'on', email: 'on' } } as any, 'email', '<a@b>')).toBe('on')
     expect(nacinZaIzvor({ ...baza, perSource: { '*': 'shadow', email: 'off' } } as any, 'email', 'x')).toBe('off')
   })
+  test('Message-ID pošiljatelja ne bira način (ključ email:<id> i goli id se ne gledaju)', () => {
+    const c = { ...baza, perSource: { '*': 'on', 'email:<zlo@x>': 'on', '<zlo@x>': 'on' } }
+    expect(nacinZaIzvor(c as any, 'email', '<zlo@x>')).toBe('shadow')
+  })
 })

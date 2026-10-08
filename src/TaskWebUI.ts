@@ -64,6 +64,7 @@ import {
   loadEmailConfig, validateEmailPatch, saveEmailConfig, stanjeEmail, probajEmail, EMAIL_CONFIG_PATH,
   emailKonfigModul, posaljiOdgovorEmail, posaljiEmail, obavijestiZadatakEmail,
 } from './EmailConfig'
+import { odlukaPrijenosa } from './TajneApi'
 import {
   loadGitLabConfig, validateGitLabPatch, saveGitLabConfig, stanjeGitLab, probajGitLab, GITLAB_CONFIG_PATH,
   gitlabKonfigModul,
@@ -18118,6 +18119,14 @@ async function obradiZahtjev(req: Request): Promise<Response | undefined> {
     // `primatelji` (kartica E-pošta) — ploča nije otvoreni relej za bilo koju adresu.
     if (url.pathname === '/api/email/posalji' && req.method === 'POST') {
       const json = (o: unknown, st = 200) => new Response(JSON.stringify(o), { status: st, headers: { 'Content-Type': 'application/json' } })
+      // Bez prijave → samo s ovog stroja (agent/bot na čvoru), i samo JSON (preglednik s tuđe
+      // stranice ne može poslati JSON bez CORS predupita, a predupit ploča ne odobrava).
+      const pr = odlukaPrijenosa(ipZahtjeva(req), false, { dopustiLanHttp: false })
+      if (!pr.dopusten || pr.vrsta !== 'loopback'
+        || !(req.headers.get('content-type') || '').toLowerCase().startsWith('application/json')) {
+        console.log(`[EMAIL] slanje na zahtjev odbijeno (${pr.vrsta}) s ${ipZahtjeva(req) || '?'}`)
+        return json({ ok: false, greska: 'slanje pošte je dopušteno samo s ovog stroja (localhost), JSON-om' }, 403)
+      }
       let b: any
       try { b = await req.json() } catch { return json({ ok: false, greska: 'Neispravan JSON' }, 400) }
       const predmet = String(b?.predmet || '').trim()
