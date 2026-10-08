@@ -98,6 +98,16 @@ for p in zod; do
 done
 echo "  ovisnosti u node_modules: $(ls node_modules 2>/dev/null | wc -l) (zod ✓$([ -d node_modules/chromadb ] && echo ', chromadb ✓' || echo ', chromadb —'))"
 
+# ── 2b. Neobavezne ovisnosti uključenih sposobnosti (TASK-5358, uputa #200) ─────────
+# E-pošta uključena u postavkama čvora → nodemailer (SMTP) / imapflow + mailparser (IMAP).
+# Povlači ih sama instalacija; korisnik ne smije dobiti poruku „pokreni bun add".
+# Uz --posudi samo javlja (bun install bi zamijenio posuđene veze).
+if [ "$POSUDI" = "1" ]; then
+  bun scripts/sposobnosti.ts || echo "  UPOZORENJE: uključena sposobnost nema knjižnicu (v. gore)"
+else
+  bun scripts/sposobnosti.ts --instaliraj || echo "  UPOZORENJE: uključena sposobnost nema knjižnicu (v. gore)"
+fi
+
 # ── 3. Baza ───────────────────────────────────────────────────────────────────
 if [ "$BEZ_BAZE" = "0" ]; then
   BAZA="${TM_DB:-${TM_HOME:-$HOME/.taskmanager}/data/tasks.db}"

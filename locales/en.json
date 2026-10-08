@@ -161,6 +161,8 @@
   "cfg_polje_nacin": "Mode",
   "cfg_polje_otvarajIssue": "Open issues",
   "cfg_polje_oznaciProcitano": "Mark as read",
+  "cfg_polje_obavijest": "Notify group (mail check)",
+  "cfg_polje_obavijestChat": "Notification chat (empty = Telegram group)",
   "cfg_polje_oznakaSinkro": "Sync tag",
   "cfg_polje_port": "Port",
   "cfg_polje_posiljatelj": "Sender",

@@ -29,7 +29,8 @@
       "KUKE_PAKETI",
       "VLASNIK_ULOGA_IME",
       "MEMORIJA_MISIJA",
-      "ZNANJE_RAZGOVOR"
+      "ZNANJE_RAZGOVOR",
+      "EPOSTA_OBAVIJEST"
     ]
   },
   "moduli": {
@@ -190,6 +191,17 @@
         "TELEGRAM_BOT_TOKEN"
       ],
       "provjeraUzivo": "getMe preko tokena iz TM_CREDENTIALS — ispisuje samo username bota, nikad token"
+    },
+    "eposta": {
+      "vlasnik": "paket",
+      "datoteka": "config/email.json",
+      "ruta": "/api/email/config",
+      "json": {
+        "imap": {
+          "obavijest": "${EPOSTA_OBAVIJEST:json}"
+        }
+      },
+      "razlog": "TASK-5358: provjera pošte s obaviješću u grupu čvora (vlastiti bot) i odlukom čovjeka; uključuje se u instanci EPOSTA_OBAVIJEST=true. Poslužitelj, korisnik i tajna NISU u profilu — upisuju se na ploči (Config → E-pošta, Config → Tajne)."
     },
     "razgovor": {
       "vlasnik": "paket",

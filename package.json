@@ -21,6 +21,9 @@
   },
   "optionalDependencies": {
     "chromadb": "^1.9.2",
+    "imapflow": "^2.2.11",
+    "mailparser": "^3.9.37",
+    "nodemailer": "^10.0.16",
     "ollama": "^0.5.9",
     "pg": "^8.13.0"
   },

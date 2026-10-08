@@ -39,6 +39,13 @@ export interface ImapPostavke {
   filtar: string
   intervalSek: number
   oznaciProcitano: boolean
+  /**
+   * TASK-5358: provjera pošte s obaviješću u Telegram grupu i odlukom čovjeka (`PostaUlaz`).
+   * Zadano `false` — uključuje je profil čvora ili vlasnik na kartici.
+   */
+  obavijest: boolean
+  /** Chat za obavijesti; prazno = `chatId` iz Telegram postavki (grupa čvora). */
+  obavijestChat: string
 }
 
 export interface EmailPostavke {
@@ -63,6 +70,7 @@ export const ZADANE_POSTAVKE: EmailPostavke = {
   imap: {
     host: '', port: 993, tls: true, korisnik: '', lozinkaEnv: 'IMAP_PASSWORD',
     mapa: 'INBOX', filtar: '', intervalSek: 60, oznaciProcitano: true,
+    obavijest: false, obavijestChat: '',
   },
   primatelji: [],
 }
@@ -121,6 +129,11 @@ const modul = new ConfigModul<EmailPostavke>({
         },
         intervalSek: { tip: 'broj', min: GRANICE.intervalSek.min, max: GRANICE.intervalSek.max },
         oznaciProcitano: { tip: 'bool' },
+        obavijest: { tip: 'bool' },
+        obavijestChat: {
+          tip: 'tekst', maxDuljina: 50, uzorak: /^(-?\d+|@\w+)?$/,
+          uzorakPoruka: 'ID chata (npr. -100123) ili @kanal; prazno = grupa iz Telegram postavki',
+        },
       },
     },
     primatelji: { tip: 'popis', obavezno: true },
@@ -223,7 +236,7 @@ export async function posaljiEmail(
   try {
     nodemailer = await import('nodemailer')
   } catch {
-    return { ok: false, greska: 'za e-poštu instaliraj knjižnicu: bun add nodemailer' }
+    return { ok: false, greska: 'nedostaje knjižnica nodemailer — pokreni instalaciju paketa (bun install, scripts/install.sh)' }
   }
   try {
     const prijenos = (nodemailer.default || nodemailer).createTransport({
@@ -242,6 +255,43 @@ export async function posaljiEmail(
     return { ok: true, detalj: { messageId: info?.messageId } }
   } catch (e: any) {
     return { ok: false, greska: String(e?.message || e) }
+  }
+}
+
+/**
+ * Odgovor pošiljatelju maila (TASK-5358) — JEDINI put kojim pošta odlazi izvan `primatelji`,
+ * i to samo na izričit nalog čovjeka u grupi („odgovori: …"). Poller ga nikad ne zove sam.
+ */
+export async function posaljiOdgovorEmail(
+  x: { prima: string; predmet: string; tekst: string; uOdgovorNa?: string }, path?: string,
+): Promise<Ishod> {
+  const cfg = loadEmailConfig(path)
+  if (!cfg.ukljucen) return { ok: false, greska: 'e-pošta je isključena' }
+  if (cfg.smjer === 'ulaz') return { ok: false, greska: 'izlazna pošta (SMTP) nije uključena — smjer je samo ulaz' }
+  if (!cfg.smtp.host) return { ok: false, greska: 'SMTP poslužitelj nije upisan' }
+  if (!RE_EPOSTA.test(x.prima) || /[\r\n]/.test(x.prima)) return { ok: false, greska: 'adresa primatelja nije ispravna' }
+  const { procitajTajnu } = await import('./core/ConfigModul')
+  const lozinka = procitajTajnu(cfg.smtp.lozinkaEnv)
+  if (!lozinka) return { ok: false, greska: `SMTP lozinka nije upisana (${cfg.smtp.lozinkaEnv}) — Config → Tajne` }
+  let nodemailer: any
+  try { nodemailer = await import('nodemailer') } catch {
+    return { ok: false, greska: 'nedostaje knjižnica nodemailer — pokreni instalaciju paketa (bun install)' }
+  }
+  try {
+    const prijenos = (nodemailer.default || nodemailer).createTransport({
+      host: cfg.smtp.host, port: cfg.smtp.port,
+      secure: cfg.smtp.tls && cfg.smtp.port === 465, requireTLS: cfg.smtp.tls,
+      auth: { user: cfg.smtp.korisnik, pass: lozinka },
+    })
+    const ref = x.uOdgovorNa && !/[\r\n]/.test(x.uOdgovorNa) ? x.uOdgovorNa : undefined
+    const info = await prijenos.sendMail({
+      from: cfg.smtp.posiljatelj, to: x.prima,
+      subject: x.predmet.replace(/[\r\n]+/g, ' ').slice(0, 300), text: x.tekst,
+      ...(ref ? { inReplyTo: ref, references: ref } : {}),
+    })
+    return { ok: true, detalj: { messageId: info?.messageId } }
+  } catch (e: any) {
+    return { ok: false, greska: String(e?.message || e).slice(0, 300) }
   }
 }
 
@@ -340,7 +390,7 @@ export async function probajEmail(path?: string): Promise<Ishod> {
     else {
       let nodemailer: any = null
       try { nodemailer = await import('nodemailer') } catch { /* nema je */ }
-      if (!nodemailer) greske.push('za SMTP probu instaliraj: bun add nodemailer')
+      if (!nodemailer) greske.push('nedostaje knjižnica nodemailer — pokreni instalaciju paketa (bun install, scripts/install.sh)')
       else {
         const { procitajTajnu } = await import('./core/ConfigModul')
         const lozinka = procitajTajnu(cfg.smtp.lozinkaEnv)
@@ -365,8 +415,8 @@ export async function probajEmail(path?: string): Promise<Ishod> {
   if (trebaUlaz) {
     if (!cfg.imap.host) greske.push('IMAP poslužitelj nije upisan')
     else {
-      const r = await probajImapVezu(cfg)
-      if (r.ok) detalj.imap = 'veza uspostavljena'
+      const r = await probajImapPrijavu(cfg)
+      if (r.ok) detalj.imap = r.detalj?.prijava ? 'prijava prihvaćena' : 'veza uspostavljena'
       else greske.push(`IMAP: ${r.greska}`)
     }
   }
@@ -441,5 +491,41 @@ export async function probajImapVezu(cfg: EmailPostavke): Promise<Ishod> {
   } finally {
     clearTimeout(rok)
     try { socket?.end() } catch { /* već zatvoren */ }
+  }
+}
+
+/**
+ * IMAP proba s PRIJAVOM (TASK-5358): uz `imapflow` (neobavezna ovisnost) LOGIN i odmah odjava,
+ * pa „Test" znači da poller stvarno može čitati. Bez lozinke ili bez knjižnice — gola veza
+ * (`probajImapVezu`), kao prije. Rok je isti; greška je sažetak, nikad odgovor poslužitelja.
+ */
+export async function probajImapPrijavu(cfg: EmailPostavke): Promise<Ishod> {
+  const { procitajTajnu } = await import('./core/ConfigModul')
+  const lozinka = procitajTajnu(cfg.imap.lozinkaEnv)
+  let ImapFlow: any = null
+  try { ImapFlow = (await import('imapflow')).ImapFlow } catch { /* nema je */ }
+  if (!lozinka || !ImapFlow) {
+    const r = await probajImapVezu(cfg)
+    if (!r.ok) return r
+    return { ok: false, greska: !lozinka
+      ? `veza radi, ali lozinka nije upisana (${cfg.imap.lozinkaEnv}) — Config → Tajne`
+      : 'veza radi, ali nedostaje knjižnica imapflow — pokreni instalaciju paketa (bun install)' }
+  }
+  const implicitni = cfg.imap.tls && cfg.imap.port === 993
+  const c = new ImapFlow({
+    host: cfg.imap.host, port: cfg.imap.port, secure: implicitni,
+    ...(cfg.imap.tls && !implicitni ? { doSTARTTLS: true } : {}),
+    auth: { user: cfg.imap.korisnik, pass: lozinka }, logger: false,
+    connectionTimeout: IMAP_ROK_MS, greetingTimeout: IMAP_ROK_MS, socketTimeout: 3 * IMAP_ROK_MS,
+  })
+  c.on?.('error', () => { /* ishod nosi obećanje */ })
+  const pocetak = Date.now()
+  try {
+    await c.connect()
+    return { ok: true, detalj: { prijava: true, trajanjeMs: Date.now() - pocetak } }
+  } catch (e: any) {
+    return { ok: false, greska: e?.authenticationFailed ? 'prijava odbijena — provjeri korisnika i lozinku' : String(e?.code || e?.message || e).slice(0, 120) }
+  } finally {
+    try { await c.logout() } catch { try { c.close() } catch { /* zatvoreno */ } }
   }
 }

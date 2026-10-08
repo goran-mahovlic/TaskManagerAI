@@ -160,6 +160,11 @@ export interface RazgovorUlaza {
    * poruka nulira strop. `stop`/`nastavak` = poruka je obrađena, dalje ne ide.
    */
   botKanal?: { ljudska(p: { chatId: string; posiljateljId: string; posiljateljIme: string; tekst: string }): Promise<'stop' | 'nastavak' | null> }
+  /**
+   * TASK-5358: odgovor na obavijest o pošti („zadatak" / „ignoriraj" / „odgovori: …").
+   * Vraća tekst za chat ako je poruka bila za poštu (tada dalje NE ide), inače `null`.
+   */
+  posta?: (p: { chatId: string; tekst: string; replyTo?: string; tko: string; dopusten: boolean }) => Promise<string | null>
   /** Živi redak za Konzolu ploče (TASK-5285) — npr. „poruka → zadatak TASK-x (izvršitelj)". */
   konzola?: (redak: string, razina: 'info' | 'ok' | 'greska') => void
 }
@@ -291,6 +296,26 @@ export async function jedanProlaz(
     // korisnici) odlučuju samo o ingestu — razgovor ima vlastiti filtar (ADR-0002 §5).
     if (u.dopusteniChatovi.length && !u.dopusteniChatovi.includes(String(m.chat.id))) {
       ishod.preskoceno++; stanje.preskoceno++; continue
+    }
+    // TASK-5358: odluka o mailu (reply na obavijest ili „mail <uid> …") — prije ingesta i
+    // razgovora, da „zadatak" ne postane zadatak bez sadržaja maila.
+    if (razg?.posta && m.from && m.from.is_bot !== true && tekstSirovi.trim()) {
+      const pid = { posiljateljId: String(m.from.id ?? ''), posiljateljKorisnickoIme: m.from.username }
+      const dopustenPosta = (u.dopusteniKorisnici.length > 0 && u.dopusteniKorisnici.includes(pid.posiljateljId)) ||
+        (!!rp && jeDopusten(pid, rp.dopusteniKorisnici))
+      let odg: string | null = null
+      try {
+        odg = await razg.posta({
+          chatId: String(m.chat.id), tekst: tekstSirovi.trim(),
+          replyTo: m.reply_to_message?.message_id ? String(m.reply_to_message.message_id) : undefined,
+          tko: `${m.from.first_name || m.from.username || '?'} (uid:${m.from.id})`, dopusten: dopustenPosta,
+        })
+      } catch (e: any) { ishod.greske.push(`pošta: ${String(e?.message || e)}`) }
+      if (odg) {
+        try { await api.odgovori(m.chat.id, odg, m.message_id) } catch { /* trag je u Konzoli */ }
+        ishod.preskoceno++; stanje.preskoceno++
+        continue
+      }
     }
     // Privitak se sprema samo od dopuštenih (v. `dopustenoPreuzeti`); putanja (ili razlog
     // zašto nije spremljen) ide dalje u tekstu — ulaz i razgovor je vide jednako.

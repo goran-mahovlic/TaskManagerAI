@@ -161,6 +161,8 @@
   "cfg_polje_nacin": "Način",
   "cfg_polje_otvarajIssue": "Otvaraj issue",
   "cfg_polje_oznaciProcitano": "Označi pročitano",
+  "cfg_polje_obavijest": "Obavijest u grupu (provjera pošte)",
+  "cfg_polje_obavijestChat": "Chat za obavijest (prazno = grupa iz Telegrama)",
   "cfg_polje_oznakaSinkro": "Oznaka za sinkronizaciju",
   "cfg_polje_port": "Vrata",
   "cfg_polje_posiljatelj": "Pošiljatelj",
