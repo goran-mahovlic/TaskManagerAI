@@ -324,7 +324,7 @@ import { join } from 'path'
 import {
   BOT_KANAL_STANJE_KLJUC, getBotKanalPostavke, parseBotKanalPatch, setBotKanalPostavke, spremisteUBazi,
 } from '../src/razgovor/BotKanalPostavke'
-import { botKanalGet, botKanalPut, botKanalRucno, imeUKanalu, odBotaPost, type RazgovorSloj } from '../src/razgovor/RazgovorPloca'
+import { botKanalGet, botKanalPut, botKanalRucno, imeUKanalu, odBotaPost, odBotaZapis, type RazgovorSloj } from '../src/razgovor/RazgovorPloca'
 import type { UlaznaPoruka } from '../src/razgovor/Kanal'
 
 describe('BotKanalPostavke', () => {
@@ -591,5 +591,76 @@ describe('TASK-5299 HMAC potpis', () => {
     expect(bk.stanjeZaDrugog(zStanje()).status).toBe(200)
     expect(bk.stanjeZaDrugog(zStanje(TAJNA_SLANJA)).status).toBe(401)
     expect(bk.stanjeZaDrugog(pz({})).status).toBe(401)
+  })
+})
+
+// ── TASK-5394: zapis-samo — odgovor drugog bota u grupi ide u zapis/konzolu ovog čvora ──────────
+// Telegram botovima ne dostavlja poruke drugih botova, pa node-A Klaudijeve odgovore ne vidi.
+// Ruta `/od-bota/zapis` ih prima kao ZAPIS: nikad ne pokreće model, ne broji se u strop.
+describe('TASK-5394 zapis drugog bota (/od-bota/zapis)', () => {
+  const zapis = (o: Record<string, unknown> = {}) => ({
+    izvor: 'klaudio', chatId: CHAT, tekst: 'Odgovor Klaudija vlasniku', telegramPorukaId: 777, ts: '2026-10-09T08:00:00Z', ...o,
+  })
+  test('potpisan za /zapis → 202 sa zapisom; brojilo stropa se ne mijenja', () => {
+    const { bk, stanje } = okolina()
+    const r = bk.primiZapis(pz(zapis(), '/zapis'))
+    expect(r.status).toBe(202)
+    expect(r.zapis).toEqual({ izvor: 'klaudio', chatId: CHAT, tekst: 'Odgovor Klaudija vlasniku', telegramPorukaId: '777', ts: '2026-10-09T08:00:00Z' })
+    expect(stanje().brojilo[CHAT] ?? []).toHaveLength(0)
+  })
+  test('bez potpisa 401; potpis za / (prijenos) ne vrijedi za /zapis; chat/izvor izvan popisa 403; vlastiti 409', () => {
+    const { bk } = okolina()
+    expect(bk.primiZapis({ ip: IP, tijelo: JSON.stringify(zapis()) }).status).toBe(401)
+    expect(bk.primiZapis(pz(zapis(), '')).status).toBe(401)
+    expect(bk.primiZapis(pz(zapis({ chatId: '-1' }), '/zapis')).status).toBe(403)
+    expect(bk.primiZapis(pz(zapis({ izvor: 'netko' }), '/zapis')).status).toBe(403)
+    expect(bk.primiZapis(pz(zapis({ izvor: 'saban' }), '/zapis')).status).toBe(409)
+  })
+  test('nepoznato polje 400, prazan tekst 400, predug 413; ponovljena poruka 409', () => {
+    const { bk } = okolina()
+    expect(bk.primiZapis(pz(zapis({ lanacId: 'L1' }), '/zapis')).status).toBe(400)
+    expect(bk.primiZapis(pz(zapis({ tekst: ' ' }), '/zapis')).status).toBe(400)
+    expect(bk.primiZapis(pz(zapis({ tekst: 'x'.repeat(4001) }), '/zapis')).status).toBe(413)
+    expect(bk.primiZapis(pz(zapis({ telegramPorukaId: 900 }), '/zapis')).status).toBe(202)
+    expect(bk.primiZapis(pz(zapis({ telegramPorukaId: 900 }), '/zapis')).status).toBe(409)
+  })
+  test('zapis prolazi i kad je razmjena zaustavljena (nije potez, model se ne pokreće)', async () => {
+    const { bk } = okolina()
+    await bk.zaustavi(CHAT, 'Korisnik A', 'fraza', false)
+    expect(bk.primiZapis(pz(zapis(), '/zapis')).status).toBe(202)
+  })
+  test('odlazno zapisi(): POST na /od-bota/zapis svakom drugom botu, bez spomena, bez brojila; potpis za /zapis', async () => {
+    const { bk, pozivi, stanje } = okolina()
+    expect(await bk.zapisi({ chatId: CHAT, tekst: 'moj odgovor bez spomena', telegramPorukaId: '55' })).toBe('poslano')
+    expect(pozivi).toHaveLength(1)
+    expect(pozivi[0]!.url).toBe('http://10.0.0.2:17781/api/razgovor/od-bota/zapis')
+    expect(pozivi[0]!.tijelo).toMatchObject({ izvor: 'saban', chatId: CHAT, tekst: 'moj odgovor bez spomena', telegramPorukaId: '55' })
+    expect(provjeriPotpis(pozivi[0]!.potpis, TAJNA_SLANJA, 'POST', `${PUT_RUTE}/zapis`, JSON.stringify(pozivi[0]!.tijelo), sada)).toBe('ok')
+    expect(stanje().brojilo[CHAT] ?? []).toHaveLength(0)
+  })
+  test('odlazno: isključeno / chat izvan popisa → 0 POST-ova; pad → pad bez dojave u grupu', async () => {
+    const { bk, pozivi, postavke, grupa, fetchStatus } = okolina()
+    expect(await bk.zapisi({ chatId: '-1', tekst: 'x', telegramPorukaId: null })).toBe('iskljuceno')
+    postavke.ukljucen = false
+    expect(await bk.zapisi({ chatId: CHAT, tekst: 'x', telegramPorukaId: null })).toBe('iskljuceno')
+    expect(pozivi).toHaveLength(0)
+    postavke.ukljucen = true
+    fetchStatus(0)
+    expect(await bk.zapisi({ chatId: CHAT, tekst: 'x', telegramPorukaId: null })).toBe('pad')
+    expect(grupa).toHaveLength(0)
+  })
+  test('ruta → razgovor: 202 → jezgra.zapisDrugogBota (bez primi); 401 → ništa', () => {
+    const { bk } = okolina()
+    const zapisano: unknown[] = []
+    const primljeno: unknown[] = []
+    const s = {
+      botKanal: bk,
+      jezgra: { primi: (p: unknown) => { primljeno.push(p) }, zapisDrugogBota: (z: unknown) => { zapisano.push(z) } },
+      ulaz: { postavke: () => ({ ukljucen: true, ime: 'Šaban' }), aktivniKanal: { ime: 'telegram' } },
+    } as unknown as RazgovorSloj
+    expect(odBotaZapis(s, pz(zapis(), '/zapis')).status).toBe(202)
+    expect(odBotaZapis(s, { ip: IP, tijelo: JSON.stringify(zapis({ telegramPorukaId: 5 })) }).status).toBe(401)
+    expect(zapisano).toEqual([{ kanal: 'telegram', chatId: CHAT, izvor: 'klaudio', tekst: 'Odgovor Klaudija vlasniku', porukaId: '777', ts: '2026-10-09T08:00:00Z' }])
+    expect(primljeno).toHaveLength(0)
   })
 })

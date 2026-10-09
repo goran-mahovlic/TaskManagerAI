@@ -78,7 +78,7 @@ import { probajUlaz, stanjeUlaza, pokreniTelegramPoller, uskladiTelegramPoller, 
 // TASK-5363: `[[SEND_DOC: …]]` iz rezultata zadatka → chat naloga (isti kanal kao razgovor).
 import { posaljiDokumenteZadatka } from './razgovor/SendDocZadatka'
 import {
-  botKanalGet, botKanalPut, botKanalRucno, odBotaPost, razgovorGet, razgovorPut, razgovorPovijestGet, sklopiRazgovor,
+  botKanalGet, botKanalPut, botKanalRucno, odBotaPost, odBotaZapis, razgovorGet, razgovorPut, razgovorPovijestGet, sklopiRazgovor,
   zadnjiPosiljatelji, plocaIzTaskManagera, type RazgovorSloj,
 } from './razgovor/RazgovorPloca'
 import { citajKonzolu, zapisiKonzolu } from './razgovor/Zapis'
@@ -11857,7 +11857,8 @@ async function handleOdBota(req: Request, put: string): Promise<Response> {
   const r = put === '/stanje' ? sloj.botKanal.stanjeZaDrugog(z)
     : put === '/stop' ? sloj.botKanal.primiStop(z)
       : put === '/nastavi' ? sloj.botKanal.primiNastavak(z)
-        : odBotaPost(sloj, z)
+        : put === '/zapis' ? odBotaZapis(sloj, z)
+          : odBotaPost(sloj, z)
   // Dnevnik bez tijela (tekst je razgovor) i bez zaglavlja (potpis).
   console.log(`[bot-kanal] ${req.method} od-bota${put} s ${z.ip || '?'} → ${r.status}${(r.tijelo as any)?.razlog ? ` (${(r.tijelo as any).razlog})` : ''}`)
   return razgovorOdgovor(r)
@@ -18105,7 +18106,7 @@ async function obradiZahtjev(req: Request): Promise<Response | undefined> {
     if (url.pathname === '/api/config/razgovor/bot-kanal' && req.method === 'PUT') return handleBotKanalConfigPut(req)
     if (url.pathname === '/api/config/razgovor/bot-kanal/rucno' && req.method === 'POST') return handleBotKanalRucno(req)
     if (url.pathname === '/api/razgovor/od-bota' && req.method === 'POST') return handleOdBota(req, '')
-    if ((url.pathname === '/api/razgovor/od-bota/stop' || url.pathname === '/api/razgovor/od-bota/nastavi') && req.method === 'POST') {
+    if ((url.pathname === '/api/razgovor/od-bota/stop' || url.pathname === '/api/razgovor/od-bota/nastavi' || url.pathname === '/api/razgovor/od-bota/zapis') && req.method === 'POST') {
       return handleOdBota(req, url.pathname.slice('/api/razgovor/od-bota'.length))
     }
     if (url.pathname === '/api/razgovor/od-bota/stanje' && req.method === 'GET') return handleOdBota(req, '/stanje')

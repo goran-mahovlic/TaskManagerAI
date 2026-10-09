@@ -236,6 +236,18 @@ export function odBotaPost(sloj: RazgovorSloj, z: Zahtjev): ApiOdgovor {
   return { status: 202, tijelo: r.tijelo }
 }
 
+/**
+ * `POST /api/razgovor/od-bota/zapis` (TASK-5394): potpis i brave u `BotKanal.primiZapis`; uz 202 vidljiva
+ * poruka drugog bota ide SAMO u zapis i Konzolu ovog čvora — nikad u potez, ingest ni zadatak.
+ */
+export function odBotaZapis(sloj: RazgovorSloj, z: Zahtjev): ApiOdgovor {
+  const r = sloj.botKanal.primiZapis(z)
+  if (r.status !== 202 || !r.zapis) return { status: r.status, tijelo: r.tijelo }
+  const m = r.zapis
+  sloj.jezgra.zapisDrugogBota({ kanal: 'telegram', chatId: m.chatId, izvor: m.izvor, tekst: m.tekst, porukaId: m.telegramPorukaId, ts: m.ts })
+  return { status: 202, tijelo: r.tijelo }
+}
+
 const stanjeTajne = (t: string | undefined) => !t ? 'nedostaje' : t.length < MIN_TAJNA ? 'prekratka' : 'postavljena'
 
 /** Kartica Config → Razgovor → Bot↔bot: postavke, zastavice, jesu li tajne postavljene (ne i one). */

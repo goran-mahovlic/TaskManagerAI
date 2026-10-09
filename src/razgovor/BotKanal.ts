@@ -95,6 +95,18 @@ export interface BotPoruka {
   ts: string
 }
 
+/**
+ * Tijelo `POST /api/razgovor/od-bota/zapis` (TASK-5394): vidljiva poruka drugog bota u grupi kao
+ * ZAPIS — Telegram je ovom botu ne dostavlja. Nije potez: ne pokreće model, ne broji se u strop.
+ */
+export interface BotZapis {
+  izvor: string
+  chatId: string
+  tekst: string
+  telegramPorukaId: string | null
+  ts: string
+}
+
 /** Lanac koji nosi potez nastao iz bot-poruke — odgovor nastavlja isti lanac sa `skok+1`. */
 export interface Lanac { izvor: string; lanacId: string; skok: number; izvornik: Izvornik | null }
 
@@ -102,6 +114,7 @@ export interface Odgovor { status: number; tijelo: Record<string, unknown> }
 
 export const MAX_TEKST = 4000
 const POLJA = ['izvor', 'chatId', 'tekst', 'telegramPorukaId', 'lanacId', 'skok', 'izvornik', 'ts']
+const POLJA_ZAPISA = ['izvor', 'chatId', 'tekst', 'telegramPorukaId', 'ts']
 const MAX_POSLANO = 200
 const POSLANO_MS = 3600_000
 const DOJAVA_PADA_MS = 10 * 60_000
@@ -225,6 +238,18 @@ export function provjeriTijelo(raw: unknown): { ok: true; value: BotPoruka } | {
   }
 }
 
+/** Tijelo zapisa (TASK-5394) — isti uvjeti polja kao poruka, bez lanca. */
+export function provjeriZapis(raw: unknown): { ok: true; value: BotZapis } | { ok: false; status: 400 | 413; error: string } {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { ok: false, status: 400, error: 'tijelo mora biti objekt' }
+  const t = raw as Record<string, unknown>
+  const nepoznato = Object.keys(t).filter(k => !POLJA_ZAPISA.includes(k))
+  if (nepoznato.length) return { ok: false, status: 400, error: `Nepoznato polje: ${nepoznato.join(', ')}` }
+  const v = provjeriTijelo({ ...t, lanacId: 'zapis', skok: 1 })
+  if (!v.ok) return v
+  const m = v.value
+  return { ok: true, value: { izvor: m.izvor, chatId: m.chatId, tekst: m.tekst, telegramPorukaId: m.telegramPorukaId, ts: m.ts } }
+}
+
 // ─── Kanal ───────────────────────────────────────────────────────────────────
 
 export interface BotKanalOvisnosti {
@@ -278,12 +303,19 @@ export interface BotKanal {
   /** Rute `POST /od-bota/stop` i `/od-bota/nastavi` (drugi kraj javlja; ne prosljeđuje se dalje). */
   primiStop(z: Zahtjev): Odgovor
   primiNastavak(z: Zahtjev): Odgovor
+  /** Ruta `POST /od-bota/zapis` (TASK-5394): uz 202 vraća provjereni zapis — nikad potez. */
+  primiZapis(z: Zahtjev): Odgovor & { zapis?: BotZapis }
   /** `GET /od-bota/stanje` — samo uz potpis; bez tajne u odgovoru. */
   stanjeZaDrugog(z: Zahtjev): Odgovor
   /** Poruka čovjeka u grupi. PRVA provjera, prije svih filtara (§4.2). */
   ljudska(p: { chatId: string; posiljateljId: string; posiljateljIme: string; tekst: string }): Promise<'stop' | 'nastavak' | null>
   /** Nakon slanja odgovora u grupu: prenesi drugom botu ako ga spominje (§5). */
   prenesi(u: PrijenosUlaz): Promise<PrijenosIshod>
+  /**
+   * TASK-5394: vlastita vidljiva poruka u grupi → zapis kod drugih botova (bez spomena, bez stropa,
+   * i kad je razmjena zaustavljena — zapis ne pokreće model). Pad se ne javlja u grupu.
+   */
+  zapisi(u: { chatId: string; tekst: string; telegramPorukaId: string | null }): Promise<'poslano' | 'iskljuceno' | 'pad'>
   jeZaustavljen(chatId: string): boolean
   zaustavi(chatId: string, by: string, razlog: RazlogStopa, javiDrugom?: boolean): Promise<void>
   nastavi(chatId: string, by: string, javiDrugom?: boolean): Promise<void>
@@ -487,6 +519,26 @@ export function stvoriBotKanal(d: BotKanalOvisnosti): BotKanal {
       return { status: 200, tijelo: { ok: true, zaustavljen, napomena: 'nastavak se ne prenosi — samo na ovom kraju' } }
     },
 
+    primiZapis(z) {
+      const prije = vrata(z, 'POST', '/zapis')
+      if (prije) return prije
+      const raw = json(z)
+      if (raw === null) return { status: 400, tijelo: { error: 'Neispravan JSON' } }
+      const v = provjeriZapis(raw)
+      if (!v.ok) return { status: v.status, tijelo: { error: v.error } }
+      const m = v.value
+      const p = d.postavke()
+      if (!p.chatovi.includes(m.chatId)) return { status: 403, tijelo: { error: 'chat nije na popisu' } }
+      if (!p.drugi.some(x => x.ime === m.izvor) && m.izvor !== d.ja) return { status: 403, tijelo: { error: 'izvor nije na popisu' } }
+      if (m.izvor === d.ja) return { status: 409, tijelo: { razlog: 'vlastita' } }
+      const t = sat()
+      for (const [k, ms] of primljeno) if (t - ms > PONOVLJENO_MS) primljeno.delete(k)
+      const kljuc = `zapis\n${m.izvor}\n${m.chatId}\n${m.telegramPorukaId ?? `${m.ts}\n${m.tekst.length}`}`
+      if (primljeno.has(kljuc)) return { status: 409, tijelo: { razlog: 'ponovljeno' } }
+      primljeno.set(kljuc, t)
+      return { status: 202, tijelo: { zapisano: true }, zapis: m }
+    },
+
     stanjeZaDrugog(z) {
       const prije = vrata(z, 'GET', '/stanje')
       if (prije) return prije
@@ -554,6 +606,17 @@ export function stvoriBotKanal(d: BotKanalOvisnosti): BotKanal {
         }
       }
       return ok ? 'poslano' : 'pad'
+    },
+
+    async zapisi(u) {
+      const p = d.postavke()
+      const slanje = tajna(d.tajnaSlanja)
+      if (!p.ukljucen || !p.chatovi.includes(u.chatId) || !slanje || !p.drugi.length || !u.tekst.trim()) return 'iskljuceno'
+      const tijelo: BotZapis = {
+        izvor: d.ja, chatId: u.chatId, tekst: u.tekst.slice(0, MAX_TEKST),
+        telegramPorukaId: u.telegramPorukaId || null, ts: new Date(sat()).toISOString(),
+      }
+      return (await zaDrugog('/zapis', tijelo)) ? 'poslano' : 'pad'
     },
 
     jeZaustavljen: chatId => st().zastavice[chatId]?.zaustavljen === true,

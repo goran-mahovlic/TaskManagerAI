@@ -335,3 +335,35 @@ describe('TASK-5291 sigurnosni pregled kroz jezgru', () => {
     expect((izv.zahtjevi[1]!.extra as any).resume).toBeUndefined()
   })
 })
+
+// ── TASK-5394: odgovor drugog bota (Klaudija) u zapis i konzolu ovog čvora, bez modela ─────────
+describe('TASK-5394 zapisDrugogBota', () => {
+  // Tekst drugog bota NE ide u prompt idućeg poteza: kao „pročitano" bi spustio ovlasti vlasnikova
+  // poteza na `citanje` (autor nije dopušten) — zapis je za log čvora, ne za model.
+  test('redak u jsonl (smjer drugi-bot), redak u konzoli, 0 poziva modela; ne ulazi u prompt idućeg poteza', async () => {
+    const konzola: string[] = []
+    const { izv, kanal } = okolina()
+    const postavke: RazgovorPostavke = {
+      ...RAZGOVOR_ZADANO, ukljucen: true, burstMs: 10, radniDir: join(mapa, 'radni'),
+      odgovaraNa: 'dopusteni-sve', dopusteniKorisnici: ['5284452279'],
+    }
+    const r = stvoriRazgovor({
+      postavke: () => postavke, izvrsitelj: izv, jePauza: () => false, kvotaPuna: () => false,
+      korijen: join(mapa, 'razgovor'), tmHome: join(mapa, 'tm'), home: join(mapa, 'home'),
+      port: 17781, plocaUrl: 'http://127.0.0.1:17781', instalacija: 'proba', env: { PATH: '/bin' },
+      log: () => {}, konzola: red => { konzola.push(red) },
+    })
+    r.zapisDrugogBota({ kanal: 'telegram', chatId: CHAT, izvor: 'klaudio', tekst: 'Disk je pun na /var.', porukaId: '777', ts: '2026-10-09T08:00:00.000Z' })
+    await r.mirno()
+    expect(izv.zahtjevi).toHaveLength(0)
+    expect(kanal.tekstovi).toHaveLength(0)
+    const { readFileSync } = await import('fs')
+    const redovi = readFileSync(join(mapa, 'razgovor', 'telegram', CHAT, '2026-10-09.jsonl'), 'utf-8').trim().split('\n').map(x => JSON.parse(x))
+    expect(redovi).toEqual([{ ts: '2026-10-09T08:00:00.000Z', smjer: 'drugi-bot', posiljateljId: 'bot:klaudio', posiljateljIme: 'Klaudio (bot)', porukaId: '777', tekst: 'Disk je pun na /var.' }])
+    expect(konzola.join('\n')).toContain('💬 ⇠ Klaudio (bot) [telegram:-5112799687]: „Disk je pun na /var." → zapis (drugi bot, bez modela)')
+    r.primi(covjek('što je rekao Klaudio?'), kanal)
+    await r.mirno()
+    expect(izv.zahtjevi).toHaveLength(1)
+    expect(izv.zahtjevi[0]!.prompt).not.toContain('Disk je pun na /var.')
+  })
+})

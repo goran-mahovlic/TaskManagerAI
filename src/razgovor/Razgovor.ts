@@ -118,6 +118,12 @@ export interface RazgovorJezgra extends Razgovor {
    * odbaci bot-poruke u redu chata. Ljudski potez u letu završava (bez prijenosa drugom botu).
    */
   prekiniBotPoteze(kanal: string, chatId: string): { prekinuto: boolean; odbaceno: number }
+  /**
+   * TASK-5394: vidljiva poruka drugog bota u grupi (Telegram je ovom botu ne dostavlja) → redak u
+   * zapisu chata i u Konzoli, da čvor ima potpun zapis grupe. Nije potez: nema modela ni odgovora,
+   * i NE ulazi u prompt (kao „pročitano" bi spustila ovlasti vlasnikova poteza).
+   */
+  zapisDrugogBota(z: { kanal: string; chatId: string; izvor: string; tekst: string; porukaId: string | null; ts: string }): void
 }
 
 interface Stavka { p: UlaznaPoruka; k: Kanal }
@@ -784,6 +790,15 @@ export function stvoriRazgovor(d: RazgovorOvisnosti): RazgovorJezgra {
       zakazi(c, s.burstMs)
     },
     aktivnih: () => aktivnih,
+    zapisDrugogBota(z) {
+      const ime = `${neutralizirajIme(z.izvor.charAt(0).toUpperCase() + z.izvor.slice(1))} (bot)`
+      const ts = /^\d{4}-\d{2}-\d{2}T/.test(z.ts) ? z.ts : new Date(sat()).toISOString()
+      zapisiPotez(d.korijen, z.kanal, z.chatId, {
+        ts, smjer: 'drugi-bot', posiljateljId: `bot:${z.izvor}`, posiljateljIme: ime,
+        ...(z.porukaId ? { porukaId: z.porukaId } : {}), tekst: z.tekst,
+      })
+      konzola(`💬 ⇠ ${ime} [${z.kanal}:${z.chatId}]: „${zaKonzolu(z.tekst)}" → zapis (drugi bot, bez modela)`)
+    },
     prekiniBotPoteze(kanal: string, chatId: string) {
       const c = chatovi.get(`${kanal}:${chatId}`)
       if (!c) return { prekinuto: false, odbaceno: 0 }
