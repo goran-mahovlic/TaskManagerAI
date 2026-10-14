@@ -19,6 +19,10 @@
 
 import { ConfigModul, tajnaPostavljena, type StanjeIntegracije } from './core/ConfigModul'
 import { prigusenje, provjeriUrl } from './core/ProbeGuard'
+import {
+  GRANICE_POSTA_PRIVITAKA, RE_MAPA_PRIVITAKA, RE_POSILJATELJ, VRSTE_MAIL_PRIVITAKA, ZADANI_POSTA_PRIVITCI,
+  type PostaPrivitci,
+} from './PostaPrivitci'
 
 export interface SmtpPostavke {
   host: string
@@ -46,6 +50,8 @@ export interface ImapPostavke {
   obavijest: boolean
   /** Chat za obavijesti; prazno = `chatId` iz Telegram postavki (grupa čvora). */
   obavijestChat: string
+  /** TASK-5508: privitci novih mailova na disk (`PostaPrivitci`); zadano isključeno. */
+  privitci: PostaPrivitci
 }
 
 /**
@@ -89,6 +95,7 @@ export const ZADANE_POSTAVKE: EmailPostavke = {
     host: '', port: 993, tls: true, korisnik: '', lozinkaEnv: 'IMAP_PASSWORD',
     mapa: 'INBOX', filtar: '', intervalSek: 60, oznaciProcitano: true,
     obavijest: false, obavijestChat: '',
+    privitci: { ...ZADANI_POSTA_PRIVITCI, vrste: [...ZADANI_POSTA_PRIVITCI.vrste], posiljatelji: [] },
   },
   primatelji: [],
   obavijestZadatak: { ukljucena: false, statusi: ['completed'], najviseNaSat: 10 },
@@ -154,6 +161,19 @@ const modul = new ConfigModul<EmailPostavke>({
           tip: 'tekst', maxDuljina: 50, uzorak: /^(-?\d+|@\w+)?$/,
           uzorakPoruka: 'ID chata (npr. -100123) ili @kanal; prazno = grupa iz Telegram postavki',
         },
+        privitci: {
+          tip: 'objekt',
+          polja: {
+            ukljucen: { tip: 'bool' },
+            mapa: {
+              tip: 'tekst', maxDuljina: GRANICE_POSTA_PRIVITAKA.mapa.maxDuljina, uzorak: RE_MAPA_PRIVITAKA,
+              uzorakPoruka: 'mora biti apsolutna putanja bez .. (ili prazno = $TM_HOME/privitci/posta)',
+            },
+            maxMB: { tip: 'broj', min: GRANICE_POSTA_PRIVITAKA.maxMB.min, max: GRANICE_POSTA_PRIVITAKA.maxMB.max },
+            vrste: { tip: 'popis', vrijednosti: VRSTE_MAIL_PRIVITAKA },
+            posiljatelji: { tip: 'popis' },
+          },
+        },
       },
     },
     primatelji: { tip: 'popis', obavezno: true },
@@ -190,6 +210,15 @@ export function validateEmailPatch(tijelo: unknown) {
     }
     for (const a of primatelji) {
       if (!RE_EPOSTA.test(String(a))) p.greske.push(`primatelji: „${a}" nije adresa e-pošte`)
+    }
+  }
+  const posiljatelji = (p.zakrpa as any)?.imap?.privitci?.posiljatelji
+  if (Array.isArray(posiljatelji)) {
+    if (posiljatelji.length > GRANICE_POSTA_PRIVITAKA.posiljatelji.maxStavki) {
+      p.greske.push(`imap.privitci.posiljatelji: najviše ${GRANICE_POSTA_PRIVITAKA.posiljatelji.maxStavki} stavki`)
+    }
+    for (const a of posiljatelji) {
+      if (!RE_POSILJATELJ.test(String(a))) p.greske.push(`imap.privitci.posiljatelji: „${a}" nije adresa, @domena ni *`)
     }
   }
   p.ok = p.greske.length === 0

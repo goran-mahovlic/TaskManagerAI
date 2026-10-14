@@ -201,9 +201,10 @@ import {
 } from './TelegramConfig'
 // TASK-5358: provjera e-pošte s obaviješću u grupu čvora i odlukom čovjeka.
 import {
-  datotecnoSpremiste, imapKlijent, obradiOdgovorPoste, pokreniPostaPoller, stanjePoste,
-  telegramObavjestac, uskladiPostaPoller, type OdgovorUGrupi, type PetljaOpcije,
+  POSTA_STANJE_PUTANJA, datotecnoSpremiste, imapKlijent, obradiOdgovorPoste, pokreniPostaPoller, stanjePoste,
+  telegramObavjestac, trebaProvjera, uskladiPostaPoller, type OdgovorUGrupi, type PetljaOpcije,
 } from './PostaUlaz'
+import { korijenPostePrivitaka } from './PostaPrivitci'
 // Prigusenje proba (DIZAJN-integracije §1.4 t.3) — jedno mjesto za svih pet kartica.
 import { prigusenje } from './core/ProbeGuard'
 // U6/TASK-4266: generički ulaz `POST /api/ingest` — source/externalId/replyTo/text/senderName.
@@ -11706,7 +11707,15 @@ function razgovorSloj(): RazgovorSloj {
     // TASK-5337: datoteke primljene u chat i one koje bot izradi uz njih (privitci/<chatId>).
     dokumentiMapeChata: (kanal: string, chatId: string) => {
       if (kanal !== 'telegram') return []
-      try { return [mapaPrivitakaRazg({ ...ZADANI_PRIVITCI_RAZG, ...(loadTelegramConfig().privitci || {}) }, chatId)] } catch { return [] }
+      const mape: string[] = []
+      try { mape.push(mapaPrivitakaRazg({ ...ZADANI_PRIVITCI_RAZG, ...(loadTelegramConfig().privitci || {}) }, chatId)) } catch { /* bez mape */ }
+      // TASK-5508: privitci maila smiju natrag u grupu u koju je stigla obavijest o tom mailu.
+      try { const pp = postaPrivitciZaRazgovor(); if (pp && pp.chatId === String(chatId)) mape.push(pp.mapa) } catch { /* bez mape */ }
+      return mape
+    },
+    // TASK-5508: model zna gdje su privitci maila i kako dohvatiti stari mail.
+    posta: () => {
+      try { const pp = postaPrivitciZaRazgovor(); return pp ? { mapa: pp.mapa, stanje: POSTA_STANJE_PUTANJA, cli: `bun ${join(PAKET_KORIJEN_POSTA, 'scripts', 'posta-privitci.ts')}` } : null } catch { return null }
     },
     // TASK-5337: trag razgovora (i bot↔bot) kao zadatak na ovoj ploči.
     ploca: plocaIzTaskManagera(taskManager as any),
@@ -11745,6 +11754,14 @@ function postaKonzola(r: string, razina: 'info' | 'ok' | 'greska'): void {
   zapisiKonzolu(join(TM_DATA, 'razgovor'), r, razina)
   try { broadcastKonzola(r, razina === 'ok' ? 'log-success' : razina === 'greska' ? 'log-error' : 'log-info', 'posta') } catch { /* prikaz */ }
 }
+
+/** TASK-5508: mapa privitaka pošte i chat obavijesti — samo kad pošta radi i privitci su uključeni. */
+function postaPrivitciZaRazgovor(): { mapa: string; chatId: string } | null {
+  const cfg = loadEmailConfig()
+  if (!trebaProvjera(cfg) || !cfg.imap.privitci?.ukljucen) return null
+  return { mapa: korijenPostePrivitaka(cfg.imap.privitci), chatId: String(cfg.imap.obavijestChat || loadTelegramConfig().chatId || '').trim() }
+}
+const PAKET_KORIJEN_POSTA = join(import.meta.dir, '..')
 
 const postaOpcije: PetljaOpcije = {
   pripremi: () => {

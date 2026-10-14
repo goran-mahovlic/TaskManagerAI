@@ -95,6 +95,38 @@ Stanje (`data/posta.json`: UIDVALIDITY, zadnji UID, Message-ID-ovi) preživi res
 obavijest ne ponavlja; prvi prolaz staru poštu samo zapamti. Kartica E-pošta i `GET /api/posta`
 pokazuju radi li, zadnju primljenu poruku i zadnju grešku.
 
+**Privitci na disk** (`imap.privitci`, TASK-5508, **zadano isključeno**): uz uključenu opciju
+privitci nove poruke idu na disk PRIJE obavijesti, a obavijest, zapis u `posta.json`
+(`poruke.*.datoteke`), ulaz i opis zadatka nose `[PRIVITAK: /putanja]` — isti redak kao privitak
+iz Telegrama, pa razgovorni bot datoteku otvara sam, bez prosljeđivanja.
+
+| Polje | Zadano | Značenje |
+|---|---|---|
+| `imap.privitci.ukljucen` | `false` | preuzimaju li se uopće |
+| `imap.privitci.mapa` | `""` | apsolutna mapa bez `..`; prazno = `$TM_HOME/privitci/posta`; ispod uvijek `<uid>/` |
+| `imap.privitci.maxMB` | `25` | strop po datoteci (1–100), stvarni bajtovi |
+| `imap.privitci.vrste` | sve osim `ostalo` | `pdf`, `slika`, `dokument`, `tablica`, `prezentacija`, `tekst`, `arhiva`, `zvuk`, `video`, `ostalo` |
+| `imap.privitci.posiljatelji` | `[]` | `ime@domena`, `@domena` ili `*`; **prazno = ne preuzima se ništa** |
+
+Sigurnost je ista kao za Telegram privitke: samo od pošiljatelja s popisa; ime je samo osnovno
+(bez `..`, kose crte i vodeće točke) i odredište se provjeri da je unutar mape maila; strop
+veličine prema strukturi poruke PRIJE preuzimanja (base64 preračunat) i prema preuzetim
+bajtovima; prava 0600, ništa se ne pokreće. Preuzima se **dio po dio** (`BODY.PEEK[<dio>]`), pa
+i poruka prevelika za sažetak tijela dobiva privitke, a mail ostaje nepročitan.
+
+Stari mail (stigao prije uključenja ili s `[PRIVITAK nije spremljen: …]`):
+
+```bash
+bun scripts/posta-privitci.ts <uid> --popis        # samo popis dijelova
+bun scripts/posta-privitci.ts <uid>                # na disk + putanje u posta.json
+```
+
+Ručni dohvat je izričit nalog: ne gleda `ukljucen` ni popis pošiljatelja (`--samo-dopusteni` ga
+vraća); ime, mapa, strop, vrste i 0600 vrijede. Putanje čvora čita iz `config/postavke.env`.
+
+**Proba** (`X-Regoc-Proba: 1` u zaglavlju maila): obavijest i privitci da — to se provjerava —
+ali nema zapisa u ulaz, „zadatak" ne otvara zadatak, a „odgovori: …" ne šalje mail.
+
 **Slanje na zahtjev**: `POST /api/email/posalji {"predmet","tekst","prima"?}`. Dopušteno je samo s
 ovog stroja (localhost) i samo na adrese iz `primatelji`. Vraća `messageId` iz SMTP odgovora.
 

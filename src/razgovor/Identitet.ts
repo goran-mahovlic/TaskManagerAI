@@ -44,6 +44,8 @@ export interface IdentitetOpcije {
   upute?: string | null
   /** Što bot stvarno ima kao memoriju (TASK-5300); bez opcije odjeljka nema. */
   memorija?: OpisMemorijeOpcije
+  /** TASK-5508: privitci e-pošte na disku — gdje su i kako se dohvaća stari mail. */
+  posta?: { mapa: string; stanje: string; cli: string }
 }
 
 export interface OpisMemorijeOpcije {
@@ -149,6 +151,10 @@ export function sastaviIdentitet(o: IdentitetOpcije): string {
     // TASK-5337: model mora znati STVARNE mape — inače spremi datoteku drugdje i oznaka se odbije.
     const mape = [o.radniDir, ...(o.dokumentiMape || [])].filter(Boolean)
     r.push(`Datoteku u ovaj chat šalješ ovako: u odgovor staviš zaseban redak [[SEND_DOC: /apsolutna/putanja | kratak opis]] — kanal je pošalje tokenom ovog bota, a oznaku ukloni iz teksta. Šalju se samo datoteke iz ovih mapa: ${mape.join(', ')} (datoteku koju izradiš spremi u jednu od njih). Ne piši oznaku u objašnjenjima ni kao primjer — svaka oznaka u odgovoru je stvarno slanje. Ako slanje ne uspije, kanal u chat dopiše razlog (📎 … nije poslan: …).`)
+  }
+  if (o.posta && o.ovlasti !== 'citanje') {
+    // TASK-5508: bez ovoga je model rekao „datoteke nisu na disku" i tražio od čovjeka da ih proslijedi.
+    r.push(`Privitci e-pošte su već na disku: ${o.posta.mapa}/<uid>/ (<uid> = IMAP UID iz obavijesti „[mail N]"). Obavijest o mailu i zadatak iz maila nose redak [PRIVITAK: /putanja] — otvori tu datoteku (Read), ne traži od ljudi da ti je proslijede. Popis mailova i putanja: ${o.posta.stanje} (poruke.*.datoteke). Stari mail kojem privitci nisu spremljeni (ili „[PRIVITAK nije spremljen: …]"): ${o.posta.cli} <uid> — mail ostaje nepročitan, datoteke idu u istu mapu.`)
   }
   if (o.agenti?.length) {
     r.push(`Agenti ove instalacije (id — ime, uloga (vještine)):\n${o.agenti.map(a =>

@@ -166,10 +166,8 @@ export function dopustenoPreuzeti(
 
 const MAX_IME = 100
 
-/** `<datum>_<message_id>_<izvorno ime>` — samo osnovno ime, bez `..`, kose crte i vodeće točke. */
-export function imePrivitka(izvorno: string | undefined, messageId: number, dateSek?: number): string {
-  const d = dateSek ? new Date(dateSek * 1000) : new Date()
-  const datum = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+/** Samo osnovno ime, bez `..`, kose crte i vodeće točke; prazno → `privitak` (i za e-poštu, TASK-5508). */
+export function cistoIme(izvorno: string | undefined): string {
   let ime = basename(String(izvorno || '').replace(/\\/g, '/'))
     .normalize('NFC')
     .replace(/[^\p{L}\p{N}._-]/gu, '_')
@@ -180,7 +178,14 @@ export function imePrivitka(izvorno: string | undefined, messageId: number, date
     const nastavak = tocka > 0 && ime.length - tocka <= 10 ? ime.slice(tocka) : ''
     ime = ime.slice(0, MAX_IME - nastavak.length) + nastavak
   }
-  return `${datum}_${Math.trunc(Number(messageId)) || 0}_${ime}`
+  return ime
+}
+
+/** `<datum>_<message_id>_<izvorno ime>` — ime očišćeno kao u `cistoIme`. */
+export function imePrivitka(izvorno: string | undefined, messageId: number, dateSek?: number): string {
+  const d = dateSek ? new Date(dateSek * 1000) : new Date()
+  const datum = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  return `${datum}_${Math.trunc(Number(messageId)) || 0}_${cistoIme(izvorno)}`
 }
 
 /** Makni token (i svaki oblik `bot<id>:<tajna>`) iz teksta prije dnevnika ili poruke. */

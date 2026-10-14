@@ -81,6 +81,8 @@ export interface RazgovorOvisnosti {
   dokumentiMape?: string[]
   /** Mape za SEND_DOC vezane uz chat (npr. `privitci/<chatId>`) — TASK-5337. */
   dokumentiMapeChata?: (kanal: string, chatId: string) => string[]
+  /** TASK-5508: privitci e-pošte na disku (čita se po potezu; `null` = opcija isključena). */
+  posta?: () => { mapa: string; stanje: string; cli: string } | null
   /** Trag razgovora na ploči čvora (TASK-5337); bez njega razgovor ne otvara zadatke. */
   zadaci?: ZadaciRazgovora
   sat?: () => number
@@ -484,6 +486,7 @@ export function stvoriRazgovor(d: RazgovorOvisnosti): RazgovorJezgra {
         dokumentiMape: [...(d.dokumentiMape || []), ...(d.dokumentiMapeChata?.(p.kanal, p.chatId) || [])],
         zapisi: { korijen: d.korijen, ingestLog: d.ingestLog },
         agenti: d.agenti?.() || [], upute: d.upute?.() || null,
+        ...(d.posta?.() ? { posta: d.posta!()! } : {}),
         memorija: {
           nacin: s.memorijaRazgovor, banka: s.memorijaBanka, url: s.memorijaUrl || d.env.TM_HINDSIGHT_URL || '',
           rag: d.ragUkljucen?.() ?? null, autoMemorija: autoMemorijaCC(d.home, radniDir),
