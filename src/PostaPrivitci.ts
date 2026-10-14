@@ -156,11 +156,13 @@ function slobodnoIme(ime: string, zauzeto: Set<string>): string {
 
 export interface SpremiOpcije {
   tmRoot?: string
-  /**
-   * Ručni dohvat (CLI, izričit nalog čovjeka): ne gleda `ukljucen` ni popis pošiljatelja.
-   * Ime, mapa, strop, vrste i 0600 vrijede i tada.
-   */
+  /** Ručni dohvat (CLI): ne gleda `ukljucen` — mail je možda stigao prije uključenja. */
   rucno?: boolean
+  /**
+   * Ni popis pošiljatelja (CLI `--bilo-tko`, samo izričit nalog čovjeka). Ime, mapa, strop,
+   * vrste i 0600 vrijede i tada.
+   */
+  biloTko?: boolean
 }
 
 /**
@@ -176,7 +178,9 @@ export async function spremiPrivitkeMaila(
 ): Promise<DatotekaMaila[]> {
   const dijelovi = m.dijelovi || []
   if (!dijelovi.length || (!p.ukljucen && !o.rucno)) return []
-  if (!o.rucno && !dopustenPosiljatelj(m.odAdresa, p.posiljatelji)) {
+  // From se može lažirati: popis se oslanja na SPF/DKIM/DMARC prihvatnog poslužitelja; zato
+  // je datoteka i uz dopuštenog pošiljatelja samo podatak (0600, ništa je ne pokreće).
+  if (!o.biloTko && !dopustenPosiljatelj(m.odAdresa, p.posiljatelji)) {
     const razlog = `pošiljatelj ${m.odAdresa || '(nepoznat)'} nije na popisu imap.privitci.posiljatelji`
     return dijelovi.map(d => ({ ime: d.ime, greska: razlog }))
   }

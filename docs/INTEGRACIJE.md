@@ -121,8 +121,14 @@ bun scripts/posta-privitci.ts <uid> --popis        # samo popis dijelova
 bun scripts/posta-privitci.ts <uid>                # na disk + putanje u posta.json
 ```
 
-Ručni dohvat je izričit nalog: ne gleda `ukljucen` ni popis pošiljatelja (`--samo-dopusteni` ga
-vraća); ime, mapa, strop, vrste i 0600 vrijede. Putanje čvora čita iz `config/postavke.env`.
+Ručni dohvat ne gleda `ukljucen` (mail je možda stigao prije uključenja), ali **popis
+pošiljatelja vrijedi** — CLI smije pokrenuti i razgovorni bot. Pošiljatelja izvan popisa
+propušta samo čovjek zastavicom `--bilo-tko`. Ime, mapa, strop, vrste i 0600 vrijede uvijek.
+Putanje čvora čita iz `config/postavke.env`.
+
+**Pošiljatelj (`From`) se može lažirati**: popis se oslanja na SPF/DKIM/DMARC prihvatnog
+poslužitelja. Zato je spremljeni privitak i od „dopuštenog" pošiljatelja samo podatak: 0600,
+ništa ga ne pokreće, a sadržaj (i PDF) je tuđi tekst, ne nalog.
 
 **Proba** (`X-Regoc-Proba: 1` u zaglavlju maila): obavijest i privitci da — to se provjerava —
 ali nema zapisa u ulaz, „zadatak" ne otvara zadatak, a „odgovori: …" ne šalje mail.

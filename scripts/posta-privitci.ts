@@ -3,7 +3,7 @@
  * Privitci jednog (starog) maila na disk — naknadni dohvat (TASK-5508).
  *
  *   bun scripts/posta-privitci.ts <uid> [<uid> …]           # preuzmi u $TM_HOME/privitci/posta/<uid>/
- *   bun scripts/posta-privitci.ts <uid> --samo-dopusteni    # poštuj i imap.privitci.posiljatelji
+ *   bun scripts/posta-privitci.ts <uid> --bilo-tko          # i pošiljatelj izvan imap.privitci.posiljatelji (samo čovjek)
  *   bun scripts/posta-privitci.ts <uid> --popis             # samo popis privitaka, bez preuzimanja
  *
  * Za mail koji je stigao prije uključenja `imap.privitci` ili čija je obavijest rekla
@@ -44,12 +44,12 @@ type ImapKlijent = import('../src/PostaUlaz').ImapKlijent
 
 const args = process.argv.slice(2)
 const uidovi = args.filter(a => /^\d+$/.test(a)).map(Number)
-const samoDopusteni = args.includes('--samo-dopusteni')
+const biloTko = args.includes('--bilo-tko')
 const samoPopis = args.includes('--popis')
-const nepoznato = args.filter(a => !/^\d+$/.test(a) && !['--samo-dopusteni', '--popis'].includes(a))
+const nepoznato = args.filter(a => !/^\d+$/.test(a) && !['--bilo-tko', '--popis'].includes(a))
 
 if (!uidovi.length || nepoznato.length || args.includes('-h') || args.includes('--help')) {
-  console.error('Uporaba: bun scripts/posta-privitci.ts <uid> [<uid> …] [--samo-dopusteni] [--popis]')
+  console.error('Uporaba: bun scripts/posta-privitci.ts <uid> [<uid> …] [--bilo-tko] [--popis]')
   process.exit(2)
 }
 
@@ -79,7 +79,7 @@ for (const uid of uidovi) {
       } finally { await ses.zatvori() }
       continue
     }
-    const r = await dohvatiPrivitkeZaUid({ cfg, imap, spremiste: datotecnoSpremiste(), uid, samoDopusteni })
+    const r = await dohvatiPrivitkeZaUid({ cfg, imap, spremiste: datotecnoSpremiste(), uid, biloTko })
     if (!r.ok) { console.error(`✗ mail ${uid}: ${r.greska}`); izlaz = Math.max(izlaz, 2); continue }
     console.log(`mail ${uid}: „${r.mail?.predmet}" od ${r.mail?.od}`)
     if (!r.datoteke.length) console.log('  (nema privitaka)')

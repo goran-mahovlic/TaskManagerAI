@@ -457,14 +457,14 @@ function prepoznajRadnju(t: string): { radnja: Radnja; tekst?: string } | null {
 }
 
 function naslovZadatka(z: ZapisMaila): string {
-  return `📧 ${z.predmet || '(bez predmeta)'} — ${z.od || z.odAdresa}`.slice(0, 200)
+  return `📧 ${tudje(z.predmet) || '(bez predmeta)'} — ${tudje(z.od || z.odAdresa)}`.slice(0, 200)
 }
 
 function opisZadatka(z: ZapisMaila, tko: string): string {
   return [
     '## Mail (izvor: e-pošta, odluka čovjeka u grupi)',
-    `Od: ${z.od}${z.odAdresa && !z.od.includes(z.odAdresa) ? ` <${z.odAdresa}>` : ''}`,
-    `Predmet: ${z.predmet || '(bez predmeta)'}`,
+    `Od: ${tudje(z.od)}${z.odAdresa && !z.od.includes(z.odAdresa) ? ` <${tudje(z.odAdresa)}>` : ''}`,
+    `Predmet: ${tudje(z.predmet) || '(bez predmeta)'}`,
     `Vrijeme: ${vrijemeZaPrikaz(z.datum)}`,
     `Privitci: ${z.privitci.length ? tudje(z.privitci.join(', ')) : 'nema'}`,
     ...oznakePrivitaka(z.datoteke),
@@ -731,15 +731,19 @@ export interface DohvatOpcije {
   imap: ImapKlijent
   spremiste: Spremiste
   uid: number
-  /** Poštuj `imap.privitci.posiljatelji` i za ručni dohvat (zadano: ne — nalog je izričit). */
-  samoDopusteni?: boolean
+  /**
+   * Ručni dohvat i za pošiljatelja koji NIJE na `imap.privitci.posiljatelji` (CLI `--bilo-tko`).
+   * Zadano ne: CLI smije pokrenuti i razgovorni model, pa popis vrijedi i tada — zaobilazi ga
+   * samo čovjek izričitom zastavicom.
+   */
+  biloTko?: boolean
   tmRoot?: string
 }
 
 /**
- * Privitci jednog (starog) maila po UID-u na disk. Ručni nalog: ne traži `ukljucen` ni popis
- * pošiljatelja; ime, mapa, strop, vrste i 0600 vrijede. Ako je mail već u `posta.json`,
- * putanje se upišu u njegov zapis.
+ * Privitci jednog (starog) maila po UID-u na disk. Ručni nalog: ne traži `ukljucen` (mail je
+ * možda stigao prije uključenja), ali popis pošiljatelja vrijedi osim uz `biloTko`; ime, mapa,
+ * strop, vrste i 0600 vrijede uvijek. Ako je mail već u `posta.json`, putanje se upišu u zapis.
  */
 export async function dohvatiPrivitkeZaUid(o: DohvatOpcije): Promise<{ ok: boolean; greska?: string; mail?: Mail; datoteke: DatotekaMaila[] }> {
   const ses = await o.imap.otvori()
@@ -749,7 +753,7 @@ export async function dohvatiPrivitkeZaUid(o: DohvatOpcije): Promise<{ ok: boole
     if (!m) return { ok: false, greska: `mail s UID-om ${o.uid} nije u mapi ${o.cfg.imap.mapa || 'INBOX'}`, datoteke: [] }
     const p = o.cfg.imap.privitci ?? ZADANI_POSTA_PRIVITCI
     const datoteke = await spremiPrivitkeMaila(m, p, (dio, max) => ses.preuzmiDio!(m.uid, dio, max),
-      { rucno: !o.samoDopusteni, ...(o.tmRoot ? { tmRoot: o.tmRoot } : {}) })
+      { rucno: true, ...(o.biloTko ? { biloTko: true } : {}), ...(o.tmRoot ? { tmRoot: o.tmRoot } : {}) })
     if (datoteke.length) {
       promijeni(o.spremiste, x => {
         for (const z of Object.values(x.poruke)) if (z.uid === m.uid) z.datoteke = datoteke

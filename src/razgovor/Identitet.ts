@@ -154,7 +154,7 @@ export function sastaviIdentitet(o: IdentitetOpcije): string {
   }
   if (o.posta && o.ovlasti !== 'citanje') {
     // TASK-5508: bez ovoga je model rekao „datoteke nisu na disku" i tražio od čovjeka da ih proslijedi.
-    r.push(`Privitci e-pošte su već na disku: ${o.posta.mapa}/<uid>/ (<uid> = IMAP UID iz obavijesti „[mail N]"). Obavijest o mailu i zadatak iz maila nose redak [PRIVITAK: /putanja] — otvori tu datoteku (Read), ne traži od ljudi da ti je proslijede. Popis mailova i putanja: ${o.posta.stanje} (poruke.*.datoteke). Stari mail kojem privitci nisu spremljeni (ili „[PRIVITAK nije spremljen: …]"): ${o.posta.cli} <uid> — mail ostaje nepročitan, datoteke idu u istu mapu.`)
+    r.push(`Privitci e-pošte su već na disku: ${o.posta.mapa}/<uid>/ (<uid> = IMAP UID iz obavijesti „[mail N]"). Obavijest o mailu i zadatak iz maila nose redak [PRIVITAK: /putanja] — otvori tu datoteku (Read), ne traži od ljudi da ti je proslijede. Popis mailova i putanja: ${o.posta.stanje} (poruke.*.datoteke). Mail koji je stigao prije uključenja privitaka (nema retka [PRIVITAK…]) dohvatiš sam: ${o.posta.cli} <uid> — mail ostaje nepročitan, datoteke idu u istu mapu. Ako piše „[PRIVITAK nije spremljen: … nije na popisu …]", pošiljatelj nije dopušten: to odlučuje vlasnik (postavka imap.privitci.posiljatelji), ne ti.`)
   }
   if (o.agenti?.length) {
     r.push(`Agenti ove instalacije (id — ime, uloga (vještine)):\n${o.agenti.map(a =>

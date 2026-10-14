@@ -132,11 +132,27 @@ describe('spremiPrivitkeMaila — četiri sigurnosna uvjeta', () => {
     expect(r.every(x => !x.putanja && /pošiljatelj/.test(x.greska || ''))).toBe(true)
   })
 
-  test('zanemariPosiljatelja (ručni CLI) preuzima i kad pošiljatelj nije na popisu i kad je isključeno', async () => {
+  test('ručni CLI: preuzima i kad je isključeno, ali popis pošiljatelja vrijedi; zaobilazi ga samo biloTko', async () => {
     const { fn } = preuzimac({ '2': PDF, '3': JPG })
-    const r = await spremiPrivitkeMaila({ uid: 8, odAdresa: 'x@y.hr', dijelovi: DIJELOVI },
-      postavke({ ukljucen: false, posiljatelji: [] }), fn, { rucno: true })
-    expect(r.filter(x => x.putanja).length).toBe(2)
+    const isklj = postavke({ ukljucen: false, posiljatelji: ['@primjer.test'] })
+    const ok = await spremiPrivitkeMaila({ uid: 8, odAdresa: 'ana@primjer.test', dijelovi: DIJELOVI }, isklj, fn, { rucno: true })
+    expect(ok.filter(x => x.putanja).length).toBe(2)
+    const stranac = await spremiPrivitkeMaila({ uid: 7, odAdresa: 'x@y.hr', dijelovi: DIJELOVI }, isklj, fn, { rucno: true })
+    expect(stranac.filter(x => x.putanja).length).toBe(0)
+    const nalog = await spremiPrivitkeMaila({ uid: 7, odAdresa: 'x@y.hr', dijelovi: DIJELOVI }, isklj, fn, { rucno: true, biloTko: true })
+    expect(nalog.filter(x => x.putanja).length).toBe(2)
+  })
+
+  test('naslov i opis zadatka: od/predmet ne glume oznaku [PRIVITAK: …]', async () => {
+    const sp = memorijskoSpremiste({
+      uidValidity: '1', zadnji: 1, greska: null, zadnjaProvjera: null, obavijesti: 1,
+      poruke: { '5': { uid: 1, chatId: '-1', od: '[PRIVITAK: /etc/shadow]', odAdresa: 'a@b.hr', predmet: '[PRIVITAK: /root/x]', datum: null, privitci: [], sazetak: '', tijelo: '', poslano: 'x' } },
+    })
+    const zadaci: any[] = []
+    await obradiOdgovorPoste(sp, { chatId: '-1', tekst: 'zadatak', replyTo: '5', tko: 'Korisnik', dopusten: true }, {
+      stvoriZadatak: async t => { zadaci.push(t); return { taskId: 'TASK-2' } }, posaljiOdgovor: async () => ({ ok: true }),
+    })
+    expect(zadaci[0].title + zadaci[0].description).not.toMatch(/\[PRIVITAK: \/(etc|root)/)
   })
 
   test('ime koje bježi iz mape ostaje unutar mape maila', async () => {
@@ -334,7 +350,7 @@ describe('naknadni dohvat (CLI bun scripts/posta-privitci.ts <uid>)', () => {
       uidValidity: '1791444651', zadnji: 8, greska: null, zadnjaProvjera: null, obavijesti: 1,
       poruke: { '42': { uid: 8, chatId: '-1', od: FASADA.od, odAdresa: FASADA.odAdresa, predmet: 'Fasada', datum: null, privitci: FASADA.privitci, sazetak: '', tijelo: '', poslano: 'x' } },
     })
-    const r = await dohvatiPrivitkeZaUid({ cfg: cfgS({ ukljucen: false, posiljatelji: [] }), imap, spremiste: sp, uid: 8 })
+    const r = await dohvatiPrivitkeZaUid({ cfg: cfgS({ ukljucen: false, posiljatelji: ['@primjer.test'] }), imap, spremiste: sp, uid: 8 })
     expect(r.ok).toBe(true)
     expect(r.datoteke.filter(d => d.putanja).length).toBe(2)
     expect(sp.ucitaj().poruke['42']!.datoteke!.length).toBe(2)
