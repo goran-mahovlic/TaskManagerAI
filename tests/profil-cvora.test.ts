@@ -507,13 +507,13 @@ const features = () => JSON.parse(readFileSync(join(d.sustav, 'features.json'), 
 const settingsJson = () => JSON.parse(readFileSync(join(d.home, '.claude', 'settings.json'), 'utf-8'))
 
 describe('J13 — modul znacajke: samo `enabled` imenovanih ključeva, idempotentno, bez restarta', () => {
-  test('profil = glavni: 53 ON; note/since i tuđi ključ ostaju; drugi --pisi → 0 promjena', async () => {
+  test('profil = glavni: 54 ON (TASK-5512: +mjeriloDojava); note/since i tuđi ključ ostaju; drugi --pisi → 0 promjena', async () => {
     const r = await d.pokreni(['primijeni', '--pisi', '--modul', 'znacajke'])
     expect(r.izlaz).toContain('potreban restart regoc-taskmanager: ne')
     const f = features()
     const p = ucitajProfil(PROFIL).moduli.znacajke!
     for (const [k, z] of Object.entries(p.kljucevi)) expect(f[k]?.enabled === true).toBe(z.on)
-    expect(Object.values(p.kljucevi).filter(z => z.on).length).toBe(53)
+    expect(Object.values(p.kljucevi).filter(z => z.on).length).toBe(54)
     expect(f.staleReaper).toEqual({ enabled: false, since: '2026-08-01', note: 'čvor: agresivnije od glavnog' })
     expect(f.tudjiPrekidac).toEqual({ enabled: true, note: 'nije u profilu — ostaje' })
     expect(f.userFlush.note).toContain('profil-cvora')
@@ -703,7 +703,7 @@ describe('oporavak — samo provjera', () => {
 })
 
 describe('C3 — config/features.example.json = modul znacajke profila', () => {
-  test('isti 75 ključeva i iste vrijednosti; svaki note nosi odluku', () => {
+  test('isti 76 ključeva i iste vrijednosti; svaki note nosi odluku', () => {
     const pr = ucitajProfil(PROFIL).moduli.znacajke!.kljucevi
     const ex = JSON.parse(readFileSync(join(KORIJEN, 'config', 'features.example.json'), 'utf-8'))
     const kljucevi = Object.keys(ex).filter(k => k !== '_opis')

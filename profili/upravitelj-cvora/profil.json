@@ -622,6 +622,11 @@
           "on": true,
           "odluka": "paket"
         },
+        "mjeriloDojava": {
+          "on": true,
+          "odluka": "paket",
+          "razlog": "TASK-5512: false gasi samo Telegram dojavu mjerila (node-A)"
+        },
         "modeClassify": {
           "on": true,
           "odluka": "paket"

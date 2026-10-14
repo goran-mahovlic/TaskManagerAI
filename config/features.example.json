@@ -85,6 +85,11 @@
     "enabled": true,
     "note": "paket"
   },
+  "mjeriloDojava": {
+    "enabled": true,
+    "since": "2026-10-14",
+    "note": "paket — TASK-5512: dojava „mjerilo potrošnje ne radi/ponovno radi” u Telegram grupu čvora. false gasi SAMO poruku (node-A: false, Goran 14.10.2026.); daemon.log, meter_status na ploči, vrata autonomije (fail-closed) i buđenje prijave ostaju. Ključ izostavljen = true."
+  },
   "modeClassify": {
     "enabled": true,
     "note": "paket"
