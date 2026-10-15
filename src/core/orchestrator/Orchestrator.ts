@@ -186,11 +186,17 @@ export class Orchestrator {
     const bezCekanja = oznakeNakonPokusaja(t.tags, { ok: true })
     await this.p.board.update(t.id, { status: 'in_progress', assignee: agent.id, ...(bezCekanja ? { tags: bezCekanja } : {}) })
 
+    // Radna mapa projekta: izvođač je dobije kao cwd, agent i u tekstu. Bez projekta ili
+    // bez mape sve ostaje kao prije (cwd se ne šalje).
+    const projekt = t.projectId ? await this.p.board.project(t.projectId) : null
+    const radnaMapa = projekt?.rootPath || null
+
     const prompt = this.p.prompt.build({
       task: t,
       agent,
       apiBaseUrl: promptApiBase(this.cfg),
       systemFacts: this.cfg.prompt.systemFacts || [],
+      projectPath: radnaMapa,
     })
 
     const dz = this.p.dezurni?.ukljucen() ? this.p.dezurni : null
@@ -202,6 +208,7 @@ export class Orchestrator {
           model: rez ? rez.model : agent.model,
           prompt,
           taskId: t.id,
+          ...(radnaMapa ? { cwd: radnaMapa } : {}),
           ...(rez ? { extra: { env: okolinaDezurnog(rez.env) } } : {}),
         })
       } catch (e: any) {

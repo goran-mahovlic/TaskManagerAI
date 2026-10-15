@@ -1,3 +1,20 @@
+## 2026-10-22 — radna mapa projekta: agent radi u repozitoriju projekta (PR #1, Marko Filipović, 15. 10. 2026.)
+
+- Novo: `projects.root_path` — apsolutna putanja mape projekta. Na ploči polje „Radna mapa"
+  u obrascu novog projekta i u panelu projekta; u API-ju `root_path` na `POST`/`PUT
+  /api/projects`. Ploča odbija mapu koje nema (`400`, `code: root_path_missing`); `null`
+  briše.
+- Orkestrator: zadatak iz projekta s radnom mapom pokreće se s tim `cwd` (port `Board.project`,
+  `ExecRequest.cwd` koji je dosad bio prazan) i agent mapu dobije u promptu (`{projectPath}`
+  u `templates/prompt/zadatak.md`). CLI izvođač odbija `cwd` koji nije postojeća mapa →
+  zadatak `blocked` s razlogom, ne tihi rad u mapi orkestratora.
+- Migracija: `ProjectManager` i `scripts/init-db.ts` sami dodaju stupac postojećoj bazi i
+  obnavljaju `v_projects_summary` (ALTER prije ponovne sheme).
+- Testovi: `tests/projekt-radna-mapa.test.ts` (shema, provjera mape, round-trip, migracija,
+  init-db nad starom bazom), `tests/orchestrator.test.ts` (cwd do izvođača, prompt, odbijanje
+  nepostojeće mape).
+- Dokumentacija: `docs/API.md` (Projekti), `docs/INSTALL.md` §6 „Gdje agent radi".
+
 ## 2026-10-22 — Mac K8 krug 3: komplet radi i na svježem čvoru (messages.db, baza ploče) (TASK-5662)
 
 - Krug 3 na Macu (`a5e4257`, `install.sh --komplet`): instalacija `uspjeh` iz prvog pokušaja, `hr.regoc.daemon`

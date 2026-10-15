@@ -14,6 +14,7 @@ import { existsSync, mkdirSync, readFileSync } from 'fs'
 import { dirname, join } from 'path'
 import { TM_DB, TM_DATA } from '../src/core/paths'
 import { seedConcurrency } from '../src/core/ConcurrencySetting'
+import { osigurajKolonuRadneMape } from '../src/core/ProjectManager'
 
 const KORIJEN = join(dirname(new URL(import.meta.url).pathname), '..')
 const SHEMA = join(KORIJEN, 'db', 'schema.sql')
@@ -31,6 +32,11 @@ console.log(novo ? `Stvaram bazu: ${TM_DB}` : `Baza postoji, primjenjujem shemu:
 const db = new Database(TM_DB)
 // WAL je obavezan: ploča čita dok agenti pišu.
 db.exec('PRAGMA journal_mode=WAL;')
+// Starija baza bez `projects.root_path`: stupac mora postojati PRIJE sheme, jer pogled
+// `v_projects_summary` u njoj taj stupac već navodi.
+if (!novo && (db.query("SELECT 1 FROM sqlite_master WHERE type='table' AND name='projects'").get())) {
+  if (osigurajKolonuRadneMape(db)) console.log('  stupac projects.root_path dodan (migracija)')
+}
 db.exec(readFileSync(SHEMA, 'utf-8'))
 // Zadane postavke (strop usporednih agenata = 3). Okolina se koristi samo ako postavke još
 // nema; postojeća vrijednost se nikad ne prepisuje.

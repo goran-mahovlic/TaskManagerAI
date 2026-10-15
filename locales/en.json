@@ -563,6 +563,8 @@
   "progress_notes": "Progress notes",
   "project_description": "Project description",
   "project_description_optional": "Project description (optional)",
+  "root_path": "Root folder",
+  "root_path_placeholder": "/absolute/path/to/project (optional)",
   "project_name": "Project name",
   "project_optional": "Project (optional)",
   "projects": "Projects",

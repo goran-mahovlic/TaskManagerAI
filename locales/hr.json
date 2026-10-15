@@ -563,6 +563,8 @@
   "progress_notes": "Bilješke o napretku",
   "project_description": "Opis projekta",
   "project_description_optional": "Opis projekta (neobavezno)",
+  "root_path": "Radna mapa",
+  "root_path_placeholder": "/apsolutna/putanja/do/projekta (neobavezno)",
   "project_name": "Naziv projekta",
   "project_optional": "Projekt (neobavezno)",
   "projects": "Projekti",

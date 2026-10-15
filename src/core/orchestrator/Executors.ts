@@ -16,7 +16,7 @@
  * Autorica: Jelena (Engineer), TASK-4800.
  */
 
-import { mkdtempSync, rmSync, writeFileSync } from 'fs'
+import { mkdtempSync, rmSync, statSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import type { ExecRequest, ExecResult, Executor } from './Ports'
@@ -37,6 +37,16 @@ function popuni(args: string[], req: ExecRequest): string[] {
     // Argument koji se sveo na prazno (npr. `{model}` bez modela) ne šalje se dalje —
     // inače CLI dobiva prazan niz i javlja grešku o „nepoznatom modelu ''".
     .filter(a => a !== '')
+}
+
+/** Poruka ako `cwd` nije postojeća mapa; `null` ako jest. */
+export function radnaMapaIzvodacaGreska(cwd: string): string | null {
+  try {
+    if (!statSync(cwd).isDirectory()) return `radna mapa nije mapa: ${cwd}`
+    return null
+  } catch {
+    return `radna mapa ne postoji: ${cwd}`
+  }
 }
 
 export class CliExecutor implements Executor {
@@ -78,6 +88,15 @@ export class CliExecutor implements Executor {
     }
 
     const rok = req.timeoutMs || ZADANI_ROK_MS
+    // Radna mapa koje nema: greška, ne tihi rad u mapi orkestratora — agent bi uređivao
+    // tuđi repozitorij i to bi se vidjelo tek poslije. Jezgra iz greške radi `blocked`.
+    if (req.cwd) {
+      const g = radnaMapaIzvodacaGreska(req.cwd)
+      if (g) {
+        if (tmpMapa) { try { rmSync(tmpMapa, { recursive: true, force: true }) } catch { /* nema veze */ } }
+        return { exitCode: 1, resultText: '', greska: g }
+      }
+    }
     try {
       const proc = Bun.spawn(argv, {
         cwd: req.cwd || process.cwd(),
