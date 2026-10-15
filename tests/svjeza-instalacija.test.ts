@@ -29,6 +29,10 @@ function okolinaNovogKorisnika(): { home: string; env: Record<string, string> } 
   }
   // Pod-procesi nisu test: ploča se mora ponašati kao u pogonu.
   Object.assign(env, { HOME: home, NODE_ENV: 'production', BUN_TEST: '' })
+  // Svježi klon nema `config/agents.json`. Razvojni stroj ga može imati (gitignoriran, nastaje
+  // u koraku 4 priručnika) i time bi zatvorio popis nositelja — pa se registar ovdje izričito
+  // pokazuje na putanju koje nema, da test mjeri paket, a ne stroj na kojem se vrti.
+  env.TM_AGENTS_CONFIG = join(home, 'config', 'agents.json')
   return { home, env }
 }
 

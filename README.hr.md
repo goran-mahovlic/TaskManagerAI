@@ -84,6 +84,9 @@ bun run init         # stvara bazu iz db/schema.sql
 bun run start        # pokreće ploču i API
 ```
 
+Prvi put ovdje? [docs/PRVI-ZADATAK.md](docs/PRVI-ZADATAK.md) vodi odavde do jednog zadatka koji
+agent dovrši u tvom repozitoriju, u sedam provjerenih koraka.
+
 Otvori `http://localhost:17781`. Ploča ima sedam kartica:
 
 | Kartica | Što je na njoj |
@@ -320,6 +323,7 @@ Pojedinosti, davatelji i postavke: [docs/ODLUCIVANJE.md](docs/ODLUCIVANJE.md).
 
 | Dokument | O čemu |
 |---|---|
+| [docs/PRVI-ZADATAK.md](docs/PRVI-ZADATAK.md) | prvi zadatak u petnaest minuta: ploča, projekt s radnom mapom, agent, orkestrator, jedan dovršen zadatak |
 | [docs/INSTALL.md](docs/INSTALL.md) | instalacija korak po korak, servis, pričuve, nadogradnja |
 | [docs/DATABASE.md](docs/DATABASE.md) | tablice, okidači, kako nastaje baza i kako se mijenja |
 | [docs/API.md](docs/API.md) | svi krajevi API-ja s primjerima |

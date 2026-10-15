@@ -259,6 +259,13 @@ describe('prompt (S13 — nijedna naša rečenica)', () => {
     expect(p).toContain('T-1')
   })
 
+  test('prompt upućuje agenta na priručnik (docs/PRVI-ZADATAK.md) apsolutnom putanjom, bez praznog mjesta', () => {
+    const p = new PredloskomSastavljenPrompt().build(ctx)
+    expect(p).toContain('docs/PRVI-ZADATAK.md')
+    expect(p).toMatch(/\/[^\s]*docs\/PRVI-ZADATAK\.md/)
+    expect(p).not.toContain('{manualPath}')
+  })
+
   test('systemFacts iz konfiguracije doslovno ulaze u prompt', () => {
     const p = new PredloskomSastavljenPrompt().build({ ...ctx, systemFacts: ['Ollama: http://10.0.0.9:11434'] })
     expect(p).toContain('Ollama: http://10.0.0.9:11434')

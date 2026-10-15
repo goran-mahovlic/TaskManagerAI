@@ -41,6 +41,9 @@ HTTP status ili commit — ne rečenicu „gotovo je"):
 Ako ne možeš dovršiti:
   curl -s -X PUT {apiBase}/api/tasks/{taskId} -H 'Content-Type: application/json' -d '{"status":"blocked","blockedReason":"..."}'
 
+## Priručnik
+Ako ti nešto o ploči ili protokolu nije jasno, pročitaj (neobavezno): {manualPath}
+
 {projectPath}
 {systemFacts}
 {verificationGate}
@@ -61,6 +64,13 @@ function zamijeni(predlozak: string, mapa: Record<string, string>): string {
   return predlozak.replace(/\{([a-zA-Z][a-zA-Z0-9_]*)\}/g, (cijeli, ime) =>
     Object.prototype.hasOwnProperty.call(mapa, ime) ? mapa[ime]! : cijeli)
 }
+
+/**
+ * Priručnik za prvi zadatak uz paket. Agent ga dobije kao apsolutnu putanju u promptu
+ * (`{manualPath}`) i čita ga po potrebi — agent nema pamćenja između pokretanja, pa „pročitaj
+ * jednom" nema smisla; ima smisla znati gdje je.
+ */
+export const MANUAL_PATH = join(PAKET_DIR, 'docs', 'PRVI-ZADATAK.md')
 
 export class PredloskomSastavljenPrompt implements PromptComposer {
   private predlozak: string
@@ -88,6 +98,7 @@ export class PredloskomSastavljenPrompt implements PromptComposer {
       agentUloga: ctx.agent.uloga || `Agent „${ctx.agent.id}".`,
       apiBase: ctx.apiBaseUrl,
       projectId: ctx.task.projectId || '',
+      manualPath: MANUAL_PATH,
       projectPath: ctx.projectPath
         ? `## Radna mapa\nRadi u mapi: ${ctx.projectPath} (tu je pokrenut i tvoj proces).\n`
         : '',
