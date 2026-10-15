@@ -88,6 +88,9 @@ bun run init         # creates the database from db/schema.sql
 bun run start        # starts the board and the API
 ```
 
+First time here? [docs/FIRST-TASK.md](docs/FIRST-TASK.md) goes from this point to one task
+finished by an agent inside your own repository, in seven checked steps.
+
 Open `http://localhost:17781`. The board has seven tabs:
 
 | Tab | What is on it |
@@ -186,6 +189,7 @@ Details, providers and settings: [docs/ODLUCIVANJE.md](docs/ODLUCIVANJE.md).
 
 | Document | About |
 |---|---|
+| [docs/FIRST-TASK.md](docs/FIRST-TASK.md) | your first task in fifteen minutes: board, project with a root folder, agent, orchestrator, one finished task |
 | [docs/INSTALL.md](docs/INSTALL.md) | step-by-step install, service, backups, upgrades |
 | [docs/DATABASE.md](docs/DATABASE.md) | tables, triggers, how the database is created and changed |
 | [docs/API.md](docs/API.md) | every API endpoint with examples |

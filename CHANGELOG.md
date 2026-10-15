@@ -1,3 +1,15 @@
+## 2026-10-15 — priručnik „Prvi zadatak u petnaest minuta" + putanja do njega u promptu agenta
+
+- Novo: `docs/PRVI-ZADATAK.md` / `docs/FIRST-TASK.md` — sedam koraka od svježeg klona do
+  jednog zadatka koji agent dovrši u korisnikovu repozitoriju; svaki korak s provjerom i
+  zamkom (naslov bez opisa, nositelj kojeg nema u registru, print način bez dopuštenja,
+  Ctrl+Z nad orkestratorom). Odjeljak „Za agenta" na kraju. README (en/hr) upućuju na njega.
+- Prompt agenta dobio `{manualPath}` — apsolutnu putanju do priručnika uz paket
+  (`MANUAL_PATH` u PromptBuilder, redak „Priručnik" u `templates/prompt/zadatak.md` i u
+  ugrađenom predlošku). Čitanje je neobavezno; agent nema pamćenja između pokretanja, pa
+  „pročitaj samo prvi put" nema smisla — ima smisla znati gdje je. Test u
+  `tests/orchestrator.test.ts`.
+
 ## 2026-10-15 — radna mapa projekta: agent radi u repozitoriju projekta
 
 - Novo: `projects.root_path` — apsolutna putanja mape projekta. Na ploči polje „Radna mapa"
