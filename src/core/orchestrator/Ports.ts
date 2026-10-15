@@ -49,8 +49,16 @@ export interface CreateTaskInput {
  * time zaobilazi vlastiti REST API — jezgra to ne smije naslijediti, jer bi vezala oblik
  * baze uz orkestraciju.
  */
+/** Ono što jezgra treba znati o projektu: samo radnu mapu (`projects.root_path`). */
+export interface ProjectInfo {
+  id: string
+  rootPath: string | null
+}
+
 export interface Board {
   get(id: string): Promise<Task | null>
+  /** Projekt zadatka; `null` ako ga nema. Radna mapa ide izvođaču kao `cwd`. */
+  project(id: string): Promise<ProjectInfo | null>
   list(status: string): Promise<Task[]>
   update(id: string, patch: TaskPatch): Promise<boolean>
   create(input: CreateTaskInput): Promise<{ id: string } | null>
@@ -150,6 +158,8 @@ export interface PromptContext {
   apiBaseUrl: string
   /** Rečenice o infrastrukturi koje je upisao KORISNIK. Jezgra svoje nema (S13). */
   systemFacts: string[]
+  /** Radna mapa projekta (`projects.root_path`); agent je dobije i kao `cwd` i u tekstu. */
+  projectPath?: string | null
   poruka?: Message
 }
 

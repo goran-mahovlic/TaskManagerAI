@@ -15,8 +15,7 @@ import { appendFileSync } from 'fs'
 import { osigurajMapu, stanjePutanja } from '../paths'
 import { obavijestiZadatak, posaljiTelegramPoruku } from '../../TelegramConfig'
 import type {
-  Board, CreateTaskInput, Logger, Message, MessageBus, Notifier, Origin, Task, TaskPatch,
-} from './Ports'
+  Board, CreateTaskInput, Logger, Message, MessageBus, Notifier, Origin, Task, TaskPatch, ProjectInfo } from './Ports'
 
 // ─── Ploča preko REST API-ja ─────────────────────────────────────────────────
 
@@ -65,6 +64,13 @@ export class HttpBoard implements Board {
   async get(id: string): Promise<Task | null> {
     const r = await this.zovi(`/api/tasks/${encodeURIComponent(id)}`)
     return r.ok && r.tijelo ? this.uTask(r.tijelo) : null
+  }
+
+  async project(id: string): Promise<ProjectInfo | null> {
+    const r = await this.zovi(`/api/projects/${encodeURIComponent(id)}`)
+    if (!r.ok || !r.tijelo) return null
+    const rp = r.tijelo.root_path ?? r.tijelo.rootPath
+    return { id: r.tijelo.id ?? id, rootPath: typeof rp === 'string' && rp ? rp : null }
   }
 
   async list(status: string): Promise<Task[]> {

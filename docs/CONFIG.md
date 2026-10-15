@@ -19,7 +19,7 @@ Kartice u skupini 01 vrijede **odmah, bez ponovnog pokretanja**.
 |---|---|---|---|
 | **01 Strop i vrata autonomije** | Usporedni agenti (1–10) | koliko agenata smije raditi istodobno (zadano 3) | `GET/PUT /api/config/concurrency` |
 | | Vrata autonomije | pragovi potrošnje sesije (70/85/95) i tjedna (90) s klizačima i trenutnom zonom | `GET/PUT /api/config/autonomy` |
-| | Orkestrator | sloj koji sam pokreće agente: izvođači, `systemFacts`, čistači | `GET/PUT /api/orchestrator/config` → `config/orchestrator.json` |
+| | Orkestrator | sloj koji sam pokreće agente: izvođači, `systemFacts`, čistači; gumb **Pokreni/Zaustavi** petlju u procesu ploče | `GET/PUT /api/orchestrator/config` → `config/orchestrator.json`; `GET /api/orchestrator/petlja`, `POST …/petlja/start`, `POST …/petlja/stop` → `data/orchestrator-petlja.json` |
 | **02 Agenti i modeli** | Agents & Model Requirements | koji model pokreće kojeg agenta | `GET /api/agents`, `GET /api/info` |
 | | Klasifikacijski model | model za rutiranje poruka, odvojen od izvršnog | `/api/models/classifier` |
 | | Podržani modeli i postavke providera | davatelji iz `models/model-config.json` i njihovi modeli | `/api/models/available` |

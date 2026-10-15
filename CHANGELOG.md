@@ -1,3 +1,50 @@
+## 2026-10-15 — petlja orkestratora u procesu ploče: gumb Pokreni/Zaustavi (bez terminala)
+
+- Novo: Config → Orkestrator → red „Petlja u procesu ploče". **Pokreni** vrti istu petlju
+  kao `scripts/orchestrator.ts` unutar procesa ploče (`src/OrchestratorPetlja.ts`, po uzoru na
+  Telegram poller „način A"); stanje pokazuje od kada radi, broj prolaza i pokrenutih agenata.
+  **Zaustavi** = ne pokreći nove agente; agent koji radi dovršava sam.
+- Trajno: želja korisnika je u `$TM_HOME/data/orchestrator-petlja.json`; nakon restarta ploče
+  petlja se sama digne (samo ako je i orkestrator uključen u konfiguraciji).
+- Jedna petlja nad jednom pločom: brava s PID-om (`src/core/Brava.ts`, izvučena iz
+  `TelegramPoller.ts`) u `$TM_HOME/data/orchestrator.lock`; `scripts/orchestrator.ts` (i
+  `--jednom`) odbija dok je drži ploča i obrnuto, s PID-om u poruci. Red na kartici pokazuje
+  „radi u zasebnom procesu N" kad bravu drži skripta.
+- API: `GET /api/orchestrator/petlja`, `POST /api/orchestrator/petlja/start` (409 + razlog
+  kad ne može), `POST /api/orchestrator/petlja/stop`.
+- Testovi: `tests/orchestrator-petlja.test.ts` (11): start/stop/brava/autostart + skripta
+  odbija uz tuđu bravu. Telegram poller testovi nepromijenjeni (28/0) nakon izvlačenja brave.
+- Dokumentacija: `docs/INSTALL.md` §6, `docs/CONFIG.md`, priručnik (korak 6).
+
+## 2026-10-15 — priručnik „Prvi zadatak u petnaest minuta" + putanja do njega u promptu agenta
+
+- Novo: `docs/PRVI-ZADATAK.md` / `docs/FIRST-TASK.md` — sedam koraka od svježeg klona do
+  jednog zadatka koji agent dovrši u korisnikovu repozitoriju; svaki korak s provjerom i
+  zamkom (naslov bez opisa, nositelj kojeg nema u registru, print način bez dopuštenja,
+  Ctrl+Z nad orkestratorom). Odjeljak „Za agenta" na kraju. README (en/hr) upućuju na njega.
+- Prompt agenta dobio `{manualPath}` — apsolutnu putanju do priručnika uz paket
+  (`MANUAL_PATH` u PromptBuilder, redak „Priručnik" u `templates/prompt/zadatak.md` i u
+  ugrađenom predlošku). Čitanje je neobavezno; agent nema pamćenja između pokretanja, pa
+  „pročitaj samo prvi put" nema smisla — ima smisla znati gdje je. Test u
+  `tests/orchestrator.test.ts`.
+
+## 2026-10-15 — radna mapa projekta: agent radi u repozitoriju projekta
+
+- Novo: `projects.root_path` — apsolutna putanja mape projekta. Na ploči polje „Radna mapa"
+  u obrascu novog projekta i u panelu projekta; u API-ju `root_path` na `POST`/`PUT
+  /api/projects`. Ploča odbija mapu koje nema (`400`, `code: root_path_missing`); `null`
+  briše.
+- Orkestrator: zadatak iz projekta s radnom mapom pokreće se s tim `cwd` (port `Board.project`,
+  `ExecRequest.cwd` koji je dosad bio prazan) i agent mapu dobije u promptu (`{projectPath}`
+  u `templates/prompt/zadatak.md`). CLI izvođač odbija `cwd` koji nije postojeća mapa →
+  zadatak `blocked` s razlogom, ne tihi rad u mapi orkestratora.
+- Migracija: `ProjectManager` i `scripts/init-db.ts` sami dodaju stupac postojećoj bazi i
+  obnavljaju `v_projects_summary` (ALTER prije ponovne sheme).
+- Testovi: `tests/projekt-radna-mapa.test.ts` (shema, provjera mape, round-trip, migracija,
+  init-db nad starom bazom), `tests/orchestrator.test.ts` (cwd do izvođača, prompt, odbijanje
+  nepostojeće mape).
+- Dokumentacija: `docs/API.md` (Projekti), `docs/INSTALL.md` §6 „Gdje agent radi".
+
 ## 2026-10-04 — /api/odlucitelj/config više ne visi kad OpenRouter nije dostupan (TASK-5233)
 
 - Ispravak: na nodu bez izlaza prema openrouter.ai `GET /api/odlucitelj/config` (i

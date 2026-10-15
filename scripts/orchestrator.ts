@@ -15,6 +15,8 @@
 import {
   loadOrchestratorConfig, orkestratorUkljucen, sastaviOrkestrator, stanjeOrkestratora,
 } from '../src/core/orchestrator'
+import { uzmiBravu } from '../src/core/Brava'
+import { PETLJA_BRAVA_PUTANJA } from '../src/OrchestratorPetlja'
 
 const args = process.argv.slice(2)
 const imaZastavicu = (i: string) => args.includes(i)
@@ -34,6 +36,16 @@ if (imaZastavicu('--stanje')) {
   console.log(JSON.stringify({ stanje, ploca: cfg.api.baseUrl, greske }, null, 2))
   process.exit(greske.length ? 1 : 0)
 }
+
+// Jedna petlja nad jednom pločom: ako je orkestrator već pokrenut — s ploče (Config →
+// Orkestrator → Pokreni) ili u drugom terminalu — ovaj se ne pokreće i kaže tko radi.
+const brava = uzmiBravu(PETLJA_BRAVA_PUTANJA, 'orkestrator')
+if (!brava.ok) {
+  console.error(`✗ ${brava.razlog}`)
+  process.exit(1)
+}
+const pustiBravu = () => { try { brava.osloboditi?.() } catch { /* nema veze */ } }
+process.on('exit', pustiBravu)
 
 const { orkestrator, greske } = sastaviOrkestrator(cfg)
 for (const g of greske) console.warn(`⚠️  ${g}`)

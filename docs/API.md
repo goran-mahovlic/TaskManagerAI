@@ -387,6 +387,18 @@ curl -X POST http://localhost:17781/api/projects \
   -d '{"name":"Mjerni lanac","description":"...","lead_agent":"ana"}'
 ```
 
+`root_path` (neobavezno) je **radna mapa projekta**: apsolutna putanja na disku u kojoj agent radi
+zadatke tog projekta. Ploča je provjerava pri spremanju — mapa koje nema ili koja nije mapa vraća
+`400` s `code: "root_path_missing"`. `null` ili prazan niz u `PUT` briše mapu. Orkestrator mapu
+prosljeđuje izvođaču kao radni direktorij procesa i agentu je navodi u promptu
+(v. [INSTALL.md §6](INSTALL.md#6-sloj-1--pokreni-orkestrator-neobavezno)).
+
+```bash
+curl -X PUT http://localhost:17781/api/projects/PRJ-001 \
+  -H "Content-Type: application/json" \
+  -d '{"root_path":"/srv/projekti/mjerni-lanac"}'
+```
+
 Filtri: `status`, `lead_agent`, `projectId`. `GET /api/projects/trosak` vraća ukupnu potrošnju
 po projektu iz zapisa troška (mora se pitati prije `/api/projects/:id`, inače bi ga ta ruta
 progutala).

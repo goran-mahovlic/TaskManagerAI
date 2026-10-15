@@ -220,6 +220,23 @@ se čita pri svakoj provjeri, pa agent dodan nakon pokretanja vrijedi bez restar
 kartica **Orkestrator**, ili izravno u `orchestrator.json`. Prazan popis je ispravno
 zatečeno stanje.
 
+**Bez terminala: gumb na ploči.** Config → Orkestrator → red „Petlja u procesu ploče" →
+**Pokreni**. Ploča tada sama vrti istu petlju kao `scripts/orchestrator.ts`, pamti da je
+uključena (`$TM_HOME/data/orchestrator-petlja.json`) i nakon restarta ploče diže je sama.
+**Zaustavi** znači „ne pokreći nove agente"; agent koji već radi dovršava i sam se javlja.
+Brava `$TM_HOME/data/orchestrator.lock` dopušta samo jednu petlju: dok ploča drži bravu,
+`bun scripts/orchestrator.ts` (i `--jednom`) odbija s PID-om, i obrnuto — dvije petlje bi se
+natjecale za iste zadatke.
+
+**Gdje agent radi.** Svaki projekt na ploči može imati **radnu mapu** (Projekti → projekt →
+„Radna mapa", ili `root_path` u API-ju): apsolutnu putanju repozitorija tog projekta. Zadatak
+iz takvog projekta orkestrator pokreće **u toj mapi** (radni direktorij procesa) i agentu je
+navodi u promptu. Projekt bez mape radi kao prije — u mapi iz koje je orkestrator pokrenut.
+Ploča odbija mapu koje nema (pretpostavka: ploča i orkestrator vide isti disk); nestane li
+poslije, izvođač odbija pokretanje i zadatak ide u `blocked` s razlogom — nikad tihi rad u
+tuđoj mapi. Jedan orkestrator tako opslužuje projekte u više mapa; više orkestratora nad istom
+pločom NE treba (natjecali bi se za iste zadatke).
+
 **Čistači kreću u sjeni.** `watchdog.*.mode` je zadano `shadow`: sud o zaglavljenom zadatku
 se zapisuje, ali se ništa ne dira. Prebaci na `live` tek kad u dnevniku (`$TM_HOME/data/orchestrator.log`)
 vidiš da su nalazi točni — čistač koji pogriješi ubija tuđi rad, a to se vidi tek poslije.
