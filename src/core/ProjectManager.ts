@@ -11,7 +11,7 @@
 
 import Database from 'bun:sqlite'
 import { join } from 'path'
-import { existsSync, readFileSync } from 'fs'
+import { existsSync, readFileSync, statSync } from 'fs'
 import { randomUUID } from 'crypto'
 import {
   CreateProjectInputSchema,
@@ -60,6 +60,42 @@ const DATA_DIR = TM_DATA
 const DB_PATH = TM_DB
 const PROJECTS_SCHEMA_PATH = join(DATA_DIR, 'projects-schema.sql')
 const MIGRATE_TASKS_PATH = join(DATA_DIR, 'migrate-tasks-project.sql')
+
+// Paketna shema — jedini izvor oblika baze; čita se samo pri migraciji stupca radne mape.
+const PAKETNA_SHEMA = join(import.meta.dir, '..', '..', 'db', 'schema.sql')
+
+// ============================================
+// RADNA MAPA PROJEKTA (projects.root_path)
+// ============================================
+
+/**
+ * Dodaj stupac `projects.root_path` ako ga nema. Vraća `true` ako je stupac SADA dodan.
+ * Nakon dodavanja ponovno primjenjuje paketnu shemu: sve u njoj je `IF NOT EXISTS`, a pogled
+ * `v_projects_summary` se njome obnavlja (DROP + CREATE) pa počne nositi novi stupac.
+ * Idempotentno — bazu otvara više procesa (ploča, orkestrator, alati) i svaki mora zateći
+ * isti oblik; isti obrazac kao `TaskManagerSQL.ensurePauseColumns`.
+ */
+export function osigurajKolonuRadneMape(db: Database): boolean {
+  const ima = db.query("SELECT 1 FROM pragma_table_info('projects') WHERE name = 'root_path'").get()
+  if (ima) return false
+  db.exec('ALTER TABLE projects ADD COLUMN root_path TEXT')
+  if (existsSync(PAKETNA_SHEMA)) db.exec(readFileSync(PAKETNA_SHEMA, 'utf-8'))
+  return true
+}
+
+/**
+ * Smije li se ova radna mapa spremiti: mora postojati i biti mapa. `null`/`undefined` znači
+ * da se mapa ne postavlja i nije greška. Vraća poruku za korisnika ili `null` ako je u redu.
+ * Provjera je na PLOČI jer korisnik grešku treba vidjeti pri spremanju, ne tek kad agent
+ * krene (pretpostavka: ploča i orkestrator vide isti disk).
+ */
+export function radnaMapaGreska(putanja: string | null | undefined): string | null {
+  if (putanja === null || putanja === undefined) return null
+  let st
+  try { st = statSync(putanja) } catch { return `Radna mapa ne postoji: ${putanja}` }
+  if (!st.isDirectory()) return `Radna mapa nije mapa: ${putanja}`
+  return null
+}
 
 // ============================================
 // PROJECT MANAGER CLASS
@@ -110,6 +146,8 @@ export class ProjectManager {
         }
       }
     }
+
+    if (osigurajKolonuRadneMape(this.db)) console.log('[ProjectManager] Stupac projects.root_path dodan')
   }
 
   /**
@@ -152,8 +190,8 @@ export class ProjectManager {
     const now = new Date().toISOString()
 
     const stmt = this.db.prepare(`
-      INSERT INTO projects (id, name, description, status, priority, lead_agent, created_at, updated_at, target_date, tags, metadata, nextcloud_folder_id, nextcloud_share_url)
-      VALUES (?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO projects (id, name, description, status, priority, lead_agent, created_at, updated_at, target_date, tags, metadata, nextcloud_folder_id, nextcloud_share_url, root_path)
+      VALUES (?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
 
     stmt.run(
@@ -168,7 +206,8 @@ export class ProjectManager {
       JSON.stringify(validated.tags || []),
       JSON.stringify(validated.metadata || {}),
       validated.nextcloud_folder_id || null,
-      validated.nextcloud_share_url || null
+      validated.nextcloud_share_url || null,
+      validated.root_path ?? null
     )
 
     // Add lead agent to project_agents if specified
@@ -304,6 +343,11 @@ export class ProjectManager {
     if (validated.metadata !== undefined) {
       updates.push('metadata = ?')
       params.push(JSON.stringify(validated.metadata))
+    }
+
+    if (validated.root_path !== undefined) {
+      updates.push('root_path = ?')
+      params.push(validated.root_path)
     }
 
     if (validated.nextcloud_folder_id !== undefined) {
@@ -569,6 +613,7 @@ export class ProjectManager {
       metadata: typeof row.metadata === 'string' ? JSON.parse(row.metadata) : (row.metadata || {}),
       nextcloud_folder_id: row.nextcloud_folder_id,
       nextcloud_share_url: row.nextcloud_share_url,
+      root_path: row.root_path ?? null,
       // Spec polja (kolone na projects, izložene kroz v_projects_summary)
       specification: row.specification ?? '',
       spec_updated_at: row.spec_updated_at ?? null,
