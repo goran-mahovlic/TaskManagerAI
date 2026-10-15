@@ -59,6 +59,8 @@ export const ProjectSchema = z.object({
   // Nextcloud integration fields
   nextcloud_folder_id: z.string().optional(),
   nextcloud_share_url: z.string().optional(),
+  // Radna mapa projekta (projects.root_path); null = nije postavljena
+  root_path: z.string().nullable().optional(),
   // Spec polja (projects.specification / spec_updated_at, izložena kroz v_projects_summary)
   specification: z.string().optional(),
   spec_updated_at: z.string().nullable().optional(),
@@ -81,6 +83,19 @@ export const ProjectSchema = z.object({
 // INPUT SCHEMAS
 // ============================================
 
+/**
+ * Radna mapa projekta: apsolutna putanja na disku u kojoj agent radi zadatke tog projekta.
+ * Ovdje se provjerava samo OBLIK (apsolutna, bez `..`); postoji li mapa provjerava ploča pri
+ * spremanju (`radnaMapaGreska` u ProjectManager). Prazan niz ili `null` = „bez mape".
+ */
+export const RootPathSchema = z.preprocess(
+  v => (typeof v === 'string' ? (v.trim() === '' ? null : v.trim()) : v),
+  z.string()
+    .refine(p => p.startsWith('/'), 'root_path must be an absolute path')
+    .refine(p => !p.split('/').includes('..'), 'root_path must not contain `..`')
+    .nullable()
+)
+
 export const CreateProjectInputSchema = z.object({
   name: z.string().min(1).max(200),
   description: z.string().optional(),
@@ -90,7 +105,8 @@ export const CreateProjectInputSchema = z.object({
   tags: z.array(z.string()).optional(),
   metadata: z.record(z.string(), z.any()).optional(),
   nextcloud_folder_id: z.string().optional(),
-  nextcloud_share_url: z.string().optional()
+  nextcloud_share_url: z.string().optional(),
+  root_path: RootPathSchema.optional()
 })
 
 export const UpdateProjectInputSchema = CreateProjectInputSchema.partial().extend({

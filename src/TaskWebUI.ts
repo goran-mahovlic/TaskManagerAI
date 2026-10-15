@@ -77,7 +77,7 @@ import { formatLocalTime } from './core/QuotaWakeup'
 // T10/TASK-3575: ploča čita POSTOJEĆI trag vratara (data/critic_gate.jsonl) — druga bi
 // baza značila da ploča i vrata mogu tvrditi suprotno o istom zadatku.
 import { unverifiedBoardState } from './core/UnverifiedReport'
-import { getProjectManager } from './core/ProjectManager'
+import { getProjectManager, radnaMapaGreska } from './core/ProjectManager'
 import { getMessageQueue } from './core/MessageQueue'
 import { getRAGService, ragPodesen } from './RAGService'
 import { kljucPrisutanUDatoteci, ukloniKljucIzDatoteke } from './LoginCreds'
@@ -2987,6 +2987,10 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
             <textarea id="project-description" placeholder="Project description (optional)" data-i18n-placeholder="project_description_optional"></textarea>
           </div>
           <div class="form-group">
+            <label for="project-root-path" data-i18n="root_path">Root folder</label>
+            <input type="text" id="project-root-path" placeholder="/absolute/path/to/project (optional)" data-i18n-placeholder="root_path_placeholder">
+          </div>
+          <div class="form-group">
             <label for="project-status" data-i18n="status">Status</label>
             <select id="project-status">
               <option value="active" data-i18n="active">Active</option>
@@ -3085,6 +3089,11 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         <div class="detail-field">
           <label data-i18n="description">Description</label>
           <textarea id="project-detail-description" placeholder="Project description" data-i18n-placeholder="project_description"></textarea>
+        </div>
+
+        <div class="detail-field">
+          <label data-i18n="root_path">Root folder</label>
+          <input type="text" id="project-detail-root-path" placeholder="/absolute/path/to/project (optional)" data-i18n-placeholder="root_path_placeholder">
         </div>
 
         <!-- POTROSNJA PROJEKTA — TASK-3572 (T8), mjera 6 suzena na ovaj projekt.
@@ -6903,6 +6912,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       const data = {
         name: document.getElementById('project-name').value,
         description: document.getElementById('project-description').value || undefined,
+        root_path: document.getElementById('project-root-path').value.trim() || undefined,
         status: document.getElementById('project-status').value,
         priority: parseInt(document.getElementById('project-priority').value),
         lead_agent: document.getElementById('project-lead').value || undefined
@@ -6970,6 +6980,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       document.getElementById('project-detail-priority').value = project.priority;
       document.getElementById('project-detail-lead').value = project.lead_agent || '';
       document.getElementById('project-detail-description').value = project.description || '';
+      document.getElementById('project-detail-root-path').value = project.root_path || '';
       // Spec u <textarea>.value (sigurno — bez innerHTML, nema XSS rizika)
       document.getElementById('project-detail-spec').value = project.specification || '';
       // Napuni dropdown agenata + osvježi disabled stanje dispatch gumba
@@ -7085,6 +7096,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         priority: parseInt(document.getElementById('project-detail-priority').value),
         lead_agent: document.getElementById('project-detail-lead').value || undefined,
         description: document.getElementById('project-detail-description').value,
+        root_path: document.getElementById('project-detail-root-path').value.trim() || null,
         specification: document.getElementById('project-detail-spec').value
       };
 
@@ -13938,6 +13950,15 @@ async function handleCreateProject(req: Request): Promise<Response> {
       })
     }
 
+    // Radna mapa mora postojati — korisnik grešku vidi pri spremanju, ne kad agent krene.
+    const greskaMape = radnaMapaGreska(parseResult.data.root_path)
+    if (greskaMape) {
+      return new Response(JSON.stringify({ error: greskaMape, code: 'root_path_missing' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' }
+      })
+    }
+
     const project = projectManager.createProject(parseResult.data)
 
     // Broadcast to WebSocket clients
@@ -13968,6 +13989,14 @@ async function handleUpdateProject(projectId: string, req: Request): Promise<Res
         error: 'Validation failed',
         details: parseResult.error.issues
       }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' }
+      })
+    }
+
+    const greskaMape = radnaMapaGreska(parseResult.data.root_path)
+    if (greskaMape) {
+      return new Response(JSON.stringify({ error: greskaMape, code: 'root_path_missing' }), {
         status: 400,
         headers: { 'Content-Type': 'application/json' }
       })

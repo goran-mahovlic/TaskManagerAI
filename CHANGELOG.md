@@ -1,3 +1,32 @@
+## 2026-10-15 — priručnik „Prvi zadatak u petnaest minuta" + putanja do njega u promptu agenta
+
+- Novo: `docs/PRVI-ZADATAK.md` / `docs/FIRST-TASK.md` — sedam koraka od svježeg klona do
+  jednog zadatka koji agent dovrši u korisnikovu repozitoriju; svaki korak s provjerom i
+  zamkom (naslov bez opisa, nositelj kojeg nema u registru, print način bez dopuštenja,
+  Ctrl+Z nad orkestratorom). Odjeljak „Za agenta" na kraju. README (en/hr) upućuju na njega.
+- Prompt agenta dobio `{manualPath}` — apsolutnu putanju do priručnika uz paket
+  (`MANUAL_PATH` u PromptBuilder, redak „Priručnik" u `templates/prompt/zadatak.md` i u
+  ugrađenom predlošku). Čitanje je neobavezno; agent nema pamćenja između pokretanja, pa
+  „pročitaj samo prvi put" nema smisla — ima smisla znati gdje je. Test u
+  `tests/orchestrator.test.ts`.
+
+## 2026-10-15 — radna mapa projekta: agent radi u repozitoriju projekta
+
+- Novo: `projects.root_path` — apsolutna putanja mape projekta. Na ploči polje „Radna mapa"
+  u obrascu novog projekta i u panelu projekta; u API-ju `root_path` na `POST`/`PUT
+  /api/projects`. Ploča odbija mapu koje nema (`400`, `code: root_path_missing`); `null`
+  briše.
+- Orkestrator: zadatak iz projekta s radnom mapom pokreće se s tim `cwd` (port `Board.project`,
+  `ExecRequest.cwd` koji je dosad bio prazan) i agent mapu dobije u promptu (`{projectPath}`
+  u `templates/prompt/zadatak.md`). CLI izvođač odbija `cwd` koji nije postojeća mapa →
+  zadatak `blocked` s razlogom, ne tihi rad u mapi orkestratora.
+- Migracija: `ProjectManager` i `scripts/init-db.ts` sami dodaju stupac postojećoj bazi i
+  obnavljaju `v_projects_summary` (ALTER prije ponovne sheme).
+- Testovi: `tests/projekt-radna-mapa.test.ts` (shema, provjera mape, round-trip, migracija,
+  init-db nad starom bazom), `tests/orchestrator.test.ts` (cwd do izvođača, prompt, odbijanje
+  nepostojeće mape).
+- Dokumentacija: `docs/API.md` (Projekti), `docs/INSTALL.md` §6 „Gdje agent radi".
+
 ## 2026-10-04 — /api/odlucitelj/config više ne visi kad OpenRouter nije dostupan (TASK-5233)
 
 - Ispravak: na nodu bez izlaza prema openrouter.ai `GET /api/odlucitelj/config` (i

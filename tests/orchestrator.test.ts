@@ -9,7 +9,7 @@
  */
 
 import { describe, expect, test } from 'bun:test'
-import { mkdtempSync, rmSync } from 'fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 
@@ -51,7 +51,9 @@ class PlocaUMemoriji implements Board {
     this.zadaci.set(puni.id, puni)
     return puni
   }
+  projekti = new Map<string, { id: string; rootPath: string | null }>()
   async get(id: string) { return this.zadaci.get(id) || null }
+  async project(id: string) { return this.projekti.get(id) || null }
   async list(status: string) { return [...this.zadaci.values()].filter(t => t.status === status) }
   async update(id: string, patch: TaskPatch) {
     this.zakrpe.push({ id, patch })
@@ -254,6 +256,13 @@ describe('prompt (S13 — nijedna naša rečenica)', () => {
     const adrese = p.match(/\b\d{1,3}(\.\d{1,3}){3}\b/g) || []
     expect(adrese).toEqual([])
     expect(p).toContain('T-1')
+  })
+
+  test('prompt upućuje agenta na priručnik (docs/PRVI-ZADATAK.md) apsolutnom putanjom, bez praznog mjesta', () => {
+    const p = new PredloskomSastavljenPrompt().build(ctx)
+    expect(p).toContain('docs/PRVI-ZADATAK.md')
+    expect(p).toMatch(/\/[^\s]*docs\/PRVI-ZADATAK\.md/)
+    expect(p).not.toContain('{manualPath}')
   })
 
   test('systemFacts iz konfiguracije doslovno ulaze u prompt', () => {
@@ -493,5 +502,64 @@ describe('OrchestratorConfig (§5.1)', () => {
     const s = stanjeOrkestratora({ ...ZADANE_POSTAVKE, enabled: false })
     expect(s.spreman).toBe(false)
     expect(s.zastoKey).toBe('orc_zasto_iskljucen')
+  })
+})
+
+// ─── Radna mapa projekta → cwd izvođača ──────────────────────────────────────
+
+describe('radna mapa projekta (projects.root_path) ide izvođaču kao cwd', () => {
+  const MAPA = ['', 'srv', 'projekti', 'alfa'].join('/')
+
+  test('zadatak u projektu s radnom mapom: izvođač dobije cwd = ta mapa', async () => {
+    const { ports, board, executor } = sloziPortove()
+    board.projekti.set('P-1', { id: 'P-1', rootPath: MAPA })
+    board.dodaj({ id: 'T-1', title: 'Napiši nešto', assignee: 'pisac', projectId: 'P-1' })
+    const o = new Orchestrator(ports, postavke())
+
+    await o.jedanProlaz()
+
+    expect(executor.pozivi.length).toBe(1)
+    expect(executor.pozivi[0]!.cwd).toBe(MAPA)
+  })
+
+  test('zadatak bez projekta ili projekt bez mape: cwd se ne šalje (zatečeno ponašanje)', async () => {
+    const { ports, board, executor } = sloziPortove()
+    board.projekti.set('P-2', { id: 'P-2', rootPath: null })
+    board.dodaj({ id: 'T-1', title: 'Bez projekta', assignee: 'pisac' })
+    board.dodaj({ id: 'T-2', title: 'Projekt bez mape', assignee: 'pisac', projectId: 'P-2' })
+    const o = new Orchestrator(ports, postavke())
+
+    await o.jedanProlaz()
+
+    expect(executor.pozivi.length).toBe(2)
+    for (const p of executor.pozivi) expect(p.cwd).toBeUndefined()
+  })
+
+  test('prompt kaže agentu radnu mapu; bez mape nema ni retka ni praznog mjesta', () => {
+    const sastavljac = new PredloskomSastavljenPrompt()
+    const zadatak: Task = { id: 'T-1', title: 'x', status: 'pending', projectId: 'P-1' }
+    const agent = AGENTI[0]!
+    const s = sastavljac.build({ task: zadatak, agent, apiBaseUrl: 'http://ploca', systemFacts: [], projectPath: MAPA })
+    expect(s).toContain(MAPA)
+    const bez = sastavljac.build({ task: zadatak, agent, apiBaseUrl: 'http://ploca', systemFacts: [] })
+    expect(bez).not.toContain('{projectPath}')
+    expect(bez).not.toContain('Radna mapa')
+  })
+
+  test('CLI izvođač odbija cwd koji nije postojeća mapa — greška, ne tihi rad u tuđoj mapi', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'tm-cwd-'))
+    try {
+      const izv = new CliExecutor('cli', { kind: 'cli', command: 'true', args: [], promptChannel: 'arg' })
+      const nema = join(dir, 'nema')
+      const r = await izv.run({ agentId: 'a', prompt: 'p', cwd: nema })
+      expect(r.exitCode).not.toBe(0)
+      expect(r.greska || '').toContain(nema)
+      const dat = join(dir, 'dat.txt')
+      writeFileSync(dat, 'x')
+      const r2 = await izv.run({ agentId: 'a', prompt: 'p', cwd: dat })
+      expect(r2.exitCode).not.toBe(0)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })
