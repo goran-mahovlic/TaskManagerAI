@@ -1,3 +1,21 @@
+## 2026-10-15 — petlja orkestratora u procesu ploče: gumb Pokreni/Zaustavi (bez terminala)
+
+- Novo: Config → Orkestrator → red „Petlja u procesu ploče". **Pokreni** vrti istu petlju
+  kao `scripts/orchestrator.ts` unutar procesa ploče (`src/OrchestratorPetlja.ts`, po uzoru na
+  Telegram poller „način A"); stanje pokazuje od kada radi, broj prolaza i pokrenutih agenata.
+  **Zaustavi** = ne pokreći nove agente; agent koji radi dovršava sam.
+- Trajno: želja korisnika je u `$TM_HOME/data/orchestrator-petlja.json`; nakon restarta ploče
+  petlja se sama digne (samo ako je i orkestrator uključen u konfiguraciji).
+- Jedna petlja nad jednom pločom: brava s PID-om (`src/core/Brava.ts`, izvučena iz
+  `TelegramPoller.ts`) u `$TM_HOME/data/orchestrator.lock`; `scripts/orchestrator.ts` (i
+  `--jednom`) odbija dok je drži ploča i obrnuto, s PID-om u poruci. Red na kartici pokazuje
+  „radi u zasebnom procesu N" kad bravu drži skripta.
+- API: `GET /api/orchestrator/petlja`, `POST /api/orchestrator/petlja/start` (409 + razlog
+  kad ne može), `POST /api/orchestrator/petlja/stop`.
+- Testovi: `tests/orchestrator-petlja.test.ts` (11): start/stop/brava/autostart + skripta
+  odbija uz tuđu bravu. Telegram poller testovi nepromijenjeni (28/0) nakon izvlačenja brave.
+- Dokumentacija: `docs/INSTALL.md` §6, `docs/CONFIG.md`, priručnik (korak 6).
+
 ## 2026-10-15 — priručnik „Prvi zadatak u petnaest minuta" + putanja do njega u promptu agenta
 
 - Novo: `docs/PRVI-ZADATAK.md` / `docs/FIRST-TASK.md` — sedam koraka od svježeg klona do

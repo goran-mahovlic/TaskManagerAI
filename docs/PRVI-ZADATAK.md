@@ -136,10 +136,11 @@ kao promptom. Za trajni rad pokreni petlju, u vlastitom terminalu, dok ploča ra
 bun scripts/orchestrator.ts
 ```
 
-**Ne iz Konzole na ploči.** Kartica Konzola može pokrenuti `bun` u WORK načinu, ali svaku
-naredbu ubija nakon 30 sekundi, a prolaz čeka da agent završi. Petlju jednom pokreni kao
-servis; nakon toga sve ostalo ide s ploče
-([INSTALL.md §6](INSTALL.md#6-sloj-1--pokreni-orkestrator-neobavezno)).
+**S ploče, bez terminala:** Config → Orkestrator → red „Petlja u procesu ploče" →
+**Pokreni**. Ploča tada istu petlju vrti sama, pamti da je uključena i nakon restarta je sama
+diže. **Zaustavi** znači „ne pokreći nove agente"; onaj koji radi dovršava sam. Petlja smije
+biti samo jedna: dok je drži ploča, skripta iz terminala odbija s PID-om ploče, i obrnuto.
+(Konzola na ploči nije put: svaku naredbu ubija nakon 30 sekundi.)
 
 **Provjera:** na ploči **Status** pokazuje živ spawn. `ps -ef | grep "claude --print"`
 pokazuje proces, a njegov radni direktorij je tvoja radna mapa.

@@ -60,6 +60,7 @@ import {
   githubKonfigModul,
 } from './GitHubConfig'
 import { probajUlaz, stanjeUlaza, pokreniTelegramPoller } from './TelegramPoller'
+import { OrchestratorPetlja } from './OrchestratorPetlja'
 import {
   loadOrchestratorConfig, validateOrchestratorPatch, saveOrchestratorConfig, stanjeOrkestratora,
   orchestratorConfigPath,
@@ -8962,6 +8963,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         var d = await (await fetch('/api/orchestrator/config')).json();
         if (d.error) throw new Error(d.error);
         el.innerHTML = renderOrkestrator(d);
+        ucitajOrkestratorPetlju();
       } catch (e) {
         el.innerHTML = '<div class="empty">' + _esc(e.message) + '</div>';
       }
@@ -8985,6 +8987,9 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         '<input type="checkbox"' + (p.enabled ? ' checked' : '') +
         ' onchange="spremiOrkestrator({enabled:this.checked}, this)">',
         _T('orc_ukljucen_opis', 'Isključeno: nijedan agent se ne pokreće sam.'));
+      h += _red(_T('orc_petlja', 'Petlja u procesu ploče'),
+        '<span id="orc-petlja-stanje">…</span> <span id="orc-petlja-gumb"></span>',
+        _T('orc_petlja_opis', 'Isto što i bun scripts/orchestrator.ts, ali bez terminala. Preživi restart ploče. Zaustavi = ne pokreći nove agente; onaj koji radi dovršava sam.'));
       h += _red(_T('orc_strop', 'Najviše usporednih agenata'),
         '<b>' + (d.strop != null ? d.strop : '') + '</b>',
         _T('cfg_usp_napomena', 'Promjena vrijedi odmah (daemon je čita najkasnije za 5 s). Smanjenje ne prekida agente koji rade — samo ne pušta nove. Vrata autonomije (70/85 %) i dalje nadjačavaju strop.') +
@@ -9011,6 +9016,46 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       h += '<div style="font-size:.68rem;color:var(--text-secondary);margin-top:0.3rem">' +
         _T('cfg_datoteka', 'datoteka') + ': <code>' + _esc(d.putanja || '') + '</code></div>';
       return h;
+    }
+
+    async function ucitajOrkestratorPetlju() {
+      var el = document.getElementById('orc-petlja-stanje');
+      var gumb = document.getElementById('orc-petlja-gumb');
+      if (!el || !gumb) return;
+      try {
+        var st = await (await fetch('/api/orchestrator/petlja')).json();
+        var txt, btn;
+        if (st.radi) {
+          txt = '<span class="info-badge enabled">' + _T('orc_petlja_radi', 'radi') + '</span> ' +
+            _T('orc_petlja_od', 'od') + ' ' + new Date(st.pokrenutaU).toLocaleTimeString() +
+            ' · ' + _T('orc_petlja_prolaza', 'prolaza') + ': ' + st.prolaza +
+            ' · ' + _T('orc_petlja_pokrenuto', 'pokrenutih agenata') + ': ' + st.pokrenuto;
+          btn = '<button class="cfg-btn" onclick="orkestratorPetlja(\\'stop\\', this)">' + _T('orc_petlja_zaustavi', 'Zaustavi') + '</button>';
+        } else if (st.drugiProces) {
+          txt = '<span class="info-badge enabled">' + _T('orc_petlja_drugi', 'radi u zasebnom procesu') + ' ' + st.drugiProces + '</span>';
+          btn = '';
+        } else {
+          txt = '<span class="info-badge disabled">' + _T('orc_petlja_ne_radi', 'ne radi') + '</span>' +
+            (st.razlog ? ' <span style="color:var(--accent-red)">' + _esc(st.razlog) + '</span>' : '');
+          btn = '<button class="cfg-btn" onclick="orkestratorPetlja(\\'start\\', this)">' + _T('orc_petlja_pokreni', 'Pokreni') + '</button>';
+        }
+        el.innerHTML = txt;
+        gumb.innerHTML = btn;
+      } catch (e) {
+        el.textContent = '?';
+      }
+    }
+
+    async function orkestratorPetlja(radnja, btn) {
+      if (btn) btn.disabled = true;
+      try {
+        var res = await fetch('/api/orchestrator/petlja/' + radnja, { method: 'POST' });
+        var d = await res.json();
+        if (d.error) alert(_T('orc_petlja', 'Petlja u procesu ploče') + ': ' + d.error);
+      } catch (e) {
+        alert('Orkestrator: ' + e.message);
+      }
+      await ucitajOrkestratorPetlju();
     }
 
     async function spremiOrkestrator(zakrpa, btn) {
@@ -16437,6 +16482,18 @@ async function obradiZahtjev(req: Request): Promise<Response | undefined> {
     if (url.pathname === '/api/orchestrator/config' && req.method === 'PUT') {
       return handleOrchestratorPut(req)
     }
+    // Petlja orkestratora u procesu ploče (gumb Pokreni/Zaustavi na Config → Orkestrator).
+    if (url.pathname === '/api/orchestrator/petlja' && req.method === 'GET') {
+      return json(orchestratorPetlja.stanje())
+    }
+    if (url.pathname === '/api/orchestrator/petlja/start' && req.method === 'POST') {
+      const r = orchestratorPetlja.start()
+      return r.ok ? json({ ok: true, stanje: orchestratorPetlja.stanje() }) : json({ error: r.razlog, stanje: orchestratorPetlja.stanje() }, 409)
+    }
+    if (url.pathname === '/api/orchestrator/petlja/stop' && req.method === 'POST') {
+      orchestratorPetlja.stop()
+      return json({ ok: true, stanje: orchestratorPetlja.stanje() })
+    }
 
     // GET /api/ingest-gate — ulazna vrata za Telegram: prekidač po grupi + pragovi (U1)
     if (url.pathname === '/api/ingest-gate' && req.method === 'GET') {
@@ -16589,6 +16646,16 @@ console.log(`
 ║  Watching:  ${watcherReady ? 'Active' : 'Inactive'}
 ╚═══════════════════════════════════════════════════════════════════════════╝
 `)
+
+// ── Petlja orkestratora u procesu ploče (Config → Orkestrator → Pokreni) ─────────────
+// Diže se sama SAMO ako ju je korisnik zadnji put ostavio uključenu (data/orchestrator-petlja.json)
+// i ako je orkestrator uključen u konfiguraciji; inače tiho ne radi ništa. Brava s PID-om
+// sprječava da uz ovu petlju radi i `scripts/orchestrator.ts` — dvije bi se natjecale za zadatke.
+const orchestratorPetlja = new OrchestratorPetlja({ log: (r: string) => console.log(r) })
+{
+  const r = orchestratorPetlja.autostart()
+  if (r.ok) console.log('[orchestrator-petlja] autostart: petlja radi u procesu ploče')
+}
 
 // ── Telegram ULAZ, način A: poller u procesu ploče (DIZAJN-telegram-poller §2) ────────
 // Pokreće se SAMO ako je `ulaz.ukljucen` i ako postoji bot token; inače tiho ne radi ništa

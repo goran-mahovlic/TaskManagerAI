@@ -140,10 +140,12 @@ with the board still running:
 bun scripts/orchestrator.ts
 ```
 
-**Not from the board's Console.** The Console tab can run `bun` in WORK mode, but it kills
-any command after 30 seconds, and a pass waits for the agent to finish. Start the loop once
-as a service instead, after which everything else happens on the board
-([INSTALL.md §6](INSTALL.md#6-sloj-1--pokreni-orkestrator-neobavezno)).
+**From the board, no terminal:** Config → Orchestrator → the "Loop inside the board" row →
+**Start**. The board then runs the same loop itself, remembers that it is on, and brings it
+back up after a restart. **Stop** means no new agents are started; a running one finishes on
+its own. Only one loop may run: while the board holds it, the command-line script refuses
+with the board's process id, and the other way round. (The Console tab is not the way: it
+kills any command after 30 seconds.)
 
 **Check:** on the board, **Status** shows a live spawn. `ps -ef | grep "claude --print"`
 shows the process, and its working directory is your root folder.

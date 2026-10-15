@@ -220,6 +220,14 @@ se čita pri svakoj provjeri, pa agent dodan nakon pokretanja vrijedi bez restar
 kartica **Orkestrator**, ili izravno u `orchestrator.json`. Prazan popis je ispravno
 zatečeno stanje.
 
+**Bez terminala: gumb na ploči.** Config → Orkestrator → red „Petlja u procesu ploče" →
+**Pokreni**. Ploča tada sama vrti istu petlju kao `scripts/orchestrator.ts`, pamti da je
+uključena (`$TM_HOME/data/orchestrator-petlja.json`) i nakon restarta ploče diže je sama.
+**Zaustavi** znači „ne pokreći nove agente"; agent koji već radi dovršava i sam se javlja.
+Brava `$TM_HOME/data/orchestrator.lock` dopušta samo jednu petlju: dok ploča drži bravu,
+`bun scripts/orchestrator.ts` (i `--jednom`) odbija s PID-om, i obrnuto — dvije petlje bi se
+natjecale za iste zadatke.
+
 **Gdje agent radi.** Svaki projekt na ploči može imati **radnu mapu** (Projekti → projekt →
 „Radna mapa", ili `root_path` u API-ju): apsolutnu putanju repozitorija tog projekta. Zadatak
 iz takvog projekta orkestrator pokreće **u toj mapi** (radni direktorij procesa) i agentu je
