@@ -24,6 +24,7 @@
 
 import { existsSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'fs'
 import { osigurajMapu, stanjePutanja } from './core/paths'
+import { uzmiBravu as uzmiBravuOpca, type Brava } from './core/Brava'
 import {
   loadTelegramConfig, posaljiTelegramPoruku, telegramBotToken, type TelegramPostavke,
 } from './TelegramConfig'
@@ -80,35 +81,13 @@ export function zapisiStanje(stanje: StanjePollera, path: string = STANJE_PUTANJ
 }
 
 // ─── Brava (§5.2) ────────────────────────────────────────────────────────────
+// Sama brava je zajednička (`core/Brava.ts`) jer je od TASK „petlja s ploče" dijeli i
+// orkestrator; ovdje ostaje samo poller-ova putanja i riječ u poruci.
 
-export interface Brava { ok: boolean; razlog?: string; osloboditi?: () => void }
+export type { Brava } from './core/Brava'
 
-/**
- * Datoteka-brava s PID-om. Ako je vlasnik živ, drugi poller se NE pokreće i to jasno kaže —
- * inače način „u procesu ploče" i način „zaseban proces" krenu zajedno, a kvar je nevidljiv
- * (Telegram svaki update isporučuje samo jednom pozivatelju, pa se poruke tiho gube).
- */
 export function uzmiBravu(path: string = BRAVA_PUTANJA): Brava {
-  try {
-    if (existsSync(path)) {
-      const pid = Number(readFileSync(path, 'utf-8').trim())
-      if (Number.isFinite(pid) && pid > 0 && pid !== process.pid) {
-        let ziv = false
-        try { process.kill(pid, 0); ziv = true } catch (e: any) { ziv = e?.code === 'EPERM' }
-        if (ziv) {
-          return { ok: false, razlog: `poller već radi u procesu ${pid} (${path})` }
-        }
-      }
-    }
-    osigurajMapu(path)
-    writeFileSync(path, String(process.pid), 'utf-8')
-    return {
-      ok: true,
-      osloboditi: () => { try { unlinkSync(path) } catch { /* već je maknuta */ } },
-    }
-  } catch (e: any) {
-    return { ok: false, razlog: `brava se ne može uzeti: ${String(e?.message || e)}` }
-  }
+  return uzmiBravuOpca(path, 'poller')
 }
 
 // ─── Telegram tipovi (samo ono što doista koristimo) ─────────────────────────
