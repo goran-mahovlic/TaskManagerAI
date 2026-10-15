@@ -106,7 +106,7 @@ CREATE TABLE IF NOT EXISTS projects (
   target_date TEXT,                             -- ISO date string for deadline
   tags TEXT DEFAULT '[]',                       -- JSON array of tags
   metadata TEXT DEFAULT '{}'                    -- JSON object for extensibility
-, nextcloud_folder_id TEXT, nextcloud_share_url TEXT, specification TEXT DEFAULT '', spec_updated_at TEXT);
+, nextcloud_folder_id TEXT, nextcloud_share_url TEXT, specification TEXT DEFAULT '', spec_updated_at TEXT, root_path TEXT);
 
 -- table: task_history
 CREATE TABLE IF NOT EXISTS task_history (
@@ -296,6 +296,7 @@ CREATE VIEW v_projects_summary AS
       p.metadata,
       p.nextcloud_folder_id,
       p.nextcloud_share_url,
+      p.root_path,
       (SELECT COUNT(*) FROM project_agents pa WHERE pa.project_id = p.id) as agent_count,
       (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id) as task_count,
       (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND t.status = 'completed') as completed_task_count,

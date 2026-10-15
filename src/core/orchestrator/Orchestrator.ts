@@ -172,11 +172,17 @@ export class Orchestrator {
     this.queue.zauzmi(agent.id, t.id)
     await this.p.board.update(t.id, { status: 'in_progress', assignee: agent.id })
 
+    // Radna mapa projekta: izvođač je dobije kao cwd, agent i u tekstu. Bez projekta ili
+    // bez mape sve ostaje kao prije (cwd se ne šalje).
+    const projekt = t.projectId ? await this.p.board.project(t.projectId) : null
+    const radnaMapa = projekt?.rootPath || null
+
     const prompt = this.p.prompt.build({
       task: t,
       agent,
       apiBaseUrl: promptApiBase(this.cfg),
       systemFacts: this.cfg.prompt.systemFacts || [],
+      projectPath: radnaMapa,
     })
 
     let rezultat: ExecResult
@@ -186,6 +192,7 @@ export class Orchestrator {
         model: agent.model,
         prompt,
         taskId: t.id,
+        ...(radnaMapa ? { cwd: radnaMapa } : {}),
       })
     } catch (e: any) {
       rezultat = { exitCode: 1, resultText: '', greska: String(e?.message || e) }

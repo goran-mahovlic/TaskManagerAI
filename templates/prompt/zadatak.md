@@ -17,6 +17,7 @@ naredba i njezin izlaz, dirnuta datoteka, izmjeren broj, HTTP status ili commit)
 Ako ne možeš dovršiti (nedostaje alat, pristup ili opis) — ne zatvaraj zadatak kao gotov:
   curl -s -X PUT {apiBase}/api/tasks/{taskId} -H 'Content-Type: application/json' -d '{"status":"blocked","blockedReason":"..."}'
 
+{projectPath}
 {systemFacts}
 {verificationGate}
 ## Zadnji redak odgovora

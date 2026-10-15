@@ -41,6 +41,7 @@ HTTP status ili commit — ne rečenicu „gotovo je"):
 Ako ne možeš dovršiti:
   curl -s -X PUT {apiBase}/api/tasks/{taskId} -H 'Content-Type: application/json' -d '{"status":"blocked","blockedReason":"..."}'
 
+{projectPath}
 {systemFacts}
 {verificationGate}
 ## Zadnji redak odgovora
@@ -87,6 +88,9 @@ export class PredloskomSastavljenPrompt implements PromptComposer {
       agentUloga: ctx.agent.uloga || `Agent „${ctx.agent.id}".`,
       apiBase: ctx.apiBaseUrl,
       projectId: ctx.task.projectId || '',
+      projectPath: ctx.projectPath
+        ? `## Radna mapa\nRadi u mapi: ${ctx.projectPath} (tu je pokrenut i tvoj proces).\n`
+        : '',
       systemFacts: facts.length
         ? '## Infrastruktura (iz konfiguracije ove instalacije)\n' + facts.map(r => `- ${r}`).join('\n') + '\n'
         : '',
