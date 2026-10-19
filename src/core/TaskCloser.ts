@@ -32,6 +32,7 @@ import { join } from 'path'
 import { tmpdir } from 'os'
 import { isTestRuntime } from './LiveDbGuard'
 import { stanjePutanja } from './paths'
+import { zaglavljaZatvaraca } from './ZatvaranjeKrozDaemon'
 
 /**
  * Mapa najmova. Isti obrazac kao data/file_scope_claims/ (A3/TASK-3002).
@@ -132,7 +133,10 @@ export async function zatvoriZadatak(
     try {
       const res = await f(`${apiBase}/${taskId}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        // TASK-5164 (B1, prijenos iz glavnog TASK-5618): daemon se predstavlja ulogom i tokenom —
+        // bez toga ploča ne razlikuje njegovo zatvaranje od običnog curla i `completed` bi postao
+        // zahtjev (202) za samog sebe.
+        headers: { 'Content-Type': 'application/json', ...zaglavljaZatvaraca() },
         body: JSON.stringify(body),
       })
       httpStatus = res.status

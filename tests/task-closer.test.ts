@@ -189,3 +189,27 @@ describe('SIMULACIJA TASK-3068 nad pravim TaskManagerSQL-om', () => {
     expect(tm.getTask(t.id)?.status).toBe('blocked')
   })
 })
+
+// TASK-5618 (prijenos TASK-5164 B1 iz TaskClosera glavnog sustava): daemon se pri
+// zatvaranju predstavlja ulogom i ključem — bez toga ploča uz `zatvaranjeKrozDaemonLive`
+// daemonovo `completed` tretira kao zahtjev (202) i zadatak ostaje otvoren.
+describe('TaskCloser.zatvoriZadatak — zaglavlja zatvarača (B1)', () => {
+  test('PUT nosi X-REGOC-Zatvara: daemon i ključ zatvarača', async () => {
+    process.env.TM_IZVORNI_PODACI = join(sandbox, 'podaci')
+    try {
+      const { zatvoriZadatak } = await ucitaj()
+      const { procitajToken } = await import('../src/core/ZatvaranjeKrozDaemon')
+      let zaglavlja: Record<string, string> = {}
+      const r = await zatvoriZadatak('http://x/api/tasks', 'TASK-B1', { status: 'completed' }, {
+        fetchFn: async (_u: string, init: any) => { zaglavlja = init.headers; return odgovor(200) },
+        sleepFn: async () => {},
+      })
+      expect(r.ok).toBe(true)
+      expect(zaglavlja['Content-Type']).toBe('application/json')
+      expect(zaglavlja['X-REGOC-Zatvara']).toBe('daemon')
+      const kljuc = procitajToken(join(sandbox, 'podaci', 'zatvarac.token'))
+      expect(kljuc).not.toBeNull()
+      expect(zaglavlja['X-REGOC-Zatvarac']).toBe(kljuc!)
+    } finally { delete process.env.TM_IZVORNI_PODACI }
+  })
+})
