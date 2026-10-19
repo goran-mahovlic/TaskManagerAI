@@ -6,7 +6,7 @@
  * ponovno otvorio zadatak.
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
-import { mkdtempSync, rmSync } from 'fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import { Database } from 'bun:sqlite'
@@ -68,5 +68,18 @@ describe('PUT /api/tasks/:id — pozivatelj u reviziji (prava ploča paketa)', (
       'in_progress:inzenjer', 'completed:covjek', 'pending:api-put',
       'in_progress:inzenjer', 'completed:covjek', 'pending:orkestrator',
     ])
+  }, 20_000)
+
+  test('dok spawn radi (živ najam), zaglavlje covjek NE upisuje čovjeka u reviziju (TASK-5334 N1)', async () => {
+    const r = await zovi('/api/tasks', 'POST', { title: 'pozivatelj uz najam', description: 'opis zadatka za reviziju', priority: 3, assignee: 'inzenjer' })
+    const { id } = await r.json() as { id: string }
+    expect((await zovi(`/api/tasks/${id}`, 'PUT', { status: 'in_progress' })).status).toBe(200)
+    mkdirSync(p!.najmovi, { recursive: true })
+    writeFileSync(join(p!.najmovi, `${id}.json`),
+      JSON.stringify({ taskId: id, agent: 'inzenjer', pid: process.pid, startedAt: new Date().toISOString() }))
+    expect((await zovi(`/api/tasks/${id}`, 'PUT',
+      { status: 'completed', resultSummary: 'Izmijenjen src/x.ts; bun test → 3 pass, 0 fail.' },
+      { 'X-REGOC-Zatvara': 'covjek' })).status).toBe(200)
+    expect(revizija(id).map(x => `${x.new_value}:${x.changed_by}`)).toEqual(['in_progress:inzenjer', 'completed:inzenjer'])
   }, 20_000)
 })

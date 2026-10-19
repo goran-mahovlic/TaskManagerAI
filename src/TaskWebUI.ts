@@ -14370,9 +14370,11 @@ async function handleUpdateTask(taskId: string, req: Request): Promise<Response>
     let pozivateljRevizije: string | undefined
     try {
       const uloga = req.headers.get('X-REGOC-Zatvara')
-      if (updates.status === 'completed' && uloga === 'covjek') pozivateljRevizije = 'covjek'
+      // Isti sud kao vrata zatvaranja (TASK-5334 N1): `covjek` dok spawn radi na zadatku NIJE čovjek.
+      const najam = najamAktivan(taskId) || ziviNajmovi().some(n => String(n.taskId) === taskId)
+      const tko = pozivateljZatvaranja(req.headers, procitajToken(), najam)   // `daemon` samo uz valjan ključ
+      if (updates.status === 'completed' && tko === 'covjek') pozivateljRevizije = 'covjek'
       else if (updates.status === 'pending' && (statusPrijePut === 'completed' || statusPrijePut === 'cancelled')) {
-        const tko = pozivateljZatvaranja(req.headers, procitajToken())   // `daemon` samo uz valjan ključ
         pozivateljRevizije = tko !== 'ostali' ? tko : (uloga === 'orkestrator' ? 'orkestrator' : 'api-put')
       }
     } catch { /* revizija nikad ne ruši PUT */ }
