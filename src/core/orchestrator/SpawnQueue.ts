@@ -136,3 +136,25 @@ export class SpawnQueue {
     }
   }
 }
+
+// ─── TASK-5625 (prijenos TASK-5029 glavnog, jezgra SpawnSlotRules) ──────────────
+
+/** Oznaka zadatka koji čeka slobodno mjesto (strop usporednih spawnova). */
+export const CEKA_MJESTO_TAG = 'ceka-mjesto'
+
+/**
+ * Oznake zadatka nakon pokušaja spawna, ili `null` kad se ništa ne mijenja.
+ * Strop → dodaj `ceka-mjesto`; proces krenuo → makni je. Ostale odbijenice (backoff, već radi)
+ * nisu „čekanje mjesta" i ne smiju se tako prikazati.
+ */
+export function oznakeNakonPokusaja(tags: string[] | null | undefined, ishod: { ok: true } | { ok: false; razlog: string }): string[] | null {
+  const cur = Array.isArray(tags) ? tags.map(String) : []
+  const ima = cur.includes(CEKA_MJESTO_TAG)
+  if (ishod.ok) return ima ? cur.filter(t => t !== CEKA_MJESTO_TAG) : null
+  if (ishod.razlog !== 'strop' || ima) return null
+  return [...cur, CEKA_MJESTO_TAG]
+}
+
+export function biljeskaCekaMjesto(aktivnih: number, strop: number): string {
+  return `⏳ Čeka mjesto: radi ${aktivnih}/${strop} agenata (strop). Status ostaje pending dok proces stvarno ne krene; orkestrator ga pokreće čim se mjesto oslobodi.`
+}

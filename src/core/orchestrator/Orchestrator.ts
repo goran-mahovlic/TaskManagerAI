@@ -14,7 +14,7 @@
  */
 
 import type { AgentInfo, ExecResult, Message, OrchestratorPorts, Task } from './Ports'
-import { SpawnQueue } from './SpawnQueue'
+import { SpawnQueue, oznakeNakonPokusaja, biljeskaCekaMjesto } from './SpawnQueue'
 import { Watchdogs, type Nalaz } from './Watchdogs'
 import { orkestratorUkljucen, promptApiBase, type OrchestratorPostavke } from './OrchestratorConfig'
 
@@ -159,6 +159,12 @@ export class Orchestrator {
       if (!dozvola.ok) {
         ishod.spawn.odbijeno++
         this.p.logger.log(`[orchestrator] ${t.id} odgođen: ${dozvola.poruka}`)
+        // TASK-5625 (TASK-5029 glavnog): strop → zadatak ostaje pending s oznakom ceka-mjesto
+        // i JEDNOM bilješkom (oznaka već postoji → ništa), da ploča pokaže „ČEKA MJESTO”.
+        const nove = oznakeNakonPokusaja(t.tags, dozvola)
+        if (nove) {
+          await this.p.board.update(t.id, { tags: nove, progressNotes: [biljeskaCekaMjesto(this.queue.broj, this.queue.strop)] })
+        }
         // Strop znači da nema smisla gledati ostale zadatke u ovom prolazu.
         if (dozvola.razlog === 'strop') break
         continue
@@ -177,7 +183,8 @@ export class Orchestrator {
   /** Pokreni jedan zadatak i zapiši ishod na ploču. Iznimka ne smije oboriti petlju. */
   async pokreniZadatak(t: Task, agent: AgentInfo): Promise<ExecResult> {
     this.queue.zauzmi(agent.id, t.id)
-    await this.p.board.update(t.id, { status: 'in_progress', assignee: agent.id })
+    const bezCekanja = oznakeNakonPokusaja(t.tags, { ok: true })
+    await this.p.board.update(t.id, { status: 'in_progress', assignee: agent.id, ...(bezCekanja ? { tags: bezCekanja } : {}) })
 
     const prompt = this.p.prompt.build({
       task: t,

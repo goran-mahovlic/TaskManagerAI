@@ -33,6 +33,8 @@ export interface TaskPatch {
   resultSummary?: string
   blockedReason?: string
   progressNotes?: string[]
+  /** TASK-5625: oznaka `ceka-mjesto` (strop) — cijeli novi popis oznaka. */
+  tags?: string[]
 }
 
 export interface CreateTaskInput {

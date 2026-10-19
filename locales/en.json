@@ -982,6 +982,8 @@
   "tel_priv_v_video_note": "video note",
   "aktivna": "active",
   "tsk_bez_procesa": "NO PROCESS",
+  "tsk_ceka_mjesto": "WAITING FOR SLOT",
+  "tsk_ceka_mjesto_naslov": "Concurrency cap is full — the task stays pending and starts by itself when a slot frees up",
   "tsk_bez_procesa_naslov": "Status is in progress, but no process runs for this task (no live lease)",
   "zivi_spawnovi_naslov": "Live spawns (leases with a verified pid) / concurrency cap",
   "tajne_g_lan_http": "The owner disabled writing over plain HTTP on the local network (\"dopustiLanHttp\": false in config/tajne.json). Open the board over Tailscale or on the machine itself.",

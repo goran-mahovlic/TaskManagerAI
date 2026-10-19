@@ -14,7 +14,7 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 
 import { Orchestrator } from '../src/core/orchestrator/Orchestrator'
-import { SpawnQueue } from '../src/core/orchestrator/SpawnQueue'
+import { SpawnQueue, CEKA_MJESTO_TAG, oznakeNakonPokusaja } from '../src/core/orchestrator/SpawnQueue'
 import { Watchdogs } from '../src/core/orchestrator/Watchdogs'
 import { KonfiguracijskiRegistar } from '../src/core/orchestrator/AgentRegistry'
 import { PredloskomSastavljenPrompt } from '../src/core/orchestrator/PromptBuilder'
@@ -59,6 +59,7 @@ class PlocaUMemoriji implements Board {
     if (!t) return false
     if (patch.status) t.status = patch.status
     if (patch.assignee !== undefined) t.assignee = patch.assignee
+    if (patch.tags) t.tags = patch.tags
     return true
   }
   async create(input: CreateTaskInput) {
@@ -493,5 +494,41 @@ describe('OrchestratorConfig (§5.1)', () => {
     const s = stanjeOrkestratora({ ...ZADANE_POSTAVKE, enabled: false })
     expect(s.spreman).toBe(false)
     expect(s.zastoKey).toBe('orc_zasto_iskljucen')
+  })
+})
+
+// ─── TASK-5625 (prijenos TASK-5029 glavnog): oznaka „ceka-mjesto” prati stvarni ishod spawna ──
+
+describe('ČEKA MJESTO — strop ostavlja zadatak pending s oznakom, spawn je miče', () => {
+  test('pravilo oznaka: strop dodaje, pokretanje miče, ostale odbijenice ne diraju', () => {
+    expect(CEKA_MJESTO_TAG).toBe('ceka-mjesto')
+    expect(oznakeNakonPokusaja(['a'], { ok: false, razlog: 'strop' })).toEqual(['a', 'ceka-mjesto'])
+    expect(oznakeNakonPokusaja(['a', 'ceka-mjesto'], { ok: false, razlog: 'strop' })).toBeNull()
+    expect(oznakeNakonPokusaja(['a'], { ok: false, razlog: 'backoff' })).toBeNull()
+    expect(oznakeNakonPokusaja(['a', 'ceka-mjesto'], { ok: true })).toEqual(['a'])
+    expect(oznakeNakonPokusaja(['a'], { ok: true })).toBeNull()
+  })
+
+  test('strop pun → odbijeni zadatak ostaje pending, dobiva ceka-mjesto i JEDNU bilješku', async () => {
+    const { ports, board } = sloziPortove()
+    board.dodaj({ id: 'T-1', assignee: 'pisac', tags: ['x'] })
+    const o = new Orchestrator(ports, postavke({ spawn: { ...ZADANE_POSTAVKE.spawn, maxConcurrent: 0 } } as any))
+    await o.jedanProlaz()
+    expect(board.zadaci.get('T-1')!.status).toBe('pending')
+    expect(board.zadaci.get('T-1')!.tags).toEqual(['x', 'ceka-mjesto'])
+    const biljeske = board.zakrpe.filter(z => z.id === 'T-1' && z.patch.progressNotes)
+    expect(biljeske.length).toBe(1)
+    expect(biljeske[0]!.patch.progressNotes![0]).toContain('Čeka mjesto')
+    await o.jedanProlaz()
+    expect(board.zakrpe.filter(z => z.id === 'T-1' && z.patch.progressNotes).length).toBe(1)
+  })
+
+  test('kad se mjesto oslobodi, pokretanje u istoj zakrpi stavlja in_progress i miče oznaku', async () => {
+    const { ports, board } = sloziPortove()
+    board.dodaj({ id: 'T-1', assignee: 'pisac', tags: ['x', 'ceka-mjesto'] })
+    const o = new Orchestrator(ports, postavke())
+    await o.jedanProlaz()
+    const z = board.zakrpe.find(k => k.id === 'T-1' && k.patch.status === 'in_progress')!
+    expect(z.patch.tags).toEqual(['x'])
   })
 })

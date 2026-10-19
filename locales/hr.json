@@ -982,6 +982,8 @@
   "tel_priv_v_video_note": "video-krug",
   "aktivna": "aktivna",
   "tsk_bez_procesa": "BEZ PROCESA",
+  "tsk_ceka_mjesto": "ČEKA MJESTO",
+  "tsk_ceka_mjesto_naslov": "Strop usporednih agenata je pun — zadatak ostaje na čekanju i kreće sam čim se mjesto oslobodi",
   "tsk_bez_procesa_naslov": "Status je „u radu”, ali za zadatak ne radi nijedan proces (nema živog najma)",
   "zivi_spawnovi_naslov": "Živi spawnovi (najmovi s provjerenim pidom) / strop usporednih agenata",
   "tajne_g_lan_http": "Vlasnik je isključio upis preko čistog HTTP-a u lokalnoj mreži (\"dopustiLanHttp\": false u config/tajne.json). Otvori ploču preko Tailscalea ili sa samog stroja.",

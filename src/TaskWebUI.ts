@@ -1771,10 +1771,11 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
     .uputa-item .uputa-meta { font-size: 0.75rem; opacity: .75; }
     .live-spawns-badge { font-size: 0.75rem; font-weight: 600; opacity: .85; margin-left: 6px; }
     .live-spawns-badge.puno { color: var(--accent-yellow, #eab308); }
-    .bez-procesa-badge {
+    .ceka-mjesto-badge, .bez-procesa-badge {
       font-size: 0.68rem; border-radius: 3px; padding: 1px 5px; margin-left: 6px; font-weight: 600;
-      background: var(--accent-red, #ef4444); color: #fff;
     }
+    .ceka-mjesto-badge { background: #64748b; color: #fff; }
+    .bez-procesa-badge { background: var(--accent-red, #ef4444); color: #fff; }
     .paused-badge {
       font-size: 0.68rem;
       background: var(--accent-yellow, #eab308);
@@ -3860,6 +3861,9 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         // stupcu (Pending/In Progress) — samo je vizualno prigušen i nosi gumb „Nastavi".
         if (task.paused) card.classList.add('paused');
         const pausedBadge = (task.paused ? '<span class="paused-badge">&#9208; PAUZA</span>' : '')
+          // TASK-5625 (TASK-5029 glavnog): orkestrator je odbio spawn zbog stropa → pending s oznakom ceka-mjesto.
+          + (task.status === 'pending' && (task.tags || []).includes('ceka-mjesto')
+              ? '<span class="ceka-mjesto-badge" title="' + escapeAttr(_T('tsk_ceka_mjesto_naslov', 'Waiting for a free slot')) + '">&#9203; ' + _T('tsk_ceka_mjesto', 'WAITING FOR SLOT') + '</span>' : '')
           // TASK-5323 (TASK-5029 glavnog): status kaže „u radu", a nijedan živi spawn ga ne drži.
           // Samo kad ploča zna najmove (liveSpawnState) — bez njih bi svaki zadatak bio lažna uzbuna.
           + (task.status === 'in_progress' && liveSpawnState && !liveSpawnState.ids.has(task.id)
