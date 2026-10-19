@@ -38,6 +38,7 @@ import { homedir } from 'os'
 import { join, dirname, relative, basename, extname, resolve, isAbsolute, sep } from 'path'
 import { isTestRuntime } from './LiveDbGuard'
 import { konfigPutanja, stanjePutanja, PAKET_DIR } from './paths'
+import { tmpKorijen, tmpMapaKriticara, tmpOkolina, pocistiTmp, tmpUTmpu, korijenIzMapeKriticara } from './TmpOkolina'
 // W3/TASK-4615: unakrsna provjera tvrdnji gleda POLJE `datoteke` kad ga ima (v. crossCheckClaims).
 import { ocijeniIzlazKoraka } from './StepSchema'
 import {
@@ -411,6 +412,11 @@ export interface PlannedCheck {
   timeoutMs?: number
   /** Samo `kind:'doc'` — pragovi i traženi odsjeci. */
   doc?: DocCheckParams
+  /**
+   * TASK-5336 (prijenos TASK-5618): TMPDIR naredbe — mapa kritičara pod korijenom paketa, nikad
+   * /tmp (mali tmpfs, pun → ENOSPC lažni pad). Postavlja je `critiqueSpawn*`; prazno = naslijeđena okolina.
+   */
+  tmpDir?: string
 }
 
 /**
@@ -1250,7 +1256,7 @@ export const realRunner: CheckRunner = (check, timeoutMs) => {
     killSignal: 'SIGKILL',
     encoding: 'utf-8',
     maxBuffer: 4 * 1024 * 1024,
-    env: { ...process.env, NO_COLOR: '1', FORCE_COLOR: '0' },
+    env: okolinaProvjere(check),
   })
   return {
     exitCode: r.status,
@@ -1258,6 +1264,17 @@ export const realRunner: CheckRunner = (check, timeoutMs) => {
     stderr: r.stderr || '',
     timedOut: (r as any).signal === 'SIGKILL' && r.status === null,
   }
+}
+
+/**
+ * Okolina naredbe provjere: naslijeđena + TMPDIR mape kritičara (TASK-5336).
+ * TASK-5338 obrana u dubinu: provjera bez `tmpDir` uz roditelja bez TMPDIR ili s TMPDIR u /tmp
+ * i dalje ide u mapu kritičara, ne u /tmp.
+ */
+function okolinaProvjere(check: PlannedCheck): Record<string, string | undefined> {
+  let tmp = check.tmpDir ? tmpOkolina(check.tmpDir, korijenIzMapeKriticara(check.tmpDir)) : {}
+  if (!tmp.TMPDIR && tmpUTmpu(process.env.TMPDIR)) tmp = tmpOkolina(tmpMapaKriticara(null))
+  return { ...process.env, ...tmp, NO_COLOR: '1', FORCE_COLOR: '0' }
 }
 
 export interface CheckResult extends PlannedCheck {
@@ -1313,7 +1330,7 @@ export const realRunnerAsync: AsyncCheckRunner = async (check, timeoutMs) => {
     cwd: check.cwd,
     stdout: 'pipe',
     stderr: 'pipe',
-    env: { ...process.env, NO_COLOR: '1', FORCE_COLOR: '0' },
+    env: okolinaProvjere(check),
   })
   let timedOut = false
   const timer = setTimeout(() => { timedOut = true; try { proc.kill('SIGKILL') } catch {} }, timeoutMs)
@@ -1950,6 +1967,8 @@ export interface CritiqueInput {
   spawnSessionId?: string
   /** Izravni putovi transkripata (testovi/CLI); imaju prednost pred `spawnSessionId`. */
   transcripts?: string[]
+  /** TASK-5336: korijen privremenih mapa (testovi); zadano `tmpKorijen()`. */
+  tmpRoot?: string
 }
 
 export interface CritiqueOutcome {
@@ -1974,17 +1993,31 @@ export const CRITIC_REPAIR_PREFIX = 'BLOCKED: CRITIC_FAILED'
 export const CRITIC_ESCALATE_PREFIX = 'BLOCKED: CRITIC_ESCALATED'
 
 /**
+ * TASK-5336: svaka naredba suda dobiva TMPDIR u <korijen>/ispitno/kriticar/<taskId>; mapa se nakon
+ * suda briše, pa ni test koji ne čisti za sobom ne puni /tmp ni korijen.
+ */
+function tmpZaSud(input: CritiqueInput, plan: PlannedCheck[]): { dir: string; korijen: string } {
+  const korijen = input.tmpRoot || tmpKorijen()
+  const dir = tmpMapaKriticara(input.taskId, korijen)
+  for (const c of plan) c.tmpDir = dir
+  return { dir, korijen }
+}
+
+/**
  * Pokreni kritiku nad onim što je spawn ostavio na disku. Nikad ne baca — kvar u
  * kritičaru ne smije zaustaviti ploču (fail-open na vlastitu grešku, fail-closed samo
  * na tuđi dokazani kvar).
  */
 export function critiqueSpawn(input: CritiqueInput, cfg: CriticConfig = loadCriticConfig(), runner: CheckRunner = realRunner): CritiqueOutcome {
   const prep = prepareScan(input, cfg)
+  const tmp = tmpZaSud(input, prep.plan)
   let checks: CheckResult[] = []
   try {
     checks = runChecks(prep.plan, cfg, runner)
   } catch (e: any) {
     prep.notes.push(`kritičar je pao na vlastitoj grešci: ${String(e?.message || e).slice(0, 200)}`)
+  } finally {
+    pocistiTmp(tmp.dir, tmp.korijen)
   }
   return finalizeCritique(input, cfg, prep, checks)
 }
@@ -1999,11 +2032,14 @@ export async function critiqueSpawnAsync(
   runner: AsyncCheckRunner = realRunnerAsync,
 ): Promise<CritiqueOutcome> {
   const prep = prepareScan(input, cfg)
+  const tmp = tmpZaSud(input, prep.plan)
   let checks: CheckResult[] = []
   try {
     checks = await runChecksAsync(prep.plan, cfg, runner)
   } catch (e: any) {
     prep.notes.push(`kritičar je pao na vlastitoj grešci: ${String(e?.message || e).slice(0, 200)}`)
+  } finally {
+    pocistiTmp(tmp.dir, tmp.korijen)
   }
   return finalizeCritique(input, cfg, prep, checks)
 }
