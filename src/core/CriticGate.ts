@@ -520,23 +520,37 @@ const DECLARED_LINE_RE = /^\s*\[\s*provjera\s*\]\s*([a-zžćčšđ0-9_-]+)\s*:\s
 /** Metaznakovi ljuske. Prisutnost bilo kojeg = odbijanje, NIKAD pokušaj čišćenja. */
 const SHELL_META_RE = /[|&;$`><\n\r]/
 
+/**
+ * Razvij `~` kao ljuska: samo nenavodnički `~` ili `~/…` na početku argumenta (TASK-5259,
+ * prijenos iz glavnog TASK-5618). Bez toga `bun test ~/x.test.ts` dobije doslovan `~` i pada kao
+ * filtar koji ništa ne hvata, iako u ljusci prolazi. `~korisnik` se ne razvija — tuđi HOME nije
+ * stvar ovog kritičara.
+ */
+function expandTilde(arg: string): string {
+  if (arg === '~') return HOME
+  if (arg.startsWith('~/')) return HOME + arg.slice(1)
+  return arg
+}
+
 /** Rastavljanje na argumente. Navodnici drže argument s razmakom na okupu. */
 function tokenizeCommand(raw: string): { argv: string[]; error: string | null } {
   const argv: string[] = []
   let cur = ''
   let quote: string | null = null
   let started = false
+  let quotedStart = false
+  const push = () => { argv.push(quotedStart ? cur : expandTilde(cur)); cur = ''; started = false; quotedStart = false }
   for (const ch of raw) {
     if (quote) {
       if (ch === quote) { quote = null; continue }
       cur += ch; started = true; continue
     }
-    if (ch === '"' || ch === "'") { quote = ch; started = true; continue }
-    if (/\s/.test(ch)) { if (started) { argv.push(cur); cur = ''; started = false } continue }
+    if (ch === '"' || ch === "'") { if (!started) quotedStart = true; quote = ch; started = true; continue }
+    if (/\s/.test(ch)) { if (started) push(); continue }
     cur += ch; started = true
   }
   if (quote) return { argv: [], error: 'nezatvoren navodnik u naredbi' }
-  if (started) argv.push(cur)
+  if (started) push()
   return { argv, error: null }
 }
 
