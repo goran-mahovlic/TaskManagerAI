@@ -31,13 +31,13 @@ const KATALOG_FIXTURE = {
     'implement-feature': {
       id: 'implement-feature', naziv: 'Izrada značajke', najmanja_tezina: 36,
       okidaci: ['implementiraj', 'nova značajka'],
-      koraci: [{ agent: 'kosjenka' }, { agent: 'jelena' }],
+      koraci: [{ agent: 'arhitekt' }, { agent: 'inzenjer' }],
       enabled: true,
     },
     'bug-fix': {
       id: 'bug-fix', naziv: 'Popravak kvara', najmanja_tezina: 16,
       okidaci: ['ne radi', 'kvar'],
-      koraci: [{ agent: 'jelena' }],
+      koraci: [{ agent: 'inzenjer' }],
       enabled: true,
     },
   },
@@ -111,7 +111,7 @@ describe('N1 — izvorne oznake ostaju netaknute', () => {
     pisiCfg('on')
     const h = hvatac()
     const z = mozdaZapisiOdluku(
-      { taskId: 'TASK-N1c', naslov: 'Jelena: izrada ponude', tezina: 70, assignee: 'jelena', blockedBy: ['TASK-1'],
+      { taskId: 'TASK-N1c', naslov: 'Inženjer: izrada ponude', tezina: 70, assignee: 'inzenjer', blockedBy: ['TASK-1'],
         oznake: ['workflow:implement-feature', 'korak:3/5', 'vjestina:Pdf'] },
       opcije({ primijeniOznaku: h.primijeniOznaku }),
     )
@@ -124,7 +124,7 @@ describe('N1 — izvorne oznake ostaju netaknute', () => {
     pisiCfg('on')
     const h = hvatac()
     mozdaZapisiOdluku(
-      { taskId: 'TASK-N1d', naslov: 'Potjeh: QA', tezina: 70, assignee: 'potjeh', blockedBy: ['TASK-1'], oznake: ['QA'] },
+      { taskId: 'TASK-N1d', naslov: 'QA: provjera', tezina: 70, assignee: 'qa', blockedBy: ['TASK-1'], oznake: ['QA'] },
       opcije({ primijeniOznaku: h.primijeniOznaku }),
     )
     expect(h.pozivi.length).toBe(1)
