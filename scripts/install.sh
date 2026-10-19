@@ -135,7 +135,7 @@ fi
 echo "  rječnici sučelja…"
 if ! bun scripts/provjeri-rjecnike.ts; then
   echo "  GREŠKA: rječnici sučelja nisu na svom mjestu (locales/, config/jezik.json)"
-  echo "         vrati ih iz gita ili prijenosom: bash scripts/uskladi_s_regocem.sh"
+  echo "         vrati ih iz gita (git checkout -- locales config/jezik.json)"
   exit 1
 fi
 
