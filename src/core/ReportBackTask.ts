@@ -35,6 +35,8 @@ import { MAX_MSG_LEN, parseAgentOutput, summaryLine } from './AgentOutputParser'
  */
 
 import { konfigPutanja } from './paths'
+import { sastaviTijek, ucitajZapise } from './TijekPosla'
+import { loadWorkflowKatalog } from './WorkflowGate'
 
 // ─── Rječnik ─────────────────────────────────────────────────────────────────
 
@@ -275,6 +277,8 @@ export interface ReportBackMessageInput {
   /** ID zadatka dojave — da se poruka može povezati s pločom. */
   reportBackId?: string | null
   maxLen?: number
+  /** TASK-5159: odjeljak „🧭 Tijek posla” (TijekPosla.sastaviTijek) — između stavki i podnožja. */
+  tijekPosla?: string | null
 }
 
 /**
@@ -313,7 +317,9 @@ export function buildReportBackMessage(input: ReportBackMessageInput): string {
 
   // Prostor za tijelo je ono što ostane; po zadatku dijelimo ravnomjerno, ali nikad ispod
   // naslova — poruka bez naslova zadatka ne kaže ništa.
-  const prostor = Math.max(200, maxLen - glava.length - rep.length)
+  const tijek = String(input.tijekPosla || '').trim()
+  const tijekBlok = tijek ? `\n\n${tijek}` : ''
+  const prostor = Math.max(200, maxLen - glava.length - rep.length - tijekBlok.length)
   const poZadatku = Math.max(80, Math.floor(prostor / Math.max(1, input.tasks.length)))
   const stavke = input.tasks.map(t => {
     const status = String(t.status || '').toLowerCase() === 'cancelled' ? 'otkazano' : 'gotovo'
@@ -323,8 +329,12 @@ export function buildReportBackMessage(input: ReportBackMessageInput): string {
     return s ? `${glavaStavke}\n   ${s}` : glavaStavke
   }).join('\n')
 
-  const cijela = `${glava}${stavke}${rep}`
-  return cijela.length <= maxLen ? cijela : cijela.slice(0, maxLen - 1).trimEnd() + '…'
+  const cijela = `${glava}${stavke}${tijekBlok}${rep}`
+  if (cijela.length <= maxLen) return cijela
+  // TASK-5159: reže se TIJELO (stavke), ne rep — inače bi rez odnio tijek posla i poveznicu ploče.
+  const zaStavke = maxLen - glava.length - tijekBlok.length - rep.length - 1
+  if (tijekBlok && zaStavke >= 80) return `${glava}${stavke.slice(0, zaStavke).trimEnd()}…${tijekBlok}${rep}`
+  return cijela.slice(0, maxLen - 1).trimEnd() + '…'
 }
 
 // ─── Konfiguracija (hot-reload, isti obrazac kao ResearchRagGate) ────────────
@@ -335,12 +345,15 @@ export interface ReportBackConfig {
   /** true = poruka se STVARNO šalje; false = SHADOW (samo zapis „BIH POSLALA"). */
   live: boolean
   maxLen: number
+  /** TASK-5159: dodaj odjeljak „🧭 Tijek posla” (zadano true; vraćanje je jedna zastavica). */
+  tijekPosla: boolean
 }
 
 export const DEFAULT_REPORT_BACK_CONFIG: ReportBackConfig = {
   enabled: true,
   live: true,   // doseg su isključivo zadaci s oznakom `report-back`, kojih bez ovog mehanizma nema
   maxLen: MAX_MSG_LEN,
+  tijekPosla: true,
 }
 
 const CONFIG_TTL_MS = 30_000
@@ -367,6 +380,7 @@ export function loadReportBackConfig(force = false): ReportBackConfig {
       if (typeof raw?.enabled === 'boolean') cfg.enabled = raw.enabled
       if (typeof raw?.live === 'boolean') cfg.live = raw.live
       if (Number.isInteger(raw?.maxLen) && raw.maxLen >= 200 && raw.maxLen <= 4096) cfg.maxLen = raw.maxLen
+      if (typeof raw?.tijekPosla === 'boolean') cfg.tijekPosla = raw.tijekPosla
     }
   } catch { /* neispravan JSON → defaulti; dojava nikad ne ruši pozivatelja */ }
   _cfg = cfg
@@ -396,6 +410,8 @@ export interface SweepDeps {
   markSent(id: string, chatId: number, text: string): void
   log?(msg: string): void
   cfg?: ReportBackConfig
+  /** TASK-5159: sastavljač odjeljka „Tijek posla” (testovi ga podmeću; zadano TijekPosla). */
+  tijekPosla?(tasks: ChainTaskView[]): string
 }
 
 export interface SweepOutcome {
@@ -441,6 +457,14 @@ export function runReportBackSweep(deps: SweepDeps): SweepResult {
       .map(id => deps.getTask(id))
       .filter((t): t is ChainTaskView => !!t)
     const subject = String(rb.title || '').replace(/^📣\s*Dojava:\s*/i, '').trim() || rb.id
+    let tijekPosla = ''
+    if (cfg.tijekPosla !== false) {
+      try {
+        tijekPosla = deps.tijekPosla
+          ? deps.tijekPosla(tasks)
+          : sastaviTijek(tasks as any, ucitajZapise(), loadWorkflowKatalog())
+      } catch (e) { log(`report-back: tijek posla nije sastavljen ${rb.id}: ${String(e).slice(0, 200)}`) }
+    }
     const text = buildReportBackMessage({
       subject,
       tasks,
@@ -448,6 +472,7 @@ export function runReportBackSweep(deps: SweepDeps): SweepResult {
       projectId: rb.projectId,
       reportBackId: rb.id,
       maxLen: cfg.maxLen,
+      tijekPosla,
     })
     const chatId = marker!.chatId
     if (!cfg.live) {
