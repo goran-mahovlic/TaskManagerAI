@@ -309,6 +309,15 @@ function oznakeNorm(oznake?: string[] | null): string[] {
   return (oznake || []).map(o => String(o).trim().toLowerCase()).filter(Boolean)
 }
 
+/**
+ * Oznake KAKO STOJE na zadatku (samo bez razmaka i praznih) — TASK-5200/N1. Što vrata upisuju
+ * natrag na zadatak smije DODATI oznaku, nikad mijenjati tuđe — `oznakeNorm` je samo za
+ * USPOREDBU. Inače `vjestina:Pdf` postane `vjestina:pdf` i spawn traži nepostojeći Skill.
+ */
+function oznakeIzvorne(oznake?: string[] | null): string[] {
+  return (oznake || []).map(o => String(o).trim()).filter(Boolean)
+}
+
 function tezinaZa(ulaz: OdlukaUlaz): { tezina: number; izvor: TezinaIzvor } {
   if (typeof ulaz.tezina === 'number' && Number.isFinite(ulaz.tezina)) {
     return { tezina: Math.max(1, Math.min(100, Math.round(ulaz.tezina))), izvor: 'zadana' }
@@ -663,9 +672,15 @@ export function mozdaZapisiOdluku(ulaz: OdlukaUlaz, o: VrataOpcije = {}): Odluka
     //   • postoji `taskId`  — kanal odlučuje prije nego zadatak postoji, nema što označiti;
     //   • oznake još nema   — čovjekova ranija oznaka se ne dira i ne duplira. Ista
     //     provjera pokriva i `bez-workflowa`: tko ga je već stavio, ostaje pri svome.
-    const postojece = oznakeNorm(ulaz.oznake)
+    // TASK-5200/N1 (prijenos iz glavnog TASK-5618): usporedba bez obzira na slova (`postojeceNorm`),
+    // upis s IZVORNIM oznakama. Korak lanca koji već nosi `workflow:<id>` ne dobiva i
+    // `bez-workflowa` — dvije proturječne oznake na istom zadatku.
+    const postojece = oznakeIzvorne(ulaz.oznake)
+    const postojeceNorm = oznakeNorm(ulaz.oznake)
+    const proturjecno = odluka.kod === 'u-lancu' && oznaka === BEZ_WORKFLOWA_OZNAKA
+      && postojeceNorm.some(x => x.startsWith(OZNAKA_PREFIKS))
     let oznakaUpisana = false
-    if (cfg.nacin === 'on' && ulaz.taskId && o.primijeniOznaku && !postojece.includes(oznaka)) {
+    if (cfg.nacin === 'on' && ulaz.taskId && o.primijeniOznaku && !postojeceNorm.includes(oznaka) && !proturjecno) {
       const nalog: NalogOznake = {
         taskId: String(ulaz.taskId),
         oznaka,
