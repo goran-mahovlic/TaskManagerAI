@@ -18,7 +18,7 @@ import { join } from 'path'
 
 import {
   jePadPrimarnog, pitajModel, probaModela, zabiljeziGresku, zabiljeziUspjeh, citajStanje,
-  simulirajPad, simulacijaPada, ciljDezurnog, dezurniRazgovora,
+  simulirajPad, simulacijaPada, ciljDezurnog, dezurniRazgovora, razinaKonteksta,
 } from '../src/Dezurni'
 import { RAZGOVOR_ZADANO, type RazgovorPostavke } from '../src/razgovor/RazgovorPostavke'
 import type { Kanal, UlaznaPoruka } from '../src/razgovor/Kanal'
@@ -321,5 +321,42 @@ describe('orkestrator — agent ponovljen na dežurnom kad primarni padne', () =
     await orc.pokreniZadatak({ id: 'TASK-2', title: 't', status: 'pending' } as any, { id: 'inzenjer', model: 'opus' } as any)
     expect(izv.zahtjevi.length).toBe(1)
     expect(azuriranja.some(a => a.status === 'blocked')).toBe(true)
+  })
+})
+
+// ─── TASK-5626: razina konteksta tekstnog dežurnog po sposobnosti modela ─────────────────
+describe('razina konteksta dežurnog (TASK-5626)', () => {
+  test('qwen3:8b → kratki; Mistral Large → puni; postavka `kontekst` nadjačava', () => {
+    expect(razinaKonteksta({ provider: 'ollama', model: 'qwen3:8b' })).toBe('kratki')
+    expect(razinaKonteksta({ provider: 'openrouter', model: 'mistralai/mistral-large-4-0' })).toBe('puni')
+    expect(razinaKonteksta({ provider: 'openrouter', model: 'qwen/qwen3-8b' })).toBe('kratki')
+    expect(razinaKonteksta({ provider: 'ollama', model: 'qwen3:8b', kontekst: 'puni' })).toBe('puni')
+    expect(razinaKonteksta({ provider: 'openrouter', model: 'mistralai/mistral-large-4-0', kontekst: 'kratki' })).toBe('kratki')
+  })
+
+  test('jak model, CLI put padne → tekstni dežurni dobiva identitet razgovora i 4000 tokena', async () => {
+    const r = razgovor({ provider: 'openrouter', model: 'mistralai/mistral-large-4-0' })
+    r.izv.odgovori.push({ exitCode: 1, resultText: '', greska: 'API Error: 429 rate_limit_error' })
+    r.izv.odgovori.push({ exitCode: 1, resultText: '', greska: 'CLI pao' })
+    r.j.primi(r.poruka('jesi tu?'), r.kanal)
+    await r.j.mirno()
+    const zadnji = zahtjevi.filter(z => z.put === '/v1/chat/completions').pop()!
+    expect(zadnji.tijelo.max_tokens).toBe(4000)
+    const sustav = String(zadnji.tijelo.messages[0].content)
+    expect(sustav).toContain('Ploča zadataka')
+    expect(sustav).toContain('DEŽURSTVO')
+    expect(sustav).toContain('bez alata')
+    expect(r.kanal.tekstovi.join('\n')).toContain('radi (rezervni)')
+  })
+
+  test('slab model (qwen, ollama) ostaje na kratkoj sistemskoj poruci i 2000 tokena', async () => {
+    const r = razgovor({ provider: 'ollama', model: 'qwen3:8b', baseUrl: `http://127.0.0.1:${srv.port}` })
+    r.izv.odgovori.push({ exitCode: 1, resultText: '', greska: 'API Error: 401 authentication_error' })
+    r.j.primi(r.poruka('jesi tu?'), r.kanal)
+    await r.j.mirno()
+    const z = zahtjevi.filter(x => x.put === '/api/chat').pop()!
+    expect(z.tijelo.options.num_predict).toBe(2000)
+    expect(String(z.tijelo.messages[0].content)).not.toContain('Ploča zadataka')
+    expect(String(z.tijelo.messages[0].content)).toContain('dežurni rezervni model')
   })
 })

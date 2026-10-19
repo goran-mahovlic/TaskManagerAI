@@ -265,6 +265,32 @@ export async function probaModela(o: DezurniOpcije = {}, pitanje = 'Odgovori jed
     : { ok: false, provider: p.provider, model: p.model, ms, nacin, greska: `davatelj "${p.provider}" nije odgovorio (model "${p.model}", oblik ${nacin})` }
 }
 
+// ── Razina konteksta (TASK-5626) ─────────────────────────────────────────────────────────
+// Isto pravilo kao most glavnog sustava (`tools/Telegram/lib/DezurniKontekst.ts`): slab model
+// (lokalni ili ≤ 30 mlrd. parametara / mini, nano, small, tiny, lite) dobiva kratku sistemsku
+// poruku; jak model dobiva identitet razgovora. Postavka `kontekst` (auto|kratki|puni) u
+// dezurni.json nadjačava prepoznavanje.
+
+export type RazinaKonteksta = 'kratki' | 'puni'
+
+/** max_tokens tekstnog dežurnog. Izmjereno (TASK-5626): Mistral Large 4 potroši ~1000 tokena
+ *  na razmišljanje i na trivijalno pitanje, pa puni kontekst treba više. */
+export const TOKENA_DEZURNOG: Record<RazinaKonteksta, number> = { kratki: 2000, puni: 4000 }
+
+export function jeSlabModel(provider: string, model: string): boolean {
+  const p = String(provider || '').toLowerCase()
+  const m = String(model || '').toLowerCase()
+  if (p === 'ollama') return true
+  if (/(?:^|[^\d.])(?:[1-9]|[12]\d|30)(?:\.\d+)?b\b/.test(m)) return true
+  return /\b(?:mini|nano|small|tiny|lite)\b/.test(m.replace(/[-_:/.]/g, ' '))
+}
+
+export function razinaKonteksta(p: { provider?: string; model?: string; kontekst?: unknown }): RazinaKonteksta {
+  const k = String(p?.kontekst ?? 'auto').toLowerCase()
+  if (k === 'kratki' || k === 'puni') return k
+  return jeSlabModel(String(p?.provider ?? ''), String(p?.model ?? '')) ? 'kratki' : 'puni'
+}
+
 // ── Sučelje za razgovor i orkestrator ────────────────────────────────────────────────────
 
 export interface DezurniRazgovora {
@@ -274,7 +300,9 @@ export interface DezurniRazgovora {
   simulacija(): boolean
   jePad(tekst: string): PadPrimarnog | null
   cilj(): (CiljRazgovora & { spec: string }) | null
-  pitaj(sustav: string, pitanje: string): Promise<string | null>
+  pitaj(sustav: string, pitanje: string, tokena?: number): Promise<string | null>
+  /** TASK-5626: koliko konteksta tekstni dežurni dobiva. */
+  razina(): RazinaKonteksta
   greska(): { pocinje: boolean; broj: number }
   uspjeh(): { zavrsilo: boolean }
 }
@@ -287,7 +315,8 @@ export function dezurniRazgovora(o: DezurniOpcije = {}): DezurniRazgovora {
     jePad: jePadPrimarnog,
     cilj: () => ciljDezurnog(o),
     // 2000 tokena: modeli koji „misle naglas" potroše dio na razmišljanje prije odgovora.
-    pitaj: (sustav, pitanje) => pitajModel(sustav, pitanje, 2000, o, { samoSadrzaj: true }),
+    pitaj: (sustav, pitanje, tokena) => pitajModel(sustav, pitanje, tokena ?? TOKENA_DEZURNOG.kratki, o, { samoSadrzaj: true }),
+    razina: () => razinaKonteksta(postavke(o)),
     greska: () => zabiljeziGresku(o),
     uspjeh: () => zabiljeziUspjeh(o),
   }

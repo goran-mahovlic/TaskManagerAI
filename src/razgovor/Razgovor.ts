@@ -29,7 +29,7 @@ import { GLAS_ZADANI_URL, OZNAKA_TTS_KVAR, sintetizirajGovor, tekstZaGovor, treb
 import { ocistiStareZapise, zapisiPotez } from './Zapis'
 import type { ZadaciRazgovora } from './ZadatakRazgovora'
 import type { PrijenosIshod, PrijenosUlaz } from './BotKanal'
-import type { DezurniRazgovora } from '../Dezurni'
+import { TOKENA_DEZURNOG, type DezurniRazgovora } from '../Dezurni'
 
 /** Što jezgra treba od kanala bot↔bot (ADR-0003) — bez njega razgovor radi kao prije. */
 export interface BotKanalJezgre {
@@ -476,11 +476,7 @@ export function stvoriRazgovor(d: RazgovorOvisnosti): RazgovorJezgra {
       delete o.CLAUDE_CODE_OAUTH_TOKEN
       return o
     }
-    const zahtjev = (resume?: string, rez?: { model?: string; env: Record<string, string> }): ExecRequest => ({
-      agentId: 'razgovor',
-      model: rez ? rez.model : cilj.model,
-      prompt,
-      systemPrompt: resume ? undefined : sastaviIdentitet({
+    const identitet = () => sastaviIdentitet({
         ime: s.ime, instalacija: d.instalacija, ovlasti, plocaUrl: d.plocaUrl, port: d.port,
         dokumenti: s.dokumenti, radniDir, stil: d.stil?.(),
         dokumentiMape: [...(d.dokumentiMape || []), ...(d.dokumentiMapeChata?.(p.kanal, p.chatId) || [])],
@@ -491,7 +487,12 @@ export function stvoriRazgovor(d: RazgovorOvisnosti): RazgovorJezgra {
           nacin: s.memorijaRazgovor, banka: s.memorijaBanka, url: s.memorijaUrl || d.env.TM_HINDSIGHT_URL || '',
           rag: d.ragUkljucen?.() ?? null, autoMemorija: autoMemorijaCC(d.home, radniDir),
         },
-      }),
+      })
+    const zahtjev = (resume?: string, rez?: { model?: string; env: Record<string, string> }): ExecRequest => ({
+      agentId: 'razgovor',
+      model: rez ? rez.model : cilj.model,
+      prompt,
+      systemPrompt: resume ? undefined : identitet(),
       cwd: radniDir,
       timeoutMs: s.rokSek * 1000,
       extra: {
@@ -555,10 +556,18 @@ export function stvoriRazgovor(d: RazgovorOvisnosti): RazgovorJezgra {
           else log(`[razgovor] ${c.kljuc}: dežurni kroz CLI nije uspio — ${zaKonzolu(r2.greska || `exit ${r2.exitCode}`, 200)}`)
         }
         if (!dezurniPotez && !kontrola?.signal.aborted) {
-          const sustav = `Ti si ${s.ime || 'bot'} na instalaciji ${d.instalacija}. Primarni model trenutačno ne radi ` +
+          const kratko = `Ti si ${s.ime || 'bot'} na instalaciji ${d.instalacija}. Primarni model trenutačno ne radi ` +
             `(${pad.vrsta}), pa odgovaraš kao dežurni rezervni model, bez alata. Odgovaraj kratko i istinito; ` +
             'ne izmišljaj stanje sustava ni rezultate koje nisi vidio.'
-          const t = await dz.pitaj(sustav, prompt)
+          // TASK-5626: jak model dobiva i identitet razgovora (ploča, ovlasti, memorija, stil) — prompt
+          // već nosi [MEMORIJA] i prethodni kontekst. Slab model ostaje na kratkoj poruci.
+          const razina = dz.razina()
+          const sustav = razina === 'puni'
+            ? `${identitet()}\n\n## DEŽURSTVO\n${kratko} Gornji opis vrijedi za podatke i ovlasti, ali sada si BEZ ALATA: ` +
+              'ništa ne izvršavaš i ne provjeravaš ploču — reci da ćeš to napraviti kad se primarni model vrati. ' +
+              'Sat ili datum oporavka ne navodi ako ga nisi vidio.'
+            : kratko
+          const t = await dz.pitaj(sustav, prompt, TOKENA_DEZURNOG[razina])
           if (t) { res = { exitCode: 0, resultText: t, numTurns: 1 }; dezurniPotez = dz.opis() }
         }
         if (!dezurniPotez) konzola(`🔻 dežurni ${dz.opis()} nije odgovorio — korisnik dobiva poruku o kvaru`, 'greska')
