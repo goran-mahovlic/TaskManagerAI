@@ -791,7 +791,7 @@ export class TaskManagerSQL {
   /**
    * Update an existing task
    */
-  updateTask(id: string, updates: UpdateTaskInput & { progressNotes?: string[] }): Task | null {
+  updateTask(id: string, updates: UpdateTaskInput & { progressNotes?: string[] }, opts: { changedBy?: string } = {}): Task | null {
     const existing = this.getTask(id);
     if (!existing) return null;
 
@@ -804,7 +804,10 @@ export class TaskManagerSQL {
     }
 
     const now = new Date().toISOString();
-    const changedBy = updates.assignee || existing.assignee || 'system';
+    const izvrsitelj = updates.assignee || existing.assignee || 'system';
+    // TASK-5210 (QA-5165 N4, prijenos iz glavnog TASK-5618): pozivatelj koji je POZNAT (čovjek s
+    // ploče, ponovno otvaranje) ide u reviziju umjesto izvršitelja; bez njega ostaje staro pravilo.
+    const changedBy = opts.changedBy || izvrsitelj;
 
     // Track changes for audit
     const fieldsToCheck: Array<{ key: keyof UpdateTaskInput; dbField: string }> = [
@@ -834,7 +837,7 @@ export class TaskManagerSQL {
     if (updates.progressNotes && Array.isArray(updates.progressNotes) && updates.progressNotes.length > 0) {
       // TASK-4809: bez nositelja biljesku potpisuje `changedBy` ('system'), ne ime
       // agenta iz NASE instalacije — tuda ploca takvog agenta uopce nema.
-      const agent = changedBy;
+      const agent = izvrsitelj;
       for (const noteText of updates.progressNotes) {
         progressNotes.push({
           timestamp: now,

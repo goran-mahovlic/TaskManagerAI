@@ -14363,7 +14363,20 @@ async function handleUpdateTask(taskId: string, req: Request): Promise<Response>
     }
 
     const statusPrijePut = taskManager.getTask(taskId)?.status
-    const task = taskManager.updateTask(taskId, updates as any)
+    // TASK-5210 (QA-5165 N4, prijenos iz glavnog TASK-5618): revizija bilježi POZIVATELJA kad ga
+    // znamo — čovjek koji zatvara („zatvorio čovjek”, dizajn §2.2) i svako ponovno otvaranje
+    // običnim PUT-om (§4.3: ne izvršitelj, nego tko je otvorio; bez uloge je to `api-put`).
+    // Ostali prijelazi: staro pravilo (izvršitelj).
+    let pozivateljRevizije: string | undefined
+    try {
+      const uloga = req.headers.get('X-REGOC-Zatvara')
+      if (updates.status === 'completed' && uloga === 'covjek') pozivateljRevizije = 'covjek'
+      else if (updates.status === 'pending' && (statusPrijePut === 'completed' || statusPrijePut === 'cancelled')) {
+        const tko = pozivateljZatvaranja(req.headers, procitajToken())   // `daemon` samo uz valjan ključ
+        pozivateljRevizije = tko !== 'ostali' ? tko : (uloga === 'orkestrator' ? 'orkestrator' : 'api-put')
+      }
+    } catch { /* revizija nikad ne ruši PUT */ }
+    const task = taskManager.updateTask(taskId, updates as any, { changedBy: pozivateljRevizije })
     if (task && oznakeSustava.length) {
       try { taskManager.zabiljeziAutomatskeOznake(taskId, oznakeSustava, 'revizija-blokiranih') }
       catch (e) { console.warn(`[API] oznake sustava za ${taskId} nisu zapisane (${e}) — PUT prolazi`) }
