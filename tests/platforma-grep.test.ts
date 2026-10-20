@@ -23,6 +23,12 @@ const DOPUSTENO = new Set([
   // LaunchDaemon (macOS grana) iz templates/servis/usluge.json; isto što platforma.ts radi za
   // upravljanje, ali za instalaciju (tests/install-servis.test.ts provjerava obje grane).
   'scripts/instalacija/servis.ts',
+  // TASK-5656 (K3): samostalne skripte čvora s izričitim granama OS-a (darwin: launchctl, lsof,
+  // `ps eww`; linux: systemctl --user, /proc, ss). Ne smiju uvoziti platforma.ts: provjeri-cisto
+  // radi bez repozitorija (curl | bash), nadogradi.sh stiže kroz `ssh … bash -s` na STARO stablo,
+  // a deinstaliraj.sh briše i bun. Obje grane drže tests/deinstalacija-do-nule.test.ts (lažni
+  // darwin) i tests/nadogradi.test.ts.
+  'scripts/provjeri-cisto.sh', 'scripts/nadogradi.sh', 'scripts/deinstaliraj.sh',
 ])
 /** Pojedinačne iznimke: redak u datoteci koji smije sadržavati uzorak, i ZAŠTO. */
 const IZNIMKE: { datoteka: string; redak: RegExp; razlog: string }[] = [

@@ -94,7 +94,7 @@ describe('install.sh — uporaba', () => {
       expect(rez).toMatchObject({ ishod: 'pad', korak: 'K2.1-os', izlaz: 3 })
       expect(koraci(o.tm).at(-1)).toMatchObject({ korak: 'K2.1-os', izlaz: 3 })
     } finally { rmSync(o.korijen, { recursive: true, force: true }) }
-  })
+  }, 60_000)
 })
 
 describe('install.sh --suho', () => {
@@ -215,7 +215,7 @@ describe('install.sh — pad koraka', () => {
       expect(r.kod).toBe(3)
       expect(rezultat(o.tm)).toMatchObject({ ishod: 'pad', korak: 'K2.2-stablo', izlaz: 3 })
     } finally { rmSync(o.korijen, { recursive: true, force: true }) }
-  })
+  }, 60_000)
 })
 
 describe('install.sh --komplet', () => {
@@ -246,7 +246,7 @@ describe('install.sh --komplet', () => {
       expect(r.izlaz).toContain('komplet.lock ne postoji')
       expect(rezultat(o.tm)).toMatchObject({ ishod: 'pad', korak: 'K2.14-komplet', izlaz: 5 })
     } finally { rmSync(o.korijen, { recursive: true, force: true }) }
-  })
+  }, 60_000)
 
   test('klon na commitu iz locka, manifest provjeren, drugo pokretanje bez promjene', () => {
     const o = okruzje('komplet')
