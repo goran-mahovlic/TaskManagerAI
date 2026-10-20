@@ -22,6 +22,7 @@ import { hostname as osHostname, networkInterfaces as osNetworkInterfaces, homed
 import { getTaskManagerSQL, INBOX_PROJECT_ID } from './core/TaskManagerSQL'
 import { konfigPutanja, konfigPutanjaZaPisanje, osigurajMapu, PAKET_DIR, stanjePutanja, sustavPutanja, TM_DATA, TM_DB, TM_ROOT } from './core/paths'
 import { datotekaTajni, datotekaTajniZaPisanje, procitajTajnu } from './core/ConfigModul'
+import { cmdline as platformaCmdline, ptyNaredba } from './core/platforma'
 /**
  * Registar PAI agenata (`REGOC_AGENTS.json`, upisuje ga `scripts/install-agents.sh`).
  * TASK-5108: bio je u rasporedu žive REGOČ instalacije; sada `TM_AGENTS_REGISTRY` ili
@@ -426,9 +427,7 @@ const daemonLivenessDeps: LivenessDeps = {
     // signal 0 ne šalje ništa, samo provjerava postoji li proces i smijemo li ga dirati
     try { process.kill(pid, 0); return true } catch { return false }
   },
-  processCmdline: (pid: number) => {
-    try { return readFileSync(`/proc/${pid}/cmdline`, 'utf-8').replace(/\0/g, ' ').trim() } catch { return null }
-  },
+  processCmdline: (pid: number) => platformaCmdline(pid),
   now: () => Date.now(),
 }
 
@@ -13561,7 +13560,7 @@ function json(o: unknown, s = 200): Response {
 
 // ============================================================================
 // LOGIN PROVIDERS — prijava preko linka (copy-link + paste) iz TaskManagera.
-// CLI-jevi (kimi/gemini/claude) traže PTY → koristimo `script -qfec` (bez node-pty).
+// CLI-jevi (kimi/gemini/claude) traže PTY → koristimo `script` kroz platforma.ptyNaredba (bez node-pty).
 // Uspjeh = pojava creds-datoteke → providers.<id>.enabled=true (ulazi u listu modela).
 // ============================================================================
 interface LoginProviderDef { id: string; name: string; kind: 'oauth-cli' | 'apikey'; cmd?: string; bin?: string; creds: string; envKey?: string; install?: string }
@@ -13936,8 +13935,8 @@ async function handleLoginStart(req: Request): Promise<Response> {
         writeFileSync(gset, JSON.stringify(cfg, null, 2))
       } catch {}
     }
-    // `script -qfec "<cmd>" /dev/null` alocira PTY; -f flush odmah.
-    const proc = Bun.spawn(['script', '-qfec', def.cmd!, '/dev/null'], {
+    // `script` alocira PTY; oblik naredbe (GNU -qfec ili BSD -q) bira platformni sloj.
+    const proc = Bun.spawn(ptyNaredba(def.cmd!), {
       stdin: 'pipe', stdout: 'pipe', stderr: 'pipe', env: loginSpawnEnv(), cwd: process.env.HOME,
     })
     const sess: LoginSess = { proc, url: '', buf: '', ok: false, done: false, err: '', started: Date.now() }
@@ -15481,7 +15480,7 @@ function handleGetPause(): Response {
 // ─── Strop usporednih agenata ────────────────────────────────────────────────
 // Izvor istine: tablica `settings` (core/ConcurrencySetting.ts). Orkestrator ga čita uživo
 // (keš ≤5 s), pa PUT ne traži restart. `active` = ŽIVI spawnovi po najmovima (pid provjeren
-// kroz /proc) kad ih neki daemon na stroju piše; inače broj zadataka `in_progress` (TASK-5323).
+// kroz platforma.ziv) kad ih neki daemon na stroju piše; inače broj zadataka `in_progress` (TASK-5323).
 function concurrencyPayload() {
   const cur = taskManager.getConcurrencySetting()
   const inProgress = taskManager.getTasks({ status: 'in_progress' } as any).length

@@ -26,6 +26,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, wri
 import { homedir } from 'os'
 import { dirname, join } from 'path'
 import { branaKorpusa, renderZaCvor, type Mogucnost } from '../src/znanje/Korpus'
+import { usluga } from '../src/core/platforma'
 import {
   dokumentAgenti, dokumentProjekti, dokumentRazgovor, dokumentStanje, dokumentZadatak, imaTajnu,
   planUpisa, sha, vaznost, type PotezRazgovora,
@@ -115,8 +116,7 @@ async function izmjeriMogucnosti(o: Okolina, mem: { url: string }): Promise<Reco
   const imena = existsSync(cred) ? readFileSync(cred, 'utf-8').split('\n').map(r => r.replace(/^export\s+/, '').split('=')[0].trim()) : []
   m.nextcloud = imena.some(k => /^NEXTCLOUD_(URL|USER|USERNAME|PASSWORD|PASS|TOKEN)$/.test(k))
   m.docuseal = imena.some(k => /^DOCUSEAL_/.test(k))
-  const glas = Bun.spawnSync(['systemctl', '--user', 'is-active', 'regoc-voice'], { stdout: 'pipe', stderr: 'pipe' })
-  m.glas = glas.stdout.toString().trim() === 'active'
+  m.glas = usluga('regoc-voice') === 'active'
   let ollama = o.postavke.TM_OLLAMA_URL || o.postavke.OLLAMA_URL || ''
   if (!ollama) {
     try {

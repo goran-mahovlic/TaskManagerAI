@@ -61,7 +61,7 @@ function okolina(o: Partial<RazgovorPostavke> = {}, dodatno: Partial<RazgovorOvi
 
 let n = 0
 const por = (o: Partial<UlaznaPoruka> = {}): UlaznaPoruka => ({
-  kanal: 'telegram', chatId: '-51', porukaId: String(++n), posiljateljId: '5284452279', posiljateljIme: 'Goran',
+  kanal: 'telegram', chatId: '-51', porukaId: String(++n), posiljateljId: '1001', posiljateljIme: 'Korisnik A',
   posiljateljJeBot: false, tekst: 'pitanje', ts: '2026-10-08T16:45:21Z', privatno: false, obracanjeBotu: false,
   ...o,
 })
@@ -154,7 +154,7 @@ describe('(2) slika bez opisa + tekst istog pošiljatelja = jedna poruka', () =>
   test('slika drugog pošiljatelja se NE lijepi', async () => {
     const o = okolina({ odgovaraNa: 'spomen' })
     o.kanal.pada = false
-    o.r.primi(por({ tekst: SLIKA, posiljateljId: '7', posiljateljIme: 'Martina' }), o.kanal)
+    o.r.primi(por({ tekst: SLIKA, posiljateljId: '7', posiljateljIme: 'Korisnik B' }), o.kanal)
     o.r.primi(por({ tekst: 'Šabane, pitanje', obracanjeBotu: true }), o.kanal)
     await o.r.mirno()
     expect(o.izv.zahtjevi.length).toBe(1)

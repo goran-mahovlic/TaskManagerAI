@@ -79,7 +79,7 @@ export interface Atribucija {
   izvori: string[]
   /** Apsolutni putovi iz `Write`/`Edit`/`MultiEdit`/`NotebookEdit`. */
   pisano: Set<string>
-  /** Tekst svih `Bash` naredbi spawna (pisanje kroz ljusku: `cat >`, `sed -i`, `cp`). */
+  /** Tekst svih `Bash` naredbi spawna (pisanje kroz ljusku: `cat >`, sed na mjestu, `cp`). */
   bash: string[]
 }
 

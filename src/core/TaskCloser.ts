@@ -25,7 +25,7 @@
 //
 // NAČELO: FAIL-OPEN. Nečitljiv, pokvaren ili ustajao najam NIKAD ne smije zaključati
 // zadatak — guard koji blokira normalan rad biva isključen (v. memoriju o tri sloja
-// obrane protiv tajni). Zaključava samo najam koji je DOKAZIVO živ (/proc/<pid>).
+// obrane protiv tajni). Zaključava samo najam koji je DOKAZIVO živ (platforma.ziv).
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync, appendFileSync, readdirSync } from 'fs'
 import { join } from 'path'
@@ -33,6 +33,7 @@ import { tmpdir } from 'os'
 import { isTestRuntime } from './LiveDbGuard'
 import { stanjePutanja } from './paths'
 import { zaglavljaZatvaraca } from './ZatvaranjeKrozDaemon'
+import { ziv } from './platforma'
 
 /**
  * Mapa najmova. Isti obrazac kao data/file_scope_claims/ (A3/TASK-3002).
@@ -222,9 +223,9 @@ export function citajNajam(taskId: string): Najam | null {
   } catch { return null }
 }
 
-/** Živ proces? Jedini dokaz koji /proc daje bez roota. */
+/** Živ proces? `kill(pid, 0)` kroz platformni sloj — radi na Linuxu i macOS-u. */
 function pidZiv(pid: number): boolean {
-  try { return pid > 0 && existsSync(`/proc/${pid}`) } catch { return false }
+  return ziv(pid)
 }
 
 /**

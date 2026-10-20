@@ -34,9 +34,9 @@ DNEVNIK="${TM_LOG:-$HOME/taskmanager_$VRATA.log}"
 
 # Proces se traži PO VRATIMA: `TM_PORT` je varijabla okoline i ne vidi se u `ps`, pa
 # `pkill -f "TM_PORT=…"` promašuje (naučeno pri postavljanju na čvorove).
+# Linux (`ss` ili procfs) i macOS (`lsof`) razlikuje platformni sloj (TASK-5654).
 pid_na_vratima() {
-  ss -ltnp 2>/dev/null | awk -v p=":$VRATA" '$4 ~ p {print $NF}' \
-    | grep -o 'pid=[0-9]*' | head -1 | cut -d= -f2
+  bun src/core/platforma.ts pid-na-vratima "$VRATA" 2>/dev/null
 }
 
 STARI="$(pid_na_vratima)"

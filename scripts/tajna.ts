@@ -11,7 +11,7 @@
  * `podesi` NIJE potreban za upis s ploče (TASK-5357): primatelj koda je vlasnik iz profila
  * čvora, privatni LAN je dopušten. Služi samo da se to izričito promijeni.
  *
- * Vrijednost u argv se ODBIJA (izlaz 2): bila bi vidljiva u `ps`, /proc/<pid>/cmdline i
+ * Vrijednost u argv se ODBIJA (izlaz 2): bila bi vidljiva u `ps`, cmdlineu procesa i
  * povijesti ljuske. Izlaz: 0 uspjeh, 1 greška spremišta, 2 pogrešna uporaba.
  */
 import { existsSync, readFileSync, writeFileSync } from 'fs'

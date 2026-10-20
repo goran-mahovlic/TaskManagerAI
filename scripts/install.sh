@@ -49,10 +49,20 @@ echo "  bun: $(bun --version)"
 # (izmjereno na oba noda: `registry.npmjs.org` → 000). Zato paket nosi vlastiti primjerak u
 # `vendor/zod.tgz` i instalacija ide redom: registry → prilog → već postojeća instalacija na
 # stroju. Prvi koji uspije prekida niz; ako ni jedan ne uspije, instalacija staje s greškom.
+# GNU `timeout` ne postoji na macOS-u: `gtimeout` (coreutils) ako ga ima, inače perl `alarm`
+# (perl je dio macOS-a); izlaz 124 pri isteku kao GNU (TASK-5654, plan Mac v3 P10 #18).
+s_rokom() {
+  local sek="$1"; shift
+  if command -v timeout >/dev/null 2>&1; then timeout "$sek" "$@"
+  elif command -v gtimeout >/dev/null 2>&1; then gtimeout "$sek" "$@"
+  else perl -e 'my $s=shift; my $p=fork; if(!$p){exec @ARGV or exit 127} $SIG{ALRM}=sub{kill "TERM",$p; waitpid $p,0; exit 124}; alarm $s; waitpid $p,0; exit($?>>8)' "$sek" "$@"
+  fi
+}
+
 osiguraj_zod() {
   # Kratak rok: bez mreže `bun add` visi minutama i instalacija „stane" bez poruke
   # (viđeno na node-A: dnevnik zastane na „postavljam" i ne miče se).
-  timeout 25 bun add zod >/dev/null 2>&1 && [ -d node_modules/zod ] && { echo "    izvor: npm"; return 0; }
+  s_rokom 25 bun add zod >/dev/null 2>&1 && [ -d node_modules/zod ] && { echo "    izvor: npm"; return 0; }
   if [ -f vendor/zod.tgz ]; then
     mkdir -p node_modules
     tar xzf vendor/zod.tgz -C . 2>/dev/null && [ -d node_modules/zod ] && { echo "    izvor: vendor/zod.tgz"; return 0; }

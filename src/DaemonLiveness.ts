@@ -8,7 +8,7 @@
  *
  * Zato se stanje ovdje IZVODI iz tri neovisna signala, a ne iz jednog polja:
  *   1. živi li proces iz `daemon.pid` (tvrdi signal),
- *   2. je li to doista daemon (`/proc/<pid>/cmdline` sadrži RegocDaemon.ts) — PID se
+ *   2. je li to doista daemon (cmdline procesa, `platforma.cmdline`, sadrži RegocDaemon.ts) — PID se
  *      nakon pada reciklira, pa sam „proces postoji" nije dokaz,
  *   3. koliko je star zadnji upis (meki signal: živ proces koji je prestao pisati = visi).
  *
@@ -119,8 +119,8 @@ export function formatAge(seconds: number | null): string {
  *
  * `processExists` sam po sebi nije dovoljan: nakon pada daemona jezgra istu brojku
  * dodijeli bilo kojem novom procesu, pa bi mrtav daemon izgledao živ. Kad cmdline
- * nije dostupan (nema /proc), pouzdajemo se u postojanje procesa — bolje blaži
- * lažno „radi" nego lažni OFFLINE na sustavu bez /proc.
+ * nije dostupan (ni procfs ni `ps`), pouzdajemo se u postojanje procesa — bolje blaži
+ * lažno „radi" nego lažni OFFLINE na sustavu bez izvora cmdlinea.
  */
 export function verifyDaemonProcess(
   pid: number | null,
