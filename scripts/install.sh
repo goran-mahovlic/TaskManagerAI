@@ -774,10 +774,9 @@ k_linger() {
   command -v loginctl >/dev/null 2>&1 || { razlog "nema loginctl"; return 0; }
   [ "$(loginctl show-user "$(id -un)" -p Linger --value 2>/dev/null)" = yes ] && { razlog "linger već uključen"; return 0; }
   naredba "loginctl enable-linger $(id -un)"
-  promjena
-  suho && { echo "    (suho) loginctl enable-linger $(id -un) — usluga radi i bez prijave"; return 0; }
-  loginctl enable-linger "$(id -un)" 2>/dev/null \
-    || upozori "linger nije uključen (treba root: sudo loginctl enable-linger $(id -un)) — usluga staje kad se odjaviš"
+  suho && { echo "    (suho) loginctl enable-linger $(id -un) — usluga radi i bez prijave"; promjena; return 0; }
+  if loginctl enable-linger "$(id -un)" 2>/dev/null; then promjena; echo "    linger uključen"
+  else upozori "linger nije uključen (treba root: sudo loginctl enable-linger $(id -un)) — usluga staje kad se odjaviš"; fi
   return 0
 }
 
