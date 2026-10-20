@@ -44,15 +44,32 @@ function naPathu(bin: string): string | null {
 }
 
 export interface Stanje { prijavljen: boolean; kako: string }
-export function stanje(d: StavkaPopisa, spremiste = datotekaTajni()): Stanje {
+
+/** Ono što stanje prijave čita — scripts/bootcheck.ts (M5) podmeće okolinu usluge i drugi OS. */
+export interface IzvorStanja {
+  os: string
+  env: Record<string, string | undefined>
+  home: string
+  /** Je li tajna u spremištu (samo prisutnost, vrijednost se nikad ne vraća). */
+  uSpremistu: (ime: string) => boolean
+  postoji: (put: string) => boolean
+}
+
+export function stanjePrijave(d: StavkaPopisa, iz: IzvorStanja): Stanje {
   for (const t of d.tajne) {
-    if (process.env[t]) return { prijavljen: true, kako: `${t} u okolini` }
-    if (kljucPrisutanUDatoteci(spremiste, t)) return { prijavljen: true, kako: `${t} u spremištu` }
+    if (iz.env[t]) return { prijavljen: true, kako: `${t} u okolini` }
+    if (iz.uSpremistu(t)) return { prijavljen: true, kako: `${t} u spremištu` }
   }
-  if (d.prijavaDatoteka && existsSync(kuci(d.prijavaDatoteka)) && !(d.nacin === 'pretplata' && OS === 'darwin'))
+  // Claude na macOS-u: prijava ide u Keychain koji LaunchDaemon ne vidi (P12.2) — vrijedi samo token.
+  if (d.prijavaDatoteka && iz.postoji(d.prijavaDatoteka.replace(/^~\//, iz.home + '/')) && !(d.nacin === 'pretplata' && iz.os === 'darwin'))
     return { prijavljen: true, kako: `prijava ${d.prijavaDatoteka}` }
   if (d.nacin === 'lokalno') return { prijavljen: false, kako: 'bez prijave' }
   return { prijavljen: false, kako: d.tajne.length ? `nema ${d.tajne.join(' ni ')}` : 'nije prijavljen' }
+}
+
+export function stanje(d: StavkaPopisa, spremiste = datotekaTajni()): Stanje {
+  return stanjePrijave(d, { os: OS, env: process.env, home: kuci('~/').replace(/\/$/, ''),
+    uSpremistu: (t) => kljucPrisutanUDatoteci(spremiste, t), postoji: existsSync })
 }
 
 function popis(): void {

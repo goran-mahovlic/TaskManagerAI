@@ -13,6 +13,8 @@
  *   bootMs()            procfs uptime         | sysctl -n kern.boottime
  *   cpuVrijeme(pid)     stat utime+stime+cutime+cstime | ps -o time= (centisekunde)
  *   cwd(pid)            readlink cwd          | lsof -a -p <pid> -d cwd -Fn
+ *   ppid(pid)           procfs stat polje 4   | ps -o ppid= -p
+ *   procesi()           procfs (pid, ppid, cmdline) | ps -A -o pid=,ppid=,command=  (jednim pozivom)
  *   pidovi()            readdir procfs        | ps -A -o pid=
  *   pidNaVratima(v)     ss -ltnp (lsof rezerva) | lsof -nP -iTCP:<v> -sTCP:LISTEN -t
  *   libc()              libc.so.6             | /usr/lib/libSystem.B.dylib
@@ -22,6 +24,7 @@
  *   usluga(ime)         systemctl --user show ActiveState | launchctl print system/hr.regoc.<ime>
  *   restartUsluge(ime)  systemctl --user restart | sudo -n launchctl kickstart -k system/hr.regoc.<ime>
  *   start/stopUsluge    systemctl --user start/stop | sudo -n launchctl bootstrap (kickstart)/bootout
+ *   opisUsluge(ime)     show ActiveState/MainPID/WorkingDirectory | launchctl print state/pid/working directory
  *   uslugaPostoji(ime)  LoadState=loaded | launchctl print ili plist u /Library/LaunchDaemons
  *   uslugeRegoc()       systemctl --user list-units regoc-* | launchctl print system (hr.regoc.*)
  *   launchdPlist(…)     — | LaunchDaemon plist (timer = StartInterval, stalna = KeepAlive)
@@ -122,6 +125,34 @@ export function cwd(pid: number, o?: Okolina): string | null {
   const out = izvrsi(o)(['lsof', '-a', '-p', String(pid), '-d', 'cwd', '-Fn'])
   const red = out?.split('\n').find(l => l.startsWith('n'))
   return red ? red.slice(1) : null
+}
+
+/** Roditelj procesa ili null (Linux: polje 4 procfs stat-a; macOS: `ps -o ppid=`). */
+export function ppid(pid: number, o?: Okolina): number | null {
+  if (!ispravanPid(pid)) return null
+  let t: string | undefined
+  if (jeLinux(o)) t = statRep(pid, o)?.[1]
+  else t = izvrsi(o)(['ps', '-o', 'ppid=', '-p', String(pid)])?.trim()
+  const n = Number(t)
+  return t && Number.isInteger(n) && n >= 0 ? n : null
+}
+
+export interface Proces { pid: number; ppid: number; cmd: string }
+
+/** Tablica procesa (bootcheck M4): na macOS-u jednim pozivom `ps`, ne po jedan po PID-u. */
+export function procesi(o?: Okolina): Proces[] {
+  if (jeLinux(o)) {
+    const r: Proces[] = []
+    for (const pid of pidovi(o)) {
+      const roditelj = Number(statRep(pid, o)?.[1])
+      const cmd = cmdline(pid, o)
+      if (cmd !== null && Number.isInteger(roditelj)) r.push({ pid, ppid: roditelj, cmd })
+    }
+    return r
+  }
+  const out = izvrsi(o)(['ps', '-A', '-o', 'pid=,ppid=,command=']) ?? ''
+  return out.split('\n').map(red => red.match(/^\s*(\d+)\s+(\d+)\s+(.*)$/)).filter(Boolean)
+    .map(m => ({ pid: Number(m![1]), ppid: Number(m![2]), cmd: m![3].trim() }))
 }
 
 // ─── vrijeme starta procesa ──────────────────────────────────────────────────
@@ -391,6 +422,39 @@ export function stopUsluge(ime: string, o?: Okolina): boolean {
     ? ['systemctl', '--user', 'stop', ime]
     : ['sudo', '-n', 'launchctl', 'bootout', `system/${launchdOznaka(ime)}`]
   return izvrsi(o)(argv) !== null
+}
+
+/** Naredba kojom opisUsluge čita stanje — za ispis čovjeku (bootcheck M1). */
+export function naredbaOpisaUsluge(ime: string, o?: Okolina): string {
+  return jeLinux(o) ? `systemctl --user show ${ime}` : `launchctl print system/${launchdOznaka(ime)}`
+}
+
+export interface OpisStanjaUsluge { stanje: StanjeUsluge; pid: number | null; cwd: string | null }
+
+/**
+ * Tko drži uslugu (bootcheck M1): stanje, glavni PID i radna mapa koju je upravitelj zadao.
+ * Linux: `systemctl --user show` (MainPID=0 → null). macOS: `launchctl print system/<oznaka>`
+ * (redak „working directory" postoji samo uz WorkingDirectory; inače se čita iz plista).
+ */
+export function opisUsluge(ime: string, o?: Okolina): OpisStanjaUsluge {
+  const ex = izvrsi(o)
+  if (jeLinux(o)) {
+    const out = ex(['systemctl', '--user', 'show', '-p', 'ActiveState', '-p', 'MainPID', '-p', 'WorkingDirectory', ime])
+    if (out === null) return { stanje: 'nepoznato', pid: null, cwd: null }
+    const polje = (k: string) => out.match(new RegExp(`^${k}=(.*)$`, 'm'))?.[1].trim() ?? ''
+    const pid = Number(polje('MainPID'))
+    return { stanje: polje('ActiveState') === 'active' ? 'active' : 'inactive',
+      pid: ispravanPid(pid) ? pid : null, cwd: polje('WorkingDirectory') || null }
+  }
+  const out = ex(['launchctl', 'print', `system/${launchdOznaka(ime)}`])
+  if (out === null) return { stanje: 'inactive', pid: null, cwd: null }
+  // Gornja razina ispisa ima jedan tabulator; dublji retci (endpoints) imaju svoje „state".
+  const gore = out.split('\n').filter(r => /^\t[^\t]/.test(r) || /^ {1,4}\S/.test(r)).join('\n')
+  const radi = /^\s*state\s*=\s*running\s*$/m.test(gore)
+  const pid = Number(gore.match(/^\s*pid\s*=\s*(\d+)/m)?.[1])
+  const cwd = gore.match(/^\s*working directory\s*=\s*(.+)$/m)?.[1].trim()
+    || ex(['plutil', '-extract', 'WorkingDirectory', 'raw', '-o', '-', launchdPlistPut(ime)])?.trim() || null
+  return { stanje: radi ? 'active' : 'inactive', pid: radi && ispravanPid(pid) ? pid : null, cwd: radi ? cwd : null }
 }
 
 /** Upravlja li uslugom upravitelj sustava (jedinica učitana | LaunchDaemon učitan ili na disku)? */

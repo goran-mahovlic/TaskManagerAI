@@ -147,6 +147,40 @@ usluge, procesi `bun|hindsight|postgres|ollama` iz `$HOME`, vrata 17781/17792/17
 `$TM_HOME` i putovi iz manifesta (i arhiviranog), označeni retci u datotekama ljuske, ključ tunela.
 Arhivu logova i backup tgz ne broji.
 
+## 2.3. Provjera čvora u radu — `scripts/bootcheck.sh` (TASK-5657)
+
+```bash
+bash scripts/bootcheck.sh                # mjeri i zapisuje; izlaz 0 PASS, 1 FAIL
+bash scripts/bootcheck.sh --json         # isto kao JSON
+bash scripts/bootcheck.sh --strogo       # i UPOZORENJE obara verdikt
+```
+
+Ništa ne pokreće i ništa ne popravlja. Učita postavke čvora istim redom kao usluga
+(`profil.instanca.env`, `config/postavke.env` uz paket, `$TM_HOME/config/{instalacija,postavke}.env`), a
+varijable koje vidi živi proces usluge (`TM_PORT`, `TM_FEATURES_FILE`, …) imaju prednost. Ako je stroj
+podignut prije manje od 10 min, zapis je `POST-BOOT`, inače `RUCNO`; prije mjerenja čeka do 60 s
+(`--cekaj SEK`) da ploča odgovori, ali je ne pokreće.
+
+| | Što mjeri | Linux | macOS | Pad |
+|---|---|---|---|---|
+| M1 | usluga radi pod upraviteljem, radna mapa = paket | `systemctl --user show regoc-taskmanager` | `launchctl print system/hr.regoc.taskmanager` | FAIL |
+| M2 | radna mapa glavnog PID-a = paket, proces je `src/TaskWebUI.ts` | procfs | `lsof -d cwd` | FAIL |
+| M3 | 200 za vlastiti Host (prvi iz `TM_ALLOWED_HOSTS`), 403 za tuđi | curl | curl | FAIL |
+| M4 | vrata drži usluga (PID ili potomak); nema druge ploče iz paketa | `ss`/procfs | `lsof`, `ps` (PPID=1 je launchd, nije siroče) | FAIL |
+| M5 | barem jedan AI servis prijavljen — **bilo koji** iz kataloga ili model-configa; uz `autonomyGate` i mjerilo radi | | Claude pretplata samo kroz `CLAUDE_CODE_OAUTH_TOKEN` | bez prijave UPOZORENJE; uključen `autonomyGate` bez mjerila FAIL |
+| M6 | sat | `timedatectl` NTPSynchronized | `sntp` | odstupanje > 60 s ili NTP isključen: UPOZORENJE |
+| M7 | izvori iz `$TM_HOME/config/memorija.json` odgovaraju | | | vidi niže |
+
+M7: `nasa` → posrednik memorije `/health` i tunel RAG-a (i ugrađivanje); nedostupan je UPOZORENJE jer čvor
+radi i bez dijeljenog sustava. `lokalna` → usluga `regoc-hindsight` radi i banka čvora ima memorija > 0, odnosno
+`regoc-pgvector` odgovara i `SELECT extversion FROM pg_extension WHERE extname='vector'` vrati verziju (lozinka iz
+spremišta, nikad u ispisu); inače FAIL. Lokalna usluga koja radi dok njen izvor nije `lokalna` je FAIL (troši
+RAM/CPU u mirovanju). Bez `memorija.json` (instalacija prije TASK-5655) izvor se izvodi iz `MEMORIJA_BANKA` /
+`TM_HINDSIGHT_URL` i `memory-config.json` (`rag.enabled`).
+
+Zapis: `$TM_HOME/log/bootcheck/<POST-BOOT|RUCNO>_<vrijeme>.{txt,json}` i `zadnji.txt` / `zadnji.json`
+(`--bez-zapisa` ga preskače). Za nadogradnju: `bash scripts/nadogradi.sh … --bootcheck 'bash scripts/bootcheck.sh --cekaj 30'`.
+
 ## 3. Agenti i vještine (neobavezno, ali to je ono što ploču čini sustavom)
 
 Paket ne nosi vještine ni alate — nosi popis agenata i zna odakle se vještine dohvaćaju:

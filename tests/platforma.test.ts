@@ -335,3 +335,54 @@ describe('macOS omotači scripts/macos/bin (perl, postavlja ih install.sh kad na
     expect(sid).not.toBe(Bun.spawnSync(['ps', '-o', 'sid=', '-p', String(process.pid)]).stdout.toString().trim())
   })
 })
+
+describe('platforma — opis usluge i roditelj procesa (TASK-5657, bootcheck M1/M4)', () => {
+  test('Linux: opisUsluge čita ActiveState, MainPID i WorkingDirectory iz systemctl show', () => {
+    const o: P.Okolina = { os: 'linux', izvrsi: (argv) => argv.join(' ') ===
+      'systemctl --user show -p ActiveState -p MainPID -p WorkingDirectory regoc-taskmanager'
+      ? 'ActiveState=active\nMainPID=4242\nWorkingDirectory=/home/x/TaskManagerAI\n' : null }
+    expect(P.opisUsluge('regoc-taskmanager', o)).toEqual({ stanje: 'active', pid: 4242, cwd: '/home/x/TaskManagerAI' })
+  })
+  test('Linux: neaktivna jedinica → MainPID=0 postaje null', () => {
+    const o: P.Okolina = { os: 'linux', izvrsi: () => 'ActiveState=inactive\nMainPID=0\nWorkingDirectory=\n' }
+    expect(P.opisUsluge('regoc-taskmanager', o)).toEqual({ stanje: 'inactive', pid: null, cwd: null })
+  })
+  test('Linux: systemctl ne odgovara → nepoznato', () => {
+    expect(P.opisUsluge('regoc-taskmanager', { os: 'linux', izvrsi: () => null })).toEqual({ stanje: 'nepoznato', pid: null, cwd: null })
+  })
+  test('macOS: launchctl print → state/pid/working directory (ugniježđeni „state = active" se ne broji)', () => {
+    const { o } = lazniDarwin({ 'launchctl print system/hr.regoc.taskmanager':
+      'system/hr.regoc.taskmanager = {\n\tactive count = 1\n\tpath = /Library/LaunchDaemons/hr.regoc.taskmanager.plist\n'
+      + '\tstate = running\n\tprogram = /Users/x/TaskManagerAI/scripts/s-okolinom.sh\n\tworking directory = /Users/x/TaskManagerAI\n'
+      + '\tpid = 311\n\tendpoints = {\n\t\t"x" = {\n\t\t\tstate = active\n\t\t}\n\t}\n}\n' })
+    expect(P.opisUsluge('regoc-taskmanager', o)).toEqual({ stanje: 'active', pid: 311, cwd: '/Users/x/TaskManagerAI' })
+  })
+  test('macOS: bez „working directory" u ispisu čita WorkingDirectory iz plista; nije učitana → inactive', () => {
+    const { o } = lazniDarwin({
+      'launchctl print system/hr.regoc.taskmanager': '\tstate = running\n\tpid = 9\n',
+      'plutil -extract WorkingDirectory raw -o - /Library/LaunchDaemons/hr.regoc.taskmanager.plist': '/Users/x/TaskManagerAI\n' })
+    expect(P.opisUsluge('regoc-taskmanager', o)).toEqual({ stanje: 'active', pid: 9, cwd: '/Users/x/TaskManagerAI' })
+    const { o: o2 } = lazniDarwin({})
+    expect(P.opisUsluge('regoc-taskmanager', o2)).toEqual({ stanje: 'inactive', pid: null, cwd: null })
+  })
+  test('macOS: učitana, ali ne radi (state = not running) → inactive, pid null', () => {
+    const { o } = lazniDarwin({ 'launchctl print system/hr.regoc.taskmanager': '\tstate = not running\n\tlast exit code = 1\n' })
+    expect(P.opisUsluge('regoc-taskmanager', o).stanje).toBe('inactive')
+    expect(P.opisUsluge('regoc-taskmanager', o).pid).toBeNull()
+  })
+  test('ppid: Linux iz procfs-a (vlastiti proces = process.ppid), macOS iz ps -o ppid=', () => {
+    expect(P.ppid(process.pid, { os: 'linux' })).toBe(process.ppid)
+    expect(P.ppid(4194303, { os: 'linux' })).toBeNull()
+    const { o } = lazniDarwin({ 'ps -o ppid= -p 311': '    1\n' })
+    expect(P.ppid(311, o)).toBe(1)
+    expect(P.ppid(312, o)).toBeNull()
+  })
+  test('procesi: Linux sadrži vlastiti proces s pravim roditeljem; macOS parsira ps -A jednim pozivom', () => {
+    const ja = P.procesi({ os: 'linux' }).find(p => p.pid === process.pid)
+    expect(ja?.ppid).toBe(process.ppid)
+    expect(ja?.cmd).toMatch(/bun/)
+    const { o, pozivi } = lazniDarwin({ 'ps -A -o pid=,ppid=,command=': '    1     0 /sbin/launchd\n  311     1 /Users/x/.bun/bin/bun src/TaskWebUI.ts\n' })
+    expect(P.procesi(o)).toEqual([{ pid: 1, ppid: 0, cmd: '/sbin/launchd' }, { pid: 311, ppid: 1, cmd: '/Users/x/.bun/bin/bun src/TaskWebUI.ts' }])
+    expect(pozivi.length).toBe(1)
+  })
+})

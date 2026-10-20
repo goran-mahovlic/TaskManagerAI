@@ -99,7 +99,9 @@ Otvori `http://localhost:17781`. Ploča ima sedam kartica:
 Na čvoru s uslugom (Linux ili macOS) `bash scripts/install.sh --cvor <ime>` postavlja instalaciju,
 `bash scripts/nadogradi.sh --git origin` je nadograđuje, a `bash scripts/deinstaliraj.sh [--sve|--do-nule]`
 uklanja — `--do-nule` samo ono što je instalacija upisala u `~/.taskmanager/instalirano.json`;
-`bash scripts/provjeri-cisto.sh` ne ispiše ništa kad je stroj čist ([docs/INSTALL.md](docs/INSTALL.md) §2.1, §2.2, §10).
+`bash scripts/provjeri-cisto.sh` ne ispiše ništa kad je stroj čist, a `bash scripts/bootcheck.sh` provjerava čvor u radu
+(vlasnik usluge, radna mapa, brana Hosta, siročad, AI prijava, sat, izvori memorije i RAG-a; PASS/FAIL)
+([docs/INSTALL.md](docs/INSTALL.md) §2.1, §2.2, §2.3, §10).
 
 Prvi zadatak preko API-ja:
 

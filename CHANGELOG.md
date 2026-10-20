@@ -1,3 +1,13 @@
+## 2026-10-21 — `scripts/bootcheck.sh`: provjera čvora M1–M7 na Linuxu i macOS-u (TASK-5657)
+
+- Plan Mac v3 K4: bootcheck je sada u paketu (`scripts/bootcheck.sh` + `scripts/bootcheck.ts`), za oba OS-a:
+  M1 vlasnik usluge, M2 radna mapa, M3 brana Hosta (200/403), M4 siročad na vratima, M5 prijava na bilo koji
+  AI servis i mjerilo autonomije, M6 sat, M7 izvori memorije i RAG-a prema `memorija.json`. Zapis u
+  `$TM_HOME/log/bootcheck/` (txt + json). Okolina usluge se čita iz živog procesa.
+- Platforma: `opisUsluge()` (stanje, glavni PID i radna mapa iz `systemctl show` / `launchctl print`),
+  `procesi()` (tablica jednim `ps` pozivom na macOS-u) i `ppid()`.
+- `prijava-ai.ts`: `stanjePrijave()` prima OS, okolinu i spremište izvana (koristi ga bootcheck M5).
+
 ## 2026-10-20 — deinstalacija do nule, provjera čistoće i nadogradnja čvora (TASK-5656)
 
 - Plan Mac v3 K3, P3.4: `scripts/deinstaliraj.sh` u tri razine (zadano: usluge i naredbe; `--sve`:
