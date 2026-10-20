@@ -11,6 +11,7 @@
  *   oznakaStarta(pid)   procfs stat polje 22  | LC_ALL=C ps -o lstart= -p  (epoha, s)
  *   startProcesaMs(pid) polje 22 + uptime     | lstart (sekundna rezolucija)
  *   bootMs()            procfs uptime         | sysctl -n kern.boottime
+ *   cpuVrijeme(pid)     stat utime+stime+cutime+cstime | ps -o time= (centisekunde)
  *   cwd(pid)            readlink cwd          | lsof -a -p <pid> -d cwd -Fn
  *   pidovi()            readdir procfs        | ps -A -o pid=
  *   pidNaVratima(v)     ss -ltnp (lsof rezerva) | lsof -nP -iTCP:<v> -sTCP:LISTEN -t
@@ -175,6 +176,30 @@ export function bootMs(o?: Okolina): number {
   const m = out.match(/sec\s*=\s*(\d+)(?:,\s*usec\s*=\s*(\d+))?/)
   if (!m) throw new Error('kern.boottime nije čitljiv')
   return Number(m[1]) * 1000 + Math.round(Number(m[2] ?? 0) / 1000)
+}
+
+/**
+ * Kumulativno CPU vrijeme procesa kao mjera „radi li” (raste li između dva čitanja).
+ * Linux: utime+stime+cutime+cstime iz procfs stat-a (otkucaji); macOS: `ps -o time=`
+ * (user+sys, u centisekundama). Jedinice se ne miješaju — uspoređuje se isti proces na
+ * istom stroju. null = proces ne postoji.
+ */
+export function cpuVrijeme(pid: number, o?: Okolina): number | null {
+  if (!ispravanPid(pid)) return null
+  if (jeLinux(o)) {
+    const f = statRep(pid, o)
+    if (!f) return null
+    // f[0] = polje 3 (state) → utime = polje 14 = f[11], stime f[12], cutime f[13], cstime f[14]
+    return [11, 12, 13, 14].reduce((z, i) => z + (parseInt(f[i] || '0', 10) || 0), 0)
+  }
+  const t = izvrsi(o)(['ps', '-o', 'time=', '-p', String(pid)])?.trim()
+  if (!t) return null
+  // [[dd-]hh:]mm:ss[.cc]
+  const m = t.match(/^(?:(\d+)-)?(?:(\d+):)?(\d+):(\d+)(?:[.,](\d+))?$/)
+  if (!m) return null
+  const [, d, h, mi, se, cs] = m
+  const sek = (Number(d ?? 0) * 24 + Number(h ?? 0)) * 3600 + Number(mi) * 60 + Number(se)
+  return sek * 100 + Number((cs ?? '0').padEnd(2, '0').slice(0, 2))
 }
 
 export interface StartOpcije { clockTicks?: number; bootMs?: number }

@@ -67,6 +67,7 @@ describe('platforma — Linux (pravi procfs)', () => {
     expect(P.cwd(42, o)).toBe('/tmp')
     const ms = P.startProcesaMs(42, { ...o, clockTicks: 100, bootMs: 1_000_000 })
     expect(ms).toBe(1_000_000 + 7770)
+    expect(P.cpuVrijeme(42, o)).toBe(9 + 10 + 11 + 12)   // polja 14–17 = vrijednosti 9..12 u nizu
     writeFileSync(join(root, '42', 'stat'), rep('Z'))
     expect(P.oznakaStarta(42, o)).toBeNull()
   })
@@ -131,6 +132,12 @@ describe('platforma — lažni darwin (BSD alati)', () => {
     expect(pozivi[0].env).toEqual({ LC_ALL: 'C' })
     expect(P.rezolucijaStartaMs(o)).toBe(1000)
     expect(P.rezolucijaStartaMs({ os: 'linux' })).toBe(0)
+  })
+  test('cpuVrijeme kroz ps -o time= (centisekunde), oblici mm:ss.cc i hh:mm:ss', () => {
+    const { o } = lazniDarwin({ 'ps -o time= -p 42': '   1:02.50\n', 'ps -o time= -p 43': '2-01:00:03\n' })
+    expect(P.cpuVrijeme(42, o)).toBe(6250)
+    expect(P.cpuVrijeme(43, o)).toBe(((2 * 24 + 1) * 3600 + 3) * 100)
+    expect(P.cpuVrijeme(44, o)).toBeNull()
   })
   test('bootMs iz sysctl kern.boottime', () => {
     const { o } = lazniDarwin({ 'sysctl -n kern.boottime': '{ sec = 1792000000, usec = 250000 } Mon Oct 20 08:00:00 2026\n' })
