@@ -1,0 +1,10 @@
+#!/usr/bin/perl
+# setsid za macOS (TASK-5654, plan Mac v3 P10 #17): macOS nema naredbu `setsid`, a upute
+# agentima (REGOC-POZADINA) i skripte kompleta je zovu kao `setsid nohup … &`.
+# install.sh ga postavlja u ~/.local/bin SAMO ako `setsid` ne postoji. perl je dio macOS-a.
+use strict; use warnings; use POSIX ();
+die "uporaba: setsid <naredba> [arg…]\n" unless @ARGV;
+# vođa procesne grupe ne smije zvati setsid(2) → kao util-linux: račvaj se, roditelj izlazi
+if (getpgrp() == $$) { my $p = fork(); die "fork: $!\n" unless defined $p; exit 0 if $p; }
+POSIX::setsid() or die "setsid: $!\n";
+exec { $ARGV[0] } @ARGV or die "setsid: $ARGV[0]: $!\n";

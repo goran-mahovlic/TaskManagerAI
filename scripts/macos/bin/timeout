@@ -1,0 +1,13 @@
+#!/usr/bin/perl
+# timeout za macOS (TASK-5654, plan Mac v3 P10 #18): GNU `timeout <sek> <naredba…>`,
+# izlaz 124 pri isteku (dijete dobije SIGTERM). install.sh ga postavlja u ~/.local/bin samo
+# ako nema ni `timeout` ni `gtimeout`. Podržava cijele i decimalne sekunde i sufikse s/m/h.
+use strict; use warnings; use Time::HiRes qw(alarm);
+my $r = shift @ARGV // ''; die "uporaba: timeout <trajanje> <naredba> [arg…]\n" unless @ARGV && $r =~ /^(\d+(?:\.\d+)?)([smh]?)$/;
+my $sek = $1 * ($2 eq 'm' ? 60 : $2 eq 'h' ? 3600 : 1);
+my $p = fork(); die "fork: $!\n" unless defined $p;
+if (!$p) { exec { $ARGV[0] } @ARGV or exit 127 }
+$SIG{ALRM} = sub { kill 'TERM', $p; waitpid $p, 0; exit 124 };
+alarm $sek if $sek > 0;
+waitpid $p, 0;
+exit($? & 127 ? 128 + ($? & 127) : $? >> 8);

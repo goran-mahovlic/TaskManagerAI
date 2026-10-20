@@ -195,3 +195,24 @@ describe('platforma — rok i odvajanje (stvarno izvođenje)', () => {
     if (sid) expect(sid).toBe(String(pid))
   })
 })
+
+describe('macOS omotači scripts/macos/bin (perl, postavlja ih install.sh kad naredba ne postoji)', () => {
+  const BIN = join(import.meta.dir, '..', 'scripts', 'macos', 'bin')
+  test('timeout: istek → 124, inače izlaz naredbe, decimalne sekunde', () => {
+    const t0 = Date.now()
+    expect(Bun.spawnSync([join(BIN, 'timeout'), '1', 'sleep', '5']).exitCode).toBe(124)
+    expect(Date.now() - t0).toBeLessThan(4000)
+    expect(Bun.spawnSync([join(BIN, 'timeout'), '3', 'sh', '-c', 'exit 5']).exitCode).toBe(5)
+    expect(Bun.spawnSync([join(BIN, 'timeout'), '0.3s', 'sleep', '2']).exitCode).toBe(124)
+    expect(Bun.spawnSync([join(BIN, 'timeout'), 'x', 'true']).exitCode).not.toBe(0)
+  })
+  test('setsid: naredba se izvodi u novoj sesiji (SID = vlastiti PID)', async () => {
+    const dir = privremena('setsid-')
+    const f = join(dir, 'sid')
+    expect(Bun.spawnSync([join(BIN, 'setsid'), 'sh', '-c', `ps -o sid=,pid= -p $$ > "${f}"`]).exitCode).toBe(0)
+    for (let i = 0; i < 40 && !(existsSync(f) && readFileSync(f, 'utf-8').trim()); i++) await Bun.sleep(50)
+    const [sid, pid] = readFileSync(f, 'utf-8').trim().split(/\s+/)
+    expect(sid).toBe(pid)
+    expect(sid).not.toBe(Bun.spawnSync(['ps', '-o', 'sid=', '-p', String(process.pid)]).stdout.toString().trim())
+  })
+})

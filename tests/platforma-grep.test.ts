@@ -13,7 +13,11 @@ const MAPE = ['src', 'scripts', 'hooks', 'tools', 'agents', 'profili', 'template
 const NASTAVCI = /\.(ts|js|sh|py)$|^[^.]+$/
 
 /** Datoteke koje SMIJU znati za Linux. */
-const DOPUSTENO = new Set(['src/core/platforma.ts', 'src/core/orchestrator/Liveness.ts'])
+const DOPUSTENO = new Set([
+  'src/core/platforma.ts', 'src/core/orchestrator/Liveness.ts',
+  // macOS omotači koji DAJU naredbe `setsid`/`timeout` ljuskama (P10 #17, #18)
+  'scripts/macos/bin/setsid', 'scripts/macos/bin/timeout',
+])
 /**
  * Pojedinačne iznimke s razlogom: to nisu pozivi nego sigurnosni uzorak koji ODBIJA
  * naredbe konzole što ciljaju `/proc/<pid>/environ` (na macOS-u bezopasan, i dalje odbija).
