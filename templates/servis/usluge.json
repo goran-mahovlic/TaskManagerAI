@@ -1,0 +1,47 @@
+{
+  "_opis": "Usluge čvora — JEDAN opis iz kojeg scripts/instalacija/servis.ts radi systemd korisničku jedinicu (Linux) i LaunchDaemon (macOS). {{IME}} se zamjenjuje pri instalaciji; vrijednosti stroja ovdje ne stoje (plan Mac v3 P2, P10 #1–#8).",
+  "usluge": [
+    {
+      "ime": "taskmanager",
+      "opis": "TaskManagerAI — ploča i API",
+      "uvjet": "uvijek",
+      "vrsta": "stalna",
+      "cwd": "{{PAKET}}",
+      "argv": ["{{PAKET}}/scripts/s-okolinom.sh", "--", "{{BUN}}", "src/TaskWebUI.ts"]
+    },
+    {
+      "ime": "daemon",
+      "opis": "RegocDaemon kompleta (D2 = B) — jedini orkestrator nad bazom čvora",
+      "uvjet": "komplet",
+      "vrsta": "nakon-pada",
+      "poslije": "taskmanager",
+      "cwd": "{{KOMPLET}}",
+      "argv": ["{{PAKET}}/scripts/s-okolinom.sh", "--tajne", "--cekaj", "http://127.0.0.1:{{TM_PORT}}/health", "--", "{{BUN}}", "RegocDaemon.ts"]
+    },
+    {
+      "ime": "znanje",
+      "opis": "Osvježavanje znanja čvora (svakih 30 min)",
+      "uvjet": "komplet",
+      "vrsta": "periodicna",
+      "intervalSek": 1800,
+      "cwd": "{{PAKET}}",
+      "argv": ["{{PAKET}}/scripts/s-okolinom.sh", "--", "{{BUN}}", "scripts/znanje-cvora.ts", "osvjezi", "--pisi"]
+    },
+    {
+      "ime": "pgvector",
+      "opis": "Lokalni pgvector (RAG) — radi samo kad je rag.izvor=lokalna",
+      "uvjet": "baze",
+      "vrsta": "rucna",
+      "cwd": "{{TM_HOME}}/rag",
+      "argv": ["{{PG_BIN}}/postgres", "-D", "{{TM_HOME}}/rag/pg0/data", "-p", "15433", "-c", "listen_addresses=127.0.0.1", "-c", "unix_socket_directories={{TM_HOME}}/rag"]
+    },
+    {
+      "ime": "hindsight",
+      "opis": "Lokalni Hindsight (memorija) — radi samo kad je memorija.izvor=lokalna",
+      "uvjet": "baze",
+      "vrsta": "rucna",
+      "cwd": "{{TM_HOME}}/hindsight",
+      "argv": ["{{PAKET}}/scripts/s-okolinom.sh", "--tajne", "--datoteka", "{{TM_HOME}}/hindsight/hindsight.env", "--", "{{BAZE_VENV}}/bin/hindsight-api"]
+    }
+  ]
+}

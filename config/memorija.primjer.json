@@ -1,0 +1,13 @@
+{
+  "_opis": "Prekidači izvora memorije (Hindsight) i RAG-a čvora (plan Mac v3 P5.2–P5.3). Primjer BEZ vrijednosti stroja: kopira se u $TM_HOME/config/memorija.json (0600) i ondje se uređuje. „nasa” = dijeljeni sustav preko tunela na 127.0.0.1, „lokalna” = baze čvora (instalira ih install.sh --baze, zaustavljene dok se ovdje ne odabere), „iskljuceno” = bez RAG-a.",
+  "memorija": {
+    "izvor": "nasa",
+    "nasa": { "host": "127.0.0.1", "port": 17792 },
+    "lokalna": { "host": "127.0.0.1", "port": 17796, "usluga": "regoc-hindsight" }
+  },
+  "rag": {
+    "izvor": "iskljuceno",
+    "nasa": { "host": "127.0.0.1", "port": 15432 },
+    "lokalna": { "host": "127.0.0.1", "port": 15433, "baza": "rag", "korisnik": "rag", "lozinkaEnv": "TM_PGVECTOR_LOKALNA_PASSWORD", "usluga": "regoc-pgvector" }
+  }
+}

@@ -162,7 +162,14 @@ const ZABRANA = [
   /^TM_(?!.*_(PASSWORD|TOKEN|SECRET|KEY)$)/,
   /_(PROXY|BASE_URL|HOST|URL)$/,
 ]
-export const imeZabranjeno = (ime: string): boolean => ZABRANA.some(r => r.test(ime))
+/**
+ * Točne iznimke od zabrane (plan Mac v3 P12.3): dugotrajni token `claude setup-token` je
+ * JEDINI način prijave Claude pretplate za uslugu na macOS-u (prijava CLI-ja ide u Keychain
+ * koji LaunchDaemon ne vidi). Ime samo prijavljuje CLI — ne mijenja izvršenje ni odredište.
+ * Prefiks `CLAUDE_` ostaje zabranjen za sva ostala imena (npr. CLAUDE_CONFIG_DIR).
+ */
+const IZNIMKE_ZABRANE = new Set(['CLAUDE_CODE_OAUTH_TOKEN'])
+export const imeZabranjeno = (ime: string): boolean => !IZNIMKE_ZABRANE.has(ime) && ZABRANA.some(r => r.test(ime))
 
 const SUFIKS_DODATNIH = /^[A-Z][A-Z0-9_]{1,63}_(PASSWORD|PASS|TOKEN|SECRET|KEY|API_KEY)$/
 

@@ -1,0 +1,38 @@
+# Plan Mac v3 P10: Linux ovisnost → macOS zamjena. Stupci (TAB): br, linux, macos, izvor, provjera, napomena.
+# izvor: U ugrađeno · K kod u paketu/kompletu · M korisnička mapa (curl) · B Homebrew (samo ako je korisnikov) · N nije podržano.
+# provjera: naredba samo za čitanje; izlaz 0 = ✓. „-" = nema provjere (N ili dolazi s kompletom).
+1	systemd --user + linger	LaunchDaemon /Library/LaunchDaemons/hr.regoc.*	U	command -v launchctl	korak servis (plutil -lint, launchctl bootstrap)
+2	EnvironmentFile (tajne)	omotač scripts/s-okolinom.sh --tajne	K	test -x "$PAKET/scripts/s-okolinom.sh"	tajne nikad u plistu
+3	drop-ini PATH/TZ	EnvironmentVariables u plistu	U	command -v plutil	predložak usluge
+4	Restart=on-failure/always	KeepAlive + ThrottleInterval	U	command -v launchctl	predložak usluge
+5	regoc-znanje.timer	StartInterval=1800	U	command -v launchctl	usluga znanje (uz --komplet)
+6	After=regoc-taskmanager	s-okolinom.sh --cekaj …/health	K	test -x "$PAKET/scripts/s-okolinom.sh"	usluga daemon čeka ploču
+7	systemctl --user restart/show	launchctl print/kickstart (platforma.ts)	U	command -v launchctl	sudo -n za kickstart
+8	journalctl --user	StandardOutPath u $TM_HOME/log	U	true	predložak usluge
+9	/proc/<pid>/cmdline	ps -o command=	U	command -v ps	platforma.cmdline()
+10	/proc/<pid>/stat + uptime	ps -o lstart= + sysctl kern.boottime	U	command -v sysctl	platforma.startProcesaMs()
+11	existsSync(/proc/<pid>)	process.kill(pid, 0)	U	true	platforma.ziv()
+12	/proc/<pid>/cwd	lsof -a -p PID -d cwd -Fn	U	command -v lsof	platforma.cwd()
+13	pgrep/pkill	BSD pgrep/pkill	U	command -v pgrep	bez promjene
+14	ss -ltnp	lsof -nP -iTCP -sTCP:LISTEN	U	command -v lsof	platforma.pidNaVratima()
+15	flock(2) iz libc.so.6	flock(2) iz libSystem	U	test -e /usr/lib/libSystem.B.dylib || test -e /usr/lib/libc.dylib || command -v launchctl	platforma.libc() (dyld cache: datoteka ne mora biti na disku)
+16	naredba flock	mkdir-brava / brava.ts	K	true	skripte ne zovu flock
+17	setsid	~/.local/bin/setsid (perl POSIX::setsid)	K	command -v setsid || test -x "$HOME/.local/bin/setsid"	korak macos-omotaci
+18	GNU timeout	~/.local/bin/timeout (perl alarm, izlaz 124)	K	command -v timeout || command -v gtimeout || test -x "$HOME/.local/bin/timeout"	korak macos-omotaci
+19	nohup	/usr/bin/nohup	U	command -v nohup	—
+20	sed -i	perl -pi / pisanje kroz bun	U	command -v perl	—
+21	stat -c, date -d, readlink -f	stat -f, date -j, readlink -f	U	command -v stat	—
+22	/tmp (tmpfs)	TMPDIR=$TM_HOME/tmp	U	true	plist EnvironmentVariables.TMPDIR
+23	/home/<korisnik>	$HOME (/Users/<korisnik>)	K	true	—
+24	capguard (nftables)	nije podržano; TM_BIND + baze na 127.0.0.1	N	-	kartica Sigurnost: „nije podržano”
+25	ulazni vatrozid (nft)	TM_BIND (petlja + tailnet)	U	true	ne dira socketfilterfw
+26	Ollama	ne instalira se zadano (https://ollama.com/download/mac)	M	-	samo uz rag.izvor=lokalna
+27	bun	službena skripta https://bun.sh/install	M	command -v bun || test -x "$HOME/.bun/bin/bun"	korak bun
+28	Claude CLI	službena skripta https://claude.ai/install.sh	M	command -v claude || test -x "$HOME/.local/bin/claude"	uz --komplet ili --claude
+29	python3 3.13	uv (https://astral.sh/uv/install.sh) + uv python install 3.13	M	command -v uv || test -x "$HOME/.local/bin/uv"	uz --baze
+30	sqlite3 CLI	/usr/bin/sqlite3	U	command -v sqlite3	—
+31	~/.claude/node_modules	bun install --frozen-lockfile (komplet)	M	-	uz --komplet
+32	settings.json kuka (apsolutni bun)	predložak kompleta s $HOME	K	-	uz --komplet
+33	script -qfec (PTY)	BSD script -q /dev/null cmd	U	command -v script	platforma.ptyNaredba()
+34	glas (espeak-ng, ffmpeg, piper)	ne instalira se u prvoj fazi	N	-	--glas kasnije
+35	Setup GUI (regoc-setup)	install.sh + Config stranica	N	-	ne instalira se

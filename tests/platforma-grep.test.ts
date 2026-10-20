@@ -19,6 +19,10 @@ const DOPUSTENO = new Set([
   'src/core/platforma.ts', 'src/core/orchestrator/Liveness.ts',
   // macOS omotači koji DAJU naredbe `setsid`/`timeout` ljuskama (P10 #17, #18)
   'scripts/macos/bin/setsid', 'scripts/macos/bin/timeout',
+  // TASK-5655 (K2): pisač usluga — JEDINO mjesto koje piše systemd jedinicu (Linux grana) ili
+  // LaunchDaemon (macOS grana) iz templates/servis/usluge.json; isto što platforma.ts radi za
+  // upravljanje, ali za instalaciju (tests/install-servis.test.ts provjerava obje grane).
+  'scripts/instalacija/servis.ts',
 ])
 /** Pojedinačne iznimke: redak u datoteci koji smije sadržavati uzorak, i ZAŠTO. */
 const IZNIMKE: { datoteka: string; redak: RegExp; razlog: string }[] = [
@@ -28,6 +32,10 @@ const IZNIMKE: { datoteka: string; redak: RegExp; razlog: string }[] = [
     razlog: 'nije poziv nego popis riječi po kojima se u odgovoru prepoznaje naredba kao dokaz' },
   { datoteka: 'scripts/profil-cvora-stanje.ts', redak: /nar\(\['systemctl', '--user', 'is-active', ime\]\)/,
     razlog: 'Linux grana ZRCALA platforma.usluga: sakupljač se izvodi preko SSH-a sa stdin-a i ne smije uvoziti paket (ugovor: tests/profil-cvora-stanje-usluga.test.ts)' },
+  { datoteka: 'scripts/install.sh', redak: /sudo apt-get install -y \$\{apt/,
+    razlog: 'nije poziv nego uputa čovjeku kad na Linuxu fali preduvjet (install.sh sam ne pokreće apt ni sudo, plan P3 korak 2)' },
+  { datoteka: 'scripts/install.sh', redak: /for ime in setsid timeout; do|K2\.12-macos-omotaci "macOS: setsid i timeout/,
+    razlog: 'korak koji na macOS-u POSTAVLJA omotače setsid/timeout iz scripts/macos/bin (P10 #17, #18); naredbe se ne zovu' },
   { datoteka: 'scripts/instaliraj-pdf.sh', redak: /apt-get/,
     razlog: 'Linux grana apt_paket (vrata [ "$OS" = Linux ], samo sudo -n); macOS ide preuzimanjem fonta u korisničku mapu (tests/instaliraj-pdf-mac.test.ts)' },
 ]

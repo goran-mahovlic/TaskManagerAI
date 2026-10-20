@@ -445,6 +445,14 @@ export interface PlistOpcije {
   nice?: number
   /** Datoteka za stdout i stderr. */
   log?: string
+  /** Diže je launchd tek kad padne (izlaz ≠ 0), kao systemd Restart=on-failure. */
+  nakonPada?: boolean
+  /** Učitana, ali ne pokreće se sama (RunAtLoad=false): baze koje uključuje prekidač. */
+  rucno?: boolean
+  /** ProcessType=Background + LowPriorityIO: E-jezgre i prigušen I/O (prednost drugim programima). */
+  pozadina?: boolean
+  /** ThrottleInterval: najmanji razmak između dva pokretanja (systemd RestartSec). */
+  razmakSek?: number
 }
 
 function xml(t: string): string {
@@ -468,6 +476,12 @@ export function launchdPlist(p: PlistOpcije): string {
   }
   if (p.intervalSek) k('StartInterval', `<integer>${Math.round(p.intervalSek)}</integer>`)
   if (p.stalno) { k('RunAtLoad', '<true/>'); k('KeepAlive', '<true/>') }
+  else if (p.nakonPada) {
+    k('RunAtLoad', '<true/>')
+    r.push('  <key>KeepAlive</key>', '  <dict>', '    <key>SuccessfulExit</key>', '    <false/>', '  </dict>')
+  } else if (p.rucno) k('RunAtLoad', '<false/>')
+  if (p.razmakSek) k('ThrottleInterval', `<integer>${Math.round(p.razmakSek)}</integer>`)
+  if (p.pozadina) { k('ProcessType', '<string>Background</string>'); k('LowPriorityIO', '<true/>') }
   if (p.nice !== undefined) k('Nice', `<integer>${p.nice}</integer>`)
   if (p.log) { k('StandardOutPath', `<string>${xml(p.log)}</string>`); k('StandardErrorPath', `<string>${xml(p.log)}</string>`) }
   r.push('</dict>', '</plist>', '')
