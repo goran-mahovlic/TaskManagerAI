@@ -461,11 +461,12 @@ EOF
 k_instanca() {
   local dirs=("$TM_HOME" "$TM_HOME/config" "$TM_HOME/data" "$TM_HOME/log" "$TM_HOME/tmp" "$TM_HOME/backup") d nove=()
   for d in "${dirs[@]}"; do [ -d "$d" ] || nove+=("$d"); done
-  if [ "${#nove[@]}" -gt 0 ]; then
-    promjena; radi "mape ${nove[*]}" -- mkdir -p "${nove[@]}"
-    suho || chmod 700 "$TM_HOME"
-    [ "${nove[0]}" = "$TM_HOME" ] && u_manifest "$TM_HOME" mapa
-  fi
+  if [ "${#nove[@]}" -gt 0 ]; then promjena; radi "mape ${nove[*]}" -- mkdir -p "${nove[@]}"; fi
+  [ "$TM_HOME_NOV" = 1 ] && u_manifest "$TM_HOME" mapa
+  # podaci, postavke i tajne čvora: samo vlasnik
+  for d in "$TM_HOME" "$TM_HOME/config"; do
+    if [ ! -d "$d" ] || [ "$(stat_mod "$d")" != 700 ]; then promjena; radi "chmod 700 $d" -- chmod 700 "$d"; fi
+  done
   pisi_sadrzaj "$(instalacija_env)" "$TM_HOME/config/instalacija.env" 600
   [ $? = 10 ] && { promjena; echo "    $(suho && echo '(suho) ')$TM_HOME/config/instalacija.env"; }
   if [ -n "$CVOR" ]; then
@@ -837,6 +838,8 @@ k_ai_prijava() {
 # ═════════════════════════════════════════════════════════════════════════════
 OS=""; OS_OPIS=""; PLOCA_URL=""
 BACKUP_DIR="$TM_HOME/backup/install-$(date '+%Y%m%d-%H%M%S')"
+# je li $TM_HOME nastao ovom instalacijom (mapa loga ga stvara prije koraka instance)
+TM_HOME_NOV=0; [ -e "$TM_HOME" ] || TM_HOME_NOV=1
 log_otvori "${LOG_DIR_ARG:-$TM_HOME/log/install}" || exit 3
 zapis_log "TaskManagerAI — instalacija iz $PAKET$(suho && echo '  [SUHO: ništa se ne piše]')"
 zapis_log "  argumenti: ${ARGUMENTI:-—}"
