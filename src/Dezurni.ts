@@ -152,6 +152,24 @@ export function ciljDezurnog(o: DezurniOpcije = {}): (CiljRazgovora & { spec: st
 
 // ── Pet oblika poziva (isto kao most glavnog sustava, TASK-4709) ─────────────────────────
 
+/**
+ * OpenRouterovo polje `reasoning` iz postavke `reasoning` u dezurni.json (TASK-5631, isto pravilo
+ * kao most glavnog sustava). Zadano ISKLJUČENO: izmjereno (TASK-5627) Mistral Large 4 inače potroši
+ * sav max_tokens na razmišljanje (finish=length, prazan odgovor, ~120 s); s {enabled:false} 4,4 s.
+ * `model` = polje se ne šalje; low/medium/high = effort.
+ */
+export function reasoningTijelo(v: unknown): { enabled: false } | { effort: string } | undefined {
+  const t = String(v ?? 'off').toLowerCase()
+  if (t === 'model') return undefined
+  if (t === 'low' || t === 'medium' || t === 'high') return { effort: t }
+  return { enabled: false }
+}
+
+/** `banke_dodatne` iz dezurni.json: valjana imena banaka [a-z0-9_], 1–64 znaka. Zadano prazno. */
+export function dodatneBanke(v: unknown): string[] {
+  return (Array.isArray(v) ? v : []).map(x => String(x)).filter(b => /^[a-z0-9_]{1,64}$/.test(b))
+}
+
 interface Zahtjev { p: Record<string, any>; sustav: string; pitanje: string; tokena: number; konf: Record<string, any>; o: DezurniOpcije; samoSadrzaj?: boolean }
 
 export const NACIN_POZIVA_MOSTA: Record<NacinPoziva, (z: Zahtjev) => Promise<string | null>> = {
@@ -182,6 +200,7 @@ export const NACIN_POZIVA_MOSTA: Record<NacinPoziva, (z: Zahtjev) => Promise<str
 
   openai: async ({ p, sustav, pitanje, tokena, o, samoSadrzaj }) => {
     const ime = String(p.provider).toLowerCase()
+    const reasoning = ime === 'openrouter' ? reasoningTijelo(p.reasoning) : undefined
     const url = o.openaiUrl || (ime === 'openrouter'
       ? 'https://openrouter.ai/api/v1/chat/completions'
       : 'https://api.openai.com/v1/chat/completions')
@@ -192,6 +211,7 @@ export const NACIN_POZIVA_MOSTA: Record<NacinPoziva, (z: Zahtjev) => Promise<str
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + kljuc },
       body: JSON.stringify({
         model: p.model, max_tokens: tokena, temperature: 0,
+        ...(reasoning ? { reasoning } : {}),
         messages: [{ role: 'system', content: sustav }, { role: 'user', content: pitanje }],
       }),
     })
@@ -303,6 +323,8 @@ export interface DezurniRazgovora {
   pitaj(sustav: string, pitanje: string, tokena?: number): Promise<string | null>
   /** TASK-5626: koliko konteksta tekstni dežurni dobiva. */
   razina(): RazinaKonteksta
+  /** TASK-5631: banke Hindsighta uz glavnu za puni kontekst (`banke_dodatne`, zadano prazno). */
+  dodatneBanke(): string[]
   greska(): { pocinje: boolean; broj: number }
   uspjeh(): { zavrsilo: boolean }
 }
@@ -317,6 +339,7 @@ export function dezurniRazgovora(o: DezurniOpcije = {}): DezurniRazgovora {
     // 2000 tokena: modeli koji „misle naglas" potroše dio na razmišljanje prije odgovora.
     pitaj: (sustav, pitanje, tokena) => pitajModel(sustav, pitanje, tokena ?? TOKENA_DEZURNOG.kratki, o, { samoSadrzaj: true }),
     razina: () => razinaKonteksta(postavke(o)),
+    dodatneBanke: () => dodatneBanke((postavke(o) as Record<string, unknown>).banke_dodatne),
     greska: () => zabiljeziGresku(o),
     uspjeh: () => zabiljeziUspjeh(o),
   }

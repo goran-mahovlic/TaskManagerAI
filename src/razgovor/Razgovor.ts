@@ -567,7 +567,21 @@ export function stvoriRazgovor(d: RazgovorOvisnosti): RazgovorJezgra {
               'ništa ne izvršavaš i ne provjeravaš ploču — reci da ćeš to napraviti kad se primarni model vrati. ' +
               'Sat ili datum oporavka ne navodi ako ga nisi vidio.'
             : kratko
-          const t = await dz.pitaj(sustav, prompt, TOKENA_DEZURNOG[razina])
+          // TASK-5631: puni kontekst dobiva i recall iz dodatnih banaka (`banke_dodatne`, npr.
+          // tehničko znanje) — isti način, adresa, rok i filtar ovlasti kao glavna; fail-open.
+          let promptDez = prompt
+          const dodatne = razina === 'puni' && s.memorijaRazgovor !== 'off'
+            ? (dz.dodatneBanke?.() || []).filter(b => b !== s.memorijaBanka) : []
+          if (dodatne.length) {
+            const rez = await Promise.all(dodatne.map(banka => dohvatiMemoriju({
+              nacin: s.memorijaRazgovor, url: s.memorijaUrl || d.env.TM_HINDSIGHT_URL || '', banka,
+              rokMs: s.memorijaRokMs, upit: cistiTekst, vecPoslano: new Set(), fetchImpl: d.fetchImpl,
+            })))
+            const blokovi = rez.map(m => m.blok).filter((b): b is string => !!b)
+            rez.forEach((m, i) => { if (m.greska) log(`[razgovor] ${c.kljuc}: dežurni, banka ${dodatne[i]}: ${m.greska}`) })
+            if (blokovi.length) promptDez = `${blokovi.join('\n\n')}\n\n${prompt}`
+          }
+          const t = await dz.pitaj(sustav, promptDez, TOKENA_DEZURNOG[razina])
           if (t) { res = { exitCode: 0, resultText: t, numTurns: 1 }; dezurniPotez = dz.opis() }
         }
         if (!dezurniPotez) konzola(`🔻 dežurni ${dz.opis()} nije odgovorio — korisnik dobiva poruku o kvaru`, 'greska')

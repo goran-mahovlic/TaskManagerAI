@@ -160,6 +160,18 @@ def _http_json(url: str, tijelo: dict, zaglavlja: dict, rok: int = 120):
     return json.load(urllib.request.urlopen(zahtjev, timeout=rok))
 
 
+def reasoning_tijelo(v) -> dict | None:
+    """OpenRouterovo polje `reasoning` (TASK-5631), isto pravilo kao `reasoningTijelo` u
+    src/Dezurni.ts. Zadano ISKLJUČENO: izmjereno (TASK-5627) Mistral Large 4 inače potroši sav
+    max_tokens na razmišljanje i vrati prazan odgovor. `model` = ne šalje se."""
+    t = str(v if v is not None else "off").lower()
+    if t == "model":
+        return None
+    if t in ("low", "medium", "high"):
+        return {"effort": t}
+    return {"enabled": False}
+
+
 def pitaj_model(kartica: str, pitanje: str, tokena: int = 200, p: dict | None = None) -> str | None:
     """Pošalji pitanje davatelju iz postavki. None = nije odgovorio.
 
@@ -205,11 +217,15 @@ def pitaj_model(kartica: str, pitanje: str, tokena: int = 200, p: dict | None = 
             if not kljuc:
                 print("nema kljuca za tog davatelja", file=sys.stderr)
                 return None
-            d = _http_json(url, {
+            tijelo = {
                 "model": model, "max_tokens": tokena, "temperature": 0,
                 "messages": [{"role": "system", "content": kartica},
                              {"role": "user", "content": pitanje}],
-            }, {"Authorization": "Bearer " + kljuc})
+            }
+            razm = reasoning_tijelo(p.get("reasoning")) if ime == "openrouter" else None
+            if razm:
+                tijelo["reasoning"] = razm
+            d = _http_json(url, tijelo, {"Authorization": "Bearer " + kljuc})
             por = (d.get("choices") or [{}])[0].get("message") or {}
             return str(por.get("content") or por.get("reasoning") or "").strip() or None
 
@@ -584,8 +600,10 @@ def kartica() -> str:
         "- Predstavi se kao dezurni i reci sto se dogodilo.\n"
         + ("- Kad korisnik pita kada moze nastaviti, ponovi cijeli redak odozgo koji to\n"
            "  govori, sa satom i zonom.\n" if d["oporavak"] else
-           "- Sustav radi. Ne spominji nikakvo vrijeme ni sat.\n") +
-        "- Reci da ces javiti cim se moze nastaviti s radom.\n"
+           "- Sustav radi. Ne spominji nikakvo vrijeme ni sat.\n")
+        # TASK-5631 (nalaz TASK-5627): kad sustav radi, obećanje „javit ću kad se može
+        # nastaviti” je laž — nema što nastaviti, pa ga kartica tada ne traži.
+        + ("" if d["radi"] else "- Reci da ces javiti cim se moze nastaviti s radom.\n") +
         "- Kratko, na hrvatskom. Nista ne izmisljaj i ne trazi da korisnik sam provjerava.\n\n"
         "AKO TREBAS ALAT, napisi TOCNO jednu od ove tri rijeci:\n"
         "stanje  = ponovno izmjeri sto radi a sto ne\n"
