@@ -3,6 +3,8 @@
  * nema Linux-only poziva — procfs, `ss`, naredba `setsid`, `script -qfec`, `libc.so.6`,
  * `sed -i`, `stat -c`, `date -d`, goli GNU `timeout`. Novi takav poziv tiho pada na macOS-u
  * (npr. „mrtav” živi proces pa čistač ubije zadatak), zato ga ova brana hvata pri commitu.
+ * TASK-5668 (K1b): i `systemctl` (usluge idu kroz platforma.usluga/restartUsluge/…), naredba
+ * `flock` (util-linux) i `apt-get` — svaki preostali pogodak je na popisu izuzeća s razlogom.
  */
 import { describe, test, expect } from 'bun:test'
 import { readdirSync, readFileSync, statSync } from 'fs'
@@ -18,13 +20,17 @@ const DOPUSTENO = new Set([
   // macOS omotači koji DAJU naredbe `setsid`/`timeout` ljuskama (P10 #17, #18)
   'scripts/macos/bin/setsid', 'scripts/macos/bin/timeout',
 ])
-/**
- * Pojedinačne iznimke s razlogom: to nisu pozivi nego sigurnosni uzorak koji ODBIJA
- * naredbe konzole što ciljaju `/proc/<pid>/environ` (na macOS-u bezopasan, i dalje odbija).
- */
-const IZNIMKE: Record<string, RegExp> = {
-  'src/KonzolaVrata.ts': /PUT_TAJNI|\/proc\/<pid>\/environ/,
-}
+/** Pojedinačne iznimke: redak u datoteci koji smije sadržavati uzorak, i ZAŠTO. */
+const IZNIMKE: { datoteka: string; redak: RegExp; razlog: string }[] = [
+  { datoteka: 'src/KonzolaVrata.ts', redak: /PUT_TAJNI|\/proc\/<pid>\/environ/,
+    razlog: 'nije poziv nego sigurnosni uzorak koji ODBIJA naredbe konzole prema okolini procesa (na macOS-u bezopasan, i dalje odbija)' },
+  { datoteka: 'src/core/CompletionGuard.ts', redak: /kind: 'command', re: \/\\b\(curl\|git/,
+    razlog: 'nije poziv nego popis riječi po kojima se u odgovoru prepoznaje naredba kao dokaz' },
+  { datoteka: 'scripts/profil-cvora-stanje.ts', redak: /nar\(\['systemctl', '--user', 'is-active', ime\]\)/,
+    razlog: 'Linux grana ZRCALA platforma.usluga: sakupljač se izvodi preko SSH-a sa stdin-a i ne smije uvoziti paket (ugovor: tests/profil-cvora-stanje-usluga.test.ts)' },
+  { datoteka: 'scripts/instaliraj-pdf.sh', redak: /apt-get/,
+    razlog: 'Linux grana apt_paket (vrata [ "$OS" = Linux ], samo sudo -n); macOS ide preuzimanjem fonta u korisničku mapu (tests/instaliraj-pdf-mac.test.ts)' },
+]
 
 const UZORCI: [string, RegExp][] = [
   ['procfs', /\/proc\b/],
@@ -36,6 +42,9 @@ const UZORCI: [string, RegExp][] = [
   ['stat -c', /\bstat\s+-c\b/],
   ['date -d', /\bdate\s+-d\b/],
   ['timeout', /(^|[\s;&|(])timeout\s+\d/],
+  ['systemctl', /\bsystemctl\b/],
+  ['flock', /(^|[\s;&|(`'"])flock\s+-|\[\s*['"]flock['"]/],
+  ['apt-get', /\bapt-get\b/],
 ]
 
 function datoteke(mapa: string): string[] {
@@ -60,11 +69,19 @@ describe('brana prenosivosti (K1 grep = 0)', () => {
       if (DOPUSTENO.has(rel)) continue
       const redovi = readFileSync(p, 'utf-8').split('\n')
       redovi.forEach((red, i) => {
-        if (IZNIMKE[rel]?.test(red)) return
+        if (IZNIMKE.some(z => z.datoteka === rel && z.redak.test(red))) return
         for (const [ime, re] of UZORCI) if (re.test(red)) nalazi.push(`${rel}:${i + 1} [${ime}] ${red.trim().slice(0, 120)}`)
       })
     }
     expect(nalazi).toEqual([])
+  })
+
+  test('svako izuzeće ima razlog i još pogađa svoj redak (nema zastarjelih izuzeća)', () => {
+    for (const z of IZNIMKE) {
+      expect(z.razlog.length).toBeGreaterThan(20)
+      const redovi = readFileSync(join(KORIJEN, z.datoteka), 'utf-8').split('\n')
+      expect(redovi.some(r => z.redak.test(r) && UZORCI.some(([, re]) => re.test(r)))).toBe(true)
+    }
   })
 
   test('brana stvarno hvata (uzorci nad poznatim Linux pozivima)', () => {
@@ -72,9 +89,12 @@ describe('brana prenosivosti (K1 grep = 0)', () => {
       "readFileSync(`/proc/${pid}/cmdline`)", "ss -ltnp 2>/dev/null", "Bun.spawn(['setsid', x])",
       "Bun.spawn(['script', '-qfec', c, '/dev/null'])", "dlopen('libc.so.6', {})", "sed -i 's/a/b/' f",
       "stat -c %Y f", "date -d '1 day ago'", "  timeout 25 bun add zod",
+      "Bun.spawnSync(['systemctl', '--user', 'restart', u])", "if ! flock -w 5 8; then", "flock -n \"$LOCK\" true",
+      "Bun.spawn(['flock', '-n', f])", "sudo -n apt-get install -y ffmpeg",
     ]
     for (const l of lose) expect(UZORCI.some(([, re]) => re.test(l))).toBe(true)
-    for (const dobro of ['s_rokom 25 bun add zod', "AbortSignal.timeout(5000)", 'process.kill(pid, 0)', 'class Process'])
+    for (const dobro of ['s_rokom 25 bun add zod', "AbortSignal.timeout(5000)", 'process.kill(pid, 0)', 'class Process',
+      "perl -MFcntl=:flock -e 'flock($f, LOCK_EX)'", 'brava_fd 8 5'])
       expect(UZORCI.some(([, re]) => re.test(dobro))).toBe(false)
   })
 })
