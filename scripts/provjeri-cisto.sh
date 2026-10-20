@@ -9,7 +9,8 @@
 #   usluga    plistovi hr.regoc.* (LaunchDaemons/LaunchAgents) ili jedinice regoc-* (systemd --user)
 #   ucitano   usluga koju upravitelj (launchd/systemd) još drži učitanom
 #   proces    procesi ovog korisnika (bun|hindsight|postgres|ollama) pokrenuti iz $HOME
-#   vrata     zauzeta vrata 17781 17792 17796 17797 15432 15433 11434 (proces ovog korisnika)
+#   vrata     zauzeta vrata 17781 17792 17796 17797 15432 15433 11434 koja drži proces iz $HOME
+#             (tuđi proces na tim vratima → samo napomena na stderr)
 #   put       $TM_HOME i svaki put iz manifesta instalirano.json (i arhivirane kopije) koji postoji
 #   rc        blok `# >>> TaskManagerAI >>>` u ~/.zprofile, ~/.zshrc, ~/.bashrc, ~/.profile…
 #   kljuc     redak s oznakom tm-tunel u ~/.ssh/authorized_keys
@@ -89,8 +90,18 @@ slusaju() {
         { i = $2; gsub(/[^0-9]/, "", i); if (i in vr && !(i in nadjen)) { split($1, d, "/"); nadjen[i] = d[3] } }
         END { for (i in vr) print vr[i], ((i in nadjen) ? nadjen[i] : "?") }'
 }
+cwd_procesa() {
+  if [ -e "/proc/$1/cwd" ]; then readlink "/proc/$1/cwd" 2>/dev/null
+  else lsof -a -p "$1" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p' | head -1; fi
+}
+# Ostatak su samo vrata koja drži proces OVE instalacije (naredba ili radna mapa pod $HOME).
+# Tuđi proces na istim vratima (drugi korisnik, druga instalacija na stroju) nije naš ostatak,
+# ali smeta novom krugu — zato napomena na stderr, bez brojanja.
 while read -r v p; do
-  ostatak vrata "$v (PID $p$( [ "$p" != "?" ] && echo ": $(ps -o args= -p "$p" 2>/dev/null | cut -c1-80)"))"
+  a=""; c=""
+  [ "$p" != "?" ] && { a="$(ps -o args= -p "$p" 2>/dev/null)"; c="$(cwd_procesa "$p")"; }
+  case "$a $c/" in *"$HOME/"*) ostatak vrata "$v (PID $p: $(printf '%s' "$a" | cut -c1-80))" ;;
+    *) echo "napomena: vrata $v drži proces koji nije iz $HOME (PID $p${a:+: $(printf '%s' "$a" | cut -c1-60)}) — nije ostatak, ali novi krug instalacije ih treba slobodna" >&2 ;; esac
 done < <(slusaju | sort -n)
 
 # ── putevi: $TM_HOME i manifesti (živi i arhivirani) ─────────────────────────

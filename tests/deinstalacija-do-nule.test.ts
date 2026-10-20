@@ -266,7 +266,7 @@ describe('rc.sh — retci službenih instalatora u ~/.zshrc', () => {
 })
 
 describe('provjeri-cisto.sh — samostalno (bez repozitorija)', () => {
-  test('kroz stdin (curl | bash): prazan HOME = 0 redaka; vrata koja slušaju se prijave', async () => {
+  test('kroz stdin (curl | bash): prazan HOME = 0 redaka; vrata procesa iz HOME-a su ostatak, tuđa samo napomena', async () => {
     const home = mkdtempSync(join(radna(), 'tm-cisto-'))
     const posluzitelj = Bun.serve({ port: 0, hostname: '127.0.0.1', fetch: () => new Response('ok') })
     try {
@@ -277,9 +277,20 @@ describe('provjeri-cisto.sh — samostalno (bez repozitorija)', () => {
       expect(r.stdout.toString()).toBe('')
       expect(r.exitCode).toBe(0)
       expect(r.stderr.toString()).toContain('čisto (0 ostataka)')
-      const z = pokreni(String(posluzitelj.port))
-      expect(z.exitCode).toBe(1)
-      expect(z.stdout.toString()).toMatch(new RegExp(`^vrata\\t${posluzitelj.port} \\(PID (\\d+|\\?)`))
+      // tuđi proces (ovaj test, radna mapa izvan HOME-a) na vratima: napomena, 0 redaka
+      const t = pokreni(String(posluzitelj.port))
+      expect(t.stdout.toString()).toBe('')
+      expect(t.exitCode).toBe(0)
+      expect(t.stderr.toString()).toContain(`napomena: vrata ${posluzitelj.port}`)
+      // proces instalacije (radna mapa u HOME-u) na vratima: ostatak
+      const vrata = 20000 + Math.floor(Math.random() * 20000)
+      const nas = Bun.spawn([process.execPath, '-e', `Bun.serve({ port: ${vrata}, hostname: '127.0.0.1', fetch: () => new Response('ok') })`], { cwd: home, stdout: 'ignore', stderr: 'ignore' })
+      try {
+        for (let i = 0; i < 50; i++) { try { if ((await fetch(`http://127.0.0.1:${vrata}/`)).ok) break } catch {} await Bun.sleep(100) }
+        const z = pokreni(String(vrata))
+        expect(z.exitCode).toBe(1)
+        expect(z.stdout.toString()).toMatch(new RegExp(`^vrata\\t${vrata} \\(PID ${nas.pid}`))
+      } finally { nas.kill(9) }
     } finally { posluzitelj.stop(true); rmSync(home, { recursive: true, force: true }) }
   })
 })
