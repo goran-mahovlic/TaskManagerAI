@@ -43,6 +43,77 @@ bash scripts/install.sh --posudi     # node_modules = veze na postojeće; zod se
 bash scripts/install.sh --bez-baze   # ne diraj postojeću bazu
 ```
 
+## 2.1. Čvor na Linuxu ili macOS-u — jedna naredba (TASK-5655)
+
+`scripts/install.sh` je jedini ulaz i na Debianu/Ubuntuu i na macOS-u ≥ 14 (bash 3.2 je dovoljan).
+Sam prepozna OS, provjeri preduvjete, a što treba s interneta (bun, Claude CLI, uv) dohvati
+službenim instalacijskim skriptama u korisničku mapu — bez root-a i bez Homebrewa.
+
+```bash
+git clone https://github.com/goran-mahovlic/TaskManagerAI.git ~/TaskManagerAI
+cd ~/TaskManagerAI
+bash scripts/install.sh --suho --cvor <ime-cvora>             # samo pokaže što bi napravila — ne piše ništa
+bash scripts/install.sh --cvor <ime-cvora> --profil upravitelj-cvora --baze
+```
+
+| Opcija | Što radi |
+|---|---|
+| `--cvor IME` | instanca čvora: `$TM_HOME/config/postavke.env` (0600, lokalno — nikad u repozitorij), usluga ploče; `TM_BIND` = `127.0.0.1` + adresa tailneta, nikad `0.0.0.0` na tuđoj mreži |
+| `--bind POPIS` | izričit `TM_BIND` (zarezom) |
+| `--profil IME` | kopira `profili/IME/instanca.primjer.env` u `$TM_HOME/config/profil.instanca.env` |
+| `--baze` | lokalni pgvector (RAG, `127.0.0.1:15433`) i Hindsight (`127.0.0.1:17796`): uv + Python 3.13, venv s `pg0-embedded` i `hindsight-api`, inicijalizirana baza s ekstenzijom `vector`, modeli bge-m3 i reranker. Usluge su **učitane, ali zaustavljene** dok ih prekidač u `$TM_HOME/config/memorija.json` ne uključi |
+| `--komplet` | komplet izvornog sustava (RegocDaemon…) iz `config/komplet.lock` (`repo`, `commit`, `manifest_sha256`, `odrediste`): klon na točnom commitu, provjera `MANIFEST.sha256`, `bun install --frozen-lockfile`, kompletov `instalacija.sh`, `bun build RegocDaemon.ts`, usluge `daemon` i `znanje`. Bez lock datoteke instalacija staje s izlazom 5 |
+| `--suho` | ništa ne piše ni ne instalira; ispisuje svaki korak (redak `KORAK {…}`) i na macOS-u tablicu 35 Linux → macOS zamjena (plan P10) |
+| `--bez-servisa` | bez systemd/launchd usluga; provjera ploče ide privremenim procesom |
+| `--preskoci K[,K]` | preskoči korak po imenu (npr. `pdf`, `baze-modeli`); i to se bilježi u logu |
+| `--claude` | Claude CLI i bez `--komplet` |
+
+**Usluge** nastaju iz jednog opisa, `templates/servis/usluge.json`: na Linuxu systemd korisnička
+jedinica (`~/.config/systemd/user/regoc-<ime>.service`, uz `loginctl enable-linger`), na macOS-u
+LaunchDaemon `/Library/LaunchDaemons/hr.regoc.<ime>.plist` s `UserName` instalatora,
+`ProcessType=Background` i `Nice=10` (prednost drugim programima na stroju). Plist ide kroz
+`plutil -lint` prije upisa. Tajne nisu u jedinici ni u plistu: usluga kreće kroz
+`scripts/s-okolinom.sh`, koji učita `instalacija.env` (piše je instalacija), pa `postavke.env`
+čvora (ima prednost), a uz `--tajne` i spremište tajni. Za LaunchDaemon treba administratorsko
+pravo (`sudo -v` prije pokretanja); bez njega `--bez-servisa`.
+
+**Idempotentnost.** Svaki korak prvo mjeri pa tek onda piše; postojeća datoteka koja se
+mijenja ide u `$TM_HOME/backup/`. Lokalne postavke (`postavke.env`, `profil.instanca.env`,
+`memorija.json`) instalacija zapiše samo prvi put. Drugo pokretanje završava s
+`GOTOVO: 0 promjena`.
+
+**Log** (`$TM_HOME/log/install/<YYYYMMDD-HHMMSS>/`, `zadnji` pokazuje na zadnji krug):
+
+| Datoteka | Sadržaj |
+|---|---|
+| `koraci.jsonl` | jedan redak po koraku, i preskočenom: `korak`, `opis`, `naredba`, `izlaz`, `trajanje_s`, `promijenjeno`, `razlog`, `stderr_rep` |
+| `install.log` | puni izlaz svake naredbe s vremenom |
+| `okolina.txt` | OS, verzije alata, disk, RAM, zauzeta vrata — nikad varijable okoline |
+| `install-rezultat.json` | `ishod` (`uspjeh` / `pad` / `prekinuto`), prvi korak koji je pao, izlazni kod, broj promjena, commit paketa — piše se i u padu i na Ctrl-C |
+
+Vrijednosti tajni ne ulaze u log (`zatamni()`: `*_TOKEN`, `*_KEY`, `*PASSWORD*`, lozinka u
+`postgres://k:l@`, `Bearer`, `sk-…`). Za čitanje s drugog stroja:
+`cat ~/.taskmanager/log/install/zadnji/install-rezultat.json` i
+`grep -v '"izlaz":0' ~/.taskmanager/log/install/zadnji/koraci.jsonl`.
+
+**Izlazni kodovi:** 0 uspjeh · 2 pogrešna uporaba · 3 preduvjet · 4 mreža · 5 ovisnosti ·
+6 baza · 7 usluga · 8 provjera nakon podizanja · 130 prekinuto.
+
+**Manifest** `$TM_HOME/instalirano.json` popisuje sve što je instalacija stvorila izvan git
+stabla (bun, venvovi, baze, usluge…), da deinstalacija briše po popisu, a ne po pogađanju.
+
+**Ugovor kompleta** (`--komplet`): u korijenu kompleta smiju biti `MANIFEST.sha256` (sha256 svake
+datoteke; sha256 samog manifesta je u `komplet.lock`), `package.json` + `bun.lock` i
+`instalacija.sh --paket P --tm-home H [--suho]`, koja priprema vlastite postavke i ispiše
+`PROMIJENJENO` ili `ISTO`.
+
+**AI servis po izboru.** Instalacija ne bira servis i ne upisuje ključ; na kraju ispiše stanje
+svih 14 davatelja. Prijava: `bun scripts/prijava-ai.ts` (izbornik u terminalu; `popis`,
+`upute <id>`, `prijavi <id>`) ili ploča → Config → Prijava / Tajne. Vrijednost se upisuje na
+upit (`tajna.ts postavi IME`), nikad kao argument. Claude pretplata na macOS-u: usluga ne vidi
+Keychain, pa ide `claude setup-token` i token u spremište kao `CLAUDE_CODE_OAUTH_TOKEN` — to je
+jedino ime s prefiksom `CLAUDE_` koje spremište prima.
+
 ## 3. Agenti i vještine (neobavezno, ali to je ono što ploču čini sustavom)
 
 Paket ne nosi vještine ni alate — nosi popis agenata i zna odakle se vještine dohvaćaju:
@@ -253,6 +324,9 @@ Oba načina drži ista datoteka-brava, pa se ne mogu pokrenuti zajedno — dva p
 bot tokenom međusobno si kradu poruke i gubitak je nevidljiv.
 
 ## 8. Trajni rad (systemd)
+
+`bash scripts/install.sh --cvor <ime>` jedinicu (Linux) ili LaunchDaemon (macOS) piše sam, iz
+`templates/servis/usluge.json` (§2.1). Ručni oblik ispod je za instalaciju na razini sustava.
 
 Za stroj koji treba držati ploču stalno uključenom:
 

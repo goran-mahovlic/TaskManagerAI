@@ -1,3 +1,26 @@
+## 2026-10-20 — `install.sh`: jedan ulaz za Debian i macOS, log instalacije, čvor, baze, komplet, AI prijava (TASK-5655)
+
+- Plan Mac v3 K2: `scripts/install.sh` prepoznaje OS (Debian/Ubuntu, macOS ≥ 14; bash 3.2), provjerava
+  preduvjete i na macOS-u ispisuje tablicu 35 Linux → macOS zamjena (`scripts/instalacija/preduvjeti-macos.tsv`).
+  Bun, Claude CLI i uv dohvaća službenim skriptama u korisničku mapu (preuzimanje u datoteku, 3 pokušaja);
+  Homebrew ne treba ni za jedan korak.
+- Log (P3.1): `$TM_HOME/log/install/<vrijeme>/` s `koraci.jsonl` (redak po koraku s izlaznim kodom, i za
+  preskočene), `install.log`, `okolina.txt` i `install-rezultat.json` (piše se i u padu i na Ctrl-C);
+  tajne zatamnjene. Izlazni kodovi 3–8 po vrsti koraka.
+- Idempotentno: drugo pokretanje = `GOTOVO: 0 promjena`; `--suho` ne piše ništa.
+- `--cvor`: `postavke.env` (0600) s `TM_BIND` = petlja + tailnet; nova postavka ploče **`TM_BIND`**
+  (`src/core/vezanje.ts`): popis adresa, bez nje `0.0.0.0` kao prije, neispravan unos → samo `127.0.0.1`.
+- Usluge iz jednog opisa (`templates/servis/usluge.json`, `scripts/instalacija/servis.ts`): systemd korisnička
+  jedinica ili LaunchDaemon (`UserName`, `ProcessType=Background`, `plutil -lint`); tajne kroz
+  `scripts/s-okolinom.sh`, nikad u plistu.
+- `--baze`: lokalni pgvector (pg0 + `vector`, 127.0.0.1:15433) i Hindsight (127.0.0.1:17796), zaustavljeni
+  dok ih ne uključi `memorija.json` (`config/memorija.primjer.json`); lozinka baze samo u spremištu tajni.
+- `--komplet`: komplet izvornog sustava samo iz `config/komplet.lock` (commit + sha256 manifesta).
+- Manifest `$TM_HOME/instalirano.json` (sve stvoreno izvan git stabla, za deinstalaciju).
+- AI servis po izboru: katalog 14 davatelja (`src/core/davateljiAI.ts`) i čarobnjak `scripts/prijava-ai.ts`;
+  spremište tajni prima točno ime `CLAUDE_CODE_OAUTH_TOKEN` (Claude pretplata na macOS-u ide kroz
+  `claude setup-token`), ostala imena s prefiksom `CLAUDE_` ostaju zabranjena.
+
 ## 2026-10-08 — naredba `pdf`: PDF s hrvatskim slovima, provjeren prije slanja (TASK-5369)
 
 - Povod (TASK-5360): node-A je poslao PDF iz vlastite reportlab skripte s Helveticom (WinAnsi,
