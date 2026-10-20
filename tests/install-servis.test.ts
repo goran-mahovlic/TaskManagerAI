@@ -59,6 +59,9 @@ describe('launchd (macOS)', () => {
     expect(p('znanje').KeepAlive).toBeUndefined()
     for (const b of ['pgvector', 'hindsight']) { expect(p(b).RunAtLoad).toBe(false); expect(p(b).KeepAlive).toBeUndefined() }
     expect(p('pgvector').ProgramArguments).toContain('listen_addresses=127.0.0.1')
+    // postgres iz pg0 traži vlastite knjižnice (bez njih: libicuuc.so.70 not found, izmjereno)
+    expect(p('pgvector').ProgramArguments.slice(0, 3)).toEqual(['/usr/bin/env',
+      `LD_LIBRARY_PATH=${V.PG_BIN}/../lib`, `DYLD_LIBRARY_PATH=${V.PG_BIN}/../lib`])
   })
   test('primijeni: plutil -lint PRIJE upisa, sudo install 644 root:wheel, bootstrap; isto i učitano → ništa', () => {
     const tm = mkdtempSync(join(radna(), 'tm-servis-'))

@@ -33,7 +33,7 @@
       "uvjet": "baze",
       "vrsta": "rucna",
       "cwd": "{{TM_HOME}}/rag",
-      "argv": ["{{PG_BIN}}/postgres", "-D", "{{TM_HOME}}/rag/pg0/data", "-p", "15433", "-c", "listen_addresses=127.0.0.1", "-c", "unix_socket_directories="]
+      "argv": ["/usr/bin/env", "LD_LIBRARY_PATH={{PG_BIN}}/../lib", "DYLD_LIBRARY_PATH={{PG_BIN}}/../lib", "{{PG_BIN}}/postgres", "-D", "{{TM_HOME}}/rag/pg0/data", "-p", "15433", "-c", "listen_addresses=127.0.0.1", "-c", "unix_socket_directories="]
     },
     {
       "ime": "hindsight",
