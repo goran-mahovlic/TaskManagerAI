@@ -249,7 +249,9 @@ const EXTERNAL_PORT = Number(process.env.TM_EXTERNAL_PORT) || Number(process.env
 // ponašanje nepromijenjeno). Uz HOME override daje potpuno izoliranu instancu s vlastitom
 // bazom — E2E se tako vozi bez ijednog fixture-zapisa u živoj regoc.db (usp. TASK-2701).
 const PORT = Number(process.env.REGOC_TASKWEBUI_PORT) || Number(process.env.TM_PORT) || 17781
-const HOST = '0.0.0.0'       // Bind to all interfaces for external access
+// TM_BIND (plan Mac v3, R3): popis adresa; bez postavke sva sučelja (0.0.0.0) kao i prije.
+const VEZANJE = adreseVezanja(process.env.TM_BIND)
+if (VEZANJE.odbaceno.length) console.warn(`[TM_BIND] neispravne adrese preskočene: ${VEZANJE.odbaceno.join(', ')}`)
 /** Ime/adresa koja se ISPISUJE korisniku. Nikad tuđe ime stroja — env ili vlastiti hostname. */
 const EXTERNAL_HOST = process.env.TM_EXTERNAL_HOST || osHostname()
 const TASKS_DIR = process.env.TM_TASKS_DIR
@@ -341,6 +343,7 @@ const messageQueue = getMessageQueue()
 // TASK-5311 (s glavnog, TASK-5164 D): bilješka, dorada, ponovno otvaranje, 404 s prijedlogom.
 import { odgovor404Rute, hintPrijelaza, tekstBiljeske, naslovDorade, opisDorade, oznakeDorade } from './core/TaskDorada'
 import { Database } from 'bun:sqlite'
+import { adreseVezanja } from './core/vezanje'
 // TASK-5011: ista mapa u kojoj ga stvara MessageQueue (uz bazu iz core/paths.ts).
 const MESSAGES_DB_PATH = join(dirname(TM_DB), 'messages.db')
 let konzolaDb: Database | null = null
@@ -11866,7 +11869,7 @@ async function handleRazgovorPut(req: Request): Promise<Response> {
 // Tajne (TM_BOT_KANAL_TAJNA_SLANJE / _PRIMANJE, TASK-5299) samo iz okoline stroja; ruta postoji samo uz
 // botKanal.ukljucen. Zahtjev nosi HMAC potpis u zaglavlju — jezgra ga provjerava nad SIROVIM tijelom.
 function ipZahtjeva(req: Request): string | null {
-  try { return server.requestIP(req)?.address || null } catch { return null }
+  try { return (posluziteljZahtjeva.get(req) ?? server).requestIP(req)?.address || null } catch { return null }
 }
 
 async function handleOdBota(req: Request, put: string): Promise<Response> {
@@ -17891,11 +17894,14 @@ function handleGetRAGBackendConfig(): Response {
 }
 
 
-const server = Bun.serve({
+// Uz više adresa (TM_BIND) svaka dobiva svoj poslužitelj s istim obrađivačem; upgrade i
+// IP klijenta moraju ići kroz poslužitelj koji je primio zahtjev.
+const posluziteljZahtjeva = new WeakMap<Request, ReturnType<typeof Bun.serve>>()
+const opcijePosluzitelja = {
   port: PORT,
-  hostname: HOST,  // Bind to 0.0.0.0 for external access
 
-  async fetch(req: Request) {
+  async fetch(req: Request, srv: ReturnType<typeof Bun.serve>) {
+    posluziteljZahtjeva.set(req, srv)
     return komprimirajOdgovor(req, await obradiZahtjev(req))
   },
 
@@ -17927,7 +17933,9 @@ const server = Bun.serve({
       wsClients.delete(ws)
     }
   }
-})
+}
+const posluzitelji = VEZANJE.adrese.map(hostname => Bun.serve({ ...opcijePosluzitelja, hostname } as any))
+const server = posluzitelji[0]
 
 // TASK-5184: tijelo nekadašnjeg Bun.serve fetch-a. Izdvojeno da svaki odgovor prođe kroz
 // komprimirajOdgovor (br/gzip) — HTML ploče 460 KB, /api/projects 275 KB, /api/tasks.
@@ -17966,7 +17974,7 @@ async function obradiZahtjev(req: Request): Promise<Response | undefined> {
 
     // WebSocket upgrade
     if (url.pathname === '/stream') {
-      const success = server.upgrade(req)
+      const success = (posluziteljZahtjeva.get(req) ?? server).upgrade(req)
       if (success) return undefined
     }
 
@@ -18721,7 +18729,7 @@ console.log(`
 ╔═══════════════════════════════════════════════════════════════════════════╗
 ║                     Regoc TaskManagerMD - Web UI Server                   ║
 ╠═══════════════════════════════════════════════════════════════════════════╣
-║  Internal:  ${HOST}:${PORT} (inside Docker)                                  ║
+║  Bind:      ${VEZANJE.adrese.join(",")}:${PORT}                                ║
 ║  External:  :${EXTERNAL_PORT} (mapped by Docker)                               ║
 ╠───────────────────────────────────────────────────────────────────────────╣
 ║  Local:     http://localhost:${EXTERNAL_PORT}                                   ║
