@@ -101,6 +101,20 @@ describe('platforma — Linux (pravi procfs)', () => {
   })
 })
 
+describe('platforma — isti ishod na oba OS-a (StaleCodeCheck, plan K1)', () => {
+  test('start procesa: darwin grana (ps -o lstart) = Linux grana (procfs) unutar rezolucije', () => {
+    // darwin grana s PRAVIM `ps` (procps na Linuxu zna lstart) — isti izvor koji macOS koristi
+    const mac = P.startProcesaMs(process.pid, { os: 'darwin' })
+    const lin = P.startProcesaMs(process.pid, { os: 'linux' })!
+    expect(mac).not.toBeNull()
+    expect(Math.abs(mac! - lin)).toBeLessThanOrEqual(1000 + P.rezolucijaStartaMs({ os: 'darwin' }))
+    // datoteka pisana 2 s nakon starta je „novija” u obje grane (isti zaključak StaleCodeCheck-a)
+    const mtime = lin + 2000 + 5000
+    expect(mtime > lin + 5000 + P.rezolucijaStartaMs({ os: 'linux' })).toBe(true)
+    expect(mtime > mac! + 5000 + P.rezolucijaStartaMs({ os: 'darwin' })).toBe(true)
+  })
+})
+
 describe('platforma — lažni darwin (BSD alati)', () => {
   test('nijedna macOS grana ne čita procfs', () => {
     const { o } = lazniDarwin({})
