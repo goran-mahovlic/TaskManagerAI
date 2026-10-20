@@ -37,6 +37,8 @@ PAKET="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 cd "$PAKET" || exit 1
 # shellcheck source=scripts/instalacija/zapis.sh
 . "$PAKET/scripts/instalacija/zapis.sh"
+# shellcheck source=scripts/instalacija/rc.sh
+. "$PAKET/scripts/instalacija/rc.sh"
 
 HINDSIGHT_VERZIJA="0.10.2"
 PG0_VERZIJA="0.15.2"
@@ -196,8 +198,19 @@ pokreni_skriptu() {
   local f="$TM_HOME/tmp/instalacija-$$.sh"
   mkdir -p "$TM_HOME/tmp"
   dohvati "$url" "$f" || { rm -f "$f"; return 4; }
+  # instalator sam dopisuje PATH u ~/.zshrc/~/.bashrc: dodani dio se omota oznakama (P3.4)
+  local snimka="$TM_HOME/tmp/rc-snimka-$$" r put
+  rc_snimi "$snimka"
   bash "$f" "$@"; local k=$?
-  rm -f "$f"; return $k
+  rm -f "$f"
+  while read -r r put; do
+    case "$r" in
+      RC-NOVA) u_manifest "$put" rc-nova; echo "    $put: dodani retci označeni (# >>> TaskManagerAI >>>)" ;;
+      RC)      u_manifest "$put" rc; echo "    $put: dodani retci označeni (# >>> TaskManagerAI >>>)" ;;
+      RC-UPOZORENJE) upozori "$put: instalator je mijenjao sredinu datoteke — --do-nule te retke neće ukloniti" ;;
+    esac
+  done < <(rc_oznaci "$snimka" "${url#https://}")
+  return $k
 }
 isti_sadrzaj() { [ -f "$2" ] && cmp -s "$1" "$2"; }
 pisi_ako_razlicito() {   # pisi_ako_razlicito IZVOR CILJ MOD — 0 bez promjene, 10 zapisano
@@ -830,8 +843,26 @@ k_provjera() {
   return 8
 }
 
+# Mape koje alati (bun, uv, pip, Claude CLI, Hugging Face) stvaraju sami, izvan svojih
+# instalacijskih mapa. Što NIJE postojalo prije instalacije, a sad postoji, ide u manifest
+# (P3.4: --do-nule briše po manifestu). Zajedničke roditeljske mape smiju samo ako su prazne.
+ALATNE_MAPE="$HOME/.bun $HOME/.cache/uv $HOME/.cache/pip $HOME/.cache/huggingface $HOME/.local/share/uv $HOME/.local/share/claude $HOME/.local/state/claude $HOME/.claude $HOME/.claude.json"
+ROD_MAPE="$HOME/.local/bin $HOME/.local/share $HOME/.local/state $HOME/.local $HOME/.cache $HOME/.config/systemd/user $HOME/.config/systemd $HOME/.config"
+PRIJE_POSTOJI=" "
+for _m in $ALATNE_MAPE $ROD_MAPE; do [ -e "$_m" ] && PRIJE_POSTOJI="$PRIJE_POSTOJI$_m "; done
+
 k_manifest() {
-  local put="$TM_HOME/instalirano.json"
+  local put="$TM_HOME/instalirano.json" m
+  if ! suho; then
+    for m in $ALATNE_MAPE; do
+      case "$PRIJE_POSTOJI" in *" $m "*) continue ;; esac
+      [ -e "$m" ] && u_manifest "$m" "$([ -d "$m" ] && echo mapa || echo datoteka)"
+    done
+    for m in $ROD_MAPE; do
+      case "$PRIJE_POSTOJI" in *" $m "*) continue ;; esac
+      [ -d "$m" ] && u_manifest "$m" mapa-ako-prazna
+    done
+  fi
   [ "${#MANIFEST_NOVO[@]}" -gt 0 ] || { razlog "ništa novo izvan git stabla"; return 0; }
   suho && { echo "    (suho) dopisala bih ${#MANIFEST_NOVO[@]} stavki u $put"; promjena; return 0; }
   local izl; izl="$(printf '%s\n' "${MANIFEST_NOVO[@]}" | bun scripts/instalacija/manifest.ts "$put")" || return 5

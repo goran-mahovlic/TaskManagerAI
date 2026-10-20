@@ -6,6 +6,8 @@
 #   okolina.txt            OS, verzije alata, disk, RAM, zauzeta vrata (bez varijabli okoline)
 #   install-rezultat.json  sažetak — piše se UVIJEK: uspjeh, pad, prekid (INT/TERM)
 # Uz --suho ništa se ne zapisuje: retci koraka idu samo na izlaz (prefiks „KORAK ").
+# Isti zapis koriste deinstaliraj.sh i nadogradi.sh: ZAPIS_IME=deinstalacija daje
+# deinstalacija.log i deinstalacija-rezultat.json (zadano: install).
 #
 # Ovisi samo o bash, sed, awk, date (postoje na Debianu i macOS-u prije buna i Pythona).
 
@@ -48,7 +50,7 @@ log_otvori() {
   local n=2; while [ -e "$LOG_DIR" ]; do LOG_DIR="$LOG_RODITELJ/$ime-$n"; n=$((n + 1)); done
   mkdir -p "$LOG_DIR" || { echo "GREŠKA: ne mogu stvoriti mapu loga $LOG_DIR" >&2; return 1; }
   chmod 700 "$LOG_RODITELJ" "$LOG_DIR" 2>/dev/null
-  KORACI="$LOG_DIR/koraci.jsonl"; INSTALL_LOG="$LOG_DIR/install.log"
+  KORACI="$LOG_DIR/koraci.jsonl"; INSTALL_LOG="$LOG_DIR/${ZAPIS_IME:-install}.log"
   : > "$KORACI"; : > "$INSTALL_LOG"
   ln -sfn "$(basename "$LOG_DIR")" "$LOG_RODITELJ/zadnji"
 }
@@ -83,7 +85,7 @@ zapis_rezultat() {
   j="$j\"os\":$(json_s "${OS_OPIS:-nepoznat}"),\"paket\":$(json_s "${PAKET:-}"),\"paket_commit\":$(json_s "$commit"),"
   j="$j\"argumenti\":$(json_s "${ARGUMENTI:-}"),\"ploca\":$(json_s "${PLOCA_URL:-}"),"
   j="$j\"koraci\":$(json_s "${KORACI:-}"),\"install_log\":$(json_s "${INSTALL_LOG:-}")}"
-  if [ -n "${LOG_DIR:-}" ]; then printf '%s\n' "$j" > "$LOG_DIR/install-rezultat.json"; else printf 'REZULTAT %s\n' "$j"; fi
+  if [ -n "${LOG_DIR:-}" ]; then printf '%s\n' "$j" > "$LOG_DIR/${ZAPIS_IME:-install}-rezultat.json"; else printf 'REZULTAT %s\n' "$j"; fi
 }
 
 # okolina.txt — samo ono što pomaže pri dijagnozi pada; NIKAD `env`/`set` (tajne).
