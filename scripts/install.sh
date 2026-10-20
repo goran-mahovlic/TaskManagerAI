@@ -301,8 +301,8 @@ k_preduvjeti() {
       if sudo -n true 2>/dev/null; then echo "    ✓ sudo bez lozinke (LaunchDaemon)"
       else
         fali+=("sudo bez lozinke za LaunchDaemon")
-        echo "    za usluge treba sudo bez lozinke; najuži oblik (/etc/sudoers.d/hr-regoc, visudo):"
-        echo "      $(id -un) ALL=(root) NOPASSWD: /bin/launchctl, /usr/bin/install -m 644 -o root -g wheel * /Library/LaunchDaemons/hr.regoc.*"
+        # Ne predlaže se sudoers: tko smije upisati LaunchDaemon, može pokrenuti bilo što kao root.
+        echo "    za usluge (LaunchDaemon) treba administratorsko pravo: pokreni 'sudo -v' (lozinka), pa ponovi"
         echo "    ili instaliraj bez usluga: --bez-servisa"
       fi
     fi
@@ -672,10 +672,15 @@ k_baze_pgvector() {
   # lozinka lokalne baze: generira se ovdje, ide SAMO u spremište tajni (0600), nikad u log
   local lozinka; lozinka="$(LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 32)"
   printf '%s' "$lozinka" | bun scripts/tajna.ts postavi TM_PGVECTOR_LOKALNA_PASSWORD >/dev/null || { echo "    GREŠKA: lozinka nije upisana u spremište tajni"; return 6; }
-  pg0 start --name tm-rag -p 15433 -d "$TM_HOME/rag/pg0/data" -u rag -P "$lozinka" -n rag \
+  # pg0 prima lozinku samo kao argument (vidljiv u ps): zato kreće s privremenom, jednokratnom
+  # lozinkom dok sluša samo na 127.0.0.1, a prava se postavlja kroz stdin (ALTER ROLE) na kraju.
+  local privremena; privremena="$(LC_ALL=C tr -dc 'a-z0-9' < /dev/urandom | head -c 16)"
+  pg0 start --name tm-rag -p 15433 -d "$TM_HOME/rag/pg0/data" -u rag -P "$privremena" -n rag \
     -c listen_addresses=127.0.0.1 -c "unix_socket_directories=$TM_HOME/rag" >/dev/null 2>&1 \
     || { echo "    GREŠKA: pg0 start nije uspio (pg0 logs --name tm-rag)"; return 6; }
   local ext; ext="$(pg0 psql --name tm-rag -- -tAc "CREATE EXTENSION IF NOT EXISTS vector; SELECT extversion FROM pg_extension WHERE extname='vector'" 2>/dev/null | tail -1)"
+  printf "ALTER ROLE rag PASSWORD '%s';\n" "$lozinka" | pg0 psql --name tm-rag -- -q >/dev/null 2>&1 \
+    || { pg0 stop --name tm-rag >/dev/null 2>&1; echo "    GREŠKA: lozinka baze nije postavljena"; return 6; }
   pg0 stop --name tm-rag >/dev/null 2>&1
   [ -n "$ext" ] || { echo "    GREŠKA: ekstenzija vector nije dostupna u pg0"; return 6; }
   local bin; bin="$(ls -d "$TM_HOME"/rag/home/.pg0/installation/*/bin 2>/dev/null | tail -1)"
