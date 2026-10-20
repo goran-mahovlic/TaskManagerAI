@@ -472,7 +472,7 @@ Redoslijed (ADR-0004 §13.5) — **5 koraka + tajne**:
 
 ```
 0. TAJNE     (čovjek, PROFIL_CVORA_TAJNE.md): bot token, tajna kanala, `claude auth login`, capguard odobrenja
-1. KOD       scripts/nadogradi.sh (na čvoru) ili omotač sa stroja koji postavlja čvorove; komplet: install.sh --komplet
+1. KOD       scripts/nadogradi.sh na čvoru (omotač: tm-cvor-azuriraj.sh <čvor>); komplet: install.sh --komplet
 2. INSTANCA  cp profili/<profil>/instanca.primjer.env $TM_HOME/config/profil.instanca.env  &&  uredi
 3. PRIMIJENI bun scripts/profil-cvora.ts primijeni --suho  →  pregled  →  primijeni --pisi
 3a. ZNANJE   bun scripts/profil-cvora.ts primijeni --pisi --modul mogucnosti,znanje   # banka čvora (ADR-0006 §9)
@@ -484,7 +484,7 @@ Redoslijed (ADR-0004 §13.5) — **5 koraka + tajne**:
    bot u grupi, Claude prijava, `TM_RAZGOVOR_PUNO=1` (samo vlasnik, ručno), tajna kanala
    bot↔bot, odobrenje Tier-2 sposobnosti, tunel memorije. Za tajnu alat javlja samo `postoji`/`nema`.
 1. **Kod.** Ažuriraj paket na čvoru na commit koji sadrži sve značajke iz `paket.paketSadrzi`
-   (`scripts/nadogradi.sh`, §10). Kod bez značajke alat javlja izlazom `3` (preduvjet) i ništa
+   (`scripts/nadogradi.sh`, §10; sa stroja koji postavlja čvorove omotač `tm-cvor-azuriraj.sh <čvor>`). Kod bez značajke alat javlja izlazom `3` (preduvjet) i ništa
    ne piše. Kod izvornog sustava (`paket.izvorniSustavSadrzi`) dolazi kroz `install.sh --komplet`
    iz `config/komplet.lock`; zastavica `--s-kompletom` koju je ovaj odlomak ranije navodio nije
    postojala (TASK-5309 B2). Prekidač bez koda ne radi ništa (§13.1).
