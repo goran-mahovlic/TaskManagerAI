@@ -120,8 +120,8 @@ describe('platforma — lažni darwin (BSD alati)', () => {
     expect(P.pidovi(o)).toEqual([1, 101, 4242])
   })
   test('cwd kroz lsof -Fn', () => {
-    const { o } = lazniDarwin({ 'lsof -a -p 42 -d cwd -Fn': 'p42\nfcwd\nn/Users/regoc/.claude/regoc\n' })
-    expect(P.cwd(42, o)).toBe('/Users/regoc/.claude/regoc')
+    const { o } = lazniDarwin({ 'lsof -a -p 42 -d cwd -Fn': 'p42\nfcwd\nn/Users/korisnik/projekt\n' })
+    expect(P.cwd(42, o)).toBe('/Users/korisnik/projekt')
   })
   test('lstart (LC_ALL=C) → oznaka u sekundama epohe i start u ms', () => {
     const lstart = 'Mon Oct 20 19:40:36 2026'

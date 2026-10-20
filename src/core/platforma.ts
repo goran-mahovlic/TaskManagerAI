@@ -1,7 +1,7 @@
 /**
  * platforma.ts — jedino mjesto koje zna razliku Linux ↔ macOS (TASK-5654, plan Mac v3 K1, P10).
  *
- * Paket i komplet (`~/.claude/regoc/lib/platforma.ts` je poveznica na ovu datoteku) ne
+ * Paket i komplet (njegov `lib/platforma.ts` je poveznica na ovu datoteku) ne
  * čitaju procfs i ne zovu `ss`, `setsid`, `script -qfec` ni `libc.so.6` izravno, nego
  * kroz ove funkcije. Na Linuxu je ponašanje bajt-za-bajt isto kao prije (isti izvori,
  * isti oblik oznake starta procesa), a na macOS-u se koriste ugrađeni alati:
