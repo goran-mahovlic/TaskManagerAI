@@ -156,6 +156,32 @@ function naredba(argv: string[]): string | null {
   } catch { return null }
 }
 
+/**
+ * Stanje usluge — ZRCALO `platforma.usluga` iz src/core/platforma.ts (ova datoteka ne smije
+ * uvoziti paket, vidi zaglavlje). Linux: sirovi izlaz `is-active` (active/inactive/failed…),
+ * macOS: LaunchDaemon `hr.regoc.<ime>`; timer (StartInterval) je aktivan kad je učitan.
+ * Ugovor s platformom: tests/profil-cvora-stanje-usluga.test.ts (TASK-5668).
+ */
+export function stanjeUsluge(ime: string, os = process.platform as string, nar: (argv: string[]) => string | null = naredba): string {
+  if (os === 'darwin') {
+    const out = nar(['launchctl', 'print', `system/${launchdOznakaZrcalo(ime)}`])
+    if (!out) return 'inactive'
+    if (ime.endsWith('.timer')) return 'active'
+    return /^\s*state\s*=\s*running/m.test(out) ? 'active' : 'inactive'
+  }
+  return nar(['systemctl', '--user', 'is-active', ime]) || 'nepoznato'
+}
+
+/** Zrcalo `platforma.launchdOznaka`. */
+export function launchdOznakaZrcalo(ime: string): string {
+  return 'hr.regoc.' + ime.replace(/\.(service|timer)$/, '').replace(/^regoc-/, '')
+}
+
+/** Datoteka periodičke usluge: systemd korisnički timer | LaunchDaemon plist. */
+export function datotekaTimera(unit: string, home: string, os = process.platform as string): string {
+  return os === 'darwin' ? `/Library/LaunchDaemons/${launchdOznakaZrcalo(unit)}.plist` : join(home, '.config', 'systemd', 'user', `${unit}.timer`)
+}
+
 export async function prikupiStanje(spec: SpecStanja, home = process.env.HOME || homedir()): Promise<StanjeCvora> {
   const v: Record<string, string> = { ...(spec.varijable || {}), HOME: home }
   const paket = putanja(spec.paket || '${HOME}/TaskManagerAI', v)
@@ -253,7 +279,7 @@ export async function prikupiStanje(spec: SpecStanja, home = process.env.HOME ||
   let sustav: StanjeCvora['sustav'] = null
   if (spec.sustav) {
     const unitovi: Record<string, string> = {}
-    for (const u of spec.sustav.unitovi) unitovi[u] = naredba(['systemctl', '--user', 'is-active', u]) || 'nepoznato'
+    for (const u of spec.sustav.unitovi) unitovi[u] = stanjeUsluge(u)
     const vrata: Record<string, boolean> = {}
     for (const p of spec.sustav.vrata) vrata[String(p)] = await slusa(p)
     const alati: Record<string, string | null> = {}
@@ -346,8 +372,8 @@ export async function prikupiStanje(spec: SpecStanja, home = process.env.HOME ||
     try { korpusPaketa = readdirSync(join(paket, z.korpus || 'znanje/sustav')).filter(f => f.endsWith('.md')).length } catch { /* nema */ }
     const timer = { datoteka: false, aktivan: 'nepoznato' }
     if (z.timer) {
-      timer.datoteka = existsSync(join(home, '.config', 'systemd', 'user', `${z.timer}.timer`))
-      timer.aktivan = naredba(['systemctl', '--user', 'is-active', `${z.timer}.timer`]) || 'nepoznato'
+      timer.datoteka = existsSync(datotekaTimera(z.timer, home))
+      timer.aktivan = stanjeUsluge(`${z.timer}.timer`)
     }
     let banke: string[] | null = null
     let tudjiDokumenti: number | null = null

@@ -7,6 +7,7 @@
  * Vrijedi samo brana TAJNI — oblik ključa ili tokena u dokumentu = dokument se ne upisuje.
  */
 import { createHash } from 'crypto'
+import { naredbaRestarta } from '../core/platforma'
 
 /** Oblici tajni (isti kao brana kompleta + česti tokeni + dugi heks). Vrijednost se nikad ne ispisuje. */
 export const UZORCI_TAJNI: readonly RegExp[] = [
@@ -75,6 +76,8 @@ export interface StanjeCvora {
   servisi?: Array<{ unit: string; opis: string; aktivan: string }>
   mape?: Record<string, string>
   ploca?: string
+  /** OS čvora (`process.platform`); zadano: ovaj stroj. */
+  os?: string
 }
 
 const OPIS_MOG: Record<string, [string, string]> = {
@@ -102,7 +105,9 @@ export function dokumentStanje(s: StanjeCvora): string {
     for (const [k, v] of Object.entries(s.mape)) r.push(`- ${k}: \`${v}\``)
   }
   if (s.servisi?.length) {
-    r.push('', '## Servisi', `Servisi čvora su systemd korisničke jedinice; restart je \`systemctl --user restart <jedinica>\` i smije SAMO kad je na ploči 0 zadataka u statusu in_progress (inače aktivni zadaci padaju). Iz spawna agenta restart ploče i daemona nije dopušten.`)
+    const mac = (s.os ?? process.platform) === 'darwin'
+    const vrsta = mac ? 'LaunchDaemoni (launchd, oznaka hr.regoc.<ime>)' : 'systemd korisničke jedinice'
+    r.push('', '## Servisi', `Servisi čvora su ${vrsta}; restart je \`${naredbaRestarta(mac ? '<ime>' : '<jedinica>', { os: s.os })}\` i smije SAMO kad je na ploči 0 zadataka u statusu in_progress (inače aktivni zadaci padaju). Iz spawna agenta restart ploče i daemona nije dopušten.`)
     // Bez trenutnog stanja jedinice: dokument bi se mijenjao svaki prolaz i trošio retain.
     for (const u of s.servisi) r.push(`- \`${u.unit}\`: ${u.opis}`)
   }

@@ -26,7 +26,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, wri
 import { homedir } from 'os'
 import { dirname, join } from 'path'
 import { branaKorpusa, renderZaCvor, type Mogucnost } from '../src/znanje/Korpus'
-import { usluga } from '../src/core/platforma'
+import { usluga, uslugeRegoc } from '../src/core/platforma'
 import {
   dokumentAgenti, dokumentProjekti, dokumentRazgovor, dokumentStanje, dokumentZadatak, imaTajnu,
   planUpisa, sha, vaznost, type PotezRazgovora,
@@ -196,11 +196,7 @@ async function sastavi(o: Okolina, mem: { banka: string }, mog: Record<string, b
   } catch { preskoceno.push('cvor/agenti (registar nečitljiv)') }
 
   // 4) stanje čvora
-  const unitovi = Bun.spawnSync(['systemctl', '--user', 'list-units', 'regoc-*', '--type=service', '--all', '--no-legend', '--plain'], { stdout: 'pipe', stderr: 'pipe' })
-  const servisi = unitovi.stdout.toString().split('\n').filter(Boolean).map(r => {
-    const [unit, , aktivan, , ...opis] = r.trim().split(/\s+/)
-    return { unit, aktivan, opis: opis.join(' ') }
-  }).filter(u => u.unit && !u.unit.startsWith('regoc-znanje')) // sam timer ne opisuje čvor
+  const servisi = uslugeRegoc().filter(u => !u.unit.startsWith('regoc-znanje')) // sam timer ne opisuje čvor
   const git = Bun.spawnSync(['git', '-C', KORIJEN, 'rev-parse', '--short', 'HEAD'], { stdout: 'pipe', stderr: 'pipe' }).stdout.toString().trim()
   let verzija = ''
   try { verzija = JSON.parse(readFileSync(join(KORIJEN, 'package.json'), 'utf-8')).version || '' } catch { /* */ }

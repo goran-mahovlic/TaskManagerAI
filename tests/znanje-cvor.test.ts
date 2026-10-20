@@ -78,3 +78,16 @@ describe('znanje-cvora.ts pod systemd (PATH bez bun-a)', () => {
     expect(izvor).toContain('process.execPath')
   })
 })
+
+describe('TASK-5668: uputa za restart servisa ovisi o OS-u čvora', () => {
+  const s = { cvor: 'c1', mogucnosti: {}, banka: 'b', servisi: [{ unit: 'regoc-taskmanager.service', opis: 'ploča', aktivan: 'active' }] }
+  test('Linux: systemd korisničke jedinice (tekst kao prije)', () => {
+    const d = dokumentStanje({ ...s, os: 'linux' })
+    expect(d).toContain('Servisi čvora su systemd korisničke jedinice; restart je `systemctl --user restart <jedinica>` i smije SAMO')
+  })
+  test('macOS: LaunchDaemoni, restart kroz launchctl kickstart', () => {
+    const d = dokumentStanje({ ...s, os: 'darwin' })
+    expect(d).toContain('Servisi čvora su LaunchDaemoni (launchd, oznaka hr.regoc.<ime>); restart je `sudo -n launchctl kickstart -k system/hr.regoc.<ime>` i smije SAMO')
+    expect(d).not.toContain('systemctl')
+  })
+})

@@ -19,10 +19,11 @@
  * stavke · 3 preduvjet pao (kod bez značajke, profil/instanca neispravni) · 4 alat odbio.
  */
 import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'fs'
-import { hostname } from 'os'
+import { hostname, userInfo } from 'os'
 import { basename, dirname, isAbsolute, join, resolve } from 'path'
 import { z } from 'zod'
 import { RAZGOVOR_KLJUCEVI, RAZGOVOR_ZADANO } from '../src/razgovor/RazgovorPostavke'
+import { launchdOznaka, launchdPlist, naredbeUkljuciTimer, uputaRestarta, type KorakNaredbe, type Okolina } from '../src/core/platforma'
 import { citajEnv, prikupiStanje, putanja, type SpecStanja, type StanjeCvora } from './profil-cvora-stanje'
 
 export const KORIJEN = join(import.meta.dir, '..')
@@ -235,7 +236,7 @@ export type Primjena =
   | { vrsta: 'konzola'; unit: string; datoteka: string; sadrzaj: string; log: string }
   | { vrsta: 'dropin'; unit: string; datoteka: string; sadrzaj: string }
   | { vrsta: 'naredba'; argv: string[] }
-  | { vrsta: 'timer'; unit: string; service: string; timer: string }
+  | { vrsta: 'timer'; unit: string; service: string; timer: string; plist?: string }
 
 export interface Stavka {
   modul: string
@@ -558,12 +559,16 @@ export function usporedi(k: Kontekst): Stavka[] {
 // ─── Znanje čvora (ADR-0006 §9, TASK-5331) ────────────────────────────────────
 
 /** Jedinice timera dotoka znanja: `osvjezi --pisi` iz paketa svakih N minuta (bez tajni u jedinici). */
-export function jediniceZnanja(m: { naredba: string[]; timer: { unit: string; minuta: number } }, paket: string, bun: string): { service: string; timer: string } {
+export function jediniceZnanja(m: { naredba: string[]; timer: { unit: string; minuta: number } }, paket: string, bun: string,
+  korisnik = userInfo().username): { service: string; timer: string; plist: string } {
   const [skripta, ...arg] = m.naredba
   return {
+    // macOS (TASK-5668): isti posao kao LaunchDaemon sa StartInterval, pod korisnikom čvora (ne root)
+    plist: launchdPlist({ ime: m.timer.unit, argv: [bun, join(paket, skripta), ...arg], cwd: paket, korisnik, nice: 10,
+      okolina: { PATH: `${dirname(bun)}:/usr/local/bin:/usr/bin:/bin` }, intervalSek: m.timer.minuta * 60 }),
     service: ['[Unit]', 'Description=REGOČ znanje čvora — korpus i ploča/Telegram čvora u banku memorije (ADR-0006)', '',
       '[Service]', 'Type=oneshot', `WorkingDirectory=${paket}`, `ExecStart=${bun} ${join(paket, skripta)} ${arg.join(' ')}`,
-      // systemd korisnička okolina nema ~/.bun/bin u PATH-u (alati paketa zovu bun/git/systemctl)
+      // korisnička okolina usluge nema ~/.bun/bin u PATH-u (alati paketa zovu bun/git)
       `Environment=PATH=${dirname(bun)}:/usr/local/bin:/usr/bin:/bin`, 'Nice=10', ''].join('\n'),
     timer: ['[Unit]', `Description=REGOČ znanje čvora svakih ${m.timer.minuta} min`, '', '[Timer]', 'OnBootSec=10min',
       `OnUnitActiveSec=${m.timer.minuta}min`, 'Persistent=true', '', '[Install]', 'WantedBy=timers.target', ''].join('\n'),
@@ -601,7 +606,7 @@ function usporediZnanje(k: Kontekst, dodaj: Dodaj): void {
     else {
       const j = jediniceZnanja(M.znanje, k.stanje.paket, join(k.stanje.home, '.bun', 'bin', 'bun'))
       dodaj({ modul: 'znanje', kljuc: 'timer', vrsta: 'RAZLIKA', profil: `${M.znanje.timer.unit}.timer aktivan`, cvor: t.datoteka ? t.aktivan : '(nema jedinice)',
-        primjena: { vrsta: 'timer', unit: M.znanje.timer.unit, service: j.service, timer: j.timer } })
+        primjena: { vrsta: 'timer', unit: M.znanje.timer.unit, service: j.service, timer: j.timer, plist: j.plist } })
     }
   }
   if (M.memorija?.izolacija) {
@@ -949,6 +954,20 @@ function kopija(datoteka: string, mapaKopija: string, kopirano: Set<string>, ime
 }
 
 /** Piše preko privremene datoteke, prava ostaju (nova datoteka 0600). */
+/**
+ * Datoteke i naredbe koje uključuju timer dotoka znanja: systemd korisničke jedinice na
+ * Linuxu, LaunchDaemon plist (iz korisničke mape u /Library/LaunchDaemons) na macOS-u.
+ */
+export function koraciTimera(t: { unit: string; service: string; timer: string; plist?: string }, home: string, o?: Okolina):
+  { datoteke: [string, string][]; naredbe: KorakNaredbe[] } {
+  if ((o?.os ?? process.platform) === 'darwin') {
+    const izvor = join(home, '.config', 'regoc', 'launchd', `${launchdOznaka(t.unit)}.plist`)
+    return { datoteke: t.plist ? [[izvor, t.plist]] : [], naredbe: naredbeUkljuciTimer(t.unit, o, izvor) }
+  }
+  const mapa = join(home, '.config', 'systemd', 'user')
+  return { datoteke: [[join(mapa, `${t.unit}.service`), t.service], [join(mapa, `${t.unit}.timer`), t.timer]], naredbe: naredbeUkljuciTimer(t.unit, o) }
+}
+
 function upisi(datoteka: string, sadrzaj: string): void {
   const prava = existsSync(datoteka) ? statSync(datoteka).mode & 0o777 : 0o600
   mkdirSync(dirname(datoteka), { recursive: true })
@@ -1101,16 +1120,19 @@ export async function primijeni(stavke: Stavka[], k: Kontekst, ploca: Ploca, sat
     else ishod.greske.push(`${n.argv.join(' ')} → izlaz ${r.exitCode}: ${(r.stdout.toString() + r.stderr.toString()).trim().split('\n').slice(-2).join(' | ').slice(0, 300)}`)
   }
   for (const t of po('timer') as Extract<Primjena, { vrsta: 'timer' }>[]) {
-    const mapa = join(k.stanje.home, '.config', 'systemd', 'user')
-    for (const [nast, sadrzaj] of [['service', t.service], ['timer', t.timer]] as const) {
-      const dat = join(mapa, `${t.unit}.${nast}`)
+    const kt = koraciTimera(t, k.stanje.home)
+    for (const [dat, sadrzaj] of kt.datoteke) {
       kopija(dat, mapaKopija, kopirano)
       upisi(dat, sadrzaj)
     }
     // Novi timer nije restart ploče ni daemona — smije se uključiti odmah.
-    const r = Bun.spawnSync(['bash', '-c', `systemctl --user daemon-reload && systemctl --user enable --now ${t.unit}.timer`], { stdout: 'pipe', stderr: 'pipe' })
-    if (r.exitCode === 0) ishod.promjena++
-    else ishod.greske.push(`timer ${t.unit}: ${r.stderr.toString().trim().slice(0, 200)}`)
+    let greska = ''
+    for (const n of kt.naredbe) {
+      const r = Bun.spawnSync(n.argv, { stdout: 'pipe', stderr: 'pipe' })
+      if (r.exitCode !== 0 && n.obavezno) { greska = `${n.argv.join(' ')}: ${r.stderr.toString().trim().slice(0, 200)}`; break }
+    }
+    if (!greska) ishod.promjena++
+    else ishod.greske.push(`timer ${t.unit}: ${greska}`)
   }
 
   for (const u of po('upravitelj') as Extract<Primjena, { vrsta: 'upravitelj' }>[]) {
@@ -1344,7 +1366,7 @@ export async function glavna(argv: string[], d: Partial<Ovisnosti> = {}): Promis
       pisi(`PRIMIJENJENO: ${ishod.promjena} promjena${ishod.kopije ? ` · kopije u ${ishod.kopije}` : ''}`)
       ishod.greske.forEach(g => pisi(`GREŠKA ${g}`))
       pisi(`potreban restart regoc-taskmanager: ${ishod.restart ? 'da (alat ga ne radi — kad je 0 zadataka in_progress)' : 'ne'}`)
-      if (ishod.unitovi.length) pisi(`drop-in (konzola, vrijeme, PATH): systemctl --user daemon-reload, pa restart ${ishod.unitovi.join(', ')} (alat ga ne radi — kad je 0 zadataka in_progress)`)
+      if (ishod.unitovi.length) pisi(`drop-in (konzola, vrijeme, PATH): ${uputaRestarta(ishod.unitovi)} (alat ga ne radi — kad je 0 zadataka in_progress)`)
       ispisStavki(poslije).forEach(pisi)
     }
     return kod

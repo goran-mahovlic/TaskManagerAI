@@ -3,7 +3,7 @@
  *
  * ZAŠTO POSTOJI: kad se 5-satni prozor obnovi, sustav to dosad nije primijetio kao
  * DOGAĐAJ. Provjereno 28.07.2026. na sva tri mjesta gdje bi okidač mogao biti:
- * `crontab -l` prazan, `systemctl --user list-timers` nijedan, harness `CronList` prazan.
+ * `crontab -l` prazan, korisnički systemd timeri (list-timers) nijedan, harness `CronList` prazan.
  * Podatak je pritom postojao i bio točan — `/api/session-usage` vraća `session_reset_at`.
  * Imali smo što čitati; nitko nije čitao.
  *

@@ -92,12 +92,31 @@ describe('platforma — Linux (pravi procfs)', () => {
     } finally { srv.stop(true) }
     expect(P.pidNaVratima(1, { os: 'linux', imaNaredbu: () => false })).toBeNull()
   })
-  test('usluga: systemctl --user is-active', () => {
-    const o: P.Okolina = { os: 'linux', izvrsi: (a) => a.join(' ') === 'systemctl --user is-active regoc-voice' ? 'active\n' : null }
+  test('usluga: systemctl --user show ActiveState (izlaz 0 i za neaktivnu, za razliku od is-active)', () => {
+    const odg: Record<string, string> = {
+      'systemctl --user show -p ActiveState --value regoc-voice': 'active\n',
+      'systemctl --user show -p ActiveState --value regoc-znanje.timer': 'inactive\n',
+      'systemctl --user show -p ActiveState --value regoc-pao': 'failed\n',
+    }
+    const o: P.Okolina = { os: 'linux', izvrsi: (a) => odg[a.join(' ')] ?? null }
     expect(P.usluga('regoc-voice', o)).toBe('active')
+    expect(P.usluga('regoc-znanje.timer', o)).toBe('inactive')
+    expect(P.usluga('regoc-pao', o)).toBe('inactive')
     expect(P.usluga('drugo', o)).toBe('nepoznato')
     expect(P.capguardPodrzan(lin)).toBe(true)
     expect(P.capguardPoruka(lin)).toBeNull()
+  })
+})
+
+describe('platforma — okolina procesa (Linux, pravi procfs)', () => {
+  test('okolinaProcesa čita varijablu djeteta; nepostojeći PID → null', async () => {
+    const p = Bun.spawn(['sleep', '5'], { env: { ...process.env, RKM_PROBA: '/neka/mapa' } })
+    try {
+      await Bun.sleep(50)
+      expect(P.okolinaProcesa(p.pid, 'RKM_PROBA', { os: 'linux' })).toBe('/neka/mapa')
+      expect(P.okolinaProcesa(p.pid, 'RKM_NEMA', { os: 'linux' })).toBeNull()
+    } finally { p.kill() }
+    expect(P.okolinaProcesa(999999999, 'PATH', { os: 'linux' })).toBeNull()
   })
 })
 
@@ -175,6 +194,92 @@ describe('platforma — lažni darwin (BSD alati)', () => {
     expect(pozivi[0].argv).toEqual(['launchctl', 'print', 'system/hr.regoc.voice'])
     expect(P.usluga('regoc-taskmanager.service', o)).toBe('inactive')
     expect(P.launchdOznaka('regoc-znanje.timer')).toBe('hr.regoc.znanje')
+  })
+  test('timer na darwinu = LaunchDaemon sa StartInterval: učitan (print uspije) znači aktivan', () => {
+    const { o } = lazniDarwin({ 'launchctl print system/hr.regoc.znanje': 'hr.regoc.znanje = {\n\tstate = not running\n\trun interval = 1800 seconds\n}' })
+    expect(P.usluga('regoc-znanje.timer', o)).toBe('active')
+    expect(P.usluga('regoc-znanje.service', o)).toBe('inactive')
+    expect(P.usluga('regoc-nema.timer', o)).toBe('inactive')
+  })
+  test('restartUsluge: Linux systemctl --user restart, darwin sudo -n launchctl kickstart -k', () => {
+    const lin: Poziv[] = []
+    expect(P.restartUsluge('regoc-daemon', { os: 'linux', izvrsi: (a) => { lin.push({ argv: a }); return '' } })).toBe(true)
+    expect(lin[0].argv).toEqual(['systemctl', '--user', 'restart', 'regoc-daemon'])
+    const { o, pozivi } = lazniDarwin({ 'sudo -n launchctl kickstart -k system/hr.regoc.daemon': '' })
+    expect(P.restartUsluge('regoc-daemon', o)).toBe(true)
+    expect(pozivi[0].argv).toEqual(['sudo', '-n', 'launchctl', 'kickstart', '-k', 'system/hr.regoc.daemon'])
+    expect(P.restartUsluge('regoc-nema', o)).toBe(false)
+  })
+  test('uslugeRegoc: Linux list-units, darwin launchctl print system (PID > 0 = active), bez tuđih oznaka', () => {
+    const lin: P.Okolina = { os: 'linux', izvrsi: (a) => a.join(' ') === 'systemctl --user list-units regoc-* --type=service --all --no-legend --plain'
+      ? 'regoc-daemon.service loaded active running REGOČ daemon\nregoc-voice.service loaded inactive dead Glas\n' : null }
+    expect(P.uslugeRegoc(lin)).toEqual([
+      { unit: 'regoc-daemon.service', aktivan: 'active', opis: 'REGOČ daemon' },
+      { unit: 'regoc-voice.service', aktivan: 'inactive', opis: 'Glas' }])
+    const ispis = ['system = {', '\tservices = {', '\t\t     412      -        hr.regoc.daemon', '\t\t       0     78        hr.regoc.znanje',
+      '\t\t     101      -        com.apple.tuđe', '\t}', '}'].join('\n')
+    const { o } = lazniDarwin({ 'launchctl print system': ispis })
+    expect(P.uslugeRegoc(o)).toEqual([
+      { unit: 'regoc-daemon', aktivan: 'active', opis: 'hr.regoc.daemon (pid 412)' },
+      { unit: 'regoc-znanje', aktivan: 'inactive', opis: 'hr.regoc.znanje (zadnji izlaz 78)' }])
+    expect(P.uslugeRegoc(lazniDarwin({}).o)).toEqual([])
+  })
+  test('launchdPlist: StartInterval (timer), korisnik, okolina, XML s escapeom; plutil-valjan oblik', () => {
+    const x = P.launchdPlist({ ime: 'regoc-znanje', argv: ['/Users/r/.bun/bin/bun', '/p/a&b.ts', '--pisi'], cwd: '/p',
+      okolina: { PATH: '/Users/r/.bun/bin:/usr/bin' }, intervalSek: 1800, korisnik: 'regoc', nice: 10 })
+    expect(x).toStartWith('<?xml version="1.0" encoding="UTF-8"?>')
+    expect(x).toContain('<key>Label</key>\n  <string>hr.regoc.znanje</string>')
+    expect(x).toContain('<key>StartInterval</key>\n  <integer>1800</integer>')
+    expect(x).toContain('<string>/p/a&amp;b.ts</string>')
+    expect(x).toContain('<key>UserName</key>\n  <string>regoc</string>')
+    expect(x).toContain('<key>Nice</key>\n  <integer>10</integer>')
+    expect(x).not.toContain('KeepAlive')
+    expect(P.launchdPlist({ ime: 'regoc-daemon', argv: ['bun'], stalno: true })).toContain('<key>KeepAlive</key>\n  <true/>')
+    expect(P.launchdPlistPut('regoc-znanje.timer')).toBe('/Library/LaunchDaemons/hr.regoc.znanje.plist')
+  })
+  test('naredbeUkljuciTimer: Linux daemon-reload + enable --now; darwin install + bootout (smije pasti) + bootstrap', () => {
+    expect(P.naredbeUkljuciTimer('regoc-znanje', { os: 'linux' })).toEqual([
+      { argv: ['systemctl', '--user', 'daemon-reload'], obavezno: true },
+      { argv: ['systemctl', '--user', 'enable', '--now', 'regoc-znanje.timer'], obavezno: true }])
+    expect(P.naredbeUkljuciTimer('regoc-znanje', { os: 'darwin' }, '/h/.config/regoc/launchd/hr.regoc.znanje.plist')).toEqual([
+      { argv: ['sudo', '-n', 'install', '-m', '644', '/h/.config/regoc/launchd/hr.regoc.znanje.plist', '/Library/LaunchDaemons/hr.regoc.znanje.plist'], obavezno: true },
+      { argv: ['sudo', '-n', 'launchctl', 'bootout', 'system/hr.regoc.znanje'], obavezno: false },
+      { argv: ['sudo', '-n', 'launchctl', 'bootstrap', 'system', '/Library/LaunchDaemons/hr.regoc.znanje.plist'], obavezno: true }])
+  })
+  test('start/stop/postoji usluge: Linux systemctl --user, darwin launchctl bootstrap/bootout (sudo -n)', () => {
+    const lin: string[] = []
+    const lo: P.Okolina = { os: 'linux', izvrsi: (a) => { lin.push(a.join(' ')); return a.includes('LoadState') ? (a.at(-1) === 'regoc-daemon' ? 'loaded\n' : 'not-found\n') : '' } }
+    expect(P.startUsluge('regoc-daemon', lo)).toBe(true)
+    expect(P.stopUsluge('regoc-daemon', lo)).toBe(true)
+    expect(P.uslugaPostoji('regoc-daemon', lo)).toBe(true)
+    expect(P.uslugaPostoji('regoc-nema', lo)).toBe(false)
+    expect(lin.slice(0, 2)).toEqual(['systemctl --user start regoc-daemon', 'systemctl --user stop regoc-daemon'])
+    const { o, pozivi } = lazniDarwin({
+      'sudo -n launchctl bootstrap system /Library/LaunchDaemons/hr.regoc.daemon.plist': '',
+      'sudo -n launchctl bootout system/hr.regoc.daemon': '',
+      'launchctl print system/hr.regoc.daemon': 'hr.regoc.daemon = {\n\tstate = running\n}' })
+    expect(P.startUsluge('regoc-daemon', o)).toBe(true)
+    expect(P.stopUsluge('regoc-daemon', o)).toBe(true)
+    expect(P.uslugaPostoji('regoc-daemon', o)).toBe(true)
+    expect(P.uslugaPostoji('regoc-nema', { ...o, postojiDatoteka: () => false })).toBe(false)
+    expect(P.uslugaPostoji('regoc-nema', { ...o, postojiDatoteka: (p) => p === '/Library/LaunchDaemons/hr.regoc.nema.plist' })).toBe(true)
+    expect(pozivi.every(p => p.argv[0] !== 'systemctl')).toBe(true)
+  })
+  test('start na darwinu: već učitana (bootstrap padne) → kickstart', () => {
+    const { o, pozivi } = lazniDarwin({ 'sudo -n launchctl kickstart system/hr.regoc.daemon': '' })
+    expect(P.startUsluge('regoc-daemon', o)).toBe(true)
+    expect(pozivi.map(p => p.argv.slice(3, 4)[0])).toEqual(['bootstrap', 'kickstart'])
+  })
+  test('uputaRestarta ovisi o OS-u', () => {
+    expect(P.uputaRestarta(['regoc-taskmanager', 'regoc-voice'], { os: 'linux' })).toBe('systemctl --user daemon-reload, pa restart regoc-taskmanager, regoc-voice')
+    expect(P.uputaRestarta(['regoc-taskmanager'], { os: 'darwin' })).toBe('sudo -n launchctl kickstart -k system/hr.regoc.taskmanager')
+  })
+  test('okolinaProcesa: darwin kroz ps -E (zadnja pojava imena), bez procfs-a', () => {
+    const { o, pozivi } = lazniDarwin({ 'ps -E -ww -o command= -p 42': 'bun RegocDaemon.ts TMPDIR=/lazni HOME=/Users/r TMPDIR=/Users/r/app/tmp/daemon PATH=/usr/bin\n' })
+    expect(P.okolinaProcesa(42, 'TMPDIR', o)).toBe('/Users/r/app/tmp/daemon')
+    expect(P.okolinaProcesa(42, 'NEMA', o)).toBeNull()
+    expect(P.okolinaProcesa(43, 'TMPDIR', o)).toBeNull()
+    expect(pozivi[0].argv).toEqual(['ps', '-E', '-ww', '-o', 'command=', '-p', '42'])
   })
   test('capguard nije podržan na darwinu, s porukom', () => {
     expect(P.capguardPodrzan({ os: 'darwin' })).toBe(false)

@@ -15,9 +15,10 @@ import { razgovorPut } from '../src/razgovor/RazgovorPloca'
 import { ensureSettingsSchema } from '../src/core/ConcurrencySetting'
 import {
   GreskaPreduvjeta, KOD, KORIJEN, glavna, izvediInstancu, konzolaDropIn, paketiKuka, provjeriVarijable, putDropIn, specZaProfil, vrijemeDropIn,
-  ucinakZnacajki, ucitajProfil, zamijeni, jediniceZnanja, type Ploca,
+  ucinakZnacajki, ucitajProfil, zamijeni, jediniceZnanja, koraciTimera, type Ploca,
 } from '../scripts/profil-cvora'
 import { prikupiStanje } from '../scripts/profil-cvora-stanje'
+import { launchdOznaka } from '../src/core/platforma'
 
 const PROFIL = join(KORIJEN, 'profili', 'upravitelj-cvora', 'profil.json')
 // Kanarinci: vrijednosti tajni koje se NIKAD ne smiju pojaviti u izlazu (J4).
@@ -785,6 +786,22 @@ describe('J18 — znanje čvora: mogućnosti, korpus u banci, izolacija memorije
     const { service, timer } = jediniceZnanja(p.moduli.znanje, '/paket', '/bun')
     expect(service).toContain('ExecStart=/bun /paket/scripts/znanje-cvora.ts osvjezi --pisi')
     expect(timer).toContain('OnUnitActiveSec=30min')
+  })
+
+  test('TASK-5668 macOS: timer = LaunchDaemon sa StartInterval (plist), upis u korisničku mapu, pa install + bootstrap', () => {
+    const p = ucitajProfil(PROFIL) as any
+    const j = jediniceZnanja(p.moduli.znanje, '/paket', '/Users/r/.bun/bin/bun', 'regoc')
+    expect(j.plist).toContain('<key>StartInterval</key>\n  <integer>1800</integer>')
+    expect(j.plist).toContain('<string>/paket/scripts/znanje-cvora.ts</string>')
+    expect(j.plist).toContain('<key>UserName</key>\n  <string>regoc</string>')
+    const unit = p.moduli.znanje.timer.unit
+    const mac = koraciTimera({ unit, ...j }, '/Users/r', { os: 'darwin' })
+    expect(mac.datoteke.map(d => d[0])).toEqual([`/Users/r/.config/regoc/launchd/${launchdOznaka(unit)}.plist`])
+    expect(mac.naredbe.map(n => n.argv.slice(0, 4).join(' '))).toEqual(['sudo -n install -m', 'sudo -n launchctl bootout', 'sudo -n launchctl bootstrap'])
+    expect(mac.naredbe.some(n => n.argv.includes('systemctl'))).toBe(false)
+    const lin = koraciTimera({ unit, ...j }, '/home/r', { os: 'linux' })
+    expect(lin.datoteke.map(d => d[0])).toEqual([`/home/r/.config/systemd/user/${unit}.service`, `/home/r/.config/systemd/user/${unit}.timer`])
+    expect(lin.naredbe.map(n => n.argv.join(' '))).toEqual(['systemctl --user daemon-reload', `systemctl --user enable --now ${unit}.timer`])
   })
 })
 
