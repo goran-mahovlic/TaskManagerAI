@@ -1,3 +1,18 @@
+## 2026-10-20 — deinstalacija do nule, provjera čistoće i nadogradnja čvora (TASK-5656)
+
+- Plan Mac v3 K3, P3.4: `scripts/deinstaliraj.sh` u tri razine (zadano: usluge i naredbe; `--sve`:
+  i `$TM_HOME` nakon kopije 0600; `--do-nule`: i sve iz manifesta `instalirano.json`, označeni retci
+  u datotekama ljuske, ključ tunela). Svaki put prolazi branu: ništa izvan `$HOME` osim
+  `LaunchDaemons/hr.regoc.*`, `~/.ssh`, `~/Library`, `~/Documents` i sam paket se odbijaju (izlaz 9).
+  `--suho` ispiše sve i ništa ne dira. Log u formatu P3.1, logovi instalacije sele u arhivu.
+- `scripts/provjeri-cisto.sh`: samostalna (bez repozitorija i buna), redak po ostatku, 0 redaka = čisto.
+- `scripts/nadogradi.sh`: logika dosadašnjeg omotača sa stroja koji postavlja čvorove, sada u paketu i
+  za oba OS-a (bundle ili git remote, kopija baze, restart kroz upravitelj usluga, provjera da novi
+  proces drži istu bazu i da je broj zadataka isti).
+- `install.sh`: ono što bun/Claude/uv instalator dopiše u `~/.zshrc`/`~/.bashrc` omota oznakama
+  (`scripts/instalacija/rc.sh`); mape alata koje prije instalacije nisu postojale idu u manifest.
+- `docs/INSTALL.md` §10.1: uklonjena nepostojeća zastavica `--s-kompletom`.
+
 ## 2026-10-20 — `install.sh`: jedan ulaz za Debian i macOS, log instalacije, čvor, baze, komplet, AI prijava (TASK-5655)
 
 - Plan Mac v3 K2: `scripts/install.sh` prepoznaje OS (Debian/Ubuntu, macOS ≥ 14; bash 3.2), provjerava

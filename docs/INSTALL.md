@@ -114,6 +114,39 @@ upit (`tajna.ts postavi IME`), nikad kao argument. Claude pretplata na macOS-u: 
 Keychain, pa ide `claude setup-token` i token u spremište kao `CLAUDE_CODE_OAUTH_TOKEN` — to je
 jedino ime s prefiksom `CLAUDE_` koje spremište prima.
 
+## 2.2. Deinstalacija i provjera čistoće (TASK-5656)
+
+```bash
+bash scripts/deinstaliraj.sh                # usluge (systemd/launchd) i naredbe pdf/glas; podaci ostaju
+bash scripts/deinstaliraj.sh --sve          # + $TM_HOME, nakon kopije ~/taskmanager-backup-<vrijeme>.tgz (0600)
+bash scripts/deinstaliraj.sh --do-nule      # + sve što je instalacija donijela, PO MANIFESTU
+bash scripts/deinstaliraj.sh --suho --do-nule   # samo ispis: svaki put koji bi uklonila
+bash scripts/provjeri-cisto.sh              # 0 redaka = stroj je čist (izlaz 0)
+```
+
+- `--do-nule` briše **samo** putove iz `$TM_HOME/instalirano.json` (bun, Claude CLI, uv i Python,
+  venvovi, pg0, modeli, predmemorije koje je instalacija stvorila), retke između oznaka
+  `# >>> TaskManagerAI >>>`/`# <<< TaskManagerAI <<<` u `~/.zshrc`, `~/.bashrc`… i redak `tm-tunel`
+  u `~/.ssh/authorized_keys`. Ništa izvan `$HOME` osim `/Library/LaunchDaemons/hr.regoc.*.plist`:
+  tuđi Homebrew, tailscale i datoteke vlasnika stroja ostaju. Put iz manifesta koji ne prođe branu
+  (izvan `$HOME`, `~/.ssh`, `~/Library`, `~/Documents`, sam paket…) se ispiše kao `ODBIJENO` i
+  izlaz je `9`.
+- Zajedničke mape koje je instalacija stvorila (`~/.local`, `~/.cache`, `~/.config/systemd`…) briše
+  samo ako su prazne.
+- Logovi krugova instalacije i kopija manifesta sele u `~/.taskmanager-log-arhiva/`; zapis
+  deinstalacije je u `…/deinstalacija/<vrijeme>/` (isti format kao log instalacije).
+- Repozitorij ostaje (skripta radi iz njega): `rm -rf ~/TaskManagerAI` je zadnji korak.
+- `--bez-kopije` preskače tgz (krug petlje popravka); `--da` preskače potvrdu u terminalu.
+- Izlaz: 0 uspjeh · 3 nema sudo-a za LaunchDaemon (`sudo -v` pa ponovi) · 7 usluga · 8 ostaci
+  nakon `--do-nule` · 9 put odbijen na brani.
+
+`scripts/provjeri-cisto.sh` radi i bez repozitorija (pošalji je kroz stdin: `ssh čvor 'bash -s' <
+provjeri-cisto.sh`). Ispisuje redak po ostatku: plistovi `hr.regoc.*` i jedinice `regoc-*`, učitane
+usluge, procesi `bun|hindsight|postgres|ollama` iz `$HOME`, vrata 17781/17792/17796/17797/15432/
+15433/11434 koja drži proces iz `$HOME` (tuđi proces na tim vratima je samo napomena na stderr),
+`$TM_HOME` i putovi iz manifesta (i arhiviranog), označeni retci u datotekama ljuske, ključ tunela.
+Arhivu logova i backup tgz ne broji.
+
 ## 3. Agenti i vještine (neobavezno, ali to je ono što ploču čini sustavom)
 
 Paket ne nosi vještine ni alate — nosi popis agenata i zna odakle se vještine dohvaćaju:
@@ -374,6 +407,26 @@ Skripta koristi SQLite naredbu za sigurnosnu presliku, koja radi i dok se piše.
 
 ## 10. Nadogradnja
 
+**Čvor (Linux ili macOS, uz uslugu):** `scripts/nadogradi.sh` radi cijeli put i piše log u
+`$TM_HOME/log/nadogradnja/<vrijeme>/`:
+
+```bash
+bash scripts/nadogradi.sh --git origin --grana main           # čvor koji vidi GitHub
+bash scripts/nadogradi.sh --bundle paket.bundle --grana main --sha <sha> [--u-granu main]
+bash scripts/nadogradi.sh --git origin --suho                 # samo STARO → NOVO i razlika
+```
+
+Koraci: kopija baze (`sqlite3 .backup`) i lokalnog stanja u `$TM_HOME/backup/nadogradnja/` (zadnjih
+5) → `checkout -f` (git-ignorirane postavke ostaju; datoteke s popisa `--lokalno` se vrate i označe
+`skip-worktree`) → `bun install` samo kad se `bun.lock` promijenio i registar odgovara → brana
+radnog stabla → restart kroz systemd/launchd → provjere: novi MainPID, HTTP 200, proces drži **istu**
+bazu kao prije (inače `CVOR PAD`), proces mlađi od restarta, broj zadataka prije = poslije, git čist.
+Dodatne provjere čvora (npr. svježina koda, bootcheck) idu kao `--svjezina 'naredba {PID}'` i
+`--bootcheck 'naredba'`. Skripta je samostalna, pa radi i kad se pošalje kroz stdin na čvor sa
+starim stablom. Izlaz `0` = `CVOR OK`, `1` = `CVOR PAD`, 10–17 = korak koji je pao.
+
+**Ručno (bez usluge):**
+
 ```bash
 git pull
 bun install
@@ -419,7 +472,7 @@ Redoslijed (ADR-0004 §13.5) — **5 koraka + tajne**:
 
 ```
 0. TAJNE     (čovjek, PROFIL_CVORA_TAJNE.md): bot token, tajna kanala, `claude auth login`, capguard odobrenja
-1. KOD       tm-cvor-azuriraj.sh <čvor> --s-kompletom      # paket + komplet izvornog sustava (P1, P5)
+1. KOD       scripts/nadogradi.sh (na čvoru) ili omotač sa stroja koji postavlja čvorove; komplet: install.sh --komplet
 2. INSTANCA  cp profili/<profil>/instanca.primjer.env $TM_HOME/config/profil.instanca.env  &&  uredi
 3. PRIMIJENI bun scripts/profil-cvora.ts primijeni --suho  →  pregled  →  primijeni --pisi
 3a. ZNANJE   bun scripts/profil-cvora.ts primijeni --pisi --modul mogucnosti,znanje   # banka čvora (ADR-0006 §9)
@@ -431,9 +484,10 @@ Redoslijed (ADR-0004 §13.5) — **5 koraka + tajne**:
    bot u grupi, Claude prijava, `TM_RAZGOVOR_PUNO=1` (samo vlasnik, ručno), tajna kanala
    bot↔bot, odobrenje Tier-2 sposobnosti, tunel memorije. Za tajnu alat javlja samo `postoji`/`nema`.
 1. **Kod.** Ažuriraj paket na čvoru na commit koji sadrži sve značajke iz `paket.paketSadrzi`
-   (sa stroja s kojeg se čvorovi postavljaju: `tm-cvor-azuriraj.sh <čvor>`). Kod bez značajke
-   alat javlja izlazom `3` (preduvjet) i ništa ne piše. Uz `--s-kompletom` dolazi i kod izvornog
-   sustava (`paket.izvorniSustavSadrzi`); prekidač bez koda ne radi ništa (§13.1).
+   (`scripts/nadogradi.sh`, §10). Kod bez značajke alat javlja izlazom `3` (preduvjet) i ništa
+   ne piše. Kod izvornog sustava (`paket.izvorniSustavSadrzi`) dolazi kroz `install.sh --komplet`
+   iz `config/komplet.lock`; zastavica `--s-kompletom` koju je ovaj odlomak ranije navodio nije
+   postojala (TASK-5309 B2). Prekidač bez koda ne radi ništa (§13.1).
 2. **Instanca.** Kopiraj primjer i upiši vrijednosti čvora (ID grupe, dopušteni korisnici, banka
    memorije, …):
    ```bash

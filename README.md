@@ -100,6 +100,11 @@ Open `http://localhost:17781`. The board has seven tabs:
 | **Status** | service health, token usage, the execution queue, the manual pause |
 | **Config** | five groups: concurrent-agent ceiling and autonomy gate, agents and models, integrations and the input gate, RAG, system; the card layout is edited with ✎ Edit layout ([docs/CONFIG.md](docs/CONFIG.md)) |
 
+On a node with a service (Linux or macOS), `bash scripts/install.sh --cvor <name>` does the setup,
+`bash scripts/nadogradi.sh --git origin` upgrades it, and `bash scripts/deinstaliraj.sh [--sve|--do-nule]`
+removes it — `--do-nule` only what the install recorded in `~/.taskmanager/instalirano.json`;
+`bash scripts/provjeri-cisto.sh` prints nothing when the machine is clean ([docs/INSTALL.md](docs/INSTALL.md) §2.1, §2.2, §10).
+
 Your first task through the API:
 
 ```bash

@@ -96,6 +96,11 @@ Otvori `http://localhost:17781`. Ploča ima sedam kartica:
 | **Stanje** | stanje servisa, potrošnja žetona, red za izvršavanje, ručna kočnica |
 | **Postavke** | pet skupina: strop usporednih agenata i vrata autonomije, agenti i modeli, integracije i ulazna vrata, RAG, sustav; raspored kartica uređuješ gumbom ✎ Uredi raspored ([docs/CONFIG.md](docs/CONFIG.md)) |
 
+Na čvoru s uslugom (Linux ili macOS) `bash scripts/install.sh --cvor <ime>` postavlja instalaciju,
+`bash scripts/nadogradi.sh --git origin` je nadograđuje, a `bash scripts/deinstaliraj.sh [--sve|--do-nule]`
+uklanja — `--do-nule` samo ono što je instalacija upisala u `~/.taskmanager/instalirano.json`;
+`bash scripts/provjeri-cisto.sh` ne ispiše ništa kad je stroj čist ([docs/INSTALL.md](docs/INSTALL.md) §2.1, §2.2, §10).
+
 Prvi zadatak preko API-ja:
 
 ```bash
