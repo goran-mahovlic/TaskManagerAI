@@ -406,9 +406,10 @@ k_sposobnosti() {
 
 k_pdf() {
   # Ne ruši instalaciju ploče — samo javi što fali (font, pip bez mreže); vidi instaliraj-pdf.sh
-  local plan; plan="$(bash scripts/instaliraj-pdf.sh --suho 2>&1)"
-  if ! printf '%s\n' "$plan" | grep -q '(suho)\|❌'; then razlog "naredba pdf spremna"; return 0; fi
-  if suho; then printf '%s\n' "$plan" | grep '(suho)\|❌' | sed 's/^/  /'; promjena; return 0; fi
+  # što bi instaliraj-pdf.sh napravio; neobavezni pdftotext (apt, root) i proba se ne broje
+  local plan; plan="$(bash scripts/instaliraj-pdf.sh --suho 2>&1 | grep '(suho)\|❌' | grep -v 'poppler-utils\|preskočeno (suho)')"
+  if [ -z "$plan" ]; then razlog "naredba pdf spremna"; return 0; fi
+  if suho; then printf '%s\n' "$plan" | sed 's/^/  /'; promjena; return 0; fi
   naredba "bash scripts/instaliraj-pdf.sh"
   promjena
   bash scripts/instaliraj-pdf.sh || upozori "naredba pdf nije spremna — bash scripts/instaliraj-pdf.sh kaže što fali"
