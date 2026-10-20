@@ -672,7 +672,9 @@ k_baze_venv() {
   s_rokom 1800 uv pip install -q --python "$BAZE_VENV/bin/python" "pg0-embedded==$PG0_VERZIJA" "hindsight-api==$HINDSIGHT_VERZIJA" || return 4
 }
 
-pg0() { HOME="$TM_HOME/rag/home" "$BAZE_VENV/bin/pg0" "$@"; }
+# pg0 nosi vlastitu binarku u paketu (site-packages/pg0/bin/pg0), ne u venv/bin
+pg0_bin() { "$BAZE_VENV/bin/python" -c 'import os, pg0; print(os.path.join(os.path.dirname(pg0.__file__), "bin", "pg0"))'; }
+pg0() { HOME="$TM_HOME/rag/home" "$(pg0_bin)" "$@"; }
 
 k_baze_pgvector() {
   [ "$BAZE" = 1 ] || { razlog "nije traženo (--baze)"; return 0; }
@@ -690,8 +692,8 @@ k_baze_pgvector() {
   # lozinkom dok sluša samo na 127.0.0.1, a prava se postavlja kroz stdin (ALTER ROLE) na kraju.
   local privremena; privremena="$(LC_ALL=C tr -dc 'a-z0-9' < /dev/urandom | head -c 16)"
   pg0 start --name tm-rag -p 15433 -d "$TM_HOME/rag/pg0/data" -u rag -P "$privremena" -n rag \
-    -c listen_addresses=127.0.0.1 -c "unix_socket_directories=$TM_HOME/rag" >/dev/null 2>&1 \
-    || { echo "    GREŠKA: pg0 start nije uspio (pg0 logs --name tm-rag)"; return 6; }
+    -c listen_addresses=127.0.0.1 -c unix_socket_directories= > "$TM_HOME/rag/pg0-start.log" 2>&1 \
+    || { tail -5 "$TM_HOME/rag/pg0-start.log" | sed 's/^/      /'; echo "    GREŠKA: pg0 start nije uspio ($TM_HOME/rag/pg0-start.log)"; return 6; }
   local ext; ext="$(pg0 psql --name tm-rag -- -tAc "CREATE EXTENSION IF NOT EXISTS vector; SELECT extversion FROM pg_extension WHERE extname='vector'" 2>/dev/null | tail -1)"
   printf "ALTER ROLE rag PASSWORD '%s';\n" "$lozinka" | pg0 psql --name tm-rag -- -q >/dev/null 2>&1 \
     || { pg0 stop --name tm-rag >/dev/null 2>&1; echo "    GREŠKA: lozinka baze nije postavljena"; return 6; }
