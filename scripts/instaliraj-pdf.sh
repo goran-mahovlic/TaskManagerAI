@@ -8,11 +8,13 @@
 #   bash scripts/instaliraj-pdf.sh           # venv + veza + proba
 #   bash scripts/instaliraj-pdf.sh --suho    # samo izvijesti što fali, ništa ne mijenja
 #
-# Koraci: (1) python3, (2) font DejaVu Sans (fonts-dejavu-core), (3) pdftotext (poppler-utils;
-# neobavezan — bez njega provjera ide pypdf-om), (4) venv s reportlab + pypdf
+# Koraci: (1) python3, (2) font DejaVu Sans (Linux: fonts-dejavu-core; inače i na macOS-u
+# službeno izdanje DejaVu 2.37 u korisničku mapu fontova, bez root-a i Homebrewa), (3) pdftotext
+# (Linux: poppler-utils; neobavezan — bez njega provjera ide pypdf-om), (4) venv s reportlab + pypdf
 # (--system-site-packages: ako ih sustav već ima, pip ne treba mrežu), (5) veza
 # ~/.local/bin/pdf → scripts/pdf, (6) proba: PDF sa „č ć ž š đ" mora proći provjeru.
-# Okolina: TM_PDF_VENV, TM_PDF_FONT_DIR (kao u scripts/pdf).
+# Okolina: TM_PDF_VENV, TM_PDF_FONT_DIR (kao u scripts/pdf; i cilj preuzetog fonta),
+# TM_PDF_DEJAVU_URL + TM_PDF_DEJAVU_SHA256 (zrcalo izdanja), TM_OS (Linux|Darwin; zadano uname -s).
 set -uo pipefail
 
 PAKET="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -20,6 +22,11 @@ REPORTLAB_VERZIJA="4.4.4"
 PYPDF_VERZIJA="6.1.1"
 VENV="${TM_PDF_VENV:-$HOME/.local/share/regoc-pdf/venv}"
 VEZA="$HOME/.local/bin/pdf"
+OS="${TM_OS:-$(uname -s)}"
+DEJAVU_URL="${TM_PDF_DEJAVU_URL:-https://github.com/dejavu-fonts/dejavu-fonts/releases/download/version_2_37/dejavu-fonts-ttf-2.37.tar.bz2}"
+DEJAVU_SHA256="${TM_PDF_DEJAVU_SHA256:-fa9ca4d13871dd122f61258a80d01751d603b4d3ee14095d65453b4e846e17d7}"
+PDFTOTEXT="${TM_PDF_PDFTOTEXT:-pdftotext}"
+if [ "$OS" = Darwin ]; then KORISNICKI_FONTOVI="$HOME/Library/Fonts"; else KORISNICKI_FONTOVI="$HOME/.local/share/fonts"; fi
 
 SUHO=0
 while [ $# -gt 0 ]; do
@@ -36,9 +43,11 @@ ok()   { echo "  ✅ $*"; }
 fali() { echo "  ❌ $*"; FALI=1; }
 upoz() { echo "  ⚠️  $*"; }
 radi() { if [ "$SUHO" = 1 ]; then echo "  ⏭  (suho) $*"; else echo "  ▶ $*"; fi; }
-# apt samo bez lozinke (sudo -n) — na čvoru radi dok je sklopka allow_root uključena.
+# Upravitelj paketa sustava samo na Linuxu i samo bez lozinke (sudo -n) — na čvoru radi dok je
+# sklopka allow_root uključena. Na macOS-u se ne zove ništa što traži root ili Homebrew.
 apt_paket() {
   [ "$SUHO" = 1 ] && return 1
+  [ "$OS" = Linux ] || return 1
   command -v apt-get >/dev/null || return 1
   if [ "$(id -u)" = 0 ]; then apt-get install -y -q "$1" >/dev/null 2>&1
   else sudo -n apt-get install -y -q "$1" >/dev/null 2>&1; fi
@@ -53,29 +62,61 @@ fi
 
 echo "2) font DejaVu Sans"
 nadi_font() {
-  for m in ${TM_PDF_FONT_DIR:+"$TM_PDF_FONT_DIR"} /usr/share/fonts/truetype/dejavu /usr/share/fonts/dejavu \
-           /usr/share/fonts/TTF "$HOME/.local/share/fonts"; do
+  local mape
+  if [ "$OS" = Darwin ]; then mape=("$HOME/Library/Fonts" /Library/Fonts)
+  else mape=(/usr/share/fonts/truetype/dejavu /usr/share/fonts/dejavu /usr/share/fonts/TTF "$HOME/.local/share/fonts"); fi
+  for m in ${TM_PDF_FONT_DIR:+"$TM_PDF_FONT_DIR"} "${mape[@]}"; do
     [ -f "$m/DejaVuSans.ttf" ] && { echo "$m/DejaVuSans.ttf"; return 0; }
   done
-  command -v fc-match >/dev/null && fc-match -f '%{file}' "DejaVu Sans" 2>/dev/null | grep -q 'DejaVuSans.ttf$' \
+  [ "$OS" = Linux ] && command -v fc-match >/dev/null && fc-match -f '%{file}' "DejaVu Sans" 2>/dev/null | grep -q 'DejaVuSans.ttf$' \
     && { fc-match -f '%{file}' "DejaVu Sans"; return 0; }
   return 1
+}
+# Službeno izdanje DejaVu (provjeren sha256) u korisničku mapu fontova — bez root-a i Homebrewa.
+preuzmi_font() {
+  [ "$SUHO" = 1 ] && return 1
+  local cilj="${TM_PDF_FONT_DIR:-$KORISNICKI_FONTOVI}" rad
+  rad="$(mktemp -d "${TMPDIR:-$HOME}/dejavu.XXXXXX")" || return 1
+  if curl -fsSL -m 120 -o "$rad/dejavu.tar.bz2" "$DEJAVU_URL" \
+     && [ "$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' "$rad/dejavu.tar.bz2")" = "$DEJAVU_SHA256" ] \
+     && tar -xjf "$rad/dejavu.tar.bz2" -C "$rad" \
+     && mkdir -p "$cilj"; then
+    local n=0 f
+    for f in "$rad"/dejavu-fonts-ttf-*/ttf/DejaVuSans.ttf "$rad"/dejavu-fonts-ttf-*/ttf/DejaVuSans-{Bold,Oblique,BoldOblique}.ttf \
+             "$rad"/dejavu-fonts-ttf-*/ttf/DejaVuSansMono.ttf; do
+      [ -f "$f" ] && cp "$f" "$cilj/" && n=$((n + 1))
+    done
+    rm -rf "$rad"; [ "$n" -gt 0 ]
+  else
+    rm -rf "$rad"; return 1
+  fi
 }
 if F="$(nadi_font)"; then
   ok "$F"
 else
-  radi "apt install fonts-dejavu-core"
-  if apt_paket fonts-dejavu-core && F="$(nadi_font)"; then ok "$F"
-  else fali "nema DejaVuSans.ttf — apt install fonts-dejavu-core (traži allow_root) ili TM_PDF_FONT_DIR=<mapa s DejaVuSans.ttf>"; fi
+  if [ "$OS" = Linux ]; then
+    radi "apt install fonts-dejavu-core"
+    apt_paket fonts-dejavu-core && F="$(nadi_font)"
+  fi
+  if [ -n "${F:-}" ]; then ok "$F"
+  else
+    radi "preuzimam DejaVu 2.37 u ${TM_PDF_FONT_DIR:-$KORISNICKI_FONTOVI} (bez root-a)"
+    if preuzmi_font && F="$(nadi_font)"; then ok "$F"
+    elif [ "$OS" = Linux ]; then fali "nema DejaVuSans.ttf — apt install fonts-dejavu-core (traži allow_root), preuzimanje ($DEJAVU_URL) nije uspjelo, ili TM_PDF_FONT_DIR=<mapa s DejaVuSans.ttf>"
+    else fali "nema DejaVuSans.ttf — preuzimanje ($DEJAVU_URL → $KORISNICKI_FONTOVI) nije uspjelo (nema mreže?) ili TM_PDF_FONT_DIR=<mapa s DejaVuSans.ttf>"; fi
+  fi
 fi
 
 echo "3) pdftotext (provjera kao kod čovjeka)"
-if command -v pdftotext >/dev/null; then
-  ok "$(command -v pdftotext)"
-else
+if command -v "$PDFTOTEXT" >/dev/null; then
+  ok "$(command -v "$PDFTOTEXT")"
+elif [ "$OS" = Linux ]; then
   radi "apt install poppler-utils"
-  if apt_paket poppler-utils && command -v pdftotext >/dev/null; then ok "pdftotext instaliran"
+  if apt_paket poppler-utils && command -v "$PDFTOTEXT" >/dev/null; then ok "pdftotext instaliran"
   else upoz "nema pdftotext (poppler-utils) — provjera dijakritika ide pypdf-om"; fi
+else
+  # macOS nema poppler, a Homebrew se ne dira (nije nužno korisnikov) — pypdf je dovoljan.
+  upoz "nema pdftotext — provjera dijakritika ide pypdf-om (neobavezno: brew install poppler, samo ako je Homebrew tvoj)"
 fi
 
 echo "4) venv s reportlab + pypdf ($VENV)"

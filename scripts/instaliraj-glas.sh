@@ -13,7 +13,7 @@
 # Koraci: (1) python3 + ffmpeg, (2) venv s piper-tts (bez ensurepip-a: venv --without-pip
 # i `pip --python`), (3) model u ~/.local/share/piper-voices + sha256, (4) veza
 # ~/.local/bin/glas → scripts/glas, (5) proba: kratka rečenica u mp3.
-# Okolina: TM_GLAS_VENV, TM_GLAS_MODEL (kao u scripts/glas).
+# Okolina: TM_GLAS_VENV, TM_GLAS_MODEL (kao u scripts/glas), TM_OS (Linux|Darwin; zadano uname -s).
 set -uo pipefail
 
 PAKET="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -46,7 +46,13 @@ if command -v python3 >/dev/null && python3 -c 'import sys; sys.exit(sys.version
 else
   fali "python3 >= 3.9"; exit 1
 fi
-command -v ffmpeg >/dev/null && ok "ffmpeg" || fali "ffmpeg (apt install ffmpeg) — bez njega samo .wav"
+# Uputa ovisi o OS-u (TASK-5668): na macOS-u nema apt-a, a Homebrew nije nužno korisnikov.
+if [ "${TM_OS:-$(uname -s)}" = Darwin ]; then
+  UPUTA_FFMPEG="statična binarka u ~/.local/bin (https://ffmpeg.org/download.html#build-mac) ili brew install ffmpeg, samo ako je Homebrew tvoj"
+else
+  UPUTA_FFMPEG="apt install ffmpeg"
+fi
+command -v "${TM_GLAS_FFMPEG:-ffmpeg}" >/dev/null && ok "ffmpeg" || fali "ffmpeg ($UPUTA_FFMPEG) — bez njega samo .wav"
 
 echo "2) venv s piper-tts ($VENV)"
 if [ -x "$VENV/bin/python" ] && "$VENV/bin/python" -c 'import piper' 2>/dev/null; then

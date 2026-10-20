@@ -32,7 +32,8 @@ import sys
 HR_SLOVA = "čćžšđČĆŽŠĐ"
 ZAMJENSKI = "■�□"
 MAPE_FONTOVA = ["/usr/share/fonts/truetype/dejavu", "/usr/share/fonts/dejavu",
-                "/usr/share/fonts/TTF", "~/.local/share/fonts"]
+                "/usr/share/fonts/TTF", "~/.local/share/fonts",
+                "~/Library/Fonts", "/Library/Fonts"]  # macOS: korisnička mapa (instaliraj-pdf.sh)
 DATOTEKE = {"TMSans": "DejaVuSans.ttf", "TMSans-Bold": "DejaVuSans-Bold.ttf",
             "TMSans-Italic": "DejaVuSans-Oblique.ttf", "TMSans-BoldItalic": "DejaVuSans-BoldOblique.ttf",
             "TMMono": "DejaVuSansMono.ttf"}
