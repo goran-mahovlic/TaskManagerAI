@@ -79,6 +79,11 @@ fi
 TM_HOME="${TM_HOME:-$HOME/.taskmanager}"
 export TM_HOME
 TM_PORT="${TM_PORT:-17781}"
+# vrata iz lokalnih postavki čvora imaju prednost (njih čita i usluga, kroz s-okolinom.sh)
+if [ -f "$TM_HOME/config/postavke.env" ]; then
+  _p="$(sed -n 's/^[[:space:]]*TM_PORT=\([0-9][0-9]*\)[[:space:]]*$/\1/p' "$TM_HOME/config/postavke.env" | tail -1)"
+  [ -n "$_p" ] && TM_PORT="$_p"
+fi
 # Odredište kompleta: TM_KOMPLET_DIR ili polje `odrediste` iz config/komplet.lock (relativno
 # prema $HOME) — paket sam ne zna raspored mapa izvornog sustava (ADR-0001 O1.4).
 KOMPLET_DIR="${TM_KOMPLET_DIR:-}"
@@ -459,7 +464,8 @@ TM_BIND=$bind
 # Imena i adrese pod kojima se ploči pristupa (Host zaglavlje), zarezom.
 TM_ALLOWED_HOSTS=$hostovi
 TM_EXTERNAL_HOST=$vanjski
-TM_PORT=$TM_PORT
+# Druga vrata (zadano $TM_PORT): odkomentiraj — install.sh i usluga ih tada poštuju.
+#TM_PORT=$TM_PORT
 EOF
 }
 
