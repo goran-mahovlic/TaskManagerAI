@@ -44,7 +44,7 @@ export function vrijednosti(env: Record<string, string | undefined> = process.en
     TM_HOME: tmHome,
     TM_PORT: env.TM_PORT || '17781',
     BUN: env.BUN || join(home, '.bun', 'bin', 'bun'),
-    KOMPLET: env.KOMPLET || join(home, '.claude', 'regoc'),
+    KOMPLET: env.KOMPLET || '',   // odredište kompleta zadaje install.sh (komplet.lock / TM_KOMPLET_DIR)
     BAZE_VENV: env.BAZE_VENV || join(tmHome, 'baze', 'venv'),
     PG_BIN: env.PG_BIN || join(tmHome, 'rag', 'pg0', 'bin'),
     HOME: home,
@@ -55,6 +55,7 @@ export function vrijednosti(env: Record<string, string | undefined> = process.en
 export function zamijeni(t: string, v: Record<string, string>): string {
   return t.replace(/\{\{([A-Z_]+)\}\}/g, (m, k) => {
     if (!(k in v)) throw new Error(`nepoznata varijabla predloška ${m}`)
+    if (!v[k]) throw new Error(`varijabla predloška ${m} nije zadana`)
     return v[k]
   })
 }

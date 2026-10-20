@@ -79,7 +79,12 @@ fi
 TM_HOME="${TM_HOME:-$HOME/.taskmanager}"
 export TM_HOME
 TM_PORT="${TM_PORT:-17781}"
-KOMPLET_DIR="${TM_KOMPLET_DIR:-$HOME/.claude/regoc}"
+# Odredište kompleta: TM_KOMPLET_DIR ili polje `odrediste` iz config/komplet.lock (relativno
+# prema $HOME) — paket sam ne zna raspored mapa izvornog sustava (ADR-0001 O1.4).
+KOMPLET_DIR="${TM_KOMPLET_DIR:-}"
+if [ "$KOMPLET" = 1 ] && [ -z "$KOMPLET_DIR" ] && [ -f "$PAKET/config/komplet.lock" ] && command -v python3 >/dev/null 2>&1; then
+  KOMPLET_DIR="$(python3 -c 'import json,os,sys; o=json.load(open(sys.argv[1])).get("odrediste") or ""; print(os.path.join(os.environ["HOME"], o) if o and not o.startswith("/") else o)' "$PAKET/config/komplet.lock" 2>/dev/null)"
+fi
 BAZE_VENV="$TM_HOME/baze/venv"
 export PATH="$HOME/.bun/bin:$HOME/.local/bin:$PATH"
 
@@ -436,7 +441,7 @@ instalacija_env() {    # sadržaj datoteke koju posjeduje instalacija (prepisuje
   echo "TM_PORT=$TM_PORT"
   echo "TM_CREDENTIALS=$TM_HOME/config/credentials.env"
   [ -n "$CVOR" ] && echo "CVOR_IME=$CVOR"
-  if [ "$KOMPLET" = 1 ]; then
+  if [ "$KOMPLET" = 1 ] && [ -n "$KOMPLET_DIR" ]; then
     echo "TM_SUSTAV_DIR=$KOMPLET_DIR"
     echo "TM_MODEL_CONFIG=$KOMPLET_DIR/models/model-config.json"
   fi
@@ -571,6 +576,7 @@ k_komplet() {
   local repo commit msha
   repo="$(lock_polje "$lock" repo)"; commit="${KOMPLET_COMMIT:-$(lock_polje "$lock" commit)}"; msha="$(lock_polje "$lock" manifest_sha256)"
   [ -n "$repo" ] && [ -n "$commit" ] || { echo "    GREŠKA: komplet.lock nema repo ili commit"; return 5; }
+  [ -n "$KOMPLET_DIR" ] || { echo "    GREŠKA: odredište kompleta nije zadano (polje odrediste u komplet.lock ili TM_KOMPLET_DIR)"; return 5; }
   naredba "git clone $repo $KOMPLET_DIR && git checkout $commit"
   if [ -e "$KOMPLET_DIR" ] && [ ! -d "$KOMPLET_DIR/.git" ]; then
     echo "    GREŠKA: $KOMPLET_DIR postoji, a nije git klon kompleta — ne prepisujem ga (premjesti ga pa ponovi)"; return 5
@@ -829,7 +835,7 @@ k_ai_prijava() {
   bez_buna && return 0
   # odluka 6: instalacija ne pita za AI servis i ne upisuje ključ — samo pokaže stanje i put
   naredba "bun scripts/prijava-ai.ts popis"
-  local mc=""; [ "$KOMPLET" = 1 ] && mc="$KOMPLET_DIR/models/model-config.json"
+  local mc=""; [ "$KOMPLET" = 1 ] && [ -n "$KOMPLET_DIR" ] && mc="$KOMPLET_DIR/models/model-config.json"
   TM_HOME="$TM_HOME" bun scripts/prijava-ai.ts popis --kratko ${mc:+--model-config "$mc"} 2>&1 | sed 's/^/    /'
   razlog "samo ispis (prijavu bira korisnik)"
   return 0
