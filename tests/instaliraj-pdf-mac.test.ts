@@ -53,8 +53,23 @@ describe('instaliraj-pdf.sh — macOS grana (lažni Darwin)', () => {
     expect(izlaz).toContain(`✅ ${home}/Library/Fonts/DejaVuSans.ttf`)
     expect(izlaz).toContain('PDF SPREMAN')
     expect(kod).toBe(0)
-    expect(existsSync(join(home, 'app', 'tmp', 'pdf-proba', 'proba.pdf'))).toBe(true)
+    // B7 (QA K6): proba ide u privremenu mapu, ne u ~/app/tmp (raspored izvornog sustava)
+    expect(existsSync(join(home, 'app'))).toBe(false)
   }, 60_000)
+})
+
+describe('instaliraj-pdf.sh — B7: ništa izvan manifesta u HOME-u (QA K6 TASK-5660)', () => {
+  test.skipIf(!existsSync(SUSTAVNI_FONT))('Linux: proba i fontconfig ne ostaju u HOME-u; privremena mapa se briše', () => {
+    const home = privremena('pdf-b7-home-'), tmp = privremena('pdf-b7-tmp-')
+    const { kod, izlaz } = pokreni('instaliraj-pdf.sh', [], { HOME: home, TMPDIR: tmp, TM_OS: 'Linux', XDG_CACHE_HOME: '' })
+    expect(izlaz).toContain('PDF SPREMAN')
+    expect(kod).toBe(0)
+    // u HOME-u smije biti samo ono što install.sh upisuje u manifest (veza pdf i venv)
+    expect(existsSync(join(home, 'app'))).toBe(false)
+    expect(existsSync(join(home, '.cache'))).toBe(false)
+    expect(existsSync(join(home, '.local', 'bin', 'pdf'))).toBe(true)
+    expect(Bun.spawnSync(['ls', '-A', tmp]).stdout.toString().trim()).toBe('')
+  }, 120_000)
 })
 
 describe('instaliraj-glas.sh — uputa za ffmpeg ovisi o OS-u', () => {

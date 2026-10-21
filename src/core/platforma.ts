@@ -8,7 +8,7 @@
  *
  *   ziv(pid)            process.kill(pid, 0)                      (oba OS-a)
  *   cmdline(pid)        procfs cmdline        | ps -o command= -p
- *   oznakaStarta(pid)   procfs stat polje 22  | LC_ALL=C ps -o lstart= -p  (epoha, s)
+ *   oznakaStarta(pid)   procfs stat polje 22  | LC_ALL=C TZ=UTC0 ps -o lstart= -p  (epoha, s)
  *   startProcesaMs(pid) polje 22 + uptime     | lstart (sekundna rezolucija)
  *   bootMs()            procfs uptime         | sysctl -n kern.boottime
  *   cpuVrijeme(pid)     stat utime+stime+cutime+cstime | ps -o time= (centisekunde)
@@ -167,12 +167,16 @@ function statRep(pid: number, o?: Okolina): string[] | null {
   } catch { return null }
 }
 
-/** `ps -o lstart=` → epoha u ms (macOS; sekundna rezolucija). */
+/**
+ * `ps -o lstart=` → epoha u ms (macOS; sekundna rezolucija). `ps` ispisuje lokalno vrijeme
+ * bez zone, a JS ga čita u SVOJOJ zoni (`bun test` uvijek u UTC) — na stroju koji nije u UTC
+ * to je pomak od nekoliko sati (QA K6 B6). Zato `ps` radi s TZ=UTC0 i ispis se čita kao UTC.
+ */
 function lstartMs(pid: number, o?: Okolina): number | null {
-  const out = izvrsi(o)(['ps', '-o', 'lstart=', '-p', String(pid)], { LC_ALL: 'C' })
+  const out = izvrsi(o)(['ps', '-o', 'lstart=', '-p', String(pid)], { LC_ALL: 'C', TZ: 'UTC0' })
   const t = out?.trim()
   if (!t) return null
-  const ms = Date.parse(t)
+  const ms = Date.parse(`${t} GMT`)
   return Number.isFinite(ms) ? ms : null
 }
 

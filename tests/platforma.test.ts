@@ -127,6 +127,12 @@ describe('platforma — isti ishod na oba OS-a (StaleCodeCheck, plan K1)', () =>
     const lin = P.startProcesaMs(process.pid, { os: 'linux' })!
     expect(mac).not.toBeNull()
     expect(Math.abs(mac! - lin)).toBeLessThanOrEqual(1000 + P.rezolucijaStartaMs({ os: 'darwin' }))
+    // B6 (QA K6 TASK-5660): stroj koji NIJE u UTC — `bun test` računa u UTC, a `ps` bez TZ
+    // ispisuje lokalno vrijeme (pomak sati). Lokalnu zonu stroja glumi okolina djeteta.
+    const tokio: P.Okolina = { os: 'darwin', izvrsi: (argv, env) => P.izvrsiZadano(argv, { TZ: 'Asia/Tokyo', ...env }) }
+    const macTokio = P.startProcesaMs(process.pid, tokio)
+    expect(macTokio).not.toBeNull()
+    expect(Math.abs(macTokio! - lin)).toBeLessThanOrEqual(1000 + P.rezolucijaStartaMs({ os: 'darwin' }))
     // datoteka pisana 2 s nakon starta je „novija” u obje grane (isti zaključak StaleCodeCheck-a)
     const mtime = lin + 2000 + 5000
     expect(mtime > lin + 5000 + P.rezolucijaStartaMs({ os: 'linux' })).toBe(true)
@@ -156,13 +162,13 @@ describe('platforma — lažni darwin (BSD alati)', () => {
     const { o } = lazniDarwin({ 'lsof -a -p 42 -d cwd -Fn': 'p42\nfcwd\nn/Users/korisnik/projekt\n' })
     expect(P.cwd(42, o)).toBe('/Users/korisnik/projekt')
   })
-  test('lstart (LC_ALL=C) → oznaka u sekundama epohe i start u ms', () => {
+  test('lstart (LC_ALL=C, TZ=UTC0) → oznaka u sekundama epohe i start u ms', () => {
     const lstart = 'Mon Oct 20 19:40:36 2026'
     const { o, pozivi } = lazniDarwin({ 'ps -o lstart= -p 42': lstart + '\n' })
-    const ms = Date.parse(lstart)
+    const ms = Date.UTC(2026, 9, 20, 19, 40, 36)   // ps zvan s TZ=UTC0 → ispis je UTC (B6)
     expect(P.startProcesaMs(42, o)).toBe(ms)
     expect(P.oznakaStarta(42, o)).toBe(String(ms / 1000))
-    expect(pozivi[0].env).toEqual({ LC_ALL: 'C' })
+    expect(pozivi[0].env).toEqual({ LC_ALL: 'C', TZ: 'UTC0' })
     expect(P.rezolucijaStartaMs(o)).toBe(1000)
     expect(P.rezolucijaStartaMs({ os: 'linux' })).toBe(0)
   })

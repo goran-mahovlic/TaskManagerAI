@@ -79,6 +79,10 @@ MANIFEST_IZVOR="$MANIFEST"
 [ -f "$MANIFEST_IZVOR" ] || MANIFEST_IZVOR="$(ls -1t "$ARHIVA"/manifest/*.json 2>/dev/null | head -1)"
 STAVKE=()
 while IFS= read -r r; do [ -n "$r" ] && STAVKE+=("$r"); done < <(ucitaj_manifest "${MANIFEST_IZVOR:-/nema}")
+# stavke na čekanju (install.sh pao prije nego što je manifest mogao upisati, npr. bez buna — QA K6 B3)
+if [ -f "$TM_HOME/instalirano.ceka" ]; then
+  while IFS='|' read -r p v _; do case "$p" in /*) STAVKE+=("$p|${v:-datoteka}") ;; esac; done < "$TM_HOME/instalirano.ceka"
+fi
 u_manifestu() {   # u_manifestu PUT [VRSTA]
   local s; for s in "${STAVKE[@]+"${STAVKE[@]}"}"; do
     [ "${s%%|*}" = "$1" ] && { [ -z "${2:-}" ] || [ "${s#*|}" = "$2" ]; } && return 0

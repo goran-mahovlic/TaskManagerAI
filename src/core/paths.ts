@@ -50,7 +50,8 @@ export function sustavPutanja(rel: string): string | null {
  * podignut na zajedničko mjesto jer ga od ADR-0001 O1.4 koristi devet modula:
  *
  *   1. varijabla okoline — puna putanja, za instalaciju koja postavke drži drugdje;
- *   2. `$TM_HOME/config/<ime>` — uz bazu, ako ta datoteka ondje POSTOJI;
+ *   2. `$TM_HOME/config/<ime>` — uz bazu, ako ta datoteka ondje POSTOJI (bez TM_HOME u okolini
+ *      vrijedi `~/.taskmanager` instaliranog čvora, v. `tmHomeKonfiguracije`);
  *   3. `config/<ime>` uz sam paket — zadano, radi bez ijedne varijable okoline.
  *
  * Korak 2 traži postojanje datoteke namjerno: instalacija koja ima `TM_HOME`, ali
@@ -58,8 +59,9 @@ export function sustavPutanja(rel: string): string | null {
  */
 export function konfigPutanja(ime: string, envVar?: string): string {
   if (envVar && process.env[envVar]) return process.env[envVar] as string
-  if (process.env.TM_HOME) {
-    const uzBazu = join(process.env.TM_HOME, 'config', ime)
+  const tm = tmHomeKonfiguracije()
+  if (tm) {
+    const uzBazu = join(tm, 'config', ime)
     if (existsSync(uzBazu)) return uzBazu
   }
   return join(PAKET_DIR, 'config', ime)
@@ -71,8 +73,22 @@ export function konfigPutanja(ime: string, envVar?: string): string {
  */
 export function konfigPutanjaZaPisanje(ime: string, envVar?: string): string {
   if (envVar && process.env[envVar]) return process.env[envVar] as string
-  if (process.env.TM_HOME) return join(process.env.TM_HOME, 'config', ime)
+  const tm = tmHomeKonfiguracije()
+  if (tm) return join(tm, 'config', ime)
   return join(PAKET_DIR, 'config', ime)
+}
+
+/**
+ * `$TM_HOME` za konfiguraciju: iz okoline, a bez nje zadani `$HOME/.taskmanager` AKO je ondje
+ * instalacija čvora (install.sh piše `config/instalacija.env`) — isti korijen koji usluga dobiva
+ * kroz scripts/s-okolinom.sh. QA K6 B4: `bun scripts/tajna.ts postavi` iz terminala (bez TM_HOME)
+ * pisao je tajnu uz paket, a usluga ju je tražila u ~/.taskmanager/config. Bez instalacije
+ * (razvojno stablo) → null: konfiguracija ostaje uz paket kao i prije.
+ */
+export function tmHomeKonfiguracije(): string | null {
+  if (process.env.TM_HOME) return process.env.TM_HOME
+  const zadano = join(process.env.HOME || os.homedir(), '.taskmanager')
+  return existsSync(join(zadano, 'config', 'instalacija.env')) ? zadano : null
 }
 
 /** Datoteka sa stanjem koje stroj sam zatekne (nikad ne miješati s konfiguracijom). */

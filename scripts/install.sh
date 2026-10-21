@@ -102,7 +102,10 @@ export PATH="$HOME/.bun/bin:$HOME/.local/bin:$PATH"
 
 N_PROMIJENJENO=0; N_PRESKOCENO=0; N_KORAKA=0
 TRENUTNI_KORAK=""; ZAVRSENO=0
-MANIFEST_NOVO=()        # put|vrsta|korak — upisuje se u $TM_HOME/instalirano.json na kraju
+MANIFEST_NOVO=()        # put|vrsta|korak — upisuje se u $TM_HOME/instalirano.json (K2.25 ili pri padu)
+# Manifest na čekanju (QA K6 B3): svaka stavka ide ODMAH i na disk, pa je pad prije K2.25 ne gubi —
+# ponovni prolaz je učita, a pad je pokuša upisati u instalirano.json (manifest_upisi).
+MANIFEST_CEKA="$TM_HOME/instalirano.ceka"
 UPOZORENJA=()
 
 # ── okvir koraka ──────────────────────────────────────────────────────────────
@@ -112,7 +115,10 @@ promjena() { KORAK_PROMJENA=1; }
 razlog()   { KORAK_RAZLOG="$*"; }
 naredba()  { KORAK_NAREDBA="$*"; }
 upozori()  { KORAK_UPOZORENJE="$*"; UPOZORENJA+=("$TRENUTNI_KORAK: $*"); }
-u_manifest() { MANIFEST_NOVO+=("$1|$2|$TRENUTNI_KORAK"); }
+u_manifest() {
+  MANIFEST_NOVO+=("$1|$2|$TRENUTNI_KORAK")
+  [ "$SUHO" = 1 ] || { mkdir -p "$TM_HOME" && printf '%s\n' "$1|$2|$TRENUTNI_KORAK" >> "$MANIFEST_CEKA"; } 2>/dev/null
+}
 suho() { [ "$SUHO" = 1 ]; }
 # radi <opis> -- naredba…: uz --suho samo ispiše, inače izvrši
 radi() {
@@ -155,6 +161,7 @@ korak() {
     zapis_log "  ✗ $id pao (izlaz $kod)"
     PAD_PORUKA="$(printf '%s\n' "$rep" | grep -v '^[[:space:]]*$' | tail -1)"
     ZAVRSENO=1
+    suho || manifest_upisi >/dev/null 2>&1   # da --do-nule zna što je dosad stvoreno (B3)
     zapis_rezultat "pad" "$id" "$kod" "${PAD_PORUKA:-korak $id nije uspio}"
     [ -n "${LOG_DIR:-}" ] && echo "log: $LOG_DIR"
     exit "$kod"
@@ -167,10 +174,12 @@ na_kraju() {
   local kod=$?
   [ "$ZAVRSENO" = 1 ] && return
   ZAVRSENO=1
+  suho || manifest_upisi >/dev/null 2>&1
   zapis_rezultat "pad" "${TRENUTNI_KORAK:-pocetak}" "$([ "$kod" = 0 ] && echo 1 || echo "$kod")" "instalacija je izašla izvan koraka (izlaz $kod)"
 }
 na_prekid() {
   ZAVRSENO=1
+  suho || manifest_upisi >/dev/null 2>&1
   zapis_rezultat "prekinuto" "${TRENUTNI_KORAK:-pocetak}" 130 "prekinuto signalom $1"
   echo; echo "prekinuto ($1) — log: ${LOG_DIR:-—}"; exit 130
 }
@@ -323,7 +332,9 @@ k_preduvjeti() {
     [ -e /etc/ssl/certs/ca-certificates.crt ] || fali+=("ca-certificates")
   fi
   echo "    obavezno: git curl python3≥3.9$([ "$OS" = linux ] && echo ' unzip ca-certificates' || echo ' perl')"
-  local slobodno; slobodno="$(df -Pk "$HOME" 2>/dev/null | awk 'NR==2 {print int($4/1024)}')"
+  # TM_INSTALL_SLOBODNO_MIB podmeće izmjereni slobodni prostor (testovi: ne ovise o disku stroja, QA K6 B6)
+  local slobodno="${TM_INSTALL_SLOBODNO_MIB:-}"
+  [ -n "$slobodno" ] || slobodno="$(df -Pk "$HOME" 2>/dev/null | awk 'NR==2 {print int($4/1024)}')"
   echo "    disk: ${slobodno:-?} MiB slobodno (treba ≥ 2048$([ "$BAZE" = 1 ] && echo ', uz --baze ≥ 8192'))"
   local treba=2048; [ "$BAZE" = 1 ] && treba=8192
   [ -n "$slobodno" ] && [ "$slobodno" -lt "$treba" ] && fali+=("disk≥${treba}MiB")
@@ -689,6 +700,16 @@ k_baze_python() {
   suho || u_manifest "$HOME/.local/share/uv/python" mapa
 }
 
+# Torch na Linuxu s CPU indeksa (QA K6 B5): PyPI za Linux x86_64 daje torch s CUDA-om — nvidia-*
+# 3,2 GB + torch 1,1 GB + triton 0,9 GB, a Hindsight čvora radi na CPU-u (…_FORCE_CPU=true).
+# macOS: PyPI torch je ondje bez CUDA-e, pa zastavica ne treba. Stari uv bez --torch-backend → upozorenje.
+torch_zastavica() {   # postavlja TORCH (bez podljuske: upozori mora ostati u UPOZORENJA)
+  TORCH=""
+  [ "$OS" = linux ] || return 0
+  if ! command -v uv >/dev/null 2>&1 || uv pip install --help 2>/dev/null | grep -q -- '--torch-backend'; then TORCH="--torch-backend cpu"
+  else upozori "uv $(uv --version 2>/dev/null | awk '{print $2}') ne zna --torch-backend: torch dolazi s CUDA-om (≈ 5 GB više) — nadogradi uv (uv self update)"; fi
+}
+
 venv_ima() { [ -x "$BAZE_VENV/bin/python" ] && "$BAZE_VENV/bin/python" -c "import importlib.metadata as m, sys; sys.exit(0 if m.version(sys.argv[1]) == sys.argv[2] else 1)" "$1" "$2" 2>/dev/null; }
 
 k_baze_venv() {
@@ -696,11 +717,13 @@ k_baze_venv() {
   if venv_ima pg0-embedded "$PG0_VERZIJA" && venv_ima hindsight-api "$HINDSIGHT_VERZIJA"; then
     razlog "venv $BAZE_VENV: pg0-embedded $PG0_VERZIJA, hindsight-api $HINDSIGHT_VERZIJA"; return 0
   fi
-  naredba "uv venv + uv pip install pg0-embedded==$PG0_VERZIJA hindsight-api==$HINDSIGHT_VERZIJA"
+  local TORCH; torch_zastavica; local torch="$TORCH"
+  naredba "uv venv + uv pip install${torch:+ $torch} pg0-embedded==$PG0_VERZIJA hindsight-api==$HINDSIGHT_VERZIJA"
   promjena
-  if suho; then echo "    (suho) venv $BAZE_VENV s pg0-embedded==$PG0_VERZIJA i hindsight-api==$HINDSIGHT_VERZIJA"; return 0; fi
+  if suho; then echo "    (suho) venv $BAZE_VENV s pg0-embedded==$PG0_VERZIJA i hindsight-api==$HINDSIGHT_VERZIJA${torch:+ (torch: CPU ($torch))}"; return 0; fi
   [ -x "$BAZE_VENV/bin/python" ] || { uv venv -q --python "$PYTHON_BAZE" "$BAZE_VENV" || return 5; u_manifest "$TM_HOME/baze" mapa; }
-  s_rokom 1800 uv pip install -q --python "$BAZE_VENV/bin/python" "pg0-embedded==$PG0_VERZIJA" "hindsight-api==$HINDSIGHT_VERZIJA" || return 4
+  # shellcheck disable=SC2086  # $torch je prazan ili dvije riječi
+  s_rokom 1800 uv pip install -q --python "$BAZE_VENV/bin/python" $torch "pg0-embedded==$PG0_VERZIJA" "hindsight-api==$HINDSIGHT_VERZIJA" || return 4
 }
 
 # pg0 nosi vlastitu binarku u paketu (site-packages/pg0/bin/pg0), ne u venv/bin
@@ -773,11 +796,15 @@ k_baze_modeli() {
     razlog "bge-m3 i reranker već u predmemoriji"; return 0; fi
   naredba "snapshot_download BAAI/bge-m3 + cross-encoder/mmarco-mMiniLMv2-L12-H384-v1"
   promjena
-  suho && { echo "    (suho) preuzela bih bge-m3 (~2,3 GB) i reranker u $TM_HOME/hindsight/hf-cache"; return 0; }
+  suho && { echo "    (suho) preuzela bih bge-m3 (~2,3 GB) i reranker (~0,5 GB) u $TM_HOME/hindsight/hf-cache"; return 0; }
+  # Samo težine koje Hindsight (sentence-transformers na torchu) čita: repozitoriji nose i ONNX/
+  # OpenVINO kopije (bge-m3 +2,3 GB, reranker +3,6 GB) koje se nikad ne učitavaju (QA K6 B5).
   HF_HOME="$TM_HOME/hindsight/hf-cache" s_rokom 3600 "$BAZE_VENV/bin/python" -c '
 from huggingface_hub import snapshot_download
-for m in ("BAAI/bge-m3", "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1"):
-    print("  ", m, snapshot_download(m))' || return 4
+izostavi = ["onnx/*", "openvino/*", "imgs/*", "*.jpg", "*.webp", "*.onnx", "*.onnx_data"]
+modeli = {"BAAI/bge-m3": izostavi, "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1": izostavi + ["pytorch_model.bin"]}
+for m, bez in modeli.items():
+    print("  ", m, snapshot_download(m, ignore_patterns=bez))' || return 4
 }
 
 k_memorija_config() {
@@ -866,24 +893,55 @@ k_provjera() {
 # (P3.4: --do-nule briše po manifestu). Zajedničke roditeljske mape smiju samo ako su prazne.
 ALATNE_MAPE="$HOME/.bun $HOME/.cache/uv $HOME/.cache/pip $HOME/.cache/huggingface $HOME/.local/share/uv $HOME/.local/share/claude $HOME/.local/state/claude $HOME/.claude $HOME/.claude.json"
 ROD_MAPE="$HOME/.local/bin $HOME/.local/share $HOME/.local/state $HOME/.local $HOME/.cache $HOME/.config/systemd/user $HOME/.config/systemd $HOME/.config"
+# Stanje PRIJE instalacije bilježi PRVO pokretanje u $TM_HOME/instalacija-prije.txt i svako
+# sljedeće ga čita (QA K6 B3): inače ponovni prolaz nakon pada vidi ~/.bun, ~/.cache/uv… kao da
+# su postojali prije, manifest ostane prazan, a --do-nule ostavi gigabajte uz „0 ostataka".
+PRIJE_TRAG="$TM_HOME/instalacija-prije.txt"
 PRIJE_POSTOJI=" "
-for _m in $ALATNE_MAPE $ROD_MAPE; do [ -e "$_m" ] && PRIJE_POSTOJI="$PRIJE_POSTOJI$_m "; done
+if [ -f "$PRIJE_TRAG" ]; then
+  while IFS= read -r _m; do
+    case "$_m" in "#tm_home_nov=1") TM_HOME_PRIJE_NOV=1 ;; /*) PRIJE_POSTOJI="$PRIJE_POSTOJI$_m " ;; esac
+  done < "$PRIJE_TRAG"
+else
+  for _m in $ALATNE_MAPE $ROD_MAPE; do [ -e "$_m" ] && PRIJE_POSTOJI="$PRIJE_POSTOJI$_m "; done
+fi
+
+# zapisi_trag_prije — samo prvo pokretanje (trag ne postoji); poziva se kad $TM_HOME postoji
+zapisi_trag_prije() {
+  suho && return 0
+  [ -f "$PRIJE_TRAG" ] && return 0
+  mkdir -p "$TM_HOME" || return 0
+  { echo "# instalacija-prije.txt — što je postojalo PRIJE prve instalacije (install.sh, ne uređuj)"
+    [ "$TM_HOME_NOV" = 1 ] && echo "#tm_home_nov=1"
+    for _m in $PRIJE_POSTOJI; do echo "$_m"; done
+  } > "$PRIJE_TRAG" && chmod 600 "$PRIJE_TRAG"
+}
+
+# manifest_upisi — alatne mape nastale od PRVE instalacije + stavke na čekanju → instalirano.json
+manifest_upisi() {
+  local put="$TM_HOME/instalirano.json" m
+  for m in $ALATNE_MAPE; do
+    case "$PRIJE_POSTOJI" in *" $m "*) continue ;; esac
+    [ -e "$m" ] && MANIFEST_NOVO+=("$m|$([ -d "$m" ] && echo mapa || echo datoteka)|K2.25-manifest")
+  done
+  for m in $ROD_MAPE; do
+    case "$PRIJE_POSTOJI" in *" $m "*) continue ;; esac
+    [ -d "$m" ] && MANIFEST_NOVO+=("$m|mapa-ako-prazna|K2.25-manifest")
+  done
+  [ "${#MANIFEST_NOVO[@]}" -gt 0 ] || { echo "manifest $put: dodano 0"; return 0; }
+  command -v bun >/dev/null 2>&1 || return 5
+  local izl; izl="$(printf '%s\n' "${MANIFEST_NOVO[@]}" | bun "$PAKET/scripts/instalacija/manifest.ts" "$put")" || return 5
+  rm -f "$MANIFEST_CEKA"
+  echo "$izl"
+}
 
 k_manifest() {
-  local put="$TM_HOME/instalirano.json" m
-  if ! suho; then
-    for m in $ALATNE_MAPE; do
-      case "$PRIJE_POSTOJI" in *" $m "*) continue ;; esac
-      [ -e "$m" ] && u_manifest "$m" "$([ -d "$m" ] && echo mapa || echo datoteka)"
-    done
-    for m in $ROD_MAPE; do
-      case "$PRIJE_POSTOJI" in *" $m "*) continue ;; esac
-      [ -d "$m" ] && u_manifest "$m" mapa-ako-prazna
-    done
+  local put="$TM_HOME/instalirano.json"
+  if suho; then
+    [ "${#MANIFEST_NOVO[@]}" -gt 0 ] || { razlog "ništa novo izvan git stabla"; return 0; }
+    echo "    (suho) dopisala bih ${#MANIFEST_NOVO[@]} stavki u $put"; promjena; return 0
   fi
-  [ "${#MANIFEST_NOVO[@]}" -gt 0 ] || { razlog "ništa novo izvan git stabla"; return 0; }
-  suho && { echo "    (suho) dopisala bih ${#MANIFEST_NOVO[@]} stavki u $put"; promjena; return 0; }
-  local izl; izl="$(printf '%s\n' "${MANIFEST_NOVO[@]}" | bun scripts/instalacija/manifest.ts "$put")" || return 5
+  local izl; izl="$(manifest_upisi)" || return 5
   echo "    $izl"
   case "$izl" in *"dodano 0"*) razlog "sve stavke već u manifestu" ;; *) promjena ;; esac
 }
@@ -903,7 +961,15 @@ OS=""; OS_OPIS=""; PLOCA_URL=""
 BACKUP_DIR="$TM_HOME/backup/install-$(date '+%Y%m%d-%H%M%S')"
 # je li $TM_HOME nastao ovom instalacijom (mapa loga ga stvara prije koraka instance)
 TM_HOME_NOV=0; [ -e "$TM_HOME" ] || TM_HOME_NOV=1
+[ "${TM_HOME_PRIJE_NOV:-0}" = 1 ] && TM_HOME_NOV=1   # $TM_HOME je nastao prvim (palim) prolazom
 log_otvori "${LOG_DIR_ARG:-$TM_HOME/log/install}" || exit 3
+zapisi_trag_prije
+# stavke koje je pali prolaz zapisao, a ovaj ih neće ponovno vidjeti (korak ih preskače: „već postoji")
+if ! suho && [ -f "$MANIFEST_CEKA" ]; then
+  while IFS= read -r _r; do [ -n "$_r" ] && MANIFEST_NOVO+=("$_r"); done < "$MANIFEST_CEKA"
+fi
+TRENUTNI_KORAK=K2.0-pocetak
+[ "$TM_HOME_NOV" = 1 ] && u_manifest "$TM_HOME" mapa
 zapis_log "TaskManagerAI — instalacija iz $PAKET$(suho && echo '  [SUHO: ništa se ne piše]')"
 zapis_log "  argumenti: ${ARGUMENTI:-—}"
 

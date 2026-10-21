@@ -129,8 +129,9 @@ no bundle, no settings files), and don't edit files in `~/TaskManagerAI`. Anythi
 to this machine only goes in `~/.taskmanager/` (step 5).
 
 Supported: **Debian/Ubuntu** and **macOS 14 or newer**.
-Disk space: at least 8 GB free for `--baze` (local databases and embedding models, about 2.3 GB
-downloaded); 2 GB without it.
+Disk space: at least 8 GB free for `--baze`; 2 GB without it. `--baze` downloads about 3.5 GB
+(embedding models 2.8 GB, Python packages with CPU-only torch) and the home folder grows by about
+5 GB (models 2.8 GB, Python environment 2 GB).
 
 **1. Prerequisites — Debian/Ubuntu** (the only step that needs root):
 

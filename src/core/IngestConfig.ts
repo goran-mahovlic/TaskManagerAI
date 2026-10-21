@@ -24,6 +24,7 @@
 
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'fs'
 import { dirname, join } from 'path'
+import { tmHomeKonfiguracije } from './paths'
 
 // ─── Gdje je datoteka ────────────────────────────────────────────────────────
 
@@ -32,8 +33,9 @@ const PAKET_DIR = join(import.meta.dir, '..', '..')
 
 function zadanaPutanja(): string {
   if (process.env.TM_INGEST_GATE_CONFIG) return process.env.TM_INGEST_GATE_CONFIG
-  if (process.env.TM_HOME) {
-    const uzBazu = join(process.env.TM_HOME, 'config', 'ingest-gate.json')
+  const tm = tmHomeKonfiguracije()   // i bez TM_HOME na instaliranom čvoru (QA K6 B4)
+  if (tm) {
+    const uzBazu = join(tm, 'config', 'ingest-gate.json')
     if (existsSync(uzBazu)) return uzBazu
   }
   return join(PAKET_DIR, 'config', 'ingest-gate.json')

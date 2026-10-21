@@ -48,7 +48,7 @@ function env(o: Okruzje, dodatno: Record<string, string> = {}): Record<string, s
     HOME: o.home, PATH: `${dodatno.PREDPATH ? dodatno.PREDPATH + ':' : ''}${BUN_DIR}:/usr/bin:/bin`, USER: 'proba', LANG: 'C.UTF-8',
     TMPDIR: join(o.korijen, 'tmp'), TM_POSUDI_IZ: NODE_MODULES, TM_BEZ_MREZE: '1',
     // vrata na kojima ovdje sigurno nitko ne sluša (stroj na kojem test radi ima svoju ploču na 17781)
-    TM_CISTO_VRATA: '1 2', ...dodatno,
+    TM_CISTO_VRATA: '1 2', TM_INSTALL_SLOBODNO_MIB: '100000', ...dodatno,
   }
 }
 function skripta(o: Okruzje, ime: string, argv: string[], dodatno: Record<string, string> = {}) {
@@ -75,6 +75,15 @@ function snimka(dir: string, osim: string[] = []): string[] {
   return van.sort()
 }
 
+/** Kao `snimka`, ali mapa bez vremena izmjene: vlasnikova mapa u koju je instalacija nešto
+ *  stavila pa to uklonila (~/.local/bin/uv) legitimno ima novi mtime — sadržaj mora biti isti. */
+function stanjeHome(dir: string, osim: string[] = []): string[] {
+  return snimka(dir, osim).map(r => {
+    const [rel] = r.split(' ')
+    return lstatSync(join(dir, rel)).isDirectory() ? `${rel} mapa` : r
+  })
+}
+
 /** Stvari vlasnika stroja: sve izvan manifesta mora ostati netaknuto. */
 function vlasnikove(o: Okruzje) {
   mkdirSync(join(o.home, 'Documents'), { recursive: true })
@@ -85,6 +94,109 @@ function vlasnikove(o: Okruzje) {
   writeFileSync(join(o.home, '.ssh', 'authorized_keys'), 'ssh-ed25519 AAAAvlasnik vlasnik@laptop\n' + 'ssh-ed25519 AAAAtudji tm-tunel-x\n'  /* N2 (TASK-5686): tuđi ključ, podniz tm-tunel u komentaru */); chmodSync(join(o.home, '.ssh', 'authorized_keys'), 0o600)
   writeFileSync(join(o.home, '.zshrc'), 'export EDITOR=vim\nalias ll="ls -l"\n')
 }
+
+/**
+ * Lažni `uv` (i njegov službeni instalator kroz lažni `curl`): stvara ono što pravi stvara izvan
+ * $TM_HOME — ~/.local/bin/uv, uvx i ~/.cache/uv — bez mreže. Ostali `curl` pozivi idu pravom curlu.
+ */
+function lazniUvInstalator(o: Okruzje): string {
+  const bin = join(o.korijen, 'lazni-bin'), lazni = join(o.korijen, 'lazni-uv')
+  mkdirSync(bin, { recursive: true }); mkdirSync(lazni, { recursive: true })
+  writeFileSync(join(lazni, 'python'), '#!/bin/sh\ncase "$*" in *importlib.metadata*) exit 1 ;; esac\nexit 0\n')
+  writeFileSync(join(lazni, 'uv'), `#!/bin/sh
+case "$1" in
+  --version) echo "uv 0.13.4" ;;
+  python) echo /usr/bin/python3 ;;
+  venv) for a; do d="$a"; done; mkdir -p "$d/bin"; cp "${lazni}/python" "$d/bin/python"; chmod 755 "$d/bin/python" ;;
+  pip) [ "$3" = --help ] && echo "      --torch-backend <TORCH_BACKEND>"; mkdir -p "$HOME/.cache/uv/wheels"; echo w > "$HOME/.cache/uv/wheels/torch.whl" ;;
+esac
+exit 0
+`)
+  writeFileSync(join(bin, 'curl'), `#!/bin/sh
+case "$*" in *astral.sh/uv/install.sh*)
+  while [ $# -gt 0 ]; do [ "$1" = -o ] && cilj="$2"; shift; done
+  printf '%s\\n' '#!/bin/sh' 'mkdir -p "$HOME/.local/bin"' 'cp "${lazni}/uv" "$HOME/.local/bin/uv"; cp "${lazni}/uv" "$HOME/.local/bin/uvx"' 'chmod 755 "$HOME/.local/bin/uv" "$HOME/.local/bin/uvx"' > "$cilj"
+  exit 0 ;;
+esac
+exec /usr/bin/curl "$@"
+`)
+  chmodSync(join(bin, 'curl'), 0o755)
+  return bin
+}
+
+describe('install.sh pada prije manifesta (QA K6 B3) — ponovni install pa --do-nule', () => {
+  test('pad na K2.24 → ponovni install → --do-nule → provjeri-cisto = 0 i HOME = snimka prije', async () => {
+    const o = okruzje('b3')
+    const vrata = 20000 + Math.floor(Math.random() * 20000)
+    // „druga ploča" na vratima: /health → 200 iz tuđe mape — k_provjera pada s 8 (prije K2.25)
+    const tudja = join(o.korijen, 'tudja'); mkdirSync(tudja)
+    const tudji = Bun.spawn([process.execPath, '-e', `Bun.serve({ port: ${vrata}, hostname: '127.0.0.1', fetch: () => new Response('ok') }); setInterval(() => {}, 1e6)`], { cwd: tudja, stdout: 'ignore', stderr: 'ignore' })
+    try {
+      vlasnikove(o)
+      const prije = stanjeHome(o.home, [o.paket])
+      for (let i = 0; i < 50; i++) { try { await fetch(`http://127.0.0.1:${vrata}/health`); break } catch { await Bun.sleep(100) } }
+      const bin = lazniUvInstalator(o)
+      const argv = ['--bez-servisa', '--posudi', '--baze', '--preskoci', 'pdf,baze-pgvector']
+      const d = { TM_PORT: String(vrata), PREDPATH: bin, TM_INSTALL_OS: 'Linux' }
+      const prvi = skripta(o, 'install.sh', argv, d)
+      expect(prvi.kod, prvi.izlaz).toBe(8)
+      expect(prvi.izlaz).toContain('K2.24-provjera pao')
+      expect(existsSync(join(o.home, '.local', 'bin', 'uv'))).toBe(true)    // uv je instaliran u padu
+      tudji.kill(); await tudji.exited
+
+      const drugi = skripta(o, 'install.sh', argv, d)
+      expect(drugi.kod, drugi.izlaz).toBe(0)
+      const putevi = JSON.parse(readFileSync(join(o.tm, 'instalirano.json'), 'utf-8')).stvoreno.map((x: any) => x.put)
+      for (const p of [`${o.home}/.local/bin/uv`, `${o.home}/.local/bin/uvx`, `${o.home}/.cache/uv`, o.tm]) expect(putevi).toContain(p)
+
+      const de = skripta(o, 'deinstaliraj.sh', ['--do-nule', '--bez-kopije'])
+      expect(de.kod, de.izlaz).toBe(0)
+      const c = cisto(o)
+      expect(c.out, c.izlaz).toBe('')
+      expect(c.kod).toBe(0)
+      // HOME = snimka prije (logovi krugova namjerno ostaju u ~/.taskmanager-log-arhiva)
+      expect(stanjeHome(o.home, [o.paket, join(o.home, '.taskmanager-log-arhiva')])).toEqual(prije)
+    } finally { tudji.kill(); rmSync(o.korijen, { recursive: true, force: true }) }
+  }, 120_000)
+
+  test('pad prije manifesta pa ODMAH --do-nule (bez ponovnog installa) — i dalje čisto', async () => {
+    const o = okruzje('b3-odmah')
+    const vrata = 20000 + Math.floor(Math.random() * 20000)
+    const tudja = join(o.korijen, 'tudja'); mkdirSync(tudja)
+    const tudji = Bun.spawn([process.execPath, '-e', `Bun.serve({ port: ${vrata}, hostname: '127.0.0.1', fetch: () => new Response('ok') }); setInterval(() => {}, 1e6)`], { cwd: tudja, stdout: 'ignore', stderr: 'ignore' })
+    try {
+      vlasnikove(o)
+      const prije = stanjeHome(o.home, [o.paket])
+      for (let i = 0; i < 50; i++) { try { await fetch(`http://127.0.0.1:${vrata}/health`); break } catch { await Bun.sleep(100) } }
+      const prvi = skripta(o, 'install.sh', ['--bez-servisa', '--posudi', '--baze', '--preskoci', 'pdf,baze-pgvector'],
+        { TM_PORT: String(vrata), PREDPATH: lazniUvInstalator(o), TM_INSTALL_OS: 'Linux' })
+      expect(prvi.kod, prvi.izlaz).toBe(8)
+      tudji.kill(); await tudji.exited
+      const de = skripta(o, 'deinstaliraj.sh', ['--do-nule', '--bez-kopije'])
+      expect(de.kod, de.izlaz).toBe(0)
+      expect(cisto(o).out).toBe('')
+      expect(stanjeHome(o.home, [o.paket, join(o.home, '.taskmanager-log-arhiva')])).toEqual(prije)
+    } finally { tudji.kill(); rmSync(o.korijen, { recursive: true, force: true }) }
+  }, 120_000)
+})
+
+describe('instalirano.ceka — pad prije nego što bun postoji (B3)', () => {
+  test('stavke na čekanju (bez instalirano.json) vide provjeri-cisto i --do-nule', () => {
+    const o = okruzje('ceka')
+    try {
+      const bun = join(o.home, '.bun', 'bin'); mkdirSync(bun, { recursive: true }); writeFileSync(join(bun, 'bun'), 'djelomičan')
+      mkdirSync(o.tm, { recursive: true })
+      writeFileSync(join(o.tm, 'instalirano.ceka'), `${o.home}/.bun|mapa|K2.4-bun\n${o.tm}|mapa|K2.0-pocetak\n`)
+      const prije = cisto(o)
+      expect(prije.kod).toBe(1)
+      expect(prije.out).toContain(`put\t${o.home}/.bun`)
+      const d = skripta(o, 'deinstaliraj.sh', ['--do-nule', '--bez-kopije'])
+      expect(d.kod, d.izlaz).toBe(0)
+      expect(existsSync(join(o.home, '.bun'))).toBe(false)
+      expect(cisto(o).out).toBe('')
+    } finally { rmSync(o.korijen, { recursive: true, force: true }) }
+  }, 60_000)
+})
 
 describe('deinstaliraj.sh --do-nule — od instalacije do čistog stroja', () => {
   test('install --bez-servisa → --do-nule → provjeri-cisto = 0; tuđe ostaje bajt-za-bajt', () => {

@@ -58,6 +58,9 @@ config/ingest.json
 # Postavke upisa tajni (`scripts/tajna.ts podesi`, TASK-5357): kao nepraćenu datoteku ju je
 # `git clean` pri deployu (tm-cvor-azuriraj.sh) brisao s čvora.
 config/tajne.json
+# Ključ otiska tajni (LoginCreds.kljucOtiskaUz) nastaje uz spremište; u razvojnom stablu je to
+# config/ — bez ovog retka `git status` nije prazan nakon prvog `tajna.ts postavi` (QA K6 B4).
+config/tajne-otisak.kljuc
 config/credentials.env
 
 # ── Uređivači i sustav ─────────────────────────────────────────────────────

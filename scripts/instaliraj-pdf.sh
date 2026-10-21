@@ -14,7 +14,8 @@
 # (--system-site-packages: ako ih sustav već ima, pip ne treba mrežu), (5) veza
 # ~/.local/bin/pdf → scripts/pdf, (6) proba: PDF sa „č ć ž š đ" mora proći provjeru.
 # Okolina: TM_PDF_VENV, TM_PDF_FONT_DIR (kao u scripts/pdf; i cilj preuzetog fonta),
-# TM_PDF_DEJAVU_URL + TM_PDF_DEJAVU_SHA256 (zrcalo izdanja), TM_OS (Linux|Darwin; zadano uname -s).
+# TM_PDF_DEJAVU_URL + TM_PDF_DEJAVU_SHA256 (zrcalo izdanja), TM_OS (Linux|Darwin; zadano uname -s),
+# TM_PDF_PROBA_DIR (gdje proba ostaje; zadano privremena mapa u $TMPDIR koja se briše).
 set -uo pipefail
 
 PAKET="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -32,11 +33,19 @@ SUHO=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --suho)    SUHO=1 ;;
-    -h|--help) sed -n '2,16p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,19p' "$0"; exit 0 ;;
     *) echo "nepoznat argument: $1" >&2; exit 2 ;;
   esac
   shift
 done
+
+# Privremeno (QA K6 B7): proba i predmemorija fontconfiga (fc-match, reportlab → ~/.cache/fontconfig)
+# ne smiju ostati u HOME-u — install.sh u manifest upisuje samo venv i vezu, pa bi
+# `deinstaliraj --do-nule` ostavio ~/.cache, a ~/app/tmp/pdf-proba provjeri-cisto ne bi ni vidio.
+# Mapa je u $TMPDIR i briše se na izlasku; TM_PDF_PROBA_DIR zadrži probu gdje želiš.
+PRIVREMENO="$(mktemp -d "${TMPDIR:-/tmp}/instaliraj-pdf.XXXXXX")" || { echo "nema privremene mape (TMPDIR)" >&2; exit 1; }
+trap 'rm -rf "$PRIVREMENO"' EXIT
+export XDG_CACHE_HOME="${XDG_CACHE_HOME:-$PRIVREMENO/cache}"
 
 FALI=0
 ok()   { echo "  ✅ $*"; }
@@ -155,7 +164,7 @@ echo "6) proba"
 if [ "$SUHO" = 1 ] || [ "$FALI" = 1 ]; then
   echo "  ⏭  preskočeno ($([ "$SUHO" = 1 ] && echo suho || echo 'nešto fali'))"
 else
-  PROBA_DIR="$HOME/app/tmp/pdf-proba"
+  PROBA_DIR="${TM_PDF_PROBA_DIR:-$PRIVREMENO/pdf-proba}"
   mkdir -p "$PROBA_DIR"
   if printf '# Proba čvora\n\nČ ć Ž š Đ — čvor, ćup, žaba, šuma, đak.\n' \
        | TM_PDF_VENV="$VENV" "$PAKET/scripts/pdf" - -o "$PROBA_DIR/proba.pdf" --naslov "Proba" >"$PROBA_DIR/proba.json"; then

@@ -109,12 +109,15 @@ done < <(slusaju | sort -n)
 while IFS= read -r p; do
   case "$p" in ''|"$TM_HOME"|"$TM_HOME"/*) continue ;; esac   # $TM_HOME je već prijavljen
   { [ -e "$p" ] || [ -L "$p" ]; } && ostatak put "$p"
-done < <(
+done < <( (
   for m in "$TM_HOME/instalirano.json" "$ARHIVA"/manifest/*.json; do
     [ -f "$m" ] || continue
     # manifest piše scripts/instalacija/manifest.ts (JSON.stringify, 2 razmaka): "put": "/…",
     sed -n 's/^[[:space:]]*"put":[[:space:]]*"\(.*\)",[[:space:]]*$/\1/p' "$m"
-  done | sort -u)
+  done
+  # stavke na čekanju: install.sh pao prije nego što je manifest upisan (QA K6 B3)
+  [ -f "$TM_HOME/instalirano.ceka" ] && cut -d'|' -f1 "$TM_HOME/instalirano.ceka"
+  ) | sort -u)
 
 # ── retci koje je instalacija dodala u tuđe datoteke ──────────────────────────
 for f in "$HOME/.zprofile" "$HOME/.zshrc" "$HOME/.bashrc" "$HOME/.bash_profile" "$HOME/.profile" "$HOME/.config/fish/config.fish"; do
