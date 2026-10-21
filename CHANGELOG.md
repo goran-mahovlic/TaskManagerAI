@@ -7,6 +7,10 @@
   a Hindsight na macOS-u dijeli popravljenu instalaciju. Test: `tests/pg0-openssl-macos.test.ts`.
 - `scripts/instaliraj-pdf.sh`: `pip_u_venv` (`scripts/instalacija/pip-u-venv.sh`) prvo koristi pip
   venva (ensurepip), jer pip CLT Pythona 3.9 nema `--python`. Test: `tests/pip-u-venv.test.ts`.
+- `deinstaliraj.sh --do-nule` na Macu: `provjeri-cisto` je našao 3 ostatka, a fontovi mu nisu bili
+  vidljivi. U manifest sada idu `~/.config/uv/uv-receipt.json`, veze `~/.local/bin/python*` iz
+  `uv python install` i fontovi koje preuzme `instaliraj-pdf.sh` (`TM_PDF_STVORENO`). pip radi s
+  `--no-cache-dir`. Test: lažni uv kao pravi i E2E fontova u `tests/deinstalacija-do-nule.test.ts`.
 - Zapis krugova: `docs/qa/mac-instalacija-krugovi.md`.
 
 ## 2026-10-21 — K6 dorada: nalazi QA svježe instalacije B1–B7 (TASK-5693)
