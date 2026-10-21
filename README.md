@@ -104,8 +104,12 @@ On a node with a service (Linux or macOS), `bash scripts/install.sh --cvor <name
 `bash scripts/nadogradi.sh --git origin` upgrades it, and `bash scripts/deinstaliraj.sh [--sve|--do-nule]`
 removes it — `--do-nule` only what the install recorded in `~/.taskmanager/instalirano.json`;
 `bash scripts/provjeri-cisto.sh` prints nothing when the machine is clean, and `bash scripts/bootcheck.sh` checks a running
-node (service owner, working directory, Host gate, orphans, AI login, clock, memory/RAG sources; PASS/FAIL)
-([docs/INSTALL.md](docs/INSTALL.md) §2.1, §2.2, §2.3, §10).
+node (service owner, working directory, Host gate, orphans, AI login, clock, memory/RAG sources, service user's sudo; PASS/FAIL)
+([docs/INSTALL.md](docs/INSTALL.md) §2.1, §2.2, §2.3, §2.4, §10).
+Run the install as the service user, never with `sudo` (as root it exits with 2). The board has no
+authentication, so on macOS **replace the service user's full sudoers (`NOPASSWD: ALL`) with the narrowed
+one after installing**: `bun scripts/instalacija/servis.ts sudoers --korisnik <user>` (example:
+`templates/servis/sudoers.primjer`, steps in [docs/INSTALL.md](docs/INSTALL.md) §2.4).
 
 Your first task through the API:
 

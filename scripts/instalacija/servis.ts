@@ -5,15 +5,18 @@
  *   bun scripts/instalacija/servis.ts popis --uvjeti uvijek,komplet,baze
  *   bun scripts/instalacija/servis.ts prikazi --ime taskmanager [--os linux|darwin]
  *   bun scripts/instalacija/servis.ts primijeni --ime taskmanager [--suho]
+ *   bun scripts/instalacija/servis.ts sudoers [--korisnik IME]   # suženi sudoers (macOS), vidi templates/servis/sudoers.primjer
  *
  * Linux: systemd korisnička jedinica u ~/.config/systemd/user (`regoc-<ime>.service`, za
  * periodične i `.timer`). macOS: LaunchDaemon `/Library/LaunchDaemons/hr.regoc.<ime>.plist`
  * s `UserName` instalatora (korisnik bez GUI sesije nema LaunchAgent, plan Mac v3 §2).
+ * Korisnik usluge nikad nije root ni prazan (K5 V2): ploča nema autentikacije, pa bi usluga kao
+ * root svakom tko dođe do ploče dala root.
  *
  * `primijeni` prvo mjeri pa tek onda piše: isti sadržaj na disku i usluga učitana → ispiše
  * `ISTO` i ništa ne dira (idempotentnost, P3). Inače stara datoteka ide u
  * $TM_HOME/backup/servis-<vrijeme>/, nova se zapiše i usluga se (ponovno) učita → `PROMIJENJENO`.
- * Izlaz: 0 uspjeh · 7 usluga se nije dala postaviti (kod iz P3.1) · 2 pogrešna uporaba.
+ * Izlaz: 0 uspjeh · 7 usluga se nije dala postaviti (kod iz P3.1) · 2 pogrešna uporaba (i korisnik root/prazan).
  *
  * Varijable predloška dolaze iz okoline: PAKET, TM_HOME, TM_PORT, BUN, KOMPLET, BAZE_VENV, PG_BIN.
  */
@@ -48,8 +51,15 @@ export function vrijednosti(env: Record<string, string | undefined> = process.en
     BAZE_VENV: env.BAZE_VENV || join(tmHome, 'baze', 'venv'),
     PG_BIN: env.PG_BIN || join(tmHome, 'rag', 'pg0', 'bin'),
     HOME: home,
-    KORISNIK: env.KORISNIK || env.USER || userInfo().username,
+    KORISNIK: env.KORISNIK ?? (env.USER || userInfo().username),
   }
+}
+
+/** Korisnik usluge: ni root ni prazan (K5 V2) — inače se jedinica/plist ne radi. */
+export function provjeriKorisnika(k: string | undefined): string {
+  if (!k || !k.trim()) throw new Error('korisnik usluge je prazan — pokreni kao korisnik usluge, bez sudo')
+  if (k === 'root' || k === '0') throw new Error('korisnik usluge je root — ploča bez autentikacije radila bi kao root; pokreni kao korisnik usluge, bez sudo')
+  return k
 }
 
 export function zamijeni(t: string, v: Record<string, string>): string {
@@ -76,6 +86,7 @@ function citiraj(a: string): string {
 
 /** systemd korisničke jedinice: `.service` (+ `.timer` za periodične). */
 export function systemdJedinice(u: OpisUsluge, v: Record<string, string>): Datoteka[] {
+  provjeriKorisnika(v.KORISNIK)
   const dir = join(v.HOME, '.config', 'systemd', 'user')
   const ime = `regoc-${u.ime}`
   const argv = u.argv.map(a => zamijeni(a, v))
@@ -99,13 +110,14 @@ export function systemdJedinice(u: OpisUsluge, v: Record<string, string>): Datot
 
 /** LaunchDaemon (macOS) iz istog opisa. */
 export function launchdDatoteka(u: OpisUsluge, v: Record<string, string>): Datoteka {
+  const korisnik = provjeriKorisnika(v.KORISNIK)
   return {
     put: launchdPlistPut(`regoc-${u.ime}`),
     sadrzaj: launchdPlist({
       ime: `regoc-${u.ime}`,
       argv: u.argv.map(a => zamijeni(a, v)),
       cwd: zamijeni(u.cwd, v),
-      korisnik: v.KORISNIK,
+      korisnik,
       okolina: okolinaUsluge(v),
       stalno: u.vrsta === 'stalna',
       nakonPada: u.vrsta === 'nakon-pada',
@@ -121,6 +133,50 @@ export function launchdDatoteka(u: OpisUsluge, v: Record<string, string>): Datot
 
 export function datotekeUsluge(u: OpisUsluge, os: string, v: Record<string, string>): Datoteka[] {
   return os === 'darwin' ? [launchdDatoteka(u, v)] : systemdJedinice(u, v)
+}
+
+// ─── suženi sudoers (K5 V1) ──────────────────────────────────────────────────
+
+/**
+ * Suženi sudoers za korisnika usluge na macOS-u: samo (re)pokretanje, učitavanje i gašenje
+ * VLASTITIH LaunchDaemona, svaka oznaka i putanja plista nabrojana točno. Zamjenski znak u
+ * putanji (`hr.regoc.*.plist`) ne smije: sudoers ga širi i preko `/`, pa propušta i
+ * `hr.regoc.x/../../tmp/zlo.plist`. `templates/servis/sudoers.primjer` je izlaz ove funkcije.
+ */
+export function sudoersPrimjer(opisi: OpisUsluge[], korisnik = 'KORISNIK_USLUGE'): string {
+  if (!/^[a-z_][a-z0-9_.-]{0,31}$/i.test(korisnik) || korisnik === 'ALL') throw new Error(`neispravno ime korisnika za sudoers: ${korisnik}`)
+  provjeriKorisnika(korisnik)
+  const naredbe: string[] = []
+  for (const o of opisi) {
+    const oznaka = launchdOznaka(`regoc-${o.ime}`)
+    if (!/^hr\.regoc\.[a-z0-9-]+$/.test(oznaka)) throw new Error(`neispravna oznaka usluge: ${oznaka}`)
+    naredbe.push(`/bin/launchctl kickstart -k system/${oznaka}`, `/bin/launchctl kickstart system/${oznaka}`,
+      `/bin/launchctl bootout system/${oznaka}`, `/bin/launchctl bootstrap system ${launchdPlistPut(`regoc-${o.ime}`)}`)
+  }
+  return [
+    '# Suženi sudoers za korisnika usluge TaskManagerAI na macOS-u (K5 V1, TASK-5685).',
+    '# Generira ga: bun scripts/instalacija/servis.ts sudoers [--korisnik IME]',
+    '# iz templates/servis/usluge.json; test drži ovu datoteku jednakom izlazu generatora.',
+    '#',
+    '# Zamjenjuje puni "IME ALL=(ALL) NOPASSWD: ALL". Ploča nema autentikacije, a agenti rade bez',
+    '# pitanja za dopuštenje, pa bi puni sudo svakome tko dođe do ploče dao root. Ovdje usluga smije',
+    '# samo pokrenuti, ponovno pokrenuti, učitati i zaustaviti VLASTITE LaunchDaemone. Svaka oznaka i',
+    '# putanja plista je nabrojana točno, bez zamjenskih znakova: uzorak u putanji plista širi se i',
+    '# preko kose crte, pa bi propustio i plist izvan /Library/LaunchDaemons.',
+    '# Upis plista (install.sh, nova usluga) i dalje traži administratora: sudo -v pa ponovi.',
+    '#',
+    '# Postavljanje (kao administrator, nakon instalacije; IME = korisnik usluge):',
+    '#   bun scripts/instalacija/servis.ts sudoers --korisnik IME > regoc.sudoers',
+    '#   sudo visudo -c -f regoc.sudoers',
+    '#   sudo install -m 440 -o root -g wheel regoc.sudoers /etc/sudoers.d/regoc',
+    '#   sudo -l -U IME          (mora pokazati samo ove naredbe, bez NOPASSWD: ALL)',
+    '',
+    `Cmnd_Alias REGOC_USLUGE = \\`,
+    ...naredbe.map((n, i) => `    ${n}${i < naredbe.length - 1 ? ', \\' : ''}`),
+    '',
+    `${korisnik} ALL=(root) NOPASSWD: REGOC_USLUGE`,
+    '',
+  ].join('\n')
 }
 
 // ─── primjena ────────────────────────────────────────────────────────────────
@@ -169,7 +225,7 @@ export function primijeni(u: OpisUsluge, os: string, v: Record<string, string>, 
     mkdirSync(join(v.TM_HOME, 'tmp'), { recursive: true })
     if (razlicite.length) {
       if (existsSync(d.put)) { mkdirSync(backup, { recursive: true }); ex(['cp', d.put, join(backup, `${oznaka}.plist`)]) }
-      pazi(ex(['sudo', '-n', 'install', '-m', '644', '-o', 'root', '-g', 'wheel', priprema, d.put]), `sudo install ${d.put} (treba sudo bez lozinke ili install.sh --sudoers)`)
+      pazi(ex(['sudo', '-n', 'install', '-m', '644', '-o', 'root', '-g', 'wheel', priprema, d.put]), `sudo install ${d.put} (treba administratorsko pravo: sudo -v pa ponovi; suženi sudoers iz templates/servis/sudoers.primjer ne dopušta upis plista)`)
       if (ucitana) ex(['sudo', '-n', 'launchctl', 'bootout', `system/${oznaka}`])
     }
     pazi(ex(['sudo', '-n', 'launchctl', 'bootstrap', 'system', d.put]), `launchctl bootstrap system ${d.put}`)
@@ -201,6 +257,15 @@ if (import.meta.main) {
   const os = (arg('--os') || process.env.TM_INSTALL_OS || process.platform).toLowerCase()
   const opisi = ucitajOpise()
   const v = vrijednosti()
+  if (nar === 'sudoers') {
+    try { process.stdout.write(sudoersPrimjer(opisi, arg('--korisnik'))) }
+    catch (e) { console.error(e instanceof Error ? e.message : String(e)); process.exit(2) }
+    process.exit(0)
+  }
+  // korisnik usluge nikad root ni prazan (K5 V2) — prije ikakve izrade jedinice
+  if (nar === 'prikazi' || nar === 'primijeni') {
+    try { provjeriKorisnika(v.KORISNIK) } catch (e) { console.error(`servis.ts: ${e instanceof Error ? e.message : String(e)}`); process.exit(2) }
+  }
   const nadji = () => {
     const u = opisi.find(o => o.ime === arg('--ime'))
     if (!u) { console.error(`nepoznata usluga: ${arg('--ime')} (postoje: ${opisi.map(o => o.ime).join(', ')})`); process.exit(2) }
@@ -221,7 +286,7 @@ if (import.meta.main) {
       process.exit(7)
     }
   } else {
-    console.error('uporaba: servis.ts popis --uvjeti … | prikazi --ime IME [--os linux|darwin] | primijeni --ime IME [--suho]')
+    console.error('uporaba: servis.ts popis --uvjeti … | prikazi --ime IME [--os linux|darwin] | primijeni --ime IME [--suho] | sudoers [--korisnik IME]')
     process.exit(2)
   }
 }

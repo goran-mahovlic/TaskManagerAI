@@ -272,9 +272,9 @@ describe('macOS: cijeli bootcheck kroz prave funkcije platforme (launchctl, ps, 
       'http://127.0.0.1:17792/health|': 200 } as Record<string, number>)[`${url}|${host ?? ''}`] ?? 0,
     json: async () => null, tcp: async () => false,
     citaj: (p) => datoteke[p] ?? null, postoji: (p) => p in datoteke, sada: () => SADA, realpath: (p) => p })
-  test('M1–M7 PASS; Claude pretplata na Macu se priznaje samo kroz token (Keychain usluga ne vidi)', async () => {
+  test('M1–M8 PASS; Claude pretplata na Macu se priznaje samo kroz token (Keychain usluga ne vidi)', async () => {
     const izvj = await B.pokreni(k)
-    expect(izvj.mjerenja.map(m => `${m.id}=${m.sud}`)).toEqual(['M1=PASS', 'M2=PASS', 'M3=PASS', 'M4=PASS', 'M5=PASS', 'M6=PASS', 'M7=PASS'])
+    expect(izvj.mjerenja.map(m => `${m.id}=${m.sud}`)).toEqual(['M1=PASS', 'M2=PASS', 'M3=PASS', 'M4=PASS', 'M5=PASS', 'M6=PASS', 'M7=PASS', 'M8=PASS'])
     expect(izvj.verdikt).toBe('PASS')
   })
   test('PPID=1 na macOS-u NIJE siroče — launchd je roditelj LaunchDaemona', async () => {
@@ -307,7 +307,7 @@ describe('verdikt, izlaz i ljuska scripts/bootcheck.sh', () => {
     expect(izlaz).not.toContain('NEVIDLJIVA')
     expect(existsSync(join(tm, 'log/bootcheck/zadnji.txt'))).toBe(true)
     const j = JSON.parse(readFileSync(join(tm, 'log/bootcheck/zadnji.json'), 'utf-8'))
-    expect(j.mjerenja.length).toBe(7)
+    expect(j.mjerenja.length).toBe(8)
     expect(j.verdikt).toBe('FAIL')
     expect(JSON.stringify(j)).not.toContain('NEVIDLJIVA')
   }, 60_000)

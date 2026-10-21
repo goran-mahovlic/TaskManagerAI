@@ -100,8 +100,12 @@ Na čvoru s uslugom (Linux ili macOS) `bash scripts/install.sh --cvor <ime>` pos
 `bash scripts/nadogradi.sh --git origin` je nadograđuje, a `bash scripts/deinstaliraj.sh [--sve|--do-nule]`
 uklanja — `--do-nule` samo ono što je instalacija upisala u `~/.taskmanager/instalirano.json`;
 `bash scripts/provjeri-cisto.sh` ne ispiše ništa kad je stroj čist, a `bash scripts/bootcheck.sh` provjerava čvor u radu
-(vlasnik usluge, radna mapa, brana Hosta, siročad, AI prijava, sat, izvori memorije i RAG-a; PASS/FAIL)
-([docs/INSTALL.md](docs/INSTALL.md) §2.1, §2.2, §2.3, §10).
+(vlasnik usluge, radna mapa, brana Hosta, siročad, AI prijava, sat, izvori memorije i RAG-a, sudo korisnika usluge; PASS/FAIL)
+([docs/INSTALL.md](docs/INSTALL.md) §2.1, §2.2, §2.3, §2.4, §10).
+Instalaciju pokreni kao korisnik usluge, nikad sa `sudo` (kao root izlazi s 2). Ploča nema
+autentikacije, pa na macOS-u **nakon instalacije zamijeni puni sudoers korisnika usluge (`NOPASSWD: ALL`)
+suženim**: `bun scripts/instalacija/servis.ts sudoers --korisnik <korisnik>` (primjer:
+`templates/servis/sudoers.primjer`, koraci u [docs/INSTALL.md](docs/INSTALL.md) §2.4).
 
 Prvi zadatak preko API-ja:
 

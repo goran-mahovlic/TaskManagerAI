@@ -1,3 +1,13 @@
+## 2026-10-21 — K5 sigurnost: brana za root, upozorenje na neograničen sudo, suženi sudoers (TASK-5685)
+
+- V2: `install.sh` i `deinstaliraj.sh` pokrenuti kao root izlaze s 2 („pokreni kao korisnik usluge, bez sudo");
+  `servis.ts` odbija korisnika usluge `root` i prazan korisnik (plist s `UserName=root` se više ne radi).
+- V1: korak preduvjeta u `install.sh` i bootcheck (nova stavka M8) javljaju UPOZORENJE kad `sudo -n -l`
+  pokazuje `NOPASSWD: ALL`. `templates/servis/sudoers.primjer` (generator: `servis.ts sudoers --korisnik IME`)
+  nabraja točne `launchctl` naredbe za svaku uslugu iz `usluge.json`, bez zamjenskih znakova.
+  `docs/INSTALL.md` §2.4 i README: nakon instalacije zamijeni puni sudoers suženim.
+- N1: poruka pada `sudo install` više ne upućuje na nepostojeći `install.sh --sudoers`.
+
 ## 2026-10-21 — README „Instalacija na novi stroj", primjeri postavki bez vrijednosti, brana granice repo ↔ čvor (TASK-5658)
 
 - Plan Mac v2 K4a, P3.2: README (EN i HR) ima odjeljak „Instalacija na novi stroj (Linux / macOS)":
