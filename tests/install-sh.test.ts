@@ -303,10 +303,11 @@ describe('zapis.sh — tajne nikad u log', () => {
       'TELEGRAM_BOT_TOKEN="dvostrukiNavod1"', "TM_RAG_KEY='jednostrukiNavod2'", 'export API_SECRET = "razmak i navod"',
       `curl https://api.telegram.org/bot${tg}/getMe`, `  ${tg}`,
       `git remote https://${ghp}@github.com/x/y`, `token: ${pat}`,
+      'DB_PASSWORD=ab"cdSredina', 'X_SECRET="nezatvoren do kraja retka',
     ].join('\n')
     const r = Bun.spawnSync(['bash', '-c', `. scripts/instalacija/zapis.sh; zatamni`], { cwd: KORIJEN, stdin: new TextEncoder().encode(ulaz) })
     const van = r.stdout.toString()
-    for (const tajna of ['dvostrukiNavod1', 'jednostrukiNavod2', 'razmak i navod', 'Ab9_-Ab9', 'a1B2a1B2', '11ABCDE_'])
+    for (const tajna of ['dvostrukiNavod1', 'jednostrukiNavod2', 'razmak i navod', 'Ab9_-Ab9', 'a1B2a1B2', '11ABCDE_', 'cdSredina', 'nezatvoren', 'retka'])
       expect(van, van).not.toContain(tajna)
     expect(van).toContain('https://api.telegram.org/bot«skriveno»/getMe')
     expect(van).toContain('TELEGRAM_BOT_TOKEN=«skriveno»')
