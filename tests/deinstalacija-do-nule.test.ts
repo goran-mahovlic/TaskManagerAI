@@ -82,7 +82,7 @@ function vlasnikove(o: Okruzje) {
   mkdirSync(join(o.home, '.local', 'bin'), { recursive: true })
   writeFileSync(join(o.home, '.local', 'bin', 'njegov-alat'), '#!/bin/sh\necho moj\n'); chmodSync(join(o.home, '.local', 'bin', 'njegov-alat'), 0o755)
   mkdirSync(join(o.home, '.ssh'), { recursive: true })
-  writeFileSync(join(o.home, '.ssh', 'authorized_keys'), 'ssh-ed25519 AAAAvlasnik vlasnik@laptop\n'); chmodSync(join(o.home, '.ssh', 'authorized_keys'), 0o600)
+  writeFileSync(join(o.home, '.ssh', 'authorized_keys'), 'ssh-ed25519 AAAAvlasnik vlasnik@laptop\n' + 'ssh-ed25519 AAAAtudji tm-tunel-x\n'  /* N2 (TASK-5686): tuđi ključ, podniz tm-tunel u komentaru */); chmodSync(join(o.home, '.ssh', 'authorized_keys'), 0o600)
   writeFileSync(join(o.home, '.zshrc'), 'export EDITOR=vim\nalias ll="ls -l"\n')
 }
 

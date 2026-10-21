@@ -113,9 +113,9 @@ describe('straža ljuske', () => {
 })
 
 describe('radna mapa', () => {
-  const r = { korijen: '/srv/tm/data/razgovor', home: '/home/x', tmHome: '/srv/tm', kanal: 'telegram', chatId: '-5112799687' }
+  const r = { korijen: '/srv/tm/data/razgovor', home: '/home/x', tmHome: '/srv/tm', kanal: 'telegram', chatId: '-1001234567890' }
   test('prazna postavka → mapa po chatu', () => {
-    expect(radniDirRazgovora('', r)).toEqual({ dir: '/srv/tm/data/razgovor/radni/telegram_-5112799687', upozorenje: null })
+    expect(radniDirRazgovora('', r)).toEqual({ dir: '/srv/tm/data/razgovor/radni/telegram_-1001234567890', upozorenje: null })
     const zla = radniDirRazgovora('', { ...r, chatId: '../../etc' }).dir
     expect(zla.startsWith('/srv/tm/data/razgovor/radni/telegram_')).toBe(true)
     expect(zla.slice('/srv/tm/data/razgovor/radni/'.length)).not.toContain('/')
@@ -123,7 +123,7 @@ describe('radna mapa', () => {
   test.each(['/', '/home', '/home/x', '/srv/tm', '/srv/tm/data', '/srv/tm/data/razgovor', '/home/x/.ssh', '/home/x/.claude/projekti', '/home/x/.config', '/srv/tm/config'])(
     'opasna postavka %p → mapa po chatu + upozorenje', put => {
       const d = radniDirRazgovora(put, r)
-      expect(d.dir).toBe('/srv/tm/data/razgovor/radni/telegram_-5112799687')
+      expect(d.dir).toBe('/srv/tm/data/razgovor/radni/telegram_-1001234567890')
       expect(d.upozorenje).toContain(put)
     })
   test('zasebna projektna mapa se poštuje', () => {

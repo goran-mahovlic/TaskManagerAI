@@ -342,12 +342,14 @@ d_rc() {
 }
 
 d_kljuc() {
-  local f="$HOME/.ssh/authorized_keys"
-  [ -f "$f" ] && grep -q 'tm-tunel' "$f" || { razlog "nema retka tm-tunel"; return 0; }
+  # Samo redak čiji je KOMENTAR ključa točno tm-tunel (TASK-5686, N2): tuđi ključ s tim
+  # podnizom u komentaru (npr. „tm-tunel-x") ostaje.
+  local f="$HOME/.ssh/authorized_keys" oznaka='[[:space:]]tm-tunel$'
+  [ -f "$f" ] && grep -Eq "$oznaka" "$f" || { razlog "nema retka tm-tunel"; return 0; }
   promjena
-  suho && { echo "    (suho) uklonila bih $(grep -c 'tm-tunel' "$f") redak/retka s oznakom tm-tunel iz $f"; return 0; }
+  suho && { echo "    (suho) uklonila bih $(grep -Ec "$oznaka" "$f") redak/retka s oznakom tm-tunel iz $f"; return 0; }
   [ -n "${LOG_DIR:-}" ] && cp -p "$f" "$LOG_DIR/authorized_keys.prije" && chmod 600 "$LOG_DIR/authorized_keys.prije"
-  grep -v 'tm-tunel' "$f" > "$f.tm-novo"; cat "$f.tm-novo" > "$f"; rm -f "$f.tm-novo"
+  grep -Ev "$oznaka" "$f" > "$f.tm-novo"; cat "$f.tm-novo" > "$f"; rm -f "$f.tm-novo"
   echo "    $f: uklonjen redak tunela (tm-tunel)"
 }
 

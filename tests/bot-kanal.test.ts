@@ -26,9 +26,9 @@ function pz(raw: unknown, put = '', o: { tajna?: string; ip?: string; pomakS?: n
   return { ip: o.ip ?? IP, tijelo: t, potpis: potpisi(o.tajna ?? TAJNA, 'POST', `${PUT_RUTE}${put}`, t, ts) }
 }
 const zStanje = (tajna = TAJNA): Zahtjev => ({ ip: IP, tijelo: '', potpis: potpisi(tajna, 'GET', `${PUT_RUTE}/stanje`, '', Math.floor(sada / 1000)) })
-const CHAT = '-5112799687'
-const VLASNIK = '5284452279'
-const DRUGA = '8872962604'
+const CHAT = '-1001234567890'
+const VLASNIK = '100000011'
+const DRUGA = '100000012'
 
 function okolina(o: Partial<BotKanalPostavke> = {}) {
   const postavke: BotKanalPostavke = {
@@ -108,7 +108,7 @@ describe('B1 ugovor rute', () => {
     expect(ok.poruka).toMatchObject({ izvor: 'klaudio', chatId: CHAT, telegramPorukaId: '501', lanacId: 'L1', skok: 1 })
   })
   test('provjeriTijelo: chatId broj se prima kao tekst; skok 0 odbijen', () => {
-    expect(provjeriTijelo(tijelo({ chatId: -5112799687 })).ok).toBe(true)
+    expect(provjeriTijelo(tijelo({ chatId: -1001234567890 })).ok).toBe(true)
     expect(provjeriTijelo(tijelo({ skok: 0 })).ok).toBe(false)
   })
 })

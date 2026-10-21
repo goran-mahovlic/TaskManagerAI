@@ -32,9 +32,9 @@ isporuke TASK-5290 u 22:09 UTC, koju je napravio netko drugi. Proba je zato pono
 
 ## Nalazi
 
-1. **Stanje na node-A NIJE ono što je pregled odobrio.** Vlasnik (`goran`, 17:17 UTC) postavio je
+1. **Stanje na node-A NIJE ono što je pregled odobrio.** Vlasnik (`vlasnik`, 17:17 UTC) postavio je
    `ovlasti=puno` i `radniDir=/home/regoc`, a `config/postavke.env` ima `TM_RAZGOVOR_PUNO=1`. Uz to vrijedi
-   `odgovaraNa=dopusteni-sve` i `dopusteniKorisnici=["5284452279","8872962604","goran","tomislava"]` (korisnička imena).
+   `odgovaraNa=dopusteni-sve` i `dopusteniKorisnici=["100000011","100000012","vlasnik","korisnikb"]` (korisnička imena).
    §7.1 (c) kaže: na node-A se `puno` NE uključuje. Ovaj E2E potvrđuje samo `citanje` (i `rad` uz brojčane id-eve), ne `puno`.
    Na `puno` točka 4 po dizajnu ne vrijedi: model čita okolinu (§7.1 d). Postavke vlasnika nisam mijenjao. Odluka je njegova.
    `radniDir=/home/regoc` kod ionako ne poštuje (= HOME) i spušta ga na mapu po chatu.

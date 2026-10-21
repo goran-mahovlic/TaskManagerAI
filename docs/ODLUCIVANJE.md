@@ -74,7 +74,7 @@ and the Anthropic path spends the very quota your agents need to do the work.
   "ukljucen": false,
   "provider": "ollama",
   "model": "qwen3:8b",
-  "baseUrl": "http://192.168.10.4:11434",
+  "baseUrl": "http://10.0.0.4:11434",
   "najvise_po_prolazu": 3,
   "smije_kreni": true
 }

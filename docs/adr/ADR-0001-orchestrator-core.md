@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Stanje** | Predloženo — čeka Goranovu potvrdu odluke O0 (v. §7) |
+| **Stanje** | Predloženo — čeka vlasnikovu potvrdu odluke O0 (v. §7) |
 | **Datum** | 10.09.2026. |
 | **Autorica** | Kosjenka (Architect) |
 | **Zadatak** | TASK-4799 (PRJ-048), prema `docs/ROADMAP_SAMOSTALNOST.md` §1 i §6.1 |
@@ -13,7 +13,7 @@
 
 ## 1. Kontekst i način rada
 
-Cilj koji je Goran postavio: *korisnik skine paket s GitHuba, upiše SVOJE podatke za
+Cilj koji je vlasnik postavio: *korisnik skine paket s GitHuba, upiše SVOJE podatke za
 RAG / Telegram / Nextcloud / GitLab i radi jednako kako mi radimo — bez ijedne naše
 vrijednosti u kodu.*
 
@@ -37,9 +37,9 @@ korisnik doista skine — bez `node_modules`, `__pycache__` i radnih datoteka):
 |---|---|---|
 | Naš raspored mapa `~/.claude/regoc` | **148 pojava / 47 datoteka** | `src/TelegramConfig.ts:23`, `src/DezurniConfig.ts:20/51/53`, `src/core/StepSchema.ts:422`, `src/SessionUsage.ts:17`, 17 alata u `tools/*.py` |
 | Naš `HOME` kao zadana vrijednost | **73 pojave / 25 datoteka** | doslovni izraz `process.env.HOME \|\| '/home/klaudio'` |
-| Naši IP-ovi | **24 pojave / 10 datoteka** | `src/RAGService.ts:52` (`chromaHost: '192.168.10.200'`), `:54` (`ollamaHost: 'http://192.168.10.4:11434'`), `src/DezurniConfig.ts:40`, `src/TaskWebUI.ts` (9×), 5 alata u `tools/` |
+| Naši IP-ovi | **24 pojave / 10 datoteka** | `src/RAGService.ts:52` (`chromaHost: '10.0.0.200'`), `:54` (`ollamaHost: 'http://10.0.0.4:11434'`), `src/DezurniConfig.ts:40`, `src/TaskWebUI.ts` (9×), 5 alata u `tools/` |
 | Naš Telegram chat id | **11 pojava / 3 datoteke** | `src/core/IngestConfig.ts` (primjeri), `src/core/ReportBackTask.ts:18`, `tests/ingest.test.ts` (fixture) |
-| Goranov osobni git identitet **kao konstanta u kodu** | 1 pojava | `src/core/WorkflowTemplate.ts:58` — `GIT_IDENTITY = { name: 'Goran Mahovlic', email: 'goran.mahovlic@gmail.com' }` |
+| Vlasnikov osobni git identitet **kao konstanta u kodu** | 1 pojava | `src/core/WorkflowTemplate.ts:58` — `GIT_IDENTITY = { name: 'Ime Prezime', email: 'vlasnik@example.com' }` |
 | Naš interni alat u javnom indeksu | 2 datoteke | `scripts/uskladi_s_regocem.sh` i `scripts/zakrpe/u6-ingest.patch` **jesu** praćeni gitom — potvrđuje nalaz `ROADMAP` §5 |
 
 Napomena o e-pošti: pojava u `README*.md`, `CONTRIBUTING.md` i `.githooks/commit-msg` je
@@ -64,7 +64,7 @@ samo umnaža kvar. Zato odluka O1 (§4) ide **prije** O2, a brana iz §8 je uvje
 |---|---|---|
 | S1 | 178 | `const HOME = process.env.HOME \|\| '/home/klaudio'` — naša rezerva |
 | S2 | 341, 3114, 6011 | `USER: process.env.USER \|\| 'klaudio'` (3 mjesta, spawn okolina) |
-| S3 | 593 | `REGOC_GROUP_FALLBACK = -5161938429` — naša Telegram grupa kao odredište svake dojave bez `chat_id` |
+| S3 | 593 | `REGOC_GROUP_FALLBACK = -1001234567892` — naša Telegram grupa kao odredište svake dojave bez `chat_id` |
 | S4 | 1641–1656 | `detectProjectId()` — tablica od 9 **naših** projekata (`FAST-TRACK-SIM`, `REGOC_EMC`, `CUBES_2026`, `MINIMAX`, `GATEMATE_ETH`, `ULX5M`, `EMC_WEBAPP`, `REGOC_SYSTEM`, `INTERGALAKTIK`) |
 | S5 | 1744 | `GEMINI_PATH = $HOME/app/regoc_system/GEMINI.md` — naš privatni repozitorij pravila |
 | S6 | 1745 | `AGENT_REGISTRY_PATH = $HOME/.claude/regoc/REGOC_AGENTS.json` |
@@ -74,10 +74,10 @@ samo umnaža kvar. Zato odluka O1 (§4) ide **prije** O2, a brana iz §8 je uvje
 | S10 | 2294–2296 | prefiksi `required_knowledge`: `skills/`→`~/.claude`, `regoc_system/`→`~/app`, `HDL-GuideLines/`→`~/fpga-AI-projects/ulx3s` |
 | S11 | 2464 | izuzeci po imenu: `agentId === 'potjeh' \|\| agentId === 'gita'` |
 | S12 | 2466 | prompt upućuje na `~/.claude/regoc/tools/consult-potjeh.ts` |
-| S13 | **2492 i 2535** | **dva mjesta gdje se u SVAKI prompt upisuje: „Infra: Ollama 192.168.10.4, ChromaDB/RAG 192.168.10.200" + popis naših 11 agenata s ulogama.** 2492 = laki prompt (ne-Anthropic), 2535 = puni prompt (Anthropic). Ovo je najskuplja pojava: nije samo u kodu, nego ide u svaki poziv modela — svaki tuđi stroj bi „vidio" naše IP-ove u vlastitom sistemskom kontekstu |
-| S14 | 2565 | `resolveOllamaBaseUrl()` — `let baseUrl = 'http://192.168.10.4:11434'` kao zadano prije čitanja konfiguracije |
+| S13 | **2492 i 2535** | **dva mjesta gdje se u SVAKI prompt upisuje: „Infra: Ollama 10.0.0.4, ChromaDB/RAG 10.0.0.200" + popis naših 11 agenata s ulogama.** 2492 = laki prompt (ne-Anthropic), 2535 = puni prompt (Anthropic). Ovo je najskuplja pojava: nije samo u kodu, nego ide u svaki poziv modela — svaki tuđi stroj bi „vidio" naše IP-ove u vlastitom sistemskom kontekstu |
+| S14 | 2565 | `resolveOllamaBaseUrl()` — `let baseUrl = 'http://10.0.0.4:11434'` kao zadano prije čitanja konfiguracije |
 | S15 | 3983–3985 | `TEAM_ORDER` — prirodni redoslijed naših 8 agenata |
-| S16 | **4062–4063** | `git config user.email goran.mahovlic@gmail.com` / `user.name 'Goran Mahovlic'` — svaki automatski otvoren projektni repozitorij potpisan Goranovim osobnim identitetom |
+| S16 | **4062–4063** | `git config user.email vlasnik@example.com` / `user.name 'Ime Prezime'` — svaki automatski otvoren projektni repozitorij potpisan vlasnikovim osobnim identitetom |
 | S17 | 4098 | `NOT_A_PROJECT` — hrvatski stop-popis („projekt", „nešto", „hitno"…) |
 | S18 | 4196–4205 | `TEAM_ROLE_BRIEF` — opis posla za naših 8 agenata |
 | S19 | 450, 478 | izuzeti iz „full" perzistentnog načina: `regoc`, `klaudio`, `stribor`, `emard` |
@@ -368,7 +368,7 @@ funkcija to ne dopušta, ona po definiciji pripada adapteru (O3), ne jezgri.
 
 ---
 
-## 7. Otvoreno pitanje za Gorana (odluka O0)
+## 7. Otvoreno pitanje za vlasnika (odluka O0)
 
 Roadmap §1 traži potvrdu za `claude --print`. Revizija je pokazala da to nije pitanje o
 jednom CLI-ju nego o granici jezgre, pa ga preformuliram u jedno pitanje s dva puta:
@@ -414,7 +414,7 @@ test koji stalno pada biva isključen — točno kvar zbog kojeg je `SecurityVal
 mrtav kod. Zapor pada **samo** kad netko doda novo curenje, pa preživi.
 
 **Brana je provjerena da doista puca**, a ne samo da prolazi: privremeno dodana datoteka
-`src/_probni_kvar.ts` s `process.env.HOME || '/home/klaudio'` i `192.168.10.4` oborila je
+`src/_probni_kvar.ts` s `process.env.HOME || '/home/klaudio'` i `10.0.0.4` oborila je
 dva pravila (`5 pass / 2 fail`) s porukom koja imenuje datoteku i pravilo; nakon uklanjanja
 opet `7 pass / 0 fail`. Brana koja nikad nije vidjela kvar nije brana nego ukras.
 

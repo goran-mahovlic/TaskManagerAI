@@ -125,7 +125,7 @@ Everything is optional; with no settings at all it runs on defaults. Copy `env.e
 | Variable | Default | What it does |
 |---|---|---|
 | `TM_PORT` | `17781` | server port |
-| `TM_BIND` | all interfaces (`0.0.0.0`) | addresses the board listens on, comma-separated (e.g. `127.0.0.1,100.64.0.7`); `install.sh --cvor` writes loopback + tailnet |
+| `TM_BIND` | `127.0.0.1` on macOS and when `$TM_HOME/config/postavke.env` exists; otherwise all interfaces (`0.0.0.0`) | addresses the board listens on, comma-separated (e.g. `127.0.0.1,100.64.0.7`); `install.sh --cvor` writes loopback + tailnet |
 | `TM_HOME` | `$HOME/.taskmanager` | folder holding the database and working files |
 | `TM_DB` | `$TM_HOME/data/tasks.db` | path to the database, if you keep it elsewhere |
 | `TM_AGENTS` | — | comma-separated names allowed as assignees |

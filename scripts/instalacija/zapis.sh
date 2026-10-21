@@ -20,14 +20,23 @@ json_s() {
   printf '"%s"' "$s"
 }
 
-# Tajne nikad u log: KLJUČ=vrijednost za *TOKEN*/*KEY*/*PASSWORD*/*SECRET*, lozinka u
-# postgres://korisnik:lozinka@, Bearer, sk-… ključevi i lozinka iza -P/--password.
+# Tajne nikad u log: KLJUČ=vrijednost za *TOKEN*/*KEY*/*PASSWORD*/*SECRET* (i u navodnicima),
+# lozinka u postgres://korisnik:lozinka@, Bearer, sk-… ključevi, lozinka iza -P/--password,
+# Telegram token i bez imena varijable (api.telegram.org/bot<broj>:<35>/…) i GitHub tokeni.
+# Uzorak imena i jednostruki navod stoje u varijablama — "…" i '…' se ne mogu ugnijezditi doslovno.
 zatamni() {
+  local ime='([A-Za-z0-9_]*(TOKEN|KEY|PASSWORD|PASSWD|SECRET|PASS)[A-Za-z0-9_]*)([[:space:]]*[=:][[:space:]]*)'
+  local n="'"
   sed -E \
-    -e 's/([A-Za-z0-9_]*(TOKEN|KEY|PASSWORD|PASSWD|SECRET|PASS)[A-Za-z0-9_]*)([[:space:]]*[=:][[:space:]]*)[^[:space:]"]+/\1\3«skriveno»/g' \
+    -e "s/${ime}\"[^\"]*\"/\\1\\3«skriveno»/g" \
+    -e "s/${ime}${n}[^${n}]*${n}/\\1\\3«skriveno»/g" \
+    -e "s/${ime}[^[:space:]\"${n}]+/\\1\\3«skriveno»/g" \
     -e 's#(postgres(ql)?|pg0|mysql|redis)://([^:/@[:space:]]+):[^@[:space:]]+@#\1://\3:«skriveno»@#g' \
     -e 's/([Bb]earer[[:space:]]+)[A-Za-z0-9._~+\/=-]+/\1«skriveno»/g' \
     -e 's/sk-[A-Za-z0-9_-]{16,}/«skriveno»/g' \
+    -e 's/[0-9]{8,12}:[A-Za-z0-9_-]{35}/«skriveno»/g' \
+    -e 's/gh[pousr]_[A-Za-z0-9]{36,}/«skriveno»/g' \
+    -e 's/github_pat_[A-Za-z0-9_]{22,}/«skriveno»/g' \
     -e 's/(^|[[:space:]])(-P|--password)([[:space:]=]+)[^[:space:]]+/\1\2\3«skriveno»/g'
 }
 

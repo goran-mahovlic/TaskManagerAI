@@ -121,7 +121,7 @@ Sve je neobavezno; bez ijedne postavke radi na zadanim vrijednostima. Kopiraj `e
 | Varijabla | Zadano | Čemu služi |
 |---|---|---|
 | `TM_PORT` | `17781` | vrata poslužitelja |
-| `TM_BIND` | sva sučelja (`0.0.0.0`) | adrese na kojima ploča sluša, zarezom (npr. `127.0.0.1,100.64.0.7`); `install.sh --cvor` upisuje petlju + tailnet |
+| `TM_BIND` | `127.0.0.1` na macOS-u i kad postoji `$TM_HOME/config/postavke.env`; inače sva sučelja (`0.0.0.0`) | adrese na kojima ploča sluša, zarezom (npr. `127.0.0.1,100.64.0.7`); `install.sh --cvor` upisuje petlju + tailnet |
 | `TM_HOME` | `$HOME/.taskmanager` | mapa s bazom i radnim datotekama |
 | `TM_DB` | `$TM_HOME/data/tasks.db` | putanja do baze, ako je držiš drugdje |
 | `TM_AGENTS` | — | imena agenata koji smiju biti nositelji, odvojena zarezom |

@@ -17,8 +17,13 @@
  * ŠTO SE PRETRAŽUJE: isključivo ono što **git prati** — to je definicija onoga što korisnik
  * skine s GitHuba. Radne datoteke, `node_modules` i `__pycache__` nisu paket.
  *
- * ŠTO SE NE PRETRAŽUJE: `docs/` (ADR i dizajnerski dokumenti moraju smjeti citirati kvar koji
- * opisuju) i sama ova datoteka (uzorci su joj sadržaj).
+ * ŠTO SE NE PRETRAŽUJE: sama ova datoteka (uzorci su joj sadržaj). `docs/` se pretražuje samo
+ * pravilima s `iDocs: true` — adrese, e-pošta, ID-ovi chatova i korisnika, imena ljudi
+ * (TASK-5686, nalaz S3 pregleda K5 TASK-5659: repozitorij je JAVAN, a docs/ je nosio uid-ove,
+ * ID-ove grupa, imena, 192.168.10.x i e-poštu u 41 datoteci). Raspored mapa (`/home/…`,
+ * `.claude/regoc`) i nazivi projekata u docs/ ostaju izvan opsega: ADR mora smjeti citirati
+ * kvar koji opisuje, a to nisu podaci o ljudima ni adrese. Pravilo smije dobiti `iDocs` samo
+ * uz osnovicu 0 — čišćenje docs/ ide u isti commit.
  *
  * Autorica: Kosjenka (Architect), TASK-4799.
  */
@@ -31,12 +36,12 @@ const KORIJEN = join(import.meta.dir, '..')
 const SAMA_BRANA = 'tests/bez-nasih-vrijednosti.test.ts'
 const BINARNO = /\.(png|jpg|jpeg|gif|ico|webp|pdf|zip|db|lock)$/
 
-/** Popis onoga što se isporučuje = ono što git prati. */
-function pratiGit(): string[] {
+/** Popis onoga što se isporučuje = ono što git prati (s docs/ ili bez). */
+function pratiGit(sDocs: boolean): string[] {
   const r = Bun.spawnSync(['git', '-c', `safe.directory=${KORIJEN}`, 'ls-files'], { cwd: KORIJEN })
   if (r.exitCode !== 0) return []
   return r.stdout.toString().trim().split('\n')
-    .filter(p => p && !p.startsWith('docs/') && p !== SAMA_BRANA && !BINARNO.test(p))
+    .filter(p => p && (sDocs || !p.startsWith('docs/')) && p !== SAMA_BRANA && !BINARNO.test(p))
 }
 
 interface Pravilo {
@@ -46,11 +51,20 @@ interface Pravilo {
   /** Izmjereno 10.09.2026. na `f37d7b5`. Smije samo padati. */
   osnovicaPojava: number
   osnovicaDatoteka: string[]
+  /** Pretražuje i `docs/` (TASK-5686). Samo uz osnovicu bez ijedne datoteke iz docs/. */
+  iDocs?: boolean
 }
+
+/**
+ * Izmišljeni ID-ovi koje primjeri i testovi SMIJU nositi: -100123456789x (supergrupa),
+ * -1000000000000 (prazan profil) i -5112345678 (obična grupa u testovima znanja).
+ */
+const PRIMJERI_CHATA = '-?100123456789\\d|-?1000000000000|-5112345678'
 
 const PRAVILA: Pravilo[] = [
   {
     ime: 'naš tailnet (Tailscale MagicDNS)',
+    iDocs: true,
     // Uzorak se slaže iz dijelova: doslovan niz u ovoj datoteci pao bi na `git grep`
     // kojim se nalaz B3 provjerava (brana sebe izuzima iz skeniranja, `git grep` ne).
     uzorak: ['tailc', '\\d+|', '\\.', 'ts', '\\.', 'net'].join(''),
@@ -70,6 +84,7 @@ const PRAVILA: Pravilo[] = [
   },
   {
     ime: 'naši IP-ovi',
+    iDocs: true,
     uzorak: '192\\.168\\.10\\.\\d+',
     objasnjenje: 'adresa nikad nije zadana vrijednost — `null` + varijabla okoline (ADR-0001 §5.1)',
     // TASK-5108: 7 → 0. Alati čitaju `TM_OLLAMA_URL` / `TM_CHROMA_HOST` kroz tools/tm_putanje.py.
@@ -78,6 +93,7 @@ const PRAVILA: Pravilo[] = [
   },
   {
     ime: 'naša e-pošta / domena',
+    iDocs: true,
     // TASK-5109: hvata i `.eu` domenu — upravo ta adresa je bila u incidentu 241aa89.
     uzorak: 'goran\\.mahovlic@gmail\\.com|@intergalaktik\\.(hr|eu)',
     objasnjenje:
@@ -92,6 +108,7 @@ const PRAVILA: Pravilo[] = [
   },
   {
     ime: 'naš Telegram chat id',
+    iDocs: true,
     uzorak: '5161938429',
     objasnjenje: 'u primjerima koristi izmišljeni id (npr. -1001234567890)',
     // TASK-5108: 11 → 0, primjeri i testovi nose izmišljeni -1001234567890.
@@ -100,6 +117,7 @@ const PRAVILA: Pravilo[] = [
   },
   {
     ime: 'ime vlasnika kao podatak (pošiljatelj, korisnik)',
+    iDocs: true,
     // Slaže se iz dijelova iz istog razloga kao tailnet gore.
     uzorak: ['[\'"]', 'Gor', 'an', '[\'"]'].join(''),
     objasnjenje:
@@ -111,6 +129,7 @@ const PRAVILA: Pravilo[] = [
   },
   {
     ime: 'ime vlasnika kao autor upisa (`by`)',
+    iDocs: true,
     // TASK-5233 (nalaz QA TASK-5219): ploča je slala doslovno `by: '<ime>'`, pa se to ime
     // upisivalo u audit postavki na TUĐEM nodu. Pravilo iznad ga nije vidjelo (malo slovo).
     // Slaže se iz dijelova iz istog razloga kao tailnet gore.
@@ -134,8 +153,10 @@ const PRAVILA: Pravilo[] = [
   },
   {
     ime: 'imena naših ljudi (navodi u komentarima, primjeri)',
+    iDocs: true,
     // TASK-5109. Slaže se iz dijelova iz istog razloga kao tailnet gore.
-    uzorak: ['\\bGor', 'an|\\bMart', 'in[aeiu]?\\b'].join(''),
+    // TASK-5686: i drugi korisnik s node-A (docs/adr/ADR-0002, ADR-0003).
+    uzorak: ['\\bGor', 'an|\\bMart', 'in[aeiu]?\\b|\\bTomi', 'slav'].join(''),
     objasnjenje:
       'navod odluke piše „vlasnik, <datum>: …" (bez imena), primjeri koriste „Korisnik A"; '
       + 'ime smije stajati samo kao AUTORSTVO (LICENSE, package.json, „Credit" u README)',
@@ -168,6 +189,37 @@ const PRAVILA: Pravilo[] = [
     osnovicaPojava: 0,
     osnovicaDatoteka: [],
   },
+  {
+    ime: 'ID Telegram chata (oblik, ne samo poznata vrijednost)',
+    iDocs: true,
+    // TASK-5686 (S3): stvaran ID grupe je bio u scripts/posalji-dokument.ts, a pravilo iznad zna samo
+    // jednu vrijednost. Supergrupa -100 + 10 znamenki, obična grupa - + 9–13 znamenki. Ispred ne smije
+    // biti slovo/znamenka/crtica (`TASK-…-1791378656740` je vrijeme u imenu grane, ne chat).
+    uzorak: `(?<![A-Za-z0-9-])(?!(?:${PRIMJERI_CHATA})(?!\\d))(?:-?100\\d{10}|-\\d{9,13})(?!\\d)`,
+    objasnjenje: 'u primjerima i testovima koristi izmišljeni -1001234567890 (v. PRIMJERI_CHATA)',
+    // TASK-5686: 41 pojava / 20 dat. u docs/ + 30 izvan docs/ (testovi, locales, TaskWebUI) → 0.
+    osnovicaPojava: 0,
+    osnovicaDatoteka: [],
+  },
+  {
+    ime: 'naši Telegram korisnički ID-ovi (uid)',
+    iDocs: true,
+    // Slaže se iz dijelova iz istog razloga kao tailnet gore.
+    uzorak: ['52844', '52279|88729', '62604'].join(''),
+    objasnjenje: 'u primjerima koristi izmišljeni uid (100000001, 777000111 …); popis korisnika je konfiguracija',
+    // TASK-5686: docs/ (4 dat.) i testovi (3 dat.) → 0.
+    osnovicaPojava: 0,
+    osnovicaDatoteka: [],
+  },
+  {
+    ime: 'prezime vlasnika (samo kao autorstvo)',
+    iDocs: true,
+    uzorak: ['\\bMahov', 'li[cć]'].join(''),
+    objasnjenje: 'git identitet je konfiguracija (ADR-0001 O1.3); ime i prezime smiju stajati samo kao AUTORSTVO',
+    // TASK-5686: docs/ 3 → 0; ostaje autorstvo (LICENSE, README, package.json).
+    osnovicaPojava: 4,
+    osnovicaDatoteka: ['LICENSE', 'README.hr.md', 'README.md', 'package.json'],
+  },
 ]
 
 interface Nalaz { pojava: number; datoteke: string[] }
@@ -184,16 +236,29 @@ function prebroji(uzorak: string, popis: string[]): Nalaz {
   return { pojava, datoteke: pogodjene.sort() }
 }
 
-const POPIS = pratiGit()
+const POPIS = pratiGit(false)
+const POPIS_S_DOCS = pratiGit(true)
+const popisZa = (p: Pravilo) => p.iDocs ? POPIS_S_DOCS : POPIS
 
 describe('paket ne smije nositi naše vrijednosti (ADR-0001 §8)', () => {
   test('skener vidi paket (inače bi svako pravilo prolazilo prazno)', () => {
     expect(POPIS.length).toBeGreaterThan(50)
+    expect(POPIS_S_DOCS.filter(p => p.startsWith('docs/')).length).toBeGreaterThan(40)
+  })
+
+  test('uzorak ID-a chata hvata stvarne oblike, a pušta primjere i vrijeme u imenu grane', () => {
+    const p = PRAVILA.find(x => x.ime.startsWith('ID Telegram chata'))!
+    const re = new RegExp(p.uzorak, 'g')
+    for (const da of ['--chat -5987654321 --x', 'chatId: "-1009876543210"', 'telegram_-5987654321', 'chat:-5987654321'])
+      expect(da.match(re)?.length, da).toBe(1)
+    for (const ne of ['-1001234567890', '-1001234567893', 'profil="-1000000000000"', 'grupa -5112345678',
+      'regoc/TASK-5324-potjeh-1791378656740', 'uidValidity: 1791444651', 'port 17781'])
+      expect(ne.match(re), ne).toBeNull()
   })
 
   for (const p of PRAVILA) {
     test(`zapor — ${p.ime}`, () => {
-      const nalaz = prebroji(p.uzorak, POPIS)
+      const nalaz = prebroji(p.uzorak, popisZa(p))
 
       // 1) Nijedna NOVA datoteka. Ovo hvata curenje u trenutku nastanka, prije nego se namnoži.
       const nove = nalaz.datoteke.filter(d => !p.osnovicaDatoteka.includes(d))
@@ -211,7 +276,7 @@ describe('paket ne smije nositi naše vrijednosti (ADR-0001 §8)', () => {
   test('osnovica nije zastarjela (ako je posao napravljen, spusti brojke)', () => {
     const zaostalo: string[] = []
     for (const p of PRAVILA) {
-      const n = prebroji(p.uzorak, POPIS)
+      const n = prebroji(p.uzorak, popisZa(p))
       if (n.pojava < p.osnovicaPojava || n.datoteke.length < p.osnovicaDatoteka.length) {
         zaostalo.push(
           `${p.ime}: osnovica ${p.osnovicaPojava} pojava / ${p.osnovicaDatoteka.length} dat., `

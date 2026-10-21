@@ -172,7 +172,7 @@ propust, prije javnog pusha.
 
 ### N5 — node-A i node-B rade STARU inačicu; "regresija nakon deploya" nije izvediva još
 
-Ni `192.168.10.20` (node-A) ni `192.168.10.11` (node-B) **nemaju** ništa od TASK-4800/4807:
+Ni `10.0.0.20` (node-A) ni `10.0.0.11` (node-B) **nemaju** ništa od TASK-4800/4807:
 nema `src/core/orchestrator/`, nema `NextcloudConfig.ts`/`EmailConfig.ts`/`GitLabConfig.ts`/
 `GitHubConfig.ts`/`TelegramPoller.ts`. `package.json` na oba čvora i dalje `1.3.0`
 (vrijednost se poklapa s repozitorijem, ali sadržaj je stariji — verzija nije bila alat za
@@ -184,8 +184,8 @@ deploy stigne:
 
 | Čvor | `bun test` | `/health` | `/api/tasks` | napomena |
 |---|---|---|---|---|
-| node-A (192.168.10.20, PID 7428) | **56 pass / 0 fail** (3 datoteke) | 200 healthy | 200 | `GET /api/telegram/config` i dalje vraća polje `"botToken":""` u tijelu odgovora — **oblik prije B2 popravka** (danas prazan jer token nije postavljen, ali čim se postavi, curi kroz API dok se ne deploya popravak) |
-| node-B (192.168.10.11:2222, PID 623728) | **32 pass / 0 fail** (1 datoteka) | 200 healthy, `clients:2` (aktivni korisnici — servis NIJE restartan da ih se ne prekine) | 200 | isti stariji oblik odgovora |
+| node-A (10.0.0.20, PID 7428) | **56 pass / 0 fail** (3 datoteke) | 200 healthy | 200 | `GET /api/telegram/config` i dalje vraća polje `"botToken":""` u tijelu odgovora — **oblik prije B2 popravka** (danas prazan jer token nije postavljen, ali čim se postavi, curi kroz API dok se ne deploya popravak) |
+| node-B (10.0.0.11:2222, PID 623728) | **32 pass / 0 fail** (1 datoteka) | 200 healthy, `clients:2` (aktivni korisnici — servis NIJE restartan da ih se ne prekine) | 200 | isti stariji oblik odgovora |
 
 Servisi na oba čvora nisu restartani niti ponovno deployani — nema novog koda za restartati
 (restart bi samo digao isti stari proces), a node-B ima 2 aktivna WebSocket klijenta.

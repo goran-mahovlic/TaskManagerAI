@@ -23,7 +23,7 @@ let mapa: string
 beforeEach(() => { mapa = mkdtempSync(join(tmpdir(), 'tm-razg-bk-')) })
 afterEach(() => { rmSync(mapa, { recursive: true, force: true }) })
 
-const CHAT = '-5112799687'
+const CHAT = '-1001234567890'
 
 class Kanalic implements Kanal {
   ime = 'telegram' as const
@@ -59,7 +59,7 @@ class SporiIzvrsitelj {
 function okolina(o: Partial<RazgovorPostavke> = {}, bkOvlasti: 'citanje' | 'rad' = 'citanje') {
   const postavke: RazgovorPostavke = {
     ...RAZGOVOR_ZADANO, ukljucen: true, burstMs: 10, radniDir: join(mapa, 'radni'),
-    odgovaraNa: 'dopusteni-sve', dopusteniKorisnici: ['5284452279'], preskociAkoSadrzi: ['Ivan', '@klaudioAI_bot'], ...o,
+    odgovaraNa: 'dopusteni-sve', dopusteniKorisnici: ['100000011'], preskociAkoSadrzi: ['Ivan', '@klaudioAI_bot'], ...o,
   }
   const izv = new SporiIzvrsitelj()
   const kanal = new Kanalic()
@@ -80,13 +80,13 @@ function okolina(o: Partial<RazgovorPostavke> = {}, bkOvlasti: 'citanje' | 'rad'
 }
 
 const covjek = (tekst: string, o: Partial<UlaznaPoruka> = {}): UlaznaPoruka => ({
-  kanal: 'telegram', chatId: CHAT, porukaId: '10', posiljateljId: '5284452279', posiljateljIme: 'Ivan',
+  kanal: 'telegram', chatId: CHAT, porukaId: '10', posiljateljId: '100000011', posiljateljIme: 'Ivan',
   posiljateljKorisnickoIme: 'ivan', posiljateljJeBot: false, tekst, ts: '', privatno: false, obracanjeBotu: false, ...o,
 })
 const odBota = (tekst: string, skok = 1): UlaznaPoruka => ({
   kanal: 'telegram', chatId: CHAT, porukaId: '501', posiljateljId: 'bot:klaudio', posiljateljIme: 'Klaudio (bot)',
   posiljateljJeBot: true, tekst, ts: '', privatno: false, obracanjeBotu: true, izvor: 'bot',
-  lanac: { izvor: 'klaudio', lanacId: 'L1', skok, izvornik: { id: '5284452279', ime: 'Ivan' } },
+  lanac: { izvor: 'klaudio', lanacId: 'L1', skok, izvornik: { id: '100000011', ime: 'Ivan' } },
 })
 
 describe('B2 filtar', () => {
@@ -165,7 +165,7 @@ describe('B4 prijenos iz poteza', () => {
     izv.odgovor = '@klaudioAI_bot koja je verzija?'
     r.primi(covjek('pitaj Klaudija verziju'), kanal)
     await r.mirno()
-    expect(prijenosi[0]).toMatchObject({ chatId: CHAT, telegramPorukaId: '901', lanac: null, izvornik: { id: '5284452279', ime: 'Ivan' } })
+    expect(prijenosi[0]).toMatchObject({ chatId: CHAT, telegramPorukaId: '901', lanac: null, izvornik: { id: '100000011', ime: 'Ivan' } })
     r.primi(odBota('2.1.0', 2), kanal)
     await r.mirno()
     expect(prijenosi[1]).toMatchObject({ telegramPorukaId: '902', lanac: { lanacId: 'L1', skok: 2 } })
@@ -257,16 +257,16 @@ describe('B5 poller', () => {
   }
   test('„Ivane, prekini komunikaciju" od stop-korisnika: 0 ingesta, 0 razgovora', async () => {
     const api = new Api0()
-    api.updates = [upd('Ivane, prekini komunikaciju', 8872962604, 'Ana')]
+    api.updates = [upd('Ivane, prekini komunikaciju', 100000012, 'Ana')]
     const { r, primljeno, ljudske } = sloj(async () => 'stop')
     await jedanProlaz(tcfg(), { ...ZADANO_STANJE }, api, r)
-    expect(ljudske[0]).toMatchObject({ chatId: CHAT, posiljateljId: '8872962604', posiljateljIme: 'Ana' })
+    expect(ljudske[0]).toMatchObject({ chatId: CHAT, posiljateljId: '100000012', posiljateljIme: 'Ana' })
     expect(api.ingesti).toHaveLength(0)
     expect(primljeno).toHaveLength(0)
   })
   test('obična poruka: kanal je vidi (nulira strop), pa ide dalje kao prije', async () => {
     const api = new Api0()
-    api.updates = [upd('kako si', 5284452279)]
+    api.updates = [upd('kako si', 100000011)]
     const { r, ljudske } = sloj(async () => null)
     await jedanProlaz(tcfg(), { ...ZADANO_STANJE }, api, r)
     expect(ljudske).toHaveLength(1)
@@ -289,17 +289,17 @@ describe('TASK-5291 sigurnosni pregled kroz jezgru', () => {
   const odBotaZa = (izvornik: { id: string; ime: string } | null): UlaznaPoruka => ({ ...odBota('x'), lanac: { ...odBota('x').lanac!, izvornik } })
 
   test('N4: botKanal.ovlasti=rad, ali lanac je pokrenuo nedopušteni (Klaudio pere tuđi nalog) → citanje', async () => {
-    const { r, izv, kanal } = okolina({ ovlasti: 'puno', dopusteniKorisnici: ['5284452279', 'goran'] }, 'rad')
+    const { r, izv, kanal } = okolina({ ovlasti: 'puno', dopusteniKorisnici: ['100000011', 'goran'] }, 'rad')
     r.primi(odBotaZa({ id: '999', ime: 'goran' }), kanal)
     await r.mirno()
     expect(alati(izv.zahtjevi[0]!)).toBe('Read,Glob,Grep,Bash')
   })
   test('N4: izvornik bez id-a (ili samo ime) → citanje; dopušteni po id-u → rad', async () => {
-    const { r, izv, kanal } = okolina({ ovlasti: 'puno', dopusteniKorisnici: ['5284452279', 'goran'] }, 'rad')
+    const { r, izv, kanal } = okolina({ ovlasti: 'puno', dopusteniKorisnici: ['100000011', 'goran'] }, 'rad')
     r.primi(odBotaZa(null), kanal)
     await r.mirno()
     expect(alati(izv.zahtjevi[0]!)).toBe('Read,Glob,Grep,Bash')
-    r.primi(odBotaZa({ id: '5284452279', ime: 'Ivan' }), kanal)
+    r.primi(odBotaZa({ id: '100000011', ime: 'Ivan' }), kanal)
     await r.mirno()
     expect(alati(izv.zahtjevi[1]!)).toBe('Read,Glob,Grep,Bash,Edit,Write')
   })
@@ -345,7 +345,7 @@ describe('TASK-5394 zapisDrugogBota', () => {
     const { izv, kanal } = okolina()
     const postavke: RazgovorPostavke = {
       ...RAZGOVOR_ZADANO, ukljucen: true, burstMs: 10, radniDir: join(mapa, 'radni'),
-      odgovaraNa: 'dopusteni-sve', dopusteniKorisnici: ['5284452279'],
+      odgovaraNa: 'dopusteni-sve', dopusteniKorisnici: ['100000011'],
     }
     const r = stvoriRazgovor({
       postavke: () => postavke, izvrsitelj: izv, jePauza: () => false, kvotaPuna: () => false,
@@ -360,7 +360,7 @@ describe('TASK-5394 zapisDrugogBota', () => {
     const { readFileSync } = await import('fs')
     const redovi = readFileSync(join(mapa, 'razgovor', 'telegram', CHAT, '2026-10-09.jsonl'), 'utf-8').trim().split('\n').map(x => JSON.parse(x))
     expect(redovi).toEqual([{ ts: '2026-10-09T08:00:00.000Z', smjer: 'drugi-bot', posiljateljId: 'bot:klaudio', posiljateljIme: 'Klaudio (bot)', porukaId: '777', tekst: 'Disk je pun na /var.' }])
-    expect(konzola.join('\n')).toContain('💬 ⇠ Klaudio (bot) [telegram:-5112799687]: „Disk je pun na /var." → zapis (drugi bot, bez modela)')
+    expect(konzola.join('\n')).toContain('💬 ⇠ Klaudio (bot) [telegram:-1001234567890]: „Disk je pun na /var." → zapis (drugi bot, bez modela)')
     r.primi(covjek('što je rekao Klaudio?'), kanal)
     await r.mirno()
     expect(izv.zahtjevi).toHaveLength(1)

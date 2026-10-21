@@ -16,14 +16,14 @@ Sirovi dokazi: `nodeA_dokazi.txt`, `suho_provjeri.txt`, `suho_primijeni___suho.t
 
 ### Nalazi uz put (node-A)
 - **N1 — auto-exec stavi `in_progress` i kad je agent u backoffu** (10:03:08: „⚡ Auto-exec P2: TASK-271” pa „u backoff-u … preskačem spawn”). Isti kvar koji je Jelena prijavila (TASK-268); glavni ga ima popravljenog (TASK-5029). Do punog kompleta koda to pokriva siroče-oporavak (10 min).
-- **N2 — dojava o ubijenom agentu ide u Telegram grupu** (`[user-flush] isporučeno chat=-5112799687`: „TASK-271 vraćen u red …”). Ispravno ponašanje, ali probni zadaci QA-a stvaraju poruku u grupi.
+- **N2 — dojava o ubijenom agentu ide u Telegram grupu** (`[user-flush] isporučeno chat=-1001234567890`: „TASK-271 vraćen u red …”). Ispravno ponašanje, ali probni zadaci QA-a stvaraju poruku u grupi.
 - **N3 — `verificationGate`, `modeClassifyLive`, `tierRouting`, `sendBreakerLive`, `fileScopeGate(+Live)`, `reviewCheckpoint(+Live)`, `userFlushBacklog`, `staleReaperLive` i dalje OFF** na node-A. To je u skladu s odlukom profila „van / uvjetno” (TASK-5308: `znacajke 75/75`), a ne regresija. `ollamaClassifier`, `zombieRecoveryLive`, `deadAgentReaperLive`, `staleWatchdogLive`, `siroceOporavak` i `criticGate(+Live)` su ON.
 - **N4 — sesija na node-A je na 78–82 %**, pa vrata autonomije drže auto-exec. Probe su prošle samo zahvaljujući oznaci `nalog`.
 - Kuke na node-A sada: **14** (PreToolUse 1, UserPromptSubmit 2, SessionStart 1, PostToolUse 2, Stop 5, Notification 2, SubagentStop 1), prije 2.
 
 ## B. Node-B — suhi prolaz
 
-**Stvarni node-B NIJE dostupan:** `ssh -p 2222 regoc@192.168.10.11` vraća „No route to host” i s glavnog stroja i s node-A (`ip neigh`: `192.168.10.11 … FAILED`). Na node-B ništa nije pokrenuto ni promijenjeno.
+**Stvarni node-B NIJE dostupan:** `ssh -p 2222 regoc@10.0.0.11` vraća „No route to host” i s glavnog stroja i s node-A (`ip neigh`: `10.0.0.11 … FAILED`). Na node-B ništa nije pokrenuto ni promijenjeno.
 
 Zamjena: suhi prolaz paketa (grana TASK-5308) nad **praznim HOME-om** (`/home/klaudio/app/tmp/TASK-5309/sandbox_nodeB`), s instancom `profili/upravitelj-cvora/instanca.primjer.env` i `--bez-sustava`:
 
@@ -55,4 +55,4 @@ Zaključak: kad se B1–B3 poprave, dobiva se 5 koraka + tajne. Danas je stvarni
 2. Dodati `--s-kompletom` i generički čvor (`korisnik@stroj:port`) u `tm-cvor-azuriraj.sh` i premjestiti ga u paket (`scripts/`). Inače ispraviti §10.1.
 3. U `instanca.primjer.env` uz `SUSTAV_DIR` napisati da je obavezan za paritet. Alat neka javi PREDUVJET, a ne PRESKOČENO, kad su `znacajke`/`oporavak` u profilu, a `SUSTAV_DIR` je prazan.
 4. U §10.1 dodati korak 0b `bash scripts/install.sh`.
-5. Kad node-B bude dostupan: `profil-cvora.ts provjeri --ssh regoc@192.168.10.11 …`, samo čitanje, uz Goranovo odobrenje za sve dalje.
+5. Kad node-B bude dostupan: `profil-cvora.ts provjeri --ssh regoc@10.0.0.11 …`, samo čitanje, uz vlasnikovo odobrenje za sve dalje.

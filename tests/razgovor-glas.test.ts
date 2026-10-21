@@ -174,7 +174,7 @@ describe('postavke razgovor.glas*', () => {
 
 // ─── Poller: glasovna poruka → STT → [GLAS] ──────────────────────────────────
 
-const GRUPA = -5112799687
+const GRUPA = -1001234567890
 
 function cfg(ulaz: Partial<TelegramPostavke['ulaz']> = {}): TelegramPostavke {
   return {

@@ -29,7 +29,7 @@ const poslano: string[] = []
 const kanal = { ime: 'telegram', maxDuljinaPoruke: 4096, maxDokumentBajta: 50e6,
   async posaljiTekst(_c: string, t: string) { poslano.push(t); return true },
   async posaljiDokument(_c: string, p: string) { poslano.push('DOK ' + p); return true } }
-r.primi({ kanal: 'telegram', chatId: '-5112799687', porukaId: '1', posiljateljId: '777000111', posiljateljIme: 'Proba',
+r.primi({ kanal: 'telegram', chatId: '-1001234567890', porukaId: '1', posiljateljId: '777000111', posiljateljIme: 'Proba',
   posiljateljKorisnickoIme: 'x_regoc_proba', posiljateljJeBot: false, tekst: `@${zivo.ime} imaš li pristup memoriji i kojoj?`,
   ts: new Date().toISOString(), privatno: false, obracanjeBotu: true } as any, kanal as any)
 await Bun.sleep(400); await r.mirno()

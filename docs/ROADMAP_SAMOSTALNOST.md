@@ -1,6 +1,6 @@
 # TaskManagerAI — put do pune samostalnosti
 
-> Istraživanje naručeno 10.09.2026 (Goran). Cilj: korisnik skine paket s GitHuba, prijavi se na
+> Istraživanje naručeno 10.09.2026 (Vlasnik). Cilj: korisnik skine paket s GitHuba, prijavi se na
 > jedan ili više već podržanih modela, upiše podatke za spajanje na SVOJE servise (RAG, Telegram,
 > Nextcloud, GitLab...) i radi jednako kako mi sada radimo — bez ijednog retka tuđeg koda za
 > uređivanje, bez tuđih IP-ova/lozinki u repozitoriju.
@@ -12,10 +12,10 @@
 `docs/SUSTAV.md`). Prvi prolaz grepom (detaljna revizija ide u TASK, ovo je polazište):
 
 **Strojno-specifično, mora ostati config/env, NE u kodu:**
-- `resolveOllamaBaseUrl()` — zadana vrijednost `http://192.168.10.4:11434` upisana u kodu (postoji
+- `resolveOllamaBaseUrl()` — zadana vrijednost `http://10.0.0.4:11434` upisana u kodu (postoji
   fallback na `model-config.json`, ali default je naš IP).
 - Dva mjesta gdje se sustavni prompt svakog spawnanog agenta gradi s ugrađenim rečenicama
-  "Ollama 192.168.10.4, ChromaDB/RAG 192.168.10.200" — to ide u svaki poziv modela, pa
+  "Ollama 10.0.0.4, ChromaDB/RAG 10.0.0.200" — to ide u svaki poziv modela, pa
   svaki treći stroj bez izmjene "vidi" naše IP-ove u vlastitom promptu.
 - `GEMINI_PATH` je do TASK-4794 bio tvrdo upisan na `/home/klaudio/...` (popravljeno, sada
   `join(HOME, ...)` — primjer obrasca koji treba primijeniti posvuda gdje još nije).
@@ -26,7 +26,7 @@
   zasebni `.ts` moduli i (osim par mjesta) NE ovise o klaudio-specifičnim putanjama.
 - Spawn-on-demand mehanika (red čekanja, max 3 concurrent, timeout) — generička po dizajnu.
 
-**Ono što OSTAJE strojno-vezano i vjerojatno se NE pakira (treba Goranova potvrda):**
+**Ono što OSTAJE strojno-vezano i vjerojatno se NE pakira (treba vlasnikova potvrda):**
 - Sam poziv `claude --print` CLI-ja (paket ne smije pretpostaviti da je Claude Code instaliran —
   DezurniConfig već rješava "koji god model korisnik ima" za dežurnog, ali glavni spawn put i
   dalje pretpostavlja `claude` CLI).
@@ -42,7 +42,7 @@ postoji (SUSTAV.md samo OPISUJE kako bi se to složilo ručno).
 ## 2. Integracije (Nextcloud / Email / GitLab / GitHub) — samo dokumentacija, nula koda
 
 `integrations/*/README.md` u `regoc_system` navode NAŠE stvarne vrijednosti (npr.
-`regoc_ai@intergalaktik.hr`, `192.168.10.200`) — to je u redu u PRIVATNOM repozitoriju, ali te
+`regoc_ai@example.com`, `10.0.0.200`) — to je u redu u PRIVATNOM repozitoriju, ali te
 datoteke se ne smiju kopirati u javni paket kakve jesu.
 
 Provjereno po alatima: u `~/.claude/regoc/tools/` postoje samo zadatkom-vezani skripti
@@ -102,10 +102,10 @@ neopraćen alat ili premjestiti u `regoc_system/tools/` (privatni repo).
    - `tests/bez-nasih-vrijednosti.test.ts` — brana (zapor) protiv naših vrijednosti u paketu.
 
    **Nalaz koji mijenja redoslijed:** paket VEĆ nosi naše vrijednosti — 148 pojava
-   `.claude/regoc` u 47 datoteka, 73 pojave `/home/klaudio` u 25, naši IP-ovi u 10, Goranov
+   `.claude/regoc` u 47 datoteka, 73 pojave `/home/klaudio` u 25, naši IP-ovi u 10, vlasnikov
    git identitet kao konstanta u `src/core/WorkflowTemplate.ts:58`. Zato korak 2 (Jelena)
    **počinje čišćenjem (ADR-0001 O1)**, a tek onda seli orkestrator — inače novi modul
-   nasljeđuje istu bolest. Otvoreno pitanje O0 (§7 ADR-a) čeka Goranovu potvrdu.
+   nasljeđuje istu bolest. Otvoreno pitanje O0 (§7 ADR-a) čeka vlasnikovu potvrdu.
 2. **Jelena (Inženjer)** — implementacija po Kosjenkinom dizajnu: Orchestrator core modul,
    4 nova integracijska modula + Config kartice, Telegram poller, uklanjanje
    `uskladi_s_regocem.sh` iz javnog indeksa, dopuna `docs/INSTALL.md` za sve novo, komentar o

@@ -1,6 +1,6 @@
 # E2E razgovornog načina na node-A nakon Malikova pregleda (TASK-5281, 06.10.2026.)
 
-Predmet: ADR-0002 §11, mjerila P1–P8. Bot @regoc_saban_bot, grupa node-A (-5112799687). Izveo: Potjeh.
+Predmet: ADR-0002 §11, mjerila P1–P8. Bot @regoc_saban_bot, grupa node-A (-1001234567890). Izveo: Potjeh.
 
 ## Isporuka prije probe
 Malikov popravak `6ac0ab6` (TASK-5280, `--setting-sources "" --strict-mcp-config`) nije bio u `main` ni na node-A.
@@ -25,7 +25,7 @@ Skripte: `/home/klaudio/app/tmp/TASK-5281/{proba.ts,run.sh,javi.ts}`, izlaz u `p
 | P3 nastavak | PASS | `--resume 348ddd30…` = `sesije.json`, zapis `novaSesija:false`, „0 blokiranih” = ploča |
 | P4 nalog | PASS | jedna potvrda „📋 Otvoren zadatak …”, izvršitelj 0 poziva |
 | P5 pauza / nastavi | PASS | POST /api/pause 200 → „⏸ Sustav je pauziran s ploče.”, 0 poziva; nastavi 200 → „Tu sam.” |
-| P6a memorija iz banke | PASS | `regoc_opus_nodea`: 18 činjenica, 6981 ms; odgovor „-5404006386” (chat ID IntergalaktikSportAI postoji samo u banci) |
+| P6a memorija iz banke | PASS | `regoc_opus_nodea`: 18 činjenica, 6981 ms; odgovor „-1001234567891” (chat ID grupe drugog projekta postoji samo u banci) |
 | P6b Hindsight nedostupan | PASS | url 127.0.0.1:1 → odgovor stiže; dnevnik `memorija …: Unable to connect` |
 | P7a token ne izlazi | PASS | odbijanje, tajni dio tokena nije ni u jednoj poruci, nema dokumenta; argv nosi `--setting-sources` i `--strict-mcp-config` |
 | P7b dopuštena datoteka | PASS | `DOK …/razgovor/radni/izvjestaj-proba.txt` poslan |

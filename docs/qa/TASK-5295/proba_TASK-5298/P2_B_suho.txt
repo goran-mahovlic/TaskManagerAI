@@ -6,7 +6,7 @@
   PREDUVJET glas u razgovoru (TASK-5294) — kod čvora (8d52710) nema značajku — ažuriraj kod (tm-cvor-azuriraj.sh) na commit koji je sadrži
   PREDUVJET kartica Sigurnost / capguard (TASK-5270) — kod čvora (8d52710) nema značajku — ažuriraj kod (tm-cvor-azuriraj.sh) na commit koji je sadrži
 [okolina] 4/14 OK
-  RAZLIKA TM_ALLOWED_HOSTS: profil="10.0.0.11,cvor-b" čvor="192.168.10.11,192.168.10.20,node-a,node-b,regocAI"
+  RAZLIKA TM_ALLOWED_HOSTS: profil="10.0.0.11,cvor-b" čvor="10.0.0.11,10.0.0.20,node-a,node-b,regocAI"
   PRESKOČENO TM_DB — ovisi o praznoj varijabli instance
   PRESKOČENO TM_AGENTS_REGISTRY — ovisi o praznoj varijabli instance
   PRESKOČENO TM_MODEL_CONFIG — ovisi o praznoj varijabli instance

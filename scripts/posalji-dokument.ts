@@ -2,7 +2,7 @@
 /**
  * Pošalji datoteku u Telegram chat tokenom bota OVE instalacije (TASK-5337).
  *
- *   bun scripts/posalji-dokument.ts --chat -5112799687 --datoteka /aps/put/x.xlsx [--opis "…"]
+ *   bun scripts/posalji-dokument.ts --chat -1001234567890 --datoteka /aps/put/x.xlsx [--opis "…"]
  *   bun scripts/posalji-dokument.ts --chat … --datoteka … --suho     # samo provjere, bez slanja
  *
  * Token i dopušteni chatovi čitaju se iz konfiguracije čvora (`telegram.json` po obrascu

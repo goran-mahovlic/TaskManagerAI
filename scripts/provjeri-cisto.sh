@@ -120,7 +120,7 @@ done < <(
 for f in "$HOME/.zprofile" "$HOME/.zshrc" "$HOME/.bashrc" "$HOME/.bash_profile" "$HOME/.profile" "$HOME/.config/fish/config.fish"; do
   [ -f "$f" ] && grep -q '^# >>> TaskManagerAI >>>' "$f" && ostatak rc "$f"
 done
-[ -f "$HOME/.ssh/authorized_keys" ] && grep -q 'tm-tunel' "$HOME/.ssh/authorized_keys" \
+[ -f "$HOME/.ssh/authorized_keys" ] && grep -Eq '[[:space:]]tm-tunel$' "$HOME/.ssh/authorized_keys" \
   && ostatak kljuc "$HOME/.ssh/authorized_keys (tm-tunel)"
 
 if [ "$N" = 0 ]; then echo "provjeri-cisto: čisto (0 ostataka)" >&2; exit 0; fi

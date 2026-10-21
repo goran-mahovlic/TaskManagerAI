@@ -249,8 +249,9 @@ const EXTERNAL_PORT = Number(process.env.TM_EXTERNAL_PORT) || Number(process.env
 // ponašanje nepromijenjeno). Uz HOME override daje potpuno izoliranu instancu s vlastitom
 // bazom — E2E se tako vozi bez ijednog fixture-zapisa u živoj regoc.db (usp. TASK-2701).
 const PORT = Number(process.env.REGOC_TASKWEBUI_PORT) || Number(process.env.TM_PORT) || 17781
-// TM_BIND (plan Mac v3, R3): popis adresa; bez postavke sva sučelja (0.0.0.0) kao i prije.
-const VEZANJE = adreseVezanja(process.env.TM_BIND)
+// TM_BIND (plan Mac v3, R3): popis adresa; bez postavke petlja na macOS-u i u instalaciji
+// paketa, a 0.0.0.0 samo na Linuxu bez $TM_HOME/config/postavke.env (TASK-5686, v. core/vezanje.ts).
+const VEZANJE = adreseVezanja(process.env.TM_BIND, zadanaAdresa(process.platform, process.env.TM_HOME))
 if (VEZANJE.odbaceno.length) console.warn(`[TM_BIND] neispravne adrese preskočene: ${VEZANJE.odbaceno.join(', ')}`)
 /** Ime/adresa koja se ISPISUJE korisniku. Nikad tuđe ime stroja — env ili vlastiti hostname. */
 const EXTERNAL_HOST = process.env.TM_EXTERNAL_HOST || osHostname()
@@ -343,7 +344,7 @@ const messageQueue = getMessageQueue()
 // TASK-5311 (s glavnog, TASK-5164 D): bilješka, dorada, ponovno otvaranje, 404 s prijedlogom.
 import { odgovor404Rute, hintPrijelaza, tekstBiljeske, naslovDorade, opisDorade, oznakeDorade } from './core/TaskDorada'
 import { Database } from 'bun:sqlite'
-import { adreseVezanja } from './core/vezanje'
+import { adreseVezanja, zadanaAdresa } from './core/vezanje'
 // TASK-5011: ista mapa u kojoj ga stvara MessageQueue (uz bazu iz core/paths.ts).
 const MESSAGES_DB_PATH = join(dirname(TM_DB), 'messages.db')
 let konzolaDb: Database | null = null
@@ -10233,7 +10234,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       h += '</tbody></table>';
 
       h += '<div style="margin-top:.5rem;display:flex;gap:6px;align-items:center;flex-wrap:wrap">' +
-        '<input id="ulaz-nova-grupa" placeholder="' + _esc(_T('cfg_ulaz_nova_grupa_ph', 'chatId nove grupe (npr. -5245252755)')) + '" style="' + _stil() + ';width:230px">' +
+        '<input id="ulaz-nova-grupa" placeholder="' + _esc(_T('cfg_ulaz_nova_grupa_ph', 'chatId nove grupe (npr. -1001234567893)')) + '" style="' + _stil() + ';width:230px">' +
         '<button class="cfg-btn" onclick="dodajUlazGrupu(this)">' + _T('cfg_ulaz_dodaj_grupu', 'Dodaj grupu') + '</button>' +
         '<span style="font-size:.66rem;color:var(--text-secondary)">' + _T('cfg_ulaz_nova_grupa_opis', 'Nova grupa kreće na <b>isključeno</b> — nikad sama.') + '</span></div>';
 
@@ -10292,7 +10293,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       var chat = polje ? String(polje.value || '').trim() : '';
       var pk = document.getElementById('ulaz-poruka');
       if (!/^-?[0-9]{5,20}$/.test(chat)) {
-        if (pk) pk.innerHTML = '<span style="color:var(--accent-red,#ef4444)">' + _T('cfg_ulaz_chatid_broj', 'chatId mora biti broj (npr. -5245252755)') + '</span>';
+        if (pk) pk.innerHTML = '<span style="color:var(--accent-red,#ef4444)">' + _T('cfg_ulaz_chatid_broj', 'chatId mora biti broj (npr. -1001234567893)') + '</span>';
         return;
       }
       var tijelo = document.getElementById('ulaz-grupe-tijelo');

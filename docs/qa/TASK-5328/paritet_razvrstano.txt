@@ -1,4 +1,4 @@
-PARITET node-B (ssh://regoc@192.168.10.11:2222) — razvrstavanje po ADR-0004 §13.2, TASK-5328, 07.10.2026.
+PARITET node-B (ssh://regoc@10.0.0.11:2222) — razvrstavanje po ADR-0004 §13.2, TASK-5328, 07.10.2026.
 
 KUKE nespojene (25):
   Notification:ContextCapture.hook.ts                uvjetno (paket pai-ucenje — instanca node-B: samo jezgra, datoteke ne postoje)

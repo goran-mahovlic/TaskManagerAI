@@ -5,7 +5,7 @@
 | **Status** | Prihvaćeno (dizajn). Izvedba: Jelena; proba: Potjeh (v. §10) |
 | **Datum** | 06.10.2026. |
 | **Autorica** | Kosjenka (Architect), TASK-5295 |
-| **Zahtjev** | Goran, 06.10.2026. 19:19: „kad node-A bude podešen, SVE osim tajnih podataka mora ući u modularni TaskManagerAI, cilj: lako ponoviti na sljedećem čvoru (node-B, …)" |
+| **Zahtjev** | Vlasnik, 06.10.2026. 19:19: „kad node-A bude podešen, SVE osim tajnih podataka mora ući u modularni TaskManagerAI, cilj: lako ponoviti na sljedećem čvoru (node-B, …)" |
 | **Veze** | ADR-0001 §8 (brana „bez naših vrijednosti"), ADR-0002 (razgovorni način), ADR-0003 (kanal bot↔bot), ADR-0010 izvornog sustava (vlasništvo usluge 17781 na čvoru) |
 
 ---
@@ -121,7 +121,7 @@ bun scripts/profil-cvora.ts izvezi    [--profil …] --instanca-van <env>   # s 
    datoteka, unit ni redak `settings_history` ne nastaje. Dokaz u probi: otisak čvora prije =
    poslije (§8).
 4. **`--suho` je zadano.** Bez `--pisi` alat ništa ne piše. Pisanje na čvor koji nije lokalni
-   (node-B …) traži Goranovo odobrenje u zadatku — alat to ne može provjeriti, pa je to stavka
+   (node-B …) traži vlasnikovo odobrenje u zadatku — alat to ne može provjeriti, pa je to stavka
    procedure, ne koda.
 5. **Idempotentno.** Primjena uspoređuje pa piše samo razliku; drugi `--pisi` zaredom mora
    javiti „0 promjena". Postavke ploče idu **kroz API** (`PUT /api/config/razgovor`, …), ne
@@ -192,9 +192,9 @@ uspoređuje vrijednost po vrijednost. Skripte i izlaz suhog prolaza na node-B: `
 | # | Preduvjet | Zašto | Tko |
 |---|---|---|---|
 | P1 | Isporuka TASK-5290 + TASK-5294 (grana `isporuka/TASK-5290-nodea`, `d6a79fc`) spojena u `main` | inače profil traži značajke koje `main` nema; node-A vrti kod koji nitko ne može ponoviti | REGOČ / vrata spajanja |
-| P2 | Commiti `30084bde`, `80996e4e` s node-A preuzeti ili svjesno odbačeni | sljedeći `checkout -f` ih briše bez traga | Goran odlučuje |
-| P3 | Na node-B oslobođen disk (89 %, 2,0 GB) | `install.sh` + `bun` + sesije razgovora | Goran / čvor |
-| P4 | Drugi bot (BotFather) i grupa za node-B | Telegram dopušta jedan `getUpdates` po tokenu — node-B ne smije dijeliti token s node-A | Goran |
+| P2 | Commiti `30084bde`, `80996e4e` s node-A preuzeti ili svjesno odbačeni | sljedeći `checkout -f` ih briše bez traga | Vlasnik odlučuje |
+| P3 | Na node-B oslobođen disk (89 %, 2,0 GB) | `install.sh` + `bun` + sesije razgovora | Vlasnik / čvor |
+| P4 | Drugi bot (BotFather) i grupa za node-B | Telegram dopušta jedan `getUpdates` po tokenu — node-B ne smije dijeliti token s node-A | Vlasnik |
 
 ## 10. Mjerila prihvaćanja
 
@@ -222,7 +222,7 @@ uspoređuje vrijednost po vrijednost. Skripte i izlaz suhog prolaza na node-B: `
 | P1 | node-A: `provjeri` → izlaz 0 (ili samo stavke `covjek`) |
 | P2 | node-B: `provjeri` i `primijeni --suho` → popis razlika ≈ §8 (63 + preduvjet), otisak prije = poslije |
 | P3 | grep izlaza oba prolaza: nijedna tajna (token, tajna kanala, sadržaj prijave) |
-| P4 | `primijeni --pisi` na node-B **tek uz Goranovo odobrenje** i nakon P1–P4 iz §9; zatim `provjeri` → 0/2 i drugi `--pisi` → 0 promjena |
+| P4 | `primijeni --pisi` na node-B **tek uz vlasnikovo odobrenje** i nakon P1–P4 iz §9; zatim `provjeri` → 0/2 i drugi `--pisi` → 0 promjena |
 
 ## 11. Otvorena pitanja
 
@@ -252,12 +252,12 @@ koji `provjeri` prijavi nego iscurjela tajna.
 > dodaje [ADR-0006](ADR-0006-znanje-cvora-opce-i-privatno.md) (TASK-5330), s modulima `mogucnosti`,
 > `znanje`, `znanje-cvora` i poljem `nikadNeNosi`.
 
-**Zahtjev** (Goran, 07.10., grupa node-A): „na node-A su ugašeni hookovi, izlazi u konzolu i
+**Zahtjev** (Vlasnik, 07.10., grupa node-A): „na node-A su ugašeni hookovi, izlazi u konzolu i
 značajke sustava; mora biti kao na glavnom sustavu i dio portabilnog TaskManagerAI-ja, novi nod
 u par koraka." Neposredan povod: TASK-212 (Jelena) bio je siroče 23:38 → 10:15 jer oporavak na
 čvoru nije radio, a uputa #2 nije stigla jer kuka `TaskInstructionsInject` nije spojena.
 
-### 13.1 Izmjereno (samo čitanje; ponovljivo: `python3 docs/qa/TASK-5307/paritet.py regoc@192.168.10.20 --tsv`)
+### 13.1 Izmjereno (samo čitanje; ponovljivo: `python3 docs/qa/TASK-5307/paritet.py regoc@10.0.0.20 --tsv`)
 
 Izlaz: `docs/qa/TASK-5307/mjerenje_2026-10-07.txt` (izlazni kod 1, 99 razlika).
 
@@ -270,7 +270,7 @@ Izlaz: `docs/qa/TASK-5307/mjerenje_2026-10-07.txt` (izlazni kod 1, 99 razlika).
 | izvori konzole ploče | `regoc_daemon.log`, `regoc.log`, `klaudio.log`, `voiceserver.log`, `taskwebui.log` — svi svježi | samo `regoc_daemon.log` svjež; `regoc.log` i `voiceserver.log` **nema**, `klaudio.log` star 27 d | servisi na čvoru pišu u journal (`StandardOutput=journal`), kuka konzole nije spojena |
 | mjerilo potrošnje (`daemon.log`) | povremeni 401 (81 redak ukupno, zadnji 05.10.), samo-oporavak buđenjem CLI-a | 401 od ≈06:41 do 06:57 UTC 07.10., nakon buđenja CLI-a nema novog 401 | isti mehanizam na oba; nije kvar pariteta nego uvjet za `autonomyGate` (§13.2.1) |
 
-**Tri ispravka Goranove slike** (važno za odluke):
+**Tri ispravka vlasnikove slike** (važno za odluke):
 
 1. Od 13 prekidača s popisa „OFF na node-A" njih **8 je OFF i na glavnom**, namjerno:
    `verificationGate`, `modeClassifyLive`, `tierRouting`, `staleReaperLive`, `sendBreakerLive`,
@@ -278,7 +278,7 @@ Izlaz: `docs/qa/TASK-5307/mjerenje_2026-10-07.txt` (izlazni kod 1, 99 razlika).
    „kao glavni", ne „sve upaljeno". Stvarno ugašeni samo na čvoru: `autonomyGate`,
    `zombieRecoveryLive`, `deadAgentReaperLive`, `staleWatchdogLive`, `ollamaClassifier`.
 2. Čvor je u četiri prekidača **agresivniji** od glavnog: `staleReaper` ON (na glavnom
-   **TRAJNO ugašen** odlukom Gorana 02.09. — sudi suprotno od staleWatchdoga), `teamChainLive`,
+   **TRAJNO ugašen** odlukom vlasnika 02.09. — sudi suprotno od staleWatchdoga), `teamChainLive`,
    `autoResumeLive`, `projectGitInit` ON. `teamChainLive` + nečuvani `createSequentialHelpers`
    su put kojim je nastala kaskada `regoc-chain` (TASK-255).
 3. **Prekidač bez koda ne radi ništa.** `siroceOporavak` (oporavak koji bi spasio TASK-212) na
@@ -307,7 +307,7 @@ dok uvjet nije ispunjen (alat provjerava uvjet); **van** = OFF i u paketu, s raz
 | Skupina | Ključevi | Glavni | node-A danas | Odluka | Razlog / uvjet |
 |---|---|---|---|---|---|
 | Isporuka korisniku | `userFlush`, `userFlushLive` | ON | ON | **u paket** | jednako |
-| | `userFlushBacklog` | off | off | **van** | Goranova potvrda za stare poruke |
+| | `userFlushBacklog` | off | off | **van** | Vlasnikova potvrda za stare poruke |
 | Klasifikacija | `modeClassify` (sjena) | ON | ON | **u paket** | — |
 | | `modeClassifyLive`, `tierRouting` | off | off | **van** | čeka golden-set prag na glavnom |
 | | `ollamaClassifier` (sjena) | ON | off | **uvjetno** | Ollama dohvatljiva s čvora (`OLLAMA_URL/api/tags` → 200) |
@@ -340,7 +340,7 @@ dok uvjet nije ispunjen (alat provjerava uvjet); **van** = OFF i u paketu, s raz
 | PreToolUse : `RadBezZadatka` | **uvjetno** | radi samo uz `REGOC_SESIJA=telegram`; ulazi kad razgovorni modul paketa postavlja tu varijablu; datoteka prenijeti u paket (danas tvrda putanja `/home/klaudio`) |
 | PreToolUse Task + SubagentStop : `AgentMemoryRead/Write` | **uvjetno (modul `rag`)** | RAG je na čvoru isključen; uključuje se zajedno s `TM_CHROMA_*` |
 | SessionStart : `LoadContext` | **uvjetno** | samo ako je komplet `skills/CORE` na čvoru; upravitelj čvora identitet dobiva iz `~/CLAUDE.md` (`TM_RAZGOVOR_UPUTE`) |
-| Stop/Notification/SubagentStop/UPS : `ContextCapture`×2, `ContextExport`, `SessionSummary`, `WorkCompletionLearning`, `ImplicitSentimentCapture`, `ExplicitRatingCapture`, `AgentOutputCapture` | **uvjetno — paket „pai-ucenje"** | pišu u `~/.claude/MEMORY`, na čvoru nemaju potrošača; datoteke postoje na node-A, pa ih **instanca node-A uključuje** (Goran: „kao na glavnom"), zadano za novi čvor off |
+| Stop/Notification/SubagentStop/UPS : `ContextCapture`×2, `ContextExport`, `SessionSummary`, `WorkCompletionLearning`, `ImplicitSentimentCapture`, `ExplicitRatingCapture`, `AgentOutputCapture` | **uvjetno — paket „pai-ucenje"** | pišu u `~/.claude/MEMORY`, na čvoru nemaju potrošača; datoteke postoje na node-A, pa ih **instanca node-A uključuje** (Vlasnik: „kao na glavnom"), zadano za novi čvor off |
 | SessionStart : `EnsureRegocDaemon` | **van** | na čvoru daemon drži systemd (`regoc-daemon.service`); kuka bi dizala drugi |
 | SessionStart : `StartupGreeting`, `CheckVersion`; UPS : `UpdateTabTitle`, `SetQuestionTab` | **van** | terminal/PAI kozmetika; čvor nema interaktivni terminal |
 | UPS : `CheckTelegramRelay`, `CheckVoiceRelay`, `CheckRegocQueue`, `LoadDomainContext`, `AutoWorkCreation` | **van** | releji interaktivne REGOČ sesije glavnog stroja; na čvoru Telegram ide razgovornim modulom (ADR-0002) |
@@ -372,7 +372,7 @@ anti-kaskade TASK-255 u `AgentRouting.ts`. Puni popis 28 modula: `mjerenje_2026-
 | # | Preduvjet | Zašto | Tko |
 |---|---|---|---|
 | P5 | Komplet izvornog sustava na čvoru = isti graf kao glavni (`deploy_node_a.sh` s `MANIFEST.sha256`, ponovno izmjeren), uključivo popravak TASK-255 | 8 prekidača i 28 modula nemaju koda; paljenje bez koda je lažni paritet | Jelena (komplet) + Malik (pregled) |
-| P6 | Na node-A u `~/TaskManagerAI` 5 izmijenjenih, nepredanih datoteka (`src/razgovor/*`, `tests/razgovor-dijelovi.test.ts`) preuzeti ili odbaciti | isti kvar kao P2: `checkout -f` bi ih brisao | Goran odlučuje |
+| P6 | Na node-A u `~/TaskManagerAI` 5 izmijenjenih, nepredanih datoteka (`src/razgovor/*`, `tests/razgovor-dijelovi.test.ts`) preuzeti ili odbaciti | isti kvar kao P2: `checkout -f` bi ih brisao | Vlasnik odlučuje |
 
 ### 13.5 Novi čvor u 5 koraka + tajne (zamjenjuje §6)
 
@@ -431,12 +431,12 @@ spawna (sesija d2b4bef7), agent odgovorio `UPUTA-E2E-PRIMLJENA`; konzola ploče 
 `/stream`) primila redak izvora `regoc`.
 
 **Otvoreno:** drop-in konzole i `TM_FEATURES_FILE` čekaju restart ploče (in_progress na node-A =
-2 smeće-zadatka TASK-255); faza B (reaperi) čeka TASK-255; P5/P6-Goran (prijenos koda,
+2 smeće-zadatka TASK-255); faza B (reaperi) čeka TASK-255; P5/P6-Vlasnik (prijenos koda,
 `OrphanRecovery`) uvjet su za P7 („siroče se samo vraća"). → Zatvoreno u §13.8.
 
 ### 13.8 Faza B i kalem siroče-oporavka na node-A (TASK-5308, 07.10.2026. 09:04 UTC)
 
-**Odluka (Goran 07.10.):** P5/P6 = DA — „uskladi sve verzije na najnovije sa svim featureima”,
+**Odluka (Vlasnik 07.10.):** P5/P6 = DA — „uskladi sve verzije na najnovije sa svim featureima”,
 prenesi i `OrphanRecovery` u paket i na node-A; dovrši fazu B (TASK-255) i restart ploče.
 
 **Zašto kalem, a ne puni komplet (izmjereno 07.10.):** `~/.claude/regoc` na node-A nije git i nema
@@ -497,7 +497,7 @@ StaleCodeCheck ✅. Ista presuda nakon popravka: odsutnost 818 ms nakon stvaranj
 - Konzola: ploča 768883 šalje redak izvora `regoc` (`⚙️ jelena · TASK-5308 · Bash: …`) WebSocketom;
   stvaran rad agenta u `regoc.log`: `⚙️ potjeh · TASK-268 · Bash: Run sleep 900 …`.
 - Testovi izvornog sustava na čvoru (`orphan-recovery`, `zombie-recovery`, `agent-routing`): 89 pass,
-  0 fail (uz trag odluke `zombieRecoveryLive.liveBy` = Goran 07.10.).
+  0 fail (uz trag odluke `zombieRecoveryLive.liveBy` = vlasnik 07.10.).
 
 ### 13.9 P5 komplet izvornog sustava na node-A i C6 (TASK-5323, 07.10.2026. 13:57 UTC)
 
@@ -537,7 +537,7 @@ novog daemona: „📚 RAG isključen na ovom čvoru" — prenesena značajka ra
 (profil `[znacajke] 75/75`). `config/stale-watchdog.json` čvora nije imao odjeljak `blocked`
 (cp -n ga ne prepisuje) → dodan iz glavnog, ali **`klaseUzivo = ["deploy"]`, bez `lanac`**: na čvoru
 stoji 10 `regoc-chain` zadataka TASK-252…262 koje TASK-255 §5 ne dira; klasa `lanac` uživo vratila bi
-ih u red i ponovno zapalila kaskadu. Prvi prolaz revizije (14:01:37 UTC): 14 blokiranih → Goranu 3,
+ih u red i ponovno zapalila kaskadu. Prvi prolaz revizije (14:01:37 UTC): 14 blokiranih → vlasniku 3,
 čeka 10, razina 2 jedan, 0 grešaka.
 
 **Mjerilo** `paritet.py`: 53 razlike → **20**, sve „van"/„uvjetno" po §13.2: 18 nespojenih kuka

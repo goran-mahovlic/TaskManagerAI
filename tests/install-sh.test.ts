@@ -293,6 +293,25 @@ describe('zapis.sh — tajne nikad u log', () => {
     expect(van).toContain('postgres://rag:«skriveno»@127.0.0.1')
   })
 
+  // TASK-5686 (S1, pregled K5 TASK-5659): REGOČ čita install.log i dijelove prepisuje u zadatak.
+  // Vrijednosti se slažu iz dijelova da ni test ne nosi nešto nalik pravom tokenu.
+  test('zatamni() skriva i vrijednost u navodnicima, Telegram token bez imena i GitHub token', () => {
+    const tg = '123456789:' + 'Ab9_-'.repeat(7)
+    const ghp = 'ghp_' + 'a1B2'.repeat(9)
+    const pat = 'github_pat_' + '11ABCDE_'.repeat(6)
+    const ulaz = [
+      'TELEGRAM_BOT_TOKEN="dvostrukiNavod1"', "TM_RAG_KEY='jednostrukiNavod2'", 'export API_SECRET = "razmak i navod"',
+      `curl https://api.telegram.org/bot${tg}/getMe`, `  ${tg}`,
+      `git remote https://${ghp}@github.com/x/y`, `token: ${pat}`,
+    ].join('\n')
+    const r = Bun.spawnSync(['bash', '-c', `. scripts/instalacija/zapis.sh; zatamni`], { cwd: KORIJEN, stdin: new TextEncoder().encode(ulaz) })
+    const van = r.stdout.toString()
+    for (const tajna of ['dvostrukiNavod1', 'jednostrukiNavod2', 'razmak i navod', 'Ab9_-Ab9', 'a1B2a1B2', '11ABCDE_'])
+      expect(van, van).not.toContain(tajna)
+    expect(van).toContain('https://api.telegram.org/bot«skriveno»/getMe')
+    expect(van).toContain('TELEGRAM_BOT_TOKEN=«skriveno»')
+  })
+
   test('json_s daje ispravan JSON i za navodnike, kose crte, nove retke i UTF-8', () => {
     const r = Bun.spawnSync(['bash', '-c', `. scripts/instalacija/zapis.sh; json_s "$(printf 'a"b\\\\c\\nčvor\\tž')"`], { cwd: KORIJEN })
     expect(JSON.parse(r.stdout.toString())).toBe('a"b\\c\nčvor\tž')

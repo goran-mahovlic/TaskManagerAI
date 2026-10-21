@@ -1,7 +1,7 @@
 # TASK-5349 točka 3 — dokaz (2026-10-08T09:56:06Z)
 ## klaudio.log
-[2026-10-08T09:47:40.458Z] [ZNANJE-ČVORU] -5112799687: savjet → banka cvor_node_a (pid 1332699, /home/klaudio/.claude/tools/Telegram/data/znanje-cvoru/2026-10-08T09-47-40-456Z_1306086_0) 
-[2026-10-08T09:47:40.463Z] [BOT-KANAL] -5112799687: odgovoreno Saban (lanac 0085d5b5-e7ab-465e-9555-1b17d2deaa44, skok 1) → prijenos: bez-spomena 
+[2026-10-08T09:47:40.458Z] [ZNANJE-ČVORU] -1001234567890: savjet → banka cvor_node_a (pid 1332699, /home/klaudio/.claude/tools/Telegram/data/znanje-cvoru/2026-10-08T09-47-40-456Z_1306086_0) 
+[2026-10-08T09:47:40.463Z] [BOT-KANAL] -1001234567890: odgovoreno Saban (lanac 0085d5b5-e7ab-465e-9555-1b17d2deaa44, skok 1) → prijenos: bez-spomena 
 [2026-10-08T09:47:40.463Z]    [BOT-KANAL] bot-ulaz 485a97cb: odgovoreno 
 ## /home/klaudio/.claude/tools/Telegram/data/znanje-cvoru/2026-10-08T09-47-40-456Z_1306086_0/savjet.log
 paket sastavljen (236s): „glas — od teksta do mp3 izvještaja i slanja u Telegram (SEND_DOC)", 39 činjenica
@@ -9,7 +9,7 @@ filtar: 39 činjenica ulazi, 0 izbačeno, 0 rečenica izrezano iz pitanja/odgovo
 OK savjet/glas → cvor_node_a (65.7s)
 trag: TASK-299 ← bilješka (http 200)
 ## ploča node-A TASK-299 (zadnja bilješka)
-TASK-299 completed ['razgovor', 'no-autonomy', 'chat:telegram:-5112799687']
+TASK-299 completed ['razgovor', 'no-autonomy', 'chat:telegram:-1001234567890']
 🧠 znanje od Klaudija upisano u banku cvor_node_a: „glas — od teksta do mp3 izvještaja i slanja u Telegram (SEND_DOC)" (savjet/glas, 39 činjenica)
 ## curenje nakon upisa
 cvor_node_a: upita 90, izraza s privatnom činjenicom 0, rezultata s izrazom 0 — projekt 0/67, klijent 0/10, osoba 0/4, usluga 0/9
