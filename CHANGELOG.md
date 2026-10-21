@@ -10,7 +10,7 @@
 - S3 brana `tests/bez-nasih-vrijednosti.test.ts` pretražuje i `docs/` (pravila za adrese, e-poštu,
   ID-ove chatova i korisnika, imena ljudi; osnovica 0), novi uzorak ID-a chata uz izuzeće izmišljenih
   primjera, uid-ovi i prezime. `docs/`, testovi, `locales/` i `scripts/posalji-dokument.ts` nose
-  primjere (-100123456789x, 10.0.0.x, 100000011, „vlasnik", example.com). Povijest NIJE prepisana.
+  primjere (-1001234567890…-1001234567893, 10.0.0.x, 100000011, „vlasnik", example.com). Povijest NIJE prepisana.
 - N2 `deinstaliraj.sh` / `provjeri-cisto.sh`: ključ tunela je samo redak čiji komentar je točno
   `tm-tunel`; tuđi ključ s `tm-tunel-x` ostaje.
 
