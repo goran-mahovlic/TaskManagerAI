@@ -738,12 +738,16 @@ pg0_instalacija() { ls -d "$TM_HOME"/rag/home/.pg0/installation/*/ 2>/dev/null |
 pg0_macos_openssl() {
   local inst; inst="$(pg0_instalacija)"
   if [ -z "$inst" ]; then
-    local r="$TM_HOME/tmp/pg0-raspakiraj"
+    # ako start ipak uspije (korisnikov openssl@3 postoji), kratko sluša samo na 127.0.0.1 s
+    # nasumičnom lozinkom, a drop ga odmah gasi — instanca koja ostane živa ruši korak
+    local r="$TM_HOME/tmp/pg0-raspakiraj" jednokratna
+    jednokratna="$(LC_ALL=C tr -dc 'a-z0-9' < /dev/urandom | head -c 16)"
     mkdir -p "$TM_HOME/tmp"
-    pg0 start --name tm-raspakiraj -p 15433 -d "$r/data" -u raspakiraj -P raspakiraj -n raspakiraj \
+    pg0 start --name tm-raspakiraj -p 15433 -d "$r/data" -u raspakiraj -P "$jednokratna" -n raspakiraj \
       -c listen_addresses=127.0.0.1 -c unix_socket_directories= > "$TM_HOME/rag/pg0-raspakiraj.log" 2>&1 || true
     pg0 drop --name tm-raspakiraj -f >/dev/null 2>&1
     rm -rf "$r"
+    if pg0 list 2>/dev/null | grep -q 'tm-raspakiraj'; then echo "    GREŠKA: jednokratna instanca tm-raspakiraj nije ugašena (pg0 stop --name tm-raspakiraj)"; return 6; fi
     inst="$(pg0_instalacija)"
     [ -n "$inst" ] || { tail -5 "$TM_HOME/rag/pg0-raspakiraj.log" | sed 's/^/      /'; echo "    GREŠKA: pg0 nije raspakirao PostgreSQL"; return 6; }
   fi
