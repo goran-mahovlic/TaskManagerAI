@@ -3,7 +3,7 @@
 #
 # pg0 0.15.2 na macOS-u raspakira PostgreSQL (theseus-rs postgresql-binaries) vezan uz Homebrewov
 # OpenSSL: bin/postgres i lib/libpq.5.dylib traže /opt/homebrew/opt/openssl@3/lib/libssl.3.dylib
-# (izmjereno na macmini-pv, K8 krug 1: dyld „Library not loaded", K2.18-baze-pgvector izlaz 6).
+# (izmjereno na Mac čvoru, K8 krug 1: dyld „Library not loaded", K2.18-baze-pgvector izlaz 6).
 # Homebrew na čvoru nije obavezan ni nužno korisnikov, a DYLD_* okolina ne pomaže jer initdb zove
 # `postgres -V` kroz /bin/sh, kojem SIP briše DYLD_* varijable.
 #

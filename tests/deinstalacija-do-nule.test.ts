@@ -97,7 +97,9 @@ function vlasnikove(o: Okruzje) {
 
 /**
  * Lažni `uv` (i njegov službeni instalator kroz lažni `curl`): stvara ono što pravi stvara izvan
- * $TM_HOME — ~/.local/bin/uv, uvx i ~/.cache/uv — bez mreže. Ostali `curl` pozivi idu pravom curlu.
+ * $TM_HOME — ~/.local/bin/uv, uvx, ~/.config/uv/uv-receipt.json i ~/.cache/uv, a `uv python install`
+ * Python u ~/.local/share/uv/python i vezu ~/.local/bin/python3.13 (izmjereno na Macu, K8 krug 1:
+ * receipt i veza ostali su nakon --do-nule) — bez mreže. Ostali `curl` pozivi idu pravom curlu.
  */
 function lazniUvInstalator(o: Okruzje): string {
   const bin = join(o.korijen, 'lazni-bin'), lazni = join(o.korijen, 'lazni-uv')
@@ -106,7 +108,11 @@ function lazniUvInstalator(o: Okruzje): string {
   writeFileSync(join(lazni, 'uv'), `#!/bin/sh
 case "$1" in
   --version) echo "uv 0.13.4" ;;
-  python) echo /usr/bin/python3 ;;
+  python) p="$HOME/.local/share/uv/python/cpython-3.13-proba/bin/python3.13"
+    case "$2" in
+      find) [ -x "$p" ] || exit 1; echo "$p" ;;
+      install) mkdir -p "$(dirname "$p")" "$HOME/.local/bin"; ln -sf /usr/bin/python3 "$p"; ln -sfn "$p" "$HOME/.local/bin/python3.13" ;;
+    esac ;;
   venv) for a; do d="$a"; done; mkdir -p "$d/bin"; cp "${lazni}/python" "$d/bin/python"; chmod 755 "$d/bin/python" ;;
   pip) [ "$3" = --help ] && echo "      --torch-backend <TORCH_BACKEND>"; mkdir -p "$HOME/.cache/uv/wheels"; echo w > "$HOME/.cache/uv/wheels/torch.whl" ;;
 esac
@@ -115,7 +121,7 @@ exit 0
   writeFileSync(join(bin, 'curl'), `#!/bin/sh
 case "$*" in *astral.sh/uv/install.sh*)
   while [ $# -gt 0 ]; do [ "$1" = -o ] && cilj="$2"; shift; done
-  printf '%s\\n' '#!/bin/sh' 'mkdir -p "$HOME/.local/bin"' 'cp "${lazni}/uv" "$HOME/.local/bin/uv"; cp "${lazni}/uv" "$HOME/.local/bin/uvx"' 'chmod 755 "$HOME/.local/bin/uv" "$HOME/.local/bin/uvx"' > "$cilj"
+  printf '%s\\n' '#!/bin/sh' 'mkdir -p "$HOME/.local/bin" "$HOME/.config/uv"' 'cp "${lazni}/uv" "$HOME/.local/bin/uv"; cp "${lazni}/uv" "$HOME/.local/bin/uvx"' 'chmod 755 "$HOME/.local/bin/uv" "$HOME/.local/bin/uvx"' 'echo "{}" > "$HOME/.config/uv/uv-receipt.json"' > "$cilj"
   exit 0 ;;
 esac
 exec /usr/bin/curl "$@"
@@ -196,6 +202,44 @@ describe('instalirano.ceka — pad prije nego što bun postoji (B3)', () => {
       expect(cisto(o).out).toBe('')
     } finally { rmSync(o.korijen, { recursive: true, force: true }) }
   }, 60_000)
+})
+
+const SUSTAVNI_FONT = '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'
+const imaReportlab = Bun.spawnSync(['python3', '-c', 'import reportlab, pypdf']).exitCode === 0
+
+describe('deinstaliraj.sh --do-nule — fontovi naredbe pdf (K8 krug 1, TASK-5662)', () => {
+  // Na Macu su nakon --do-nule ostali ~/Library/Fonts/DejaVu*.ttf: instaliraj-pdf.sh ih preuzme,
+  // a manifest ih nije znao (provjeri-cisto ih zato nije ni vidio).
+  test.skipIf(!existsSync(SUSTAVNI_FONT) || !imaReportlab)('lažni darwin: preuzeti fontovi idu u manifest, --do-nule ih briše, HOME = snimka prije', () => {
+    const o = okruzje('fontovi')
+    try {
+      vlasnikove(o)
+      mkdirSync(join(o.home, 'Library'), { recursive: true })   // Mac uvijek ima ~/Library (zaštićena)
+      const prije = stanjeHome(o.home, [o.paket])
+      // zrcalo službenog izdanja DejaVu (isti raspored kao tar 2.37), kao u instaliraj-pdf-mac.test.ts
+      const izv = join(o.korijen, 'dejavu-izv'); mkdirSync(join(izv, 'dejavu-fonts-ttf-2.37', 'ttf'), { recursive: true })
+      for (const f of ['DejaVuSans.ttf', 'DejaVuSans-Bold.ttf']) cpSync(SUSTAVNI_FONT, join(izv, 'dejavu-fonts-ttf-2.37', 'ttf', f))
+      const tar = join(o.korijen, 'dejavu.tar.bz2')
+      expect(Bun.spawnSync(['tar', '-cjf', tar, '-C', izv, 'dejavu-fonts-ttf-2.37']).exitCode).toBe(0)
+      const sha = new Bun.CryptoHasher('sha256').update(readFileSync(tar)).digest('hex')
+      const i = skripta(o, 'install.sh', ['--bez-servisa', '--posudi'], {
+        TM_PORT: String(20000 + Math.floor(Math.random() * 20000)), TM_OS: 'Darwin',
+        TM_PDF_DEJAVU_URL: `file://${tar}`, TM_PDF_DEJAVU_SHA256: sha, TM_PDF_PDFTOTEXT: 'nema-pdftotext-5662',
+      })
+      expect(i.kod, i.izlaz).toBe(0)
+      const fontovi = join(o.home, 'Library', 'Fonts')
+      expect(existsSync(join(fontovi, 'DejaVuSans.ttf'))).toBe(true)
+      const stvoreno = JSON.parse(readFileSync(join(o.tm, 'instalirano.json'), 'utf-8')).stvoreno.map((x: any) => `${x.put}|${x.vrsta}`)
+      expect(stvoreno).toContain(`${fontovi}/DejaVuSans.ttf|datoteka`)
+      expect(stvoreno).toContain(`${fontovi}/DejaVuSans-Bold.ttf|datoteka`)
+      expect(stvoreno).toContain(`${fontovi}|mapa-ako-prazna`)
+
+      const de = skripta(o, 'deinstaliraj.sh', ['--do-nule', '--bez-kopije'])
+      expect(de.kod, de.izlaz).toBe(0)
+      expect(cisto(o).out).toBe('')
+      expect(stanjeHome(o.home, [o.paket, join(o.home, '.taskmanager-log-arhiva')])).toEqual(prije)
+    } finally { rmSync(o.korijen, { recursive: true, force: true }) }
+  }, 180_000)
 })
 
 describe('deinstaliraj.sh --do-nule — od instalacije do čistog stroja', () => {

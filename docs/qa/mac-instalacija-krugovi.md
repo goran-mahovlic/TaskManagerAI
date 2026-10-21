@@ -3,10 +3,10 @@
 Petlja popravka iz plana Mac v3 (§4 K8a, P3.3). Svaki krug kreće od nule: `deinstaliraj.sh --do-nule`
 i `rm -rf ~/TaskManagerAI`, zatim `provjeri-cisto.sh` = 0. Nakon toga se izvode **doslovno** naredbe
 iz README-a („Install on a new machine"). Ništa se ne krpa na Macu. Svaki pad dobiva popravak u
-paketu i test koji ga hvata, a Goran ga pusha na GitHub. Kočnica: 5 krugova zaredom pada na istom
-koraku → stop i javiti Goranu.
+paketu i test koji ga hvata, a na GitHub ga pusha samo vlasnik repozitorija. Kočnica: ako 5 krugova zaredom padne na istom
+koraku, petlja staje i javlja se vlasniku.
 
-Čvor: `macmini-pv` (macOS 27.0.1, arm64, Command Line Tools, Homebrew drugog korisnika bez `openssl@3`).
+Čvor: Mac (macOS 27.0.1, arm64, Command Line Tools, Homebrew drugog korisnika bez `openssl@3`).
 Instalaciju izvodi korisnik usluge `regoc` preko SSH-a. Log se čita ovako:
 `cat ~/.taskmanager/log/install/zadnji/install-rezultat.json` i
 `grep -v '"izlaz":0' ~/.taskmanager/log/install/zadnji/koraci.jsonl`.
@@ -21,7 +21,7 @@ Instalaciju izvodi korisnik usluge `regoc` preko SSH-a. Log se čita ovako:
 `origin/main` = `894bddd`.
 
 **Izvedeno:** `git clone https://github.com/goran-mahovlic/TaskManagerAI.git ~/TaskManagerAI` →
-`bash scripts/install.sh --cvor macmini-pv --profil upravitelj-cvora --baze`. README-ov
+`bash scripts/install.sh --cvor <ime-čvora> --profil upravitelj-cvora --baze`. README-ov
 `sudo -v` je zamijenjen sa `sudo -n true`, jer `regoc` ima NOPASSWD, a `sudo -v` bez terminala
 ipak traži lozinku (zbog unosa `(ALL) ALL` iz grupe admin). Isto provjerava i sam install.sh.
 `xcode-select --install` nije pokrenut jer su Command Line Tools već instalirani.
@@ -62,9 +62,25 @@ Test: `tests/pg0-openssl-macos.test.ts` (5) i lažni darwin u `tests/install-sh.
 (`ensurepip`, bez `-q`, koji ensurepip ne prima). Pip sustava s `--python` ostaje rezerva za Debian.
 Na Macu (`/tmp`) to daje reportlab 4.4.4 i pypdf 6.1.1. Test: `tests/pip-u-venv.test.ts` (3).
 
+**Čišćenje nakon kruga 1 (L4) — popravak 3:** `deinstaliraj.sh --do-nule` je završio s izlazom 0, ali
+s korakom `D10-provjera` izlaz 8 (`provjeri-cisto`: 3 ostatka). Na Macu su ostale stvari koje je
+napravila instalacija, a manifest `instalirano.json` ih nije poznavao:
+- `~/.config/uv/uv-receipt.json`, koji piše službeni instalator uv-a,
+- veza `~/.local/bin/python3.13` (stvara je `uv python install`; nakon brisanja Pythona visi),
+- `~/Library/Fonts/DejaVu*.ttf` (5 fontova iz `instaliraj-pdf.sh`); `provjeri-cisto` ih nije vidio.
+
+Popravci:
+- `install.sh` upisuje receipt i nove veze `~/.local/bin/python*`;
+- `instaliraj-pdf.sh` kroz `TM_PDF_STVORENO` javlja fontove i mapu koje je sam stvorio;
+- `pip_u_venv` dobiva `--no-cache-dir`.
+
+Testovi: lažni uv u `tests/deinstalacija-do-nule.test.ts` sada radi isto što i pravi (HOME = snimka
+prije). Novi test „fontovi naredbe pdf" (lažni darwin) prolazi cijeli put install → `--do-nule` →
+`provjeri-cisto` = 0. Na Macu su ostaci kruga 1 maknuti tek u čišćenju prije kruga 2.
+
 **Otvoreno za K8 (nije pad instalacije):** D2 = B traži `--komplet`, a `config/komplet.lock` ni javni
 modul `regoc-komplet` (K3a, odluka D3) na GitHubu ne postoje, pa `install.sh --komplet` staje s
 izlazom 5. README ga zato ne navodi. Usluga `daemon` (RegocDaemon) na Macu za sada ne postoji.
 
-**Sljedeće:** Goran pusha granu → `deinstaliraj.sh --do-nule` + `rm -rf ~/TaskManagerAI` →
+**Sljedeće:** vlasnik pusha granu → `deinstaliraj.sh --do-nule` + `rm -rf ~/TaskManagerAI` →
 `provjeri-cisto.sh` = 0 → krug 2.

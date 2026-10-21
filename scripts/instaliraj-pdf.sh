@@ -88,14 +88,21 @@ preuzmi_font() {
   [ "$SUHO" = 1 ] && return 1
   local cilj="${TM_PDF_FONT_DIR:-$KORISNICKI_FONTOVI}" rad
   rad="$(mktemp -d "${TMPDIR:-$HOME}/dejavu.XXXXXX")" || return 1
+  local bila=0; [ -d "$cilj" ] && bila=1
   if curl -fsSL -m 120 -o "$rad/dejavu.tar.bz2" "$DEJAVU_URL" \
      && [ "$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' "$rad/dejavu.tar.bz2")" = "$DEJAVU_SHA256" ] \
      && tar -xjf "$rad/dejavu.tar.bz2" -C "$rad" \
      && mkdir -p "$cilj"; then
+    # TM_PDF_STVORENO: install.sh tu čita što je stvoreno (redak „put|vrsta") i upisuje u manifest,
+    # da ih --do-nule obriše (K8 krug 1: ~/Library/Fonts/DejaVu*.ttf ostali su na Macu)
+    [ "$bila" = 0 ] && [ -n "${TM_PDF_STVORENO:-}" ] && echo "$cilj|mapa-ako-prazna" >> "$TM_PDF_STVORENO"
     local n=0 f
     for f in "$rad"/dejavu-fonts-ttf-*/ttf/DejaVuSans.ttf "$rad"/dejavu-fonts-ttf-*/ttf/DejaVuSans-{Bold,Oblique,BoldOblique}.ttf \
              "$rad"/dejavu-fonts-ttf-*/ttf/DejaVuSansMono.ttf; do
-      [ -f "$f" ] && cp "$f" "$cilj/" && n=$((n + 1))
+      [ -f "$f" ] || continue
+      local novi=1; [ -e "$cilj/$(basename "$f")" ] && novi=0
+      cp "$f" "$cilj/" && n=$((n + 1)) || continue
+      [ "$novi" = 1 ] && [ -n "${TM_PDF_STVORENO:-}" ] && echo "$cilj/$(basename "$f")|datoteka" >> "$TM_PDF_STVORENO"
     done
     rm -rf "$rad"; [ "$n" -gt 0 ]
   else

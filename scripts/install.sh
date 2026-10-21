@@ -464,7 +464,11 @@ k_pdf() {
   if suho; then printf '%s\n' "$plan" | sed 's/^/  /'; promjena; return 0; fi
   naredba "bash scripts/instaliraj-pdf.sh"
   promjena
-  bash scripts/instaliraj-pdf.sh || upozori "naredba pdf nije spremna — bash scripts/instaliraj-pdf.sh kaže što fali"
+  local stvoreno="$TM_HOME/tmp/pdf-stvoreno-$$" put vrsta
+  mkdir -p "$TM_HOME/tmp"; : > "$stvoreno"
+  TM_PDF_STVORENO="$stvoreno" bash scripts/instaliraj-pdf.sh || upozori "naredba pdf nije spremna — bash scripts/instaliraj-pdf.sh kaže što fali"
+  while IFS='|' read -r put vrsta; do [ -n "$put" ] && u_manifest "$put" "$vrsta"; done < "$stvoreno"
+  rm -f "$stvoreno"
   [ -L "$HOME/.local/bin/pdf" ] && u_manifest "$HOME/.local/bin/pdf" veza
   u_manifest "${TM_PDF_VENV:-$HOME/.local/share/regoc-pdf}" mapa
   return 0
@@ -689,6 +693,9 @@ k_baze_uv() {
   UV_NO_MODIFY_PATH=1 pokreni_skriptu https://astral.sh/uv/install.sh || return 4
   command -v uv >/dev/null 2>&1 || { echo "    GREŠKA: uv se nije instalirao"; return 5; }
   u_manifest "$HOME/.local/bin/uv" datoteka; u_manifest "$HOME/.local/bin/uvx" datoteka
+  # instalator uv-a piše i potvrdu ~/.config/uv/uv-receipt.json (K8 krug 1: ostala nakon --do-nule)
+  [ -f "$HOME/.config/uv/uv-receipt.json" ] && { u_manifest "$HOME/.config/uv/uv-receipt.json" datoteka; u_manifest "$HOME/.config/uv" mapa-ako-prazna; }
+  return 0
 }
 
 k_baze_python() {
@@ -696,8 +703,15 @@ k_baze_python() {
   suho && ! command -v uv >/dev/null 2>&1 && { echo "    (suho) uv python install $PYTHON_BAZE"; promjena; return 0; }
   if uv python find "$PYTHON_BAZE" >/dev/null 2>&1; then razlog "Python $PYTHON_BAZE: $(uv python find "$PYTHON_BAZE")"; return 0; fi
   naredba "uv python install $PYTHON_BAZE"
+  local prije; prije="$(ls -1 "$HOME/.local/bin" 2>/dev/null)"
   promjena; radi "uv python install $PYTHON_BAZE" -- uv python install "$PYTHON_BAZE" || return 4
-  suho || u_manifest "$HOME/.local/share/uv/python" mapa
+  suho && return 0
+  u_manifest "$HOME/.local/share/uv/python" mapa
+  # uv stavlja i vezu ~/.local/bin/python3.13 (K8 krug 1: nakon --do-nule ostala je viseća veza)
+  local v; for v in "$HOME"/.local/bin/python*; do
+    [ -L "$v" ] && ! printf '%s\n' "$prije" | grep -qxF "$(basename "$v")" && u_manifest "$v" veza
+  done
+  return 0
 }
 
 # Torch na Linuxu s CPU indeksa (QA K6 B5): PyPI za Linux x86_64 daje torch s CUDA-om — nvidia-*

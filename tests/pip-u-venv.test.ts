@@ -47,7 +47,7 @@ describe('pip_u_venv — pip u venv i na macOS-u (CLT Python 3.9 nema pip --pyth
     const r = okruzje(true).pokreni()
     expect(r.kod, r.izlaz + r.zapis).toBe(0)
     expect(r.zapis).toMatch(/^venv -m ensurepip$/m) // ensurepip ne zna -q (izmjereno: CLT Python 3.9)
-    expect(r.zapis).toMatch(/venv -m pip install .*reportlab==4\.4\.4 pypdf==6\.1\.1/)
+    expect(r.zapis).toMatch(/venv -m pip install .*--no-cache-dir reportlab==4\.4\.4 pypdf==6\.1\.1/) // predmemorija nije u manifestu
     expect(r.zapis).not.toContain('sustav')
   })
   test('bez ensurepip-a (Debian) → rezerva: pip sustava s --python', () => {
