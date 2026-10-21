@@ -127,6 +127,15 @@ export function cwd(pid: number, o?: Okolina): string | null {
   return red ? red.slice(1) : null
 }
 
+/**
+ * Stvarna putanja otvorenog opisnika OVOG procesa ili null (Linux: procfs `self/fd/N`; macOS: nema
+ * puta bez nativnog fcntl(F_GETPATH) → null, pozivatelj tada drži provjeru realpath + dev/ino).
+ */
+export function putanjaOpisnika(fd: number, o?: Okolina): string | null {
+  if (!Number.isInteger(fd) || fd < 0 || !jeLinux(o)) return null
+  try { return readlinkSync(join(procRoot(o), 'self', 'fd', String(fd))) } catch { return null }
+}
+
 /** Roditelj procesa ili null (Linux: polje 4 procfs stat-a; macOS: `ps -o ppid=`). */
 export function ppid(pid: number, o?: Okolina): number | null {
   if (!ispravanPid(pid)) return null

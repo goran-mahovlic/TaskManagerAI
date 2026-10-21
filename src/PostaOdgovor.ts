@@ -26,6 +26,7 @@ import { closeSync, constants, fstatSync, openSync, readSync, realpathSync, stat
 import { basename, sep } from 'path'
 import { provjeriDokument } from './razgovor/SendDoc'
 import { promijeni, type Spremiste, type ZapisMaila } from './PostaUlaz'
+import { putanjaOpisnika } from './core/platforma'
 
 // ─── Nalog poteza ────────────────────────────────────────────────────────────
 
@@ -196,6 +197,9 @@ export function procitajProvjereno(put: string, mape: string[], max: number): { 
     if (sad.dev !== st.dev || sad.ino !== st.ino) return { ok: false, razlog: 'datoteka se promijenila tijekom provjere' }
     const realMape = mape.flatMap(m => { try { return [realpathSync(m)] } catch { return [] } })
     if (!unutar(stvarna, realMape)) return { ok: false, razlog: 'izvan dopuštene mape' }
+    // Obrana u dubinu gdje OS daje putanju samog opisnika (Linux): i ona mora biti u mapi.
+    const poOpisniku = putanjaOpisnika(fd)
+    if (poOpisniku !== null && !unutar(poOpisniku, realMape)) return { ok: false, razlog: 'izvan dopuštene mape' }
     const buf = Buffer.alloc(st.size)
     let procitano = 0
     while (procitano < st.size) {

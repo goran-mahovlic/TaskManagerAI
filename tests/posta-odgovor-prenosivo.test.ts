@@ -44,3 +44,17 @@ describe('procitajProvjereno bez /proc', () => {
     expect(/\/proc\b/.test(izvor)).toBe(false)
   })
 })
+
+describe('platforma.putanjaOpisnika', () => {
+  test('Linux: putanja otvorenog opisnika; macOS (podmetnut): null', async () => {
+    const { putanjaOpisnika } = await import('../src/core/platforma')
+    const { openSync, closeSync, realpathSync } = await import('fs')
+    const f = join(KOR, 'fd.txt'); writeFileSync(f, 'x')
+    const fd = openSync(f, 'r')
+    try {
+      if (process.platform === 'linux') expect(putanjaOpisnika(fd)).toBe(realpathSync(f))
+      expect(putanjaOpisnika(fd, { os: 'darwin' })).toBeNull()
+      expect(putanjaOpisnika(-1)).toBeNull()
+    } finally { closeSync(fd) }
+  })
+})
