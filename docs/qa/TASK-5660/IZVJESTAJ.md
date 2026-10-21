@@ -64,6 +64,13 @@ Tri pada na node-A ista su u bazi i u kandidatu (B6: disk i vremenska zona). Če
 prolazi **3/3** (23 pass, 0 fail) — vremenski flake. **Novih padova u odnosu na postojeće
 testove: 0.**
 
+Ponovljeno 21.10. 15:45 (nakon siroče-oporavka) u worktreeu node-A na 12f419d: puni
+`bun test` → 2444 pass / 2 skip / **1 fail** (`files-download.test.ts` „živa ploča se nije
+podigla u 10 s", load average 3–5). Ta datoteka samostalno prolazi **34/34 u dva pokušaja**:
+to je flake pod opterećenjem, a ne regresija. Ranije pokretanje u istom prolazu dalo je
+4 fail i 4 errors uz 2357 testova (datoteke nisu dovršile pod opterećenjem), pa je broj na
+node-A nestabilan, ali ni u jednom pokretanju nema pada koji se ponavlja samostalno.
+
 Živi node-A (f50408fb) nije diran. `bootcheck.sh` kandidata nad njegovom instalacijom
 (`--paket ~/TaskManagerAI --bez-zapisa`): **PASS**, izlaz 0 (M1–M7 PASS, M8 upozorenje:
 neograničen sudo).
