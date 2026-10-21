@@ -21,7 +21,7 @@
 # manifesta prolazi branu `smije_obrisati` (ispod), a odbijeni se ispisuju i broje.
 # Logovi krugova instalacije sele u ~/.taskmanager-log-arhiva/install/ (provjeri-cisto ih
 # ne broji), a zapis deinstalacije ide u …/deinstalacija/<vrijeme>/ (format P3.1).
-# Izlaz: 0 uspjeh · 2 uporaba · 3 preduvjet (sudo za LaunchDaemon) · 7 usluga · 8 ostaci nakon
+# Izlaz: 0 uspjeh · 2 uporaba ili root · 3 preduvjet (sudo za LaunchDaemon) · 7 usluga · 8 ostaci nakon
 #        --do-nule (provjeri-cisto ≠ 0) · 9 put iz manifesta odbijen na brani · 130 prekinuto.
 set -uo pipefail
 export LC_NUMERIC=C
@@ -48,6 +48,11 @@ while [ $# -gt 0 ]; do
   esac
   shift
 done
+
+# Nikad kao root (K5 V2): $HOME i brana brisanja vrijede za korisnika usluge, ne za root.
+if [ "$(id -u)" = 0 ]; then
+  echo "deinstaliraj.sh: ne radi kao root — pokreni kao korisnik usluge, bez sudo (sudo traži sama kad treba)" >&2; exit 2
+fi
 
 TM_HOME="${TM_HOME:-$HOME/.taskmanager}"
 ARHIVA="${TM_LOG_ARHIVA:-$HOME/.taskmanager-log-arhiva}"

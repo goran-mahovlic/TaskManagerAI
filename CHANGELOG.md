@@ -1,3 +1,13 @@
+## 2026-10-21 — K5 sigurnost: brana za root, upozorenje na neograničen sudo, suženi sudoers (TASK-5685)
+
+- V2: `install.sh` i `deinstaliraj.sh` pokrenuti kao root izlaze s 2 („pokreni kao korisnik usluge, bez sudo");
+  `servis.ts` odbija korisnika usluge `root` i prazan korisnik (plist s `UserName=root` se više ne radi).
+- V1: korak preduvjeta u `install.sh` i bootcheck (nova stavka M8) javljaju UPOZORENJE kad `sudo -n -l`
+  pokazuje `NOPASSWD: ALL`. `templates/servis/sudoers.primjer` (generator: `servis.ts sudoers --korisnik IME`)
+  nabraja točne `launchctl` naredbe za svaku uslugu iz `usluge.json`, bez zamjenskih znakova.
+  `docs/INSTALL.md` §2.4 i README: nakon instalacije zamijeni puni sudoers suženim.
+- N1: poruka pada `sudo install` više ne upućuje na nepostojeći `install.sh --sudoers`.
+
 ## 2026-10-21 — `scripts/bootcheck.sh`: provjera čvora M1–M7 na Linuxu i macOS-u (TASK-5657)
 
 - Plan Mac v3 K4: bootcheck je sada u paketu (`scripts/bootcheck.sh` + `scripts/bootcheck.ts`), za oba OS-a:

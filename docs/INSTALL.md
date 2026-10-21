@@ -77,6 +77,13 @@ LaunchDaemon `/Library/LaunchDaemons/hr.regoc.<ime>.plist` s `UserName` instalat
 čvora (ima prednost), a uz `--tajne` i spremište tajni. Za LaunchDaemon treba administratorsko
 pravo (`sudo -v` prije pokretanja); bez njega `--bez-servisa`.
 
+**Ne kao root.** `install.sh` i `deinstaliraj.sh` pokrenuti kao root (`sudo bash scripts/install.sh …`)
+odmah izlaze s 2: usluga dobiva korisnika iz `$USER`, pa bi plist imao `UserName=root`, a ploča bez
+autentikacije radila bi kao root. Pokreni ih kao korisnik usluge; sudo traže same kad treba.
+`servis.ts` isto odbija korisnika `root` i prazan korisnik. Ako korisnik usluge ima neograničen sudo
+(`sudo -n -l` pokazuje `(ALL) NOPASSWD: ALL`), korak preduvjeta i sažetak na kraju ispisuju
+UPOZORENJE — nakon instalacije ga zamijeni suženim (§2.4).
+
 **Idempotentnost.** Svaki korak prvo mjeri pa tek onda piše; postojeća datoteka koja se
 mijenja ide u `$TM_HOME/backup/`. Lokalne postavke (`postavke.env`, `profil.instanca.env`,
 `memorija.json`) instalacija zapiše samo prvi put. Drugo pokretanje završava s
@@ -170,6 +177,7 @@ podignut prije manje od 10 min, zapis je `POST-BOOT`, inače `RUCNO`; prije mjer
 | M5 | barem jedan AI servis prijavljen — **bilo koji** iz kataloga ili model-configa; uz `autonomyGate` i mjerilo radi | | Claude pretplata samo kroz `CLAUDE_CODE_OAUTH_TOKEN` | bez prijave UPOZORENJE; uključen `autonomyGate` bez mjerila FAIL |
 | M6 | sat | `timedatectl` NTPSynchronized | `sntp` | odstupanje > 60 s ili NTP isključen: UPOZORENJE |
 | M7 | izvori iz `$TM_HOME/config/memorija.json` odgovaraju | | | vidi niže |
+| M8 | korisnik usluge nema neograničen sudo (`sudo -n -l` bez `NOPASSWD: ALL`) | `sudo -n -l` | `sudo -n -l` | `NOPASSWD: ALL`: UPOZORENJE (§2.4) |
 
 M7: `nasa` → posrednik memorije `/health` i tunel RAG-a (i ugrađivanje); nedostupan je UPOZORENJE jer čvor
 radi i bez dijeljenog sustava. `lokalna` → usluga `regoc-hindsight` radi i banka čvora ima memorija > 0, odnosno
@@ -180,6 +188,25 @@ RAM/CPU u mirovanju). Bez `memorija.json` (instalacija prije TASK-5655) izvor se
 
 Zapis: `$TM_HOME/log/bootcheck/<POST-BOOT|RUCNO>_<vrijeme>.{txt,json}` i `zadnji.txt` / `zadnji.json`
 (`--bez-zapisa` ga preskače). Za nadogradnju: `bash scripts/nadogradi.sh … --bootcheck 'bash scripts/bootcheck.sh --cekaj 30'`.
+
+## 2.4. Suženi sudoers za korisnika usluge (macOS, K5 V1)
+
+Ploča nema autentikacije, a agenti rade bez pitanja za dopuštenje. Ako korisnik usluge ima
+`NOPASSWD: ALL`, svatko tko dođe do ploče (tailnet ili bilo koji lokalni proces na `127.0.0.1`)
+dolazi do root-a. **Nakon instalacije zamijeni puni sudoers suženim**: usluga smije samo
+`launchctl kickstart [-k]`, `bootout` i `bootstrap` vlastitih LaunchDaemona, svaki nabrojan točno.
+
+```bash
+bun scripts/instalacija/servis.ts sudoers --korisnik regoc > regoc.sudoers   # iz templates/servis/usluge.json
+sudo visudo -c -f regoc.sudoers
+sudo install -m 440 -o root -g wheel regoc.sudoers /etc/sudoers.d/regoc      # zamjenjuje "regoc ALL=(ALL) NOPASSWD: ALL"
+sudo -l -U regoc                                                              # samo naredbe usluga, bez NOPASSWD: ALL
+```
+
+Primjer je u `templates/servis/sudoers.primjer` (test drži da je jednak izlazu generatora i da
+pokriva sve usluge). U njemu nema zamjenskih znakova: `hr.regoc.*.plist` u sudoersu propušta i
+`hr.regoc.x/../../tmp/zlo.plist`. Ponovna instalacija (upis plista u `/Library/LaunchDaemons`) i
+dalje traži administratora: `sudo -v` pa `install.sh`. Bootcheck to prati kao M8 (upozorenje, ne pad).
 
 ## 3. Agenti i vještine (neobavezno, ali to je ono što ploču čini sustavom)
 

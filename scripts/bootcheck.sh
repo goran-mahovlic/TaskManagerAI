@@ -6,7 +6,8 @@
 #   M1 vlasnik usluge (systemd --user / LaunchDaemon) · M2 radna mapa procesa = paket ·
 #   M3 HTTP 200 vlastiti Host / 403 tuđi · M4 nema osirotjelih procesa na vratima ·
 #   M5 AI servis prijavljen (bilo koji) i mjerilo autonomije · M6 sat (NTP) ·
-#   M7 izvori memorije i RAG-a odgovaraju prekidačima (memorija.json)
+#   M7 izvori memorije i RAG-a odgovaraju prekidačima (memorija.json) ·
+#   M8 korisnik usluge nema neograničen sudo (NOPASSWD: ALL → upozorenje)
 #
 # Ništa ne pokreće i ništa ne popravlja. Učita postavke čvora istim redom kao usluga
 # (scripts/s-okolinom.sh), pa pozove scripts/bootcheck.ts. Zapis ide u
@@ -14,7 +15,7 @@
 # Izlaz: 0 PASS (upozorenja ne obaraju, osim uz --strogo) · 1 FAIL · 2 pogrešna uporaba.
 set -uo pipefail
 
-case "${1:-}" in -h|--help) sed -n '2,15p' "$0"; exit 0 ;; esac
+case "${1:-}" in -h|--help) sed -n '2,16p' "$0"; exit 0 ;; esac
 
 OVDJE="$(cd "$(dirname "$0")/.." && pwd)"
 # --paket DIR: mjeri instalaciju u DIR (npr. bootcheck iz druge kopije) — i postavke se čitaju odande

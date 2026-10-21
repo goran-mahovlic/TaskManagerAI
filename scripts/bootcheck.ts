@@ -11,6 +11,7 @@
  *   M5 model i autonomija  barem jedan AI servis prijavljen (BILO KOJI, odluka 6); uz autonomyGate i mjerilo radi
  *   M6 sat                 NTP sinkroniziran / odstupanje ≤ 60 s (inače upozorenje, nikad pad)
  *   M7 memorija i RAG      odabrani izvor (memorija.json: nasa/lokalna/iskljuceno) odgovara; neodabrane lokalne usluge stoje
+ *   M8 ovlasti korisnika   `sudo -n -l` bez NOPASSWD: ALL (inače upozorenje: ploča bez autentikacije = put do root-a)
  *
  * Sud po mjerenju: PASS · UPOZORENJE (ne obara verdikt; --strogo ga obara) · FAIL.
  * Okolina usluge (TM_PORT, TM_FEATURES_FILE…) čita se iz živog procesa usluge, pa bootcheck
@@ -310,6 +311,20 @@ export async function m7(k: Kontekst): Promise<Mjerenje> {
 
 // ─── sastavljanje ────────────────────────────────────────────────────────────
 
+/** Daje li izlaz `sudo -n -l` neograničen sudo bez lozinke (`(ALL) NOPASSWD: ALL`, `(ALL : ALL) …`, `(root) …`). Isti uzorak ima install.sh. */
+export function neogranicenSudo(izlaz: string): boolean {
+  return /^\s*\((ALL|root)(\s*:\s*ALL)?\)\s+([A-Z_]+:\s*)*NOPASSWD:\s*([A-Z_]+:\s*)*ALL\s*$/m.test(izlaz)
+}
+
+/** M8: korisnik usluge (bootcheck radi kao on) nema neograničen sudo — K5 V1. Upozorenje, nikad pad. */
+export async function m8(k: Kontekst): Promise<Mjerenje> {
+  const out = (k.okolina.izvrsi ?? P.izvrsiZadano)(['sudo', '-n', '-l'])
+  if (out !== null && neogranicenSudo(out))
+    return m('M8', 'ovlasti korisnika usluge', 'UPOZORENJE', ['korisnik usluge ima neograničen sudo (NOPASSWD: ALL) — ploča nema autentikacije, pa je pristup ploči put do root-a',
+      'zamijeni ga suženim: bun scripts/instalacija/servis.ts sudoers --korisnik IME (templates/servis/sudoers.primjer, docs/INSTALL.md §2.4)'])
+  return m('M8', 'ovlasti korisnika usluge', 'PASS', [out === null ? 'sudo -n -l: bez ovlasti bez lozinke' : 'sudo -n -l: bez NOPASSWD: ALL'])
+}
+
 export function verdikt(mj: Mjerenje[], strogo = false): Sud {
   const s = najgori(...mj.map(x => x.sud))
   return s === 'FAIL' || (strogo && s === 'UPOZORENJE') ? 'FAIL' : 'PASS'
@@ -317,7 +332,7 @@ export function verdikt(mj: Mjerenje[], strogo = false): Sud {
 
 export async function pokreni(k: Kontekst, strogo = false): Promise<Omit<Izvjestaj, 'host' | 'vrijeme' | 'vrsta'> & { verdikt: Sud }> {
   const mjerenja: Mjerenje[] = []
-  for (const f of [m1, m2, m3, m4, m5, m6, m7]) {
+  for (const f of [m1, m2, m3, m4, m5, m6, m7, m8]) {
     try { mjerenja.push(await f(k)) } catch (e: any) { mjerenja.push(m(`M${mjerenja.length + 1}`, 'greška mjerenja', 'FAIL', [String(e?.message ?? e)])) }
   }
   return { os: k.os, paket: k.paket, usluga: k.usluga, mjerenja, verdikt: verdikt(mjerenja, strogo) }

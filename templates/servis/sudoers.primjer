@@ -1,0 +1,40 @@
+# Suženi sudoers za korisnika usluge TaskManagerAI na macOS-u (K5 V1, TASK-5685).
+# Generira ga: bun scripts/instalacija/servis.ts sudoers [--korisnik IME]
+# iz templates/servis/usluge.json; test drži ovu datoteku jednakom izlazu generatora.
+#
+# Zamjenjuje puni "IME ALL=(ALL) NOPASSWD: ALL". Ploča nema autentikacije, a agenti rade bez
+# pitanja za dopuštenje, pa bi puni sudo svakome tko dođe do ploče dao root. Ovdje usluga smije
+# samo pokrenuti, ponovno pokrenuti, učitati i zaustaviti VLASTITE LaunchDaemone. Svaka oznaka i
+# putanja plista je nabrojana točno, bez zamjenskih znakova: uzorak u putanji plista širi se i
+# preko kose crte, pa bi propustio i plist izvan /Library/LaunchDaemons.
+# Upis plista (install.sh, nova usluga) i dalje traži administratora: sudo -v pa ponovi.
+#
+# Postavljanje (kao administrator, nakon instalacije; IME = korisnik usluge):
+#   bun scripts/instalacija/servis.ts sudoers --korisnik IME > regoc.sudoers
+#   sudo visudo -c -f regoc.sudoers
+#   sudo install -m 440 -o root -g wheel regoc.sudoers /etc/sudoers.d/regoc
+#   sudo -l -U IME          (mora pokazati samo ove naredbe, bez NOPASSWD: ALL)
+
+Cmnd_Alias REGOC_USLUGE = \
+    /bin/launchctl kickstart -k system/hr.regoc.taskmanager, \
+    /bin/launchctl kickstart system/hr.regoc.taskmanager, \
+    /bin/launchctl bootout system/hr.regoc.taskmanager, \
+    /bin/launchctl bootstrap system /Library/LaunchDaemons/hr.regoc.taskmanager.plist, \
+    /bin/launchctl kickstart -k system/hr.regoc.daemon, \
+    /bin/launchctl kickstart system/hr.regoc.daemon, \
+    /bin/launchctl bootout system/hr.regoc.daemon, \
+    /bin/launchctl bootstrap system /Library/LaunchDaemons/hr.regoc.daemon.plist, \
+    /bin/launchctl kickstart -k system/hr.regoc.znanje, \
+    /bin/launchctl kickstart system/hr.regoc.znanje, \
+    /bin/launchctl bootout system/hr.regoc.znanje, \
+    /bin/launchctl bootstrap system /Library/LaunchDaemons/hr.regoc.znanje.plist, \
+    /bin/launchctl kickstart -k system/hr.regoc.pgvector, \
+    /bin/launchctl kickstart system/hr.regoc.pgvector, \
+    /bin/launchctl bootout system/hr.regoc.pgvector, \
+    /bin/launchctl bootstrap system /Library/LaunchDaemons/hr.regoc.pgvector.plist, \
+    /bin/launchctl kickstart -k system/hr.regoc.hindsight, \
+    /bin/launchctl kickstart system/hr.regoc.hindsight, \
+    /bin/launchctl bootout system/hr.regoc.hindsight, \
+    /bin/launchctl bootstrap system /Library/LaunchDaemons/hr.regoc.hindsight.plist
+
+KORISNIK_USLUGE ALL=(root) NOPASSWD: REGOC_USLUGE

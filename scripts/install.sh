@@ -28,7 +28,7 @@
 # piše, pa drugo pokretanje javlja „0 promjena".
 # Piše se za bash 3.2 (macOS /bin/bash): bez asocijativnih polja, a prazno polje se širi samo
 # uz zaštitu ("${a[@]+"${a[@]}"}"), jer ga `set -u` u 3.2 smatra nepostavljenim.
-# Izlaz: 0 uspjeh · 2 pogrešna uporaba · 3 preduvjet · 4 mreža · 5 ovisnosti · 6 baza ·
+# Izlaz: 0 uspjeh · 2 pogrešna uporaba ili root · 3 preduvjet · 4 mreža · 5 ovisnosti · 6 baza ·
 #        7 usluga · 8 provjera nakon podizanja · 130 prekinuto.
 set -uo pipefail
 export LC_NUMERIC=C   # decimalna točka u trajanju koraka (hr_HR bi dao zarez → neispravan JSON)
@@ -68,6 +68,11 @@ while [ $# -gt 0 ]; do
   esac
   shift
 done
+# Nikad kao root (K5 V2): usluga dobiva korisnika iz $USER, pa bi `sudo bash install.sh` dao
+# plist s UserName=root, a ploča bez autentikacije radila bi kao root.
+if [ "$(id -u)" = 0 ]; then
+  echo "install.sh: ne radi kao root — pokreni kao korisnik usluge, bez sudo (sudo traži sama kad treba)" >&2; exit 2
+fi
 if [ -n "$CVOR" ] && ! printf '%s' "$CVOR" | grep -Eq '^[a-z0-9][a-z0-9-]{0,62}$'; then
   echo "--cvor: ime smije imati mala slova, brojke i '-' (do 63 znaka)" >&2; exit 2
 fi
@@ -298,6 +303,14 @@ k_stablo() {
   razlog "git $(git -C "$PAKET" rev-parse --short HEAD 2>/dev/null)$([ -n "$prljavo" ] && echo ' (izmjene)' || echo ', čisto')"
 }
 
+# neograniceni_sudo — 0 kad `sudo -n -l` za ovog korisnika daje NOPASSWD: ALL (K5 V1). Ploča nema
+# autentikacije, a agenti rade bez pitanja za dopuštenje, pa je takav sudo put do root-a za
+# svakoga tko dođe do ploče. Isti uzorak mjeri bootcheck (M8, neogranicenSudo).
+neograniceni_sudo() {
+  command -v sudo >/dev/null 2>&1 || return 1
+  s_rokom 10 sudo -n -l 2>/dev/null | grep -Eq '^[[:space:]]*\((ALL|root)([[:space:]]*:[[:space:]]*ALL)?\)[[:space:]]+([A-Z_]+:[[:space:]]*)*NOPASSWD:[[:space:]]*([A-Z_]+:[[:space:]]*)*ALL[[:space:]]*$'
+}
+
 brew_korisnikov() { command -v brew >/dev/null 2>&1 && [ -w "$(brew --prefix 2>/dev/null)" ]; }
 
 k_preduvjeti() {
@@ -343,6 +356,11 @@ k_preduvjeti() {
       else st="✗ (${nap})"; fi
       printf '    %-3s %-34.34s %-48.48s %-3s %s\n' "$br" "$lin" "$mac" "$izv" "$st"
     done < "$PAKET/scripts/instalacija/preduvjeti-macos.tsv"
+  fi
+  if neograniceni_sudo; then
+    echo "    UPOZORENJE: korisnik usluge ($(id -un)) ima neograničen sudo (NOPASSWD: ALL) — tko dođe do ploče, dolazi do root-a"
+    echo "    nakon instalacije zamijeni ga suženim: templates/servis/sudoers.primjer (docs/INSTALL.md §2.4)"
+    upozori "korisnik usluge ima neograničen sudo (NOPASSWD: ALL) — zamijeni ga suženim: templates/servis/sudoers.primjer"
   fi
   if [ "${#fali[@]}" -gt 0 ]; then
     echo "    GREŠKA: nedostaje: ${fali[*]}"
