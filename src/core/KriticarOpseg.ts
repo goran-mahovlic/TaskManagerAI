@@ -20,14 +20,17 @@
  * Čiste funkcije osim čitanja transkripta; nikad ne bacaju.
  */
 
-import { existsSync, readFileSync, readdirSync, statSync } from 'fs'
-import { homedir } from 'os'
+import { existsSync, readFileSync, readdirSync, statSync, statfsSync } from 'fs'
+import { spawnSync } from 'child_process'
 import { basename, extname, isAbsolute, join, relative, resolve } from 'path'
+import { homedir } from 'os'
 
 const HOME = process.env.HOME || homedir()
 
 export type OpsegMode = 'off' | 'shadow' | 'on'
 export type RazlogIzvan = 'snimka-koda' | 'nije-dirao'
+/** Razlozi iz TASK-5670 (replay): pad koji nije dokaz kvara zadatka. */
+export type RazlogNeprovjereno = 'istek-roka' | 'okolina' | 'visestruki'
 
 /** Ekstenzije koje kritičar pokreće/raščlanjuje — samo za njih vrijedi izuzeće snimke. */
 const KOD_EKSTENZIJE = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.py', '.json'])
@@ -49,7 +52,10 @@ export function jeSnimkaKoda(path: string): boolean {
   if (i < 0) return false
   const ispod = p.slice(i + '/docs/'.length).split('/')
   if (ispod.length < 2) return false // datoteka izravno u docs/ nije u podmapi snimki
-  return ispod[0] === 'kod' || ispod[0] === 'prijedlozi'
+  // `architecture` (TASK-5670/K5): docs/architecture/<zadatak>/*.ts su kopije modula uz
+  // izvještaj (TASK-5259 pozadina_povrat_5259, TASK-5414 radna_mapa_5414) — „Could not
+  // resolve ../TaskManagerSQL". Provjera po importima to nije hvatala kad je snimka obrisana.
+  return ispod[0] === 'kod' || ispod[0] === 'prijedlozi' || ispod[0] === 'architecture'
 }
 
 const RELATIVNI_IMPORT_RE = /(?:\bfrom\s+|\bimport\s*\(?\s*|\brequire\s*\(\s*)['"](\.{1,2}\/[^'"\n]+)['"]/g
@@ -180,6 +186,195 @@ export function razlogIzvanOpsega(path: string, a: Atribucija | null, vlastitiKo
   return pripadaSpawnu(abs, a) ? null : 'nije-dirao'
 }
 
+// ─── (e) Okolina i istek roka (TASK-5670) ────────────────────────────────────
+
+const ENOSPC_RE = /\bENOSPC\b|no space left on device|\bEDQUOT\b|disk quota exceeded/i
+const BARE_PAKET_RE = /Could not resolve: "([^".\/][^"]*)"\. Maybe you need to "bun install"/
+
+/**
+ * TASK-5674: `bun test` koji nije izveo NIJEDAN test ne dokazuje ništa ni o kodu ni o
+ * izvođaču — filter ne odgovara nijednoj datoteci u stablu u kojem je pokrenut (TASK-5657:
+ * provjere pokrenute na grani main, a testovi su u worktreeju zadatka). „Ran 0 tests" se
+ * računa samo kad u izlazu nema nijednog pada: test koji pukne pri učitavanju bun broji kao
+ * „1 fail" i to ostaje pravi pad.
+ */
+const FILTER_BEZ_TESTA_RE = /did not match any test files|\bNo tests found\b/i
+const RAN_0_RE = /\bRan 0 tests?\b/
+const IMA_PAD_RE = /^\s*[1-9]\d*\s+fail\b/m
+export const NULA_TESTOVA = '0 izvedenih testova — filter ne odgovara nijednoj datoteci u stablu provjere (krivo stablo ili put)'
+
+export function nulaIzvedenihTestova(tekst: string): boolean {
+  const t = tekst || ''
+  if (IMA_PAD_RE.test(t)) return false
+  return FILTER_BEZ_TESTA_RE.test(t) || RAN_0_RE.test(t)
+}
+
+/**
+ * Je li pad posljedica OKOLINE kritičara, a ne koda (`null` = nije, sudi se normalno):
+ *   • ENOSPC/EDQUOT — pun disk ili tmpfs (TASK-5306/5327/5331/5333),
+ *   • paket (ne relativni put) se ne razrješava, a stablo NEMA nijedan node_modules od mape
+ *     cilja do korijena paketa — worktree je stvoren bez `bun install` (~20 zadataka
+ *     06.–14.10., TASK-5509). Kad node_modules POSTOJI, a paketa u njemu nema, ovisnost
+ *     nije upisana/instalirana — to je pravi kvar i ostaje pad.
+ * Relativni import koji se ne razrješava NIKAD nije okolina (pravi modul s krivim importom).
+ */
+export function okolinaIzIzlaza(tekst: string, target: string, exists: (p: string) => boolean = existsSync): string | null {
+  const t = tekst || ''
+  if (ENOSPC_RE.test(t)) return 'ENOSPC — disk ili tmpfs kritičara je pun'
+  if (nulaIzvedenihTestova(t)) return NULA_TESTOVA
+  const m = BARE_PAKET_RE.exec(t)
+  // Okolina samo kad je SVAKA prijavljena greška nerazriješen paket: `bun build` uz „zod"
+  // prijavi i pravu sintaksnu grešku, a ona ne smije nestati pod „okolinom".
+  const greske = t.split(/\r?\n/).map((l) => l.trim()).filter((l) => /^(error|SyntaxError|TypeError|ReferenceError)\b/.test(l))
+  if (m && greske.every((l) => BARE_PAKET_RE.test(l))) {
+    let dir = resolve(target, '..')
+    for (let i = 0; i < 40; i++) {
+      if (exists(join(dir, 'node_modules'))) return null
+      if (exists(join(dir, 'package.json')) || dir === '/' || dir === HOME) break
+      const gore = resolve(dir, '..')
+      if (gore === dir) break
+      dir = gore
+    }
+    return `paket „${m[1]}" se ne razrješava, a stablo nema node_modules (worktree bez bun install)`
+  }
+  return null
+}
+
+/**
+ * Replay starih zapisa (prije TASK-5670 trag nije bilježio istek): `bun test` ubijen na
+ * roku ispiše samo zaglavlje datoteke, pa `failureSignature` od njega napravi `<dir><put>:`.
+ * Provjereno na dnevniku daemona: TASK-5157 mjere-cron, TASK-5397 daemon-keeper-env → „ISTEKAO ROK".
+ */
+export function jeIstekRokaPotpis(sig: string): boolean {
+  const { kind } = rastaviPotpis(sig)
+  if (kind !== 'test' && kind !== 'parse') return false
+  return /:[^\s:]*<put>:$/.test(sig)
+}
+
+/** Potpis bez osobnog dijela puta worktreeja: `app/.regoc-worktrees/<repo>/<TASK-…>/` → `wt:<repo>/`. */
+export function normalizirajPotpis(sig: string): string {
+  return sig.replace(/app\/\.regoc-worktrees\/([^/]+)\/TASK-[^/]+\//g, 'wt:$1/')
+}
+
+/** Spominje li izvještaj datoteku (ime kao riječ puta)? Zamjena za transkript kad ga nema. */
+export function spominjeIzvjestaj(path: string, tekst: string | undefined | null): boolean {
+  if (!tekst) return false
+  const ime = basename(path)
+  if (!ime || !tekst.includes(ime)) return false
+  return new RegExp(`(^|[\\s/'"\`=>(<*])${escapeRe(ime)}(?=$|[\\s'"\`;&|)<>:,.*])`, 'm').test(tekst)
+}
+
+/**
+ * K4: je li spawn dirao test ILI modul koji test izravno uvozi (relativni import, jedna
+ * razina). Bez toga bi krivac koji je pokvario MODUL (a test nije ni otvorio) prošao kao
+ * „zatečen" čim je netko drugi pao s istim potpisom. Bez transkripta (`a = null`) vrijedi
+ * spomen imena u izvještaju — kad ga nema, nije dirao.
+ */
+export function diraoTest(
+  testPath: string, a: Atribucija | null, izvjestaj: string | undefined | null,
+  git?: { taskId: string | null; sinceMs: number },
+): boolean {
+  // Bez transkripta: git (commit s ID-om zadatka / neuvrštena izmjena) je dokaz s diska;
+  // spomen u izvještaju agent bira sam, pa vrijedi samo kad git ne zna (datoteka nije u gitu).
+  const dirao = (p: string) => {
+    if (a) return pripadaSpawnu(p, a)
+    if (spominjeIzvjestaj(p, izvjestaj)) return true
+    return git ? gitDirao(p, git.taskId, git.sinceMs) === true : false
+  }
+  if (dirao(testPath)) return true
+  let tekst = ''
+  try { tekst = readFileSync(testPath, 'utf-8') } catch { return false }
+  const dir = resolve(testPath, '..')
+  for (const m of tekst.matchAll(RELATIVNI_IMPORT_RE)) {
+    const cilj = resolve(dir, m[1])
+    for (const n of NASTAVCI_IMPORTA) {
+      const p = cilj + n
+      if (existsSync(p) && (() => { try { return statSync(p).isFile() } catch { return false } })()) {
+        if (dirao(p)) return true
+        break
+      }
+    }
+  }
+  return false
+}
+
+/**
+ * Je li zadatak dirao datoteku po gitu: `true` = commit od `sinceMs` čija poruka nosi ID
+ * zadatka ILI neuvrštena izmjena (ne zna se čija → fail-closed); `false` = datoteka je u
+ * gitu, čista, a commitovi u prozoru su tuđi; `null` = git ne zna (izvan repozitorija,
+ * nepraćena datoteka, git pao — npr. safe.directory). Rok 3 s po pozivu.
+ */
+export function gitDirao(path: string, taskId: string | null, sinceMs: number): boolean | null {
+  try {
+    const dir = resolve(path, '..')
+    if (!existsSync(dir)) return null
+    const git = (...a: string[]) => spawnSync('git', ['-C', dir, ...a], { encoding: 'utf-8', timeout: 3000 })
+    if (git('ls-files', '--error-unmatch', '--', path).status !== 0) return null
+    const st = git('status', '--porcelain', '--', path)
+    if (st.status !== 0) return null
+    if ((st.stdout || '').trim()) return true
+    const log = git('log', `--since=@${Math.floor(sinceMs / 1000)}`, '--format=%s%n%b', '--', path)
+    if (log.status !== 0) return null
+    return !!taskId && (log.stdout || '').includes(taskId)
+  } catch { return null }
+}
+
+/**
+ * Je li disk na kojem leži put STVARNO pun (ENOSPC iz ispisa vlastitog testa nije dokaz —
+ * test smije ispisati što hoće). Pun = < 5 % slobodno, ili < 512 MiB na volumenu ≥ 10 GiB.
+ * Ne zna → `false`.
+ */
+export function diskNizak(path: string): boolean {
+  try {
+    let p = resolve(path)
+    while (!existsSync(p) && p !== '/') p = resolve(p, '..')
+    const s = statfsSync(p)
+    const slobodno = Number(s.bavail) * Number(s.bsize)
+    const ukupno = Number(s.blocks) * Number(s.bsize)
+    // Apsolutni prag samo za velike volumene: tmpfs od 100 MB bi inače uvijek bio „pun".
+    return (ukupno > 0 && slobodno / ukupno < 0.05) || (ukupno >= 10 * 1024 ** 3 && slobodno < 512 * 1024 ** 2)
+  } catch { return false }
+}
+
+export interface VisestrukiUlaz {
+  signature: string
+  taskId: string | null
+  rows: LedgerZapis[]
+  nowMs: number
+  prozorMs: number
+  /** Je li OVAJ spawn dirao datoteku (transkript; bez njega: spomen u izvještaju). */
+  dirao: boolean
+}
+
+/**
+ * K4 (TASK-5670): isti potpis pao je na DRUGOM zadatku unutar prozora (ukupno ≥ 2 zadatka
+ * s ovim), a ovaj spawn datoteku NIJE dirao → zatečen. Izmjereno: trajna-sesija-spawn.test.ts
+ * pokvario je TASK-5615 (23:32), pa su 5623/5625/5626 (put zahtjeva zatvaranja, bez
+ * transkripta) pali s istim potpisom minutu kasnije. `jeZateceniPad` to ne hvata jer je
+ * granica PRVI trag zadatka (22:59), a tuđi pad je nastao poslije.
+ * Dirao = nikad zatečen: vlastiti kod je fail-closed.
+ */
+export function jeVisestrukiTudjiPad(u: VisestrukiUlaz): { zatecen: boolean; izvor?: string; zadaci: string[] } {
+  if (u.dirao || rastaviPotpis(u.signature).kind === 'task') return { zatecen: false, zadaci: [] }
+  const sig = normalizirajPotpis(u.signature)
+  // Vlastiti raniji pad istog potpisa (krug popravka): pad je njegov, kao u `jeZateceniPad`.
+  if (u.taskId && u.rows.some((r) => r?.taskId === u.taskId && (r.signatures || []).some((s) => normalizirajPotpis(s) === sig))) {
+    return { zatecen: false, zadaci: [] }
+  }
+  const zadaci = new Map<string, string>()
+  for (const r of u.rows) {
+    if (!r || !r.taskId || r.taskId === u.taskId) continue
+    const t = Date.parse(r.ts)
+    if (!Number.isFinite(t) || t >= u.nowMs || t < u.nowMs - u.prozorMs) continue
+    // Samo STVARNI padovi (`signatures`). Zatečeni drugog zadatka nije dokaz — inače bi se
+    // lanac „zatečen jer je i onaj bio zatečen" protezao bez kraja i bez ijednog pravog pada.
+    if ((r.signatures || []).some((s) => normalizirajPotpis(s) === sig)) zadaci.set(r.taskId, r.ts)
+  }
+  if (zadaci.size === 0) return { zatecen: false, zadaci: [] }
+  const ids = [...zadaci.keys()]
+  return { zatecen: true, izvor: `višestruki: ${ids.slice(0, 5).join(', ')}`, zadaci: ids }
+}
+
 // ─── (d) Zatečeni pad ────────────────────────────────────────────────────────
 
 /** Podskup zapisa traga kritičara koji ovaj modul čita. */
@@ -192,6 +387,10 @@ export interface LedgerZapis {
   prosle?: string[]
   /** Potpis → broj palih testova (od TASK-5235). */
   failCounts?: Record<string, number>
+  /** Potpisi zatečenih padova (od TASK-5670) — ulaz za K4 sljedećih zadataka. */
+  zateceniSig?: string[]
+  /** Potpisi neprovjerenih provjera (istek/okolina, od TASK-5670). */
+  neprovjereno?: string[]
 }
 
 export interface ZateceniUlaz {
@@ -275,7 +474,7 @@ export function rastaviPotpis(sig: string): { kind: string; rel: string } {
 export interface PresudaReplay {
   novo: 'fail' | 'pass'
   zadrzano: string[]
-  otpalo: Array<{ sig: string; razlog: RazlogIzvan | 'zatecen'; izvor?: string }>
+  otpalo: Array<{ sig: string; razlog: RazlogIzvan | 'zatecen' | RazlogNeprovjereno; izvor?: string }>
 }
 
 /**
@@ -287,7 +486,7 @@ export function presudiZapisReplay(
   a: Atribucija | null,
   sviZapisi: LedgerZapis[],
   home = HOME,
-  opts: { sinceMs?: number; lookbackMs?: number; vlastitiKorijeni?: string[] } = {},
+  opts: { sinceMs?: number; lookbackMs?: number; vlastitiKorijeni?: string[]; resultText?: string; prozorMs?: number; lazni?: boolean } = {},
 ): PresudaReplay {
   const zadrzano: string[] = []
   const otpalo: PresudaReplay['otpalo'] = []
@@ -298,15 +497,40 @@ export function presudiZapisReplay(
   sviZapisi = sviZapisi.filter((r) => Date.parse(r.ts) < tRow)
   for (const sig of row.signatures || []) {
     const { kind, rel } = rastaviPotpis(sig)
+    const lazni = opts.lazni !== false
+    const abs = kind === 'task' ? '' : (isAbsolute(rel) ? rel : join(home, rel))
+    // TASK-5670: okolina vrijedi i za propisanu provjeru (ENOSPC nije kvar ničijeg koda);
+    // kod nje je cilj `stablo$naredba`, pa se node_modules traži od stabla.
+    const okCilj = abs || join(home, rel.split('$')[0], '_')
+    if (lazni && okolinaIzIzlaza(poruka(sig), okCilj)) { otpalo.push({ sig, razlog: 'okolina' }); continue }
     if (kind === 'task' || kind === 'doc' || kind === 'doc2') { zadrzano.push(sig); continue }
-    const abs = isAbsolute(rel) ? rel : join(home, rel)
+    if (lazni && jeIstekRokaPotpis(sig)) { otpalo.push({ sig, razlog: 'istek-roka' }); continue }
+    // K5 u replayu: snimka pod docs/ koja je u međuvremenu obrisana ne može se pročitati,
+    // pa `importiSeRazrjesavaju` ne zna ništa — tada svjedoči potpis istog zapisa: raščlamba
+    // te datoteke pala je na relativnom importu („Could not resolve: "../TaskToolkit"").
+    if (lazni && abs.includes('/docs/') && !existsSync(abs)
+      && (row.signatures || []).some((x) => x.startsWith(`parse:${rel}:`) && /Could not resolve: "\.\.?\//.test(x))) {
+      otpalo.push({ sig, razlog: 'snimka-koda' }); continue
+    }
     const razlog = razlogIzvanOpsega(abs, a, opts.vlastitiKorijeni || [])
     if (razlog) { otpalo.push({ sig, razlog }); continue }
     const z = jeZateceniPad({ signature: sig, kind, relTarget: rel, sinceMs, taskId: row.taskId, rows: sviZapisi, lookbackMs: opts.lookbackMs })
     if (z.zatecen) { otpalo.push({ sig, razlog: 'zatecen', izvor: z.izvor }); continue }
+    if (lazni) {
+      const dirao = diraoTest(abs, a, opts.resultText, { taskId: row.taskId, sinceMs })
+      const v = jeVisestrukiTudjiPad({ signature: sig, taskId: row.taskId, rows: sviZapisi, nowMs: tRow, prozorMs: opts.prozorMs ?? 24 * 3_600_000, dirao })
+      if (v.zatecen) { otpalo.push({ sig, razlog: 'visestruki', izvor: v.izvor }); continue }
+    }
     zadrzano.push(sig)
   }
   return { novo: zadrzano.length ? 'fail' : 'pass', zadrzano, otpalo }
+}
+
+/** Poruka potpisa (dio iza `vrsta:cilj:`). */
+function poruka(sig: string): string {
+  const i = sig.indexOf(':')
+  const j = sig.indexOf(':', i + 1)
+  return j >= 0 ? sig.slice(j + 1) : ''
 }
 
 /** Relativni cilj kakav piše `failureSignature` (za zapis `prosle`). */

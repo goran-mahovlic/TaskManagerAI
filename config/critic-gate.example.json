@@ -33,5 +33,9 @@
   "doc2Mode": "off",
   "_zasto_opseg": "TASK-5235 (vlasnik, 04.10.2026.): kriticar pokrece (a) propisanu [PROVJERA] cmd i (b) parse/test SAMO za datoteke koje je OVAJ spawn dirao (transkript claude --session-id: Write/Edit + spomen u Bash naredbi; A1 worktree = sve). Snimke koda (docs/kod/**, docs/prijedlozi/**, mape snimka*/snapshot*, kod pod docs/ s nerazrijesenim relativnim importom) se ne pokrecu. Pad koji je zadnji tudji zapis traga prije prvog traga zadatka imao s istim potpisom = zatecen (napomena). Bez transkripta: staro pravilo po mtimeu. 'shadow' = stari sud odlucuje, novi se biljezi (critic-gate redak 'opseg[...]' + polje opseg u tragu); 'on' = novi sud odlucuje. Dizajn: docs sustava domaćina, KRITICAR-opseg-provjera.md",
   "opsegMode": "shadow",
-  "opsegLookbackDays": 14
+  "opsegLookbackDays": 14,
+  "_zasto_lazni_pad": "TASK-5670/TASK-5674: padovi koji NISU dokaz kvara zadatka ne obaraju zadatak. lazniPadMode 'on': K1 istek roka auto test/parse → jedan ponovni pokušaj s timeoutRetryMs, a ako i on istekne → NEPROVJERENO (unverifiable, nikad pass); K2 worktree bez node_modules → za vrijeme suda posudi se node_modules matičnog stabla (poveznica, makne se nakon suda), a bez njega 'Could not resolve: <paket>' bez ikakvog node_modules = OKOLINA; K3 ENOSPC/EDQUOT uz stvarno pun disk = OKOLINA; K4 isti potpis na drugom zadatku unutar visestrukiProzorH, a ovaj spawn nije dirao test ni modul koji test uvozi → zatečen + JEDAN zadatak popravka ($TM_HOME/data/kriticar_popravak_testa.json, 7 dana; izvršitelj/projekt iz TM_KRITICAR_POPRAVAK_IZVRSITELJ/_PROJEKT); K5 docs/architecture/** = snimka koda. TASK-5674: propisani bun test s 0 izvedenih testova ('filters did not match any test files', 'Ran 0 tests') čiji put ne postoji u stablu provjere = NEPROVJERENO, nikad CRITIC_FAILED (vrijedi i uz 'off'). Pad u datoteci koju je spawn dirao i dalje blokira. 'off' = ponašanje prije TASK-5670.",
+  "lazniPadMode": "on",
+  "timeoutRetryMs": 60000,
+  "visestrukiProzorH": 24
 }

@@ -1,3 +1,26 @@
+## 2026-10-21 — kritičar bez lažnih CRITIC_FAILED: okolina, istek roka, 0 izvedenih testova (TASK-5691, prijenos TASK-5670 i TASK-5674)
+
+- `src/core/CriticGate.ts` i `src/core/KriticarOpseg.ts` dobivaju pravila iz jezgre domaćina; postavka
+  `lazniPadMode` (`on` zadano, `off` = staro ponašanje), `timeoutRetryMs`, `visestrukiProzorH`
+  (`config/critic-gate.example.json`).
+- K1 istek roka auto test/parse → jedan ponovni pokušaj s duljim rokom, pa NEPROVJERENO (`unverifiable`, nikad pass).
+- K2 worktree bez `node_modules` → za vrijeme suda poveznica na `node_modules` matičnog stabla (miče se nakon
+  suda); bez nje nerazriješen paket u stablu bez ikakvog `node_modules` = okolina.
+- K3 ENOSPC/EDQUOT = okolina samo uz stvarno pun disk (statfs) ili za datoteku koju spawn nije dirao.
+- K4 isti potpis pada na drugom zadatku u prozoru, a ovaj spawn nije dirao test ni modul koji test uvozi →
+  zatečen + jedan zadatak popravka u 7 dana (`$TM_HOME/data/kriticar_popravak_testa.json`; izvršitelj i projekt iz
+  `TM_KRITICAR_POPRAVAK_IZVRSITELJ` / `TM_KRITICAR_POPRAVAK_PROJEKT`, bez njih zadatak nema dodijeljenog).
+- K5 `docs/architecture/**` je snimka koda (ne pokreće se).
+- TASK-5674: propisani `bun test` koji nije izveo nijedan test („filters did not match any test files",
+  „Ran 0 tests") je NEPROVJEREN, nikad CRITIC_FAILED — i uz `lazniPadMode: off`. Okolina po tekstu ispisa vrijedi
+  samo kad disk potvrdi da put-filter ne postoji u stablu provjere; test koji postoji i sam ispiše tu poruku
+  ostaje pad. Kritičar propisane provjere izvodi u `rootDir` (stablo zadatka).
+- Nije preneseno (samo domaćin, ADR-0023 §5): kuka „dirnuto samo jedno stablo" (`TmRazlike`), izbor
+  sačuvanog worktreeja pri ponovnom spawnu (`WorktreeIsolation`) i voditelj lanca (ADR-0024) — dolaze s kompletom
+  izvornog sustava.
+- Testovi: `tests/kriticar-lazni-padovi.test.ts`, `tests/kriticar-stablo-zadatka.test.ts` (37); `diskNizak`
+  očekivanje se računa iz istog statfs-a (test nije smio pretpostaviti prazan disk).
+
 ## 2026-10-21 — sigurnosna dorada K5: zatamnjivanje loga, TM_BIND zadano, javni docs/ (TASK-5686)
 
 - Iz pregleda K5 (TASK-5659), nalazi S1–S3 i N2.
