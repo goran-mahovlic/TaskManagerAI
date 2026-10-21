@@ -176,10 +176,10 @@ const unutar = (put: string, mape: string[]) => mape.some(m => put === m || put.
 
 /**
  * Pročitaj provjerenu datoteku bez ponovnog razrješavanja: O_NOFOLLOW na realpath, isti dev/ino
- * kao pri provjeri, obična datoteka, i (na Linuxu) stvarna putanja otvorenog opisnika i dalje u
- * dopuštenoj mapi — zamjena međumape simboličkom poveznicom nakon provjere tako pada.
+ * kao pri provjeri, obična datoteka, i stvarna putanja nakon otvaranja (isti inode kao opisnik)
+ * i dalje u dopuštenoj mapi — zamjena međumape simboličkom poveznicom nakon provjere tako pada.
  */
-function procitajProvjereno(put: string, mape: string[], max: number): { ok: true; sadrzaj: Buffer } | { ok: false; razlog: string } {
+export function procitajProvjereno(put: string, mape: string[], max: number): { ok: true; sadrzaj: Buffer } | { ok: false; razlog: string } {
   let fd = -1
   try {
     const prije = statSync(put)
@@ -187,10 +187,15 @@ function procitajProvjereno(put: string, mape: string[], max: number): { ok: tru
     const st = fstatSync(fd)
     if (!st.isFile() || st.dev !== prije.dev || st.ino !== prije.ino) return { ok: false, razlog: 'datoteka se promijenila tijekom provjere' }
     if (st.size > max) return { ok: false, razlog: `prevelika datoteka (${st.size} B > ${max} B)` }
-    let stvarna: string | null = null
-    try { stvarna = realpathSync(`/proc/self/fd/${fd}`) } catch { /* nema /proc — vrijedi provjera dev/ino */ }
+    // Stvarna putanja NAKON otvaranja, prenosivo (Linux i macOS, bez procfs-a): realpath mora biti u
+    // dopuštenoj mapi i voditi na ISTI inode kao otvoreni opisnik. Zamjena međumape poveznicom
+    // prije otvaranja daje realpath izvan mape; vraćanje poveznice poslije daje drugi inode.
+    let stvarna: string
+    try { stvarna = realpathSync(put) } catch { return { ok: false, razlog: 'datoteka se promijenila tijekom provjere' } }
+    const sad = statSync(stvarna)
+    if (sad.dev !== st.dev || sad.ino !== st.ino) return { ok: false, razlog: 'datoteka se promijenila tijekom provjere' }
     const realMape = mape.flatMap(m => { try { return [realpathSync(m)] } catch { return [] } })
-    if (stvarna && !unutar(stvarna, realMape)) return { ok: false, razlog: 'izvan dopuštene mape' }
+    if (!unutar(stvarna, realMape)) return { ok: false, razlog: 'izvan dopuštene mape' }
     const buf = Buffer.alloc(st.size)
     let procitano = 0
     while (procitano < st.size) {

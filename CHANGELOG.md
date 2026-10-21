@@ -20,6 +20,10 @@
   izvornog sustava.
 - Testovi: `tests/kriticar-lazni-padovi.test.ts`, `tests/kriticar-stablo-zadatka.test.ts` (37); `diskNizak`
   očekivanje se računa iz istog statfs-a (test nije smio pretpostaviti prazan disk).
+- Spojen TASK-5509 (odgovor na dolazni mail preko ploče — na node-A u pogonu od 14.10., a nije bio u main).
+  `PostaOdgovor.procitajProvjereno` više ne čita stvarnu putanju opisnika iz procfs-a (na macOS-u je provjera
+  „izvan dopuštene mape" tada tiho otpadala): realpath nakon otvaranja mora biti u dopuštenoj mapi i voditi na
+  isti inode kao opisnik. Test `tests/posta-odgovor-prenosivo.test.ts`.
 
 ## 2026-10-21 — sigurnosna dorada K5: zatamnjivanje loga, TM_BIND zadano, javni docs/ (TASK-5686)
 
