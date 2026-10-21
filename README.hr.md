@@ -124,8 +124,9 @@ Naredbe ispod izvodiš redom. S drugog stroja se ništa ne kopira (ni `scp`, ni 
 datoteke postavki), a datoteke u `~/TaskManagerAI` se ne uređuju ručno. Sve što pripada samo
 ovom stroju ide u `~/.taskmanager/` (korak 5).
 
-Podržano: **Debian/Ubuntu** i **macOS 14 ili noviji**. Disk: barem 8 GB slobodno uz `--baze`
-(lokalne baze i modeli za ugrađivanje, oko 2,3 GB preuzimanja), bez toga 2 GB.
+Podržano: **Debian/Ubuntu** i **macOS 14 ili noviji**. Disk: barem 8 GB slobodno uz `--baze`,
+bez toga 2 GB. `--baze` preuzima oko 3,5 GB (modeli za ugrađivanje 2,8 GB, Python paketi s torchem
+samo za CPU), a kućna mapa naraste za oko 5 GB (modeli 2,8 GB, Python okolina 2 GB).
 
 **1. Preduvjeti — Debian/Ubuntu** (jedini korak koji traži root):
 

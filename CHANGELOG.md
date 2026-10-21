@@ -1,3 +1,26 @@
+## 2026-10-21 — K6 dorada: nalazi QA svježe instalacije B1–B7 (TASK-5693)
+
+- Iz QA K6 (TASK-5660), kandidat main 306c442. Svaki popravak ima test koji pada na starom kodu.
+- B1 `scripts/start.sh` gasi samo ploču IZ OVOG paketa (radna mapa procesa = paket, isto mjerilo kao
+  `install.sh` k_provjera i `deinstaliraj.sh` d_procesi); tuđi proces na vratima ostaje, izlaz 3 s PID-om
+  i mapom. Nakon pokretanja provjerava da odgovara NAŠ proces. Test: `tests/start-sh.test.ts`.
+- B2 `start.sh` postavke čita kroz `scripts/s-okolinom.sh` (isti red kao usluga: `$TM_HOME/config/
+  instalacija.env`, pa `postavke.env`); stari `<paket>/config/postavke.env` još se čita, uz upozorenje.
+- B3 `install.sh`: stanje PRIJE prve instalacije u `$TM_HOME/instalacija-prije.txt` (ponovni prolaz ga
+  čita), svaka stavka manifesta odmah u `$TM_HOME/instalirano.ceka`, a pad koraka ih upisuje u
+  `instalirano.json`. `deinstaliraj.sh` i `provjeri-cisto.sh` čitaju i `instalirano.ceka` (pad bez buna).
+  Test: pad na K2.24 → ponovni install → `--do-nule` → `provjeri-cisto` = 0 i HOME = snimka prije.
+- B4 `src/core/paths.ts` `tmHomeKonfiguracije()`: bez `TM_HOME` u okolini, a uz instalaciju čvora
+  (`~/.taskmanager/config/instalacija.env`), CLI (`tajna.ts`, `prijava-ai.ts`, IngestConfig) koristi
+  `~/.taskmanager` kao usluga. `config/tajne-otisak.kljuc` u `.gitignore`.
+- B5 `install.sh --baze`: na Linuxu `uv pip install --torch-backend cpu` (bez nvidia-*/triton, ≈ 5 GB
+  manje); modeli bez ONNX/OpenVINO kopija (`ignore_patterns`: 2,8 GB umjesto ≈ 8,7 GB). README EN/HR:
+  ≈ 3,5 GB preuzimanja, HOME + ≈ 5 GB.
+- B6 `platforma.ts` `lstartMs`: `ps` s `TZ=UTC0`, ispis se čita kao UTC (prije pomak sati izvan UTC-a);
+  `TM_INSTALL_SLOBODNO_MIB` podmeće slobodni disk u testovima `install.sh`.
+- B7 `scripts/instaliraj-pdf.sh`: proba i predmemorija fontconfiga u privremenoj mapi u `$TMPDIR`
+  (briše se na izlasku), ne u `~/app/tmp/pdf-proba` i `~/.cache/fontconfig`; `TM_PDF_PROBA_DIR` je čuva.
+
 ## 2026-10-21 — kritičar bez lažnih CRITIC_FAILED: okolina, istek roka, 0 izvedenih testova (TASK-5691, prijenos TASK-5670 i TASK-5674)
 
 - `src/core/CriticGate.ts` i `src/core/KriticarOpseg.ts` dobivaju pravila iz jezgre domaćina; postavka

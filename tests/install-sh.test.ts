@@ -47,7 +47,8 @@ function pokreni(o: Okruzje, argv: string[], env: Record<string, string> = {}) {
     env: {
       HOME: o.home, PATH: `${env.PREDPATH ? env.PREDPATH + ':' : ''}${BUN_DIR}:/usr/bin:/bin`, USER: 'proba', LANG: 'C.UTF-8',
       TMPDIR: join(o.korijen, 'tmp'), TM_PORT: String(env.TM_PORT || 20000 + Math.floor(Math.random() * 20000)),
-      TM_POSUDI_IZ: NODE_MODULES, TM_BEZ_MREZE: '1', ...env,
+      // slobodan disk se podmeće (B6, QA K6): test ne smije ovisiti o disku stroja (node-A 4,8 GB)
+      TM_POSUDI_IZ: NODE_MODULES, TM_BEZ_MREZE: '1', TM_INSTALL_SLOBODNO_MIB: '100000', ...env,
     },
     stdout: 'pipe', stderr: 'pipe',
   })
@@ -116,6 +117,16 @@ describe('install.sh --suho', () => {
         expect(retci.map(k => k.korak)).toContain(id)
       const rez = JSON.parse(r.izlaz.split('\n').find(l => l.startsWith('REZULTAT '))!.slice(9))
       expect(rez.ishod).toBe('suho')
+    } finally { rmSync(o.korijen, { recursive: true, force: true }) }
+  }, 60_000)
+
+  test('B6: provjera diska je podmetljiva — malo diska uz --baze → izlaz 3 s porukom', () => {
+    const o = okruzje('disk')
+    try {
+      const r = pokreni(o, ['--suho', '--baze', '--posudi'], { TM_INSTALL_SLOBODNO_MIB: '4800' })
+      expect(r.kod, r.izlaz).toBe(3)
+      expect(r.izlaz).toContain('disk: 4800 MiB slobodno')
+      expect(r.izlaz).toMatch(/disk≥\d+MiB/)
     } finally { rmSync(o.korijen, { recursive: true, force: true }) }
   }, 60_000)
 
@@ -195,6 +206,57 @@ describe('install.sh — prava instalacija u privremenom HOME-u', () => {
     // stablo paketa ostaje čisto (lokalno ide samo u $TM_HOME)
     expect(Bun.spawnSync(['git', 'status', '--porcelain', '--untracked-files=no'], { cwd: o.paket }).stdout.toString()).toBe('')
   })
+})
+
+/** Lažni `uv` i lažni python venva: bilježe argumente u ZAPIS, ništa ne preuzimaju (B5). */
+function lazniUv(o: Okruzje) {
+  const bin = join(o.korijen, 'lazni-uv'), zapis = join(o.korijen, 'zapis')
+  mkdirSync(bin, { recursive: true }); mkdirSync(zapis, { recursive: true })
+  writeFileSync(join(zapis, 'python'), `#!/bin/sh
+printf '%s\\n' "python $*" >> "${zapis}/python.log"
+case "$*" in *importlib.metadata*) exit 1 ;; esac
+exit 0
+`)
+  writeFileSync(join(bin, 'uv'), `#!/bin/sh
+printf '%s\\n' "uv $*" >> "${zapis}/uv.log"
+case "$1" in
+  --version) echo "uv 0.13.4" ;;
+  python) echo /usr/bin/python3 ;;
+  venv) for a; do d="$a"; done; mkdir -p "$d/bin"; cp "${zapis}/python" "$d/bin/python"; chmod 755 "$d/bin/python" ;;
+  pip) [ "$3" = --help ] && echo "      --torch-backend <TORCH_BACKEND>" ;;
+esac
+exit 0
+`)
+  chmodSync(join(bin, 'uv'), 0o755)
+  const citaj = (f: string) => existsSync(join(zapis, f)) ? readFileSync(join(zapis, f), 'utf-8') : ''
+  return { bin, uv: () => citaj('uv.log'), python: () => citaj('python.log') }
+}
+
+describe('install.sh --baze — B5: CPU torch na Linuxu i modeli bez ONNX/OpenVINO kopija', () => {
+  test('Linux: uv pip install ide s --torch-backend cpu; snapshot_download s ignore_patterns', () => {
+    const o = okruzje('baze-cpu')
+    try {
+      const l = lazniUv(o)
+      const r = pokreni(o, [...OSNOVNO, '--baze', '--preskoci', 'baze-pgvector'], { PREDPATH: l.bin, TM_INSTALL_OS: 'Linux' })
+      expect(r.kod, r.izlaz).toBe(0)
+      const pip = l.uv().split('\n').find(x => x.startsWith('uv pip install') && x.includes('hindsight-api'))
+      expect(pip, l.uv()).toBeDefined()
+      expect(pip).toContain('--torch-backend cpu')
+      // bge-m3 i reranker nose po 2–4 GB ONNX/OpenVINO kopija koje Hindsight (torch) ne čita
+      expect(l.python()).toContain('ignore_patterns')
+      expect(l.python()).toContain('onnx/*')
+      expect(l.python()).toContain('openvino/*')
+    } finally { rmSync(o.korijen, { recursive: true, force: true }) }
+  }, 120_000)
+
+  test('--suho: plan venva na Linuxu kaže CPU torch', () => {
+    const o = okruzje('baze-suho')
+    try {
+      const lin = pokreni(o, ['--suho', '--baze', '--posudi'], { TM_INSTALL_OS: 'Linux' })
+      expect(lin.kod, lin.izlaz).toBe(0)
+      expect(lin.izlaz).toContain('torch: CPU (--torch-backend cpu)')
+    } finally { rmSync(o.korijen, { recursive: true, force: true }) }
+  }, 60_000)
 })
 
 describe('install.sh — pad koraka', () => {

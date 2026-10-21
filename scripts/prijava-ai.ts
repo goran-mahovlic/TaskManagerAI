@@ -18,6 +18,7 @@ import { join } from 'path'
 import { koraciPrijave, spojiSModelConfigom, type StavkaPopisa } from '../src/core/davateljiAI'
 import { kljucPrisutanUDatoteci } from '../src/LoginCreds'
 import { datotekaTajni } from '../src/core/ConfigModul'
+import { konfigPutanja } from '../src/core/paths'
 
 const PAKET = join(import.meta.dir, '..')
 const OS = (process.env.TM_INSTALL_OS || process.platform).toLowerCase()
@@ -25,8 +26,8 @@ const args = process.argv.slice(2)
 const arg = (k: string) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : undefined }
 
 function modelConfig(): { put: string | null; mc: any } {
-  const kandidati = [arg('--model-config'), process.env.TM_MODEL_CONFIG,
-    process.env.TM_HOME && join(process.env.TM_HOME, 'config', 'model-config.json'), join(PAKET, 'config', 'model-config.json')]
+  // TM_MODEL_CONFIG → $TM_HOME/config (i bez TM_HOME na instaliranom čvoru, QA K6 B4) → uz paket
+  const kandidati = [arg('--model-config'), konfigPutanja('model-config.json', 'TM_MODEL_CONFIG'), join(PAKET, 'config', 'model-config.json')]
   for (const p of kandidati) {
     if (!p || !existsSync(p)) continue
     try { return { put: p, mc: JSON.parse(readFileSync(p, 'utf-8')) } } catch { /* sljedeći */ }
