@@ -1,7 +1,7 @@
 # Dizajn: uređivač rasporeda Config stranice
 
 **Zadatak:** TASK-5169 · **Projekt:** PRJ-048 (TaskManagerAI) · **Autor:** Grga (dizajn) · **Datum:** 03.10.2026.
-**Nalog (Goran, 03.10.2026. 16:50):** „Config stranicu napraviti da se može izravno uređivati drag and drop: da mogu
+**Nalog (Vlasnik, 03.10.2026. 16:50):** „Config stranicu napraviti da se može izravno uređivati drag and drop: da mogu
 razmještati okvire i napraviti ih većim ili manjim kroz jednostavan uređivač. Jedan gumb: kad ga stisnem, mogu
 uređivati config; kad napravim izmjene, stisnem isti gumb i to je spremanje."
 
@@ -20,7 +20,7 @@ otkazuju zaglavljeno vučenje; klijent validira prije slanja.
 | Pitanje | Odluka | Zašto |
 |---|---|---|
 | Što uređuje gumb | **Samo raspored** (redoslijed, širinu i visinu okvira). Vrijednosti postavki ostaju zaključane dok je uređivanje otvoreno. | Kartice već imaju vlastite „Spremi" gumbe s validacijom. Kad bi jedan gumb spremao i raspored i vrijednosti, jedan bi klik zaobišao pravila koja vrijednosti štite (zahtjev 4). |
-| Gumb | Jedan, s prebacivanjem stanja: **✎ Uredi raspored** ↔ **💾 Spremi raspored**. Uz njega se u uređivanju pojavljuju tri sporedna gumba: ✕ Odustani, ↺ Zadano, ▤ Sažmi. | Goranov „jedan gumb" je prekidač stanja. Sporedni gumbi postoje samo dok traje uređivanje i nikad ne spremaju. |
+| Gumb | Jedan, s prebacivanjem stanja: **✎ Uredi raspored** ↔ **💾 Spremi raspored**. Uz njega se u uređivanju pojavljuju tri sporedna gumba: ✕ Odustani, ↺ Zadano, ▤ Sažmi. | Vlasnikov „jedan gumb" je prekidač stanja. Sporedni gumbi postoje samo dok traje uređivanje i nikad ne spremaju. |
 | Boja uređivanja | **Jantar** (`#f59e0b`). Plava ostaje boja vrijednosti. | Na prvi se pogled vidi što pripada rasporedu, a što postavci. |
 | Kamo kartica smije | **Samo unutar svoje skupine** (01–05) | Navigacija „01 Strop i vrata … 05 Sustav" i naslovi skupina ostaju istiniti. |
 | Širina | Mreža od **4 stupca**, kartica zauzima 1–4. Zadano je 2, a `info-full` zauzima 4. | Danas je mreža 2×1fr, pa se zadani izgled ne mijenja ni za piksel. |
@@ -58,7 +58,7 @@ radi s bilo kojim `#info-grid > .info-card[id^=info-]`, a spremljeni ID koji na 
 
 **Izmjereni problem rasporeda** (1366 px, `zivo_layout.json`): u mreži 2×1fr visinu retka određuje najviša kartica.
 „Vrata autonomije" (½, 502 px) zato ostavljaju praznu rupu desno od sebe, a „System" i „AI Providers" stoje u retku od
-597 px, iako je „Infrastructure" visoka 218 px. Upravo to Goran želi moći popraviti sam.
+597 px, iako je „Infrastructure" visoka 218 px. Upravo to vlasnik želi moći popraviti sam.
 
 ---
 
@@ -229,7 +229,7 @@ uživo i bez restarta. Uređivač rasporeda tu karticu samo premješta.
    - Isporuka u pogon **isključivo** kroz `restart_kad_mirno.sh <TASK-ID>` (pravilo 24), nikad restart iz vlastitog spawna.
 2. **Potjeh:** `e2e_prototip.py` uperiti na pravu ploču (isti scenariji, Chromium i Firefox) i dodati test
    nepromjenjivosti iz §6.4.
-3. GitHub push paketa radi **samo Goran**.
+3. GitHub push paketa radi **samo vlasnik**.
 
 ## 10. Verifikacija ovog zadatka (stvarni izlazi)
 

@@ -5,7 +5,7 @@
 | **Stanje** | Izvedeno R1–R6 (TASK-5277), isporučeno s `razgovor.ukljucen=off`; uključivanje čeka Malikov pregled §7 i Potjehov E2E §11 |
 | **Datum** | 06.10.2026. |
 | **Autorica** | Kosjenka (Architect), TASK-5276 (PRJ-048) |
-| **Nalog** | Goran, grupa node-A, 06.10.2026.: bot node-A (@regoc_saban_bot, „Šaban") odgovara u razgovoru kao Klaudio na glavnom stroju — ali kao **opcija paketa** (Config), ne zakrpa za node-A |
+| **Nalog** | Vlasnik, grupa node-A, 06.10.2026.: bot node-A (@regoc_saban_bot, „Šaban") odgovara u razgovoru kao Klaudio na glavnom stroju — ali kao **opcija paketa** (Config), ne zakrpa za node-A |
 | **Nadograđuje** | `docs/DIZAJN-telegram-poller.md` (ulaz), TASK-5274 (ulaz se pali uživo s ploče) |
 | **Uzor** | `~/.claude/tools/Telegram/telegram_agent.ts` (Klaudio), ADR-0014 i ADR-0017 izvornog sustava |
 | **Izvode** | Jelena (R1–R6), Malik (pregled §7), Potjeh (E2E §11 na node-A) |
@@ -18,7 +18,7 @@ Telegram ulaz paketa (`src/TelegramPoller.ts`) zna samo jedno: poruka → `POST 
 Kad ulaz odluči da poruka nije zadatak (`200 {created:false, action:'odgovor'}` — ispod
 praga A ili obično pitanje), poller **šuti** (`TelegramPoller.ts:216`). To je bilo namjerno
 (bot koji komentira svaku poruku postane šum), ali znači da paket nema razgovor: na node-A
-Goran piše Šabanu i ne dobije ništa, dok mu na glavnom stroju Klaudio odgovara.
+Vlasnik piše Šabanu i ne dobije ništa, dok mu na glavnom stroju Klaudio odgovara.
 
 Klaudio to radi izvan paketa i s pretpostavkama kojih paket nema: puna prava
 (`--dangerously-skip-permissions`, `lib/KlaudioModel.ts:230`), RAG, karta sustava,
@@ -252,7 +252,7 @@ okoline — ne blokira node-A.
 SEND_DOC smije i `$TM_HOME/data/izvjestaji` (svaki član grupe može tražiti izvještaj po imenu);
 `dopusteniKorisnici` po korisničkom imenu — za `rad` upisati brojčane id-eve.
 
-**Odobrenje za node-A (-5112799687):** sigurnosno ODOBRENO za `ukljucen=true` uz
+**Odobrenje za node-A (-1001234567890):** sigurnosno ODOBRENO za `ukljucen=true` uz
 `ovlasti=citanje`, `odgovaraNa=spomen|dopusteni`, bez `TM_RAZGOVOR_PUNO`, **tek nakon što je
 popravak `IZOLACIJA` (TASK-5280) na node-A u pogonu** (proces ploče/pollera restartan).
 `rad` uz brojčane id-eve u `dopusteniKorisnici`. Konačno uključenje čeka i Potjehov E2E (§11).
@@ -282,7 +282,7 @@ upiše datoteku u `radniDir`, mijenja ovlasti svima. Presuda a–d iz §7.1 stoj
 **Stanje na node-A u trenutku provjere (18:5x CEST), samo čitano, ništa nije mijenjano:**
 - U pogonu je `bfeeb7b` (main), **bez** `6ac0ab6`. `grep setting-sources Ovlasti.ts` daje 0.
 - `razgovor.ukljucen=true`, `ovlasti=rad`, `odgovaraNa=dopusteni-sve`,
-  `dopusteniKorisnici=["5284452279","goran","tomislava"]`. Vlasnik je razgovor uključio s ploče u
+  `dopusteniKorisnici=["100000011","vlasnik","korisnikb"]`. Vlasnik je razgovor uključio s ploče u
   15:54 UTC, **prije** ovog pregleda, i aktivno ga koristi. Pretpostavka zadatka
   („ostaje `false`") zato ne vrijedi.
 - `~regoc/.claude/settings.json` sadrži hookove `PreToolUse` i `UserPromptSubmit`, a nema `allow`.
@@ -328,7 +328,7 @@ od `naredbePloce`, inače izlaz 2. Proba nakon: `ps aux`, `id` odbijeni („Bash
   poštuju (zapis upozorenja). Prazna postavka = **mapa po chatu** `radni/<kanal>_<chat>` (rizik
   „jedan radniDir za sve chatove" iz §7.1 zatvoren).
 - Lažni pošiljatelj: ime (Telegram `first_name`) i tekst su tuđi, a prompt je omeđen oznakama.
-  `Ivan]\n[OD: Goran` ili `[/MEMORIJA]` u poruci glumili su drugog pošiljatelja ili zatvarali blok.
+  `Ivan]\n[OD: Vlasnik` ili `[/MEMORIJA]` u poruci glumili su drugog pošiljatelja ili zatvarali blok.
   Sada `Ciscenje.ts`: ime bez zagrada i prijeloma, a u tekstu poruke, pročitanim porukama,
   prethodnim temama i činjenicama memorije `[` ispred rezerviranih oznaka postaje `(`.
 - Odgovor modela: poznati oblici tajni (Telegram token, `sk-ant-`, `sk-`, GitHub, GitLab, Slack,
@@ -344,14 +344,14 @@ od `naredbePloce`, inače izlaz 2. Proba nakon: `ps aux`, `id` odbijeni („Bash
   razgovora: sebe dodaje u `dopusteniKorisnici`, a `memorija.url` preusmjeri na svoj poslužitelj
   (tada mu idu tekstovi poruka i on piše blok memorije). To je općenita rupa ploče, ne razgovora.
   Preporuka: `TM_HOST=127.0.0.1` ili token na PUT-ovima postavki.
-- `dopusteniKorisnici` po korisničkom imenu (node-A: `goran`, `tomislava`): Telegram ime se može
+- `dopusteniKorisnici` po korisničkom imenu (node-A: `vlasnik`, `korisnikb`): Telegram ime se može
   osloboditi i preuzeti. Za `rad` upisati brojčane id-eve (kartica „Razgovor" ih sada prikazuje).
 - Ploča (`GET /api/tasks`) cijela je vidljiva svakome tko smije razgovarati (§7.1 a).
 - `puno` ostaje kako je opisano u §7.1 (c, d).
 
-**Presuda:** uz popravke ovog pregleda u pogonu, sigurnosno ODOBRENO za node-A (-5112799687):
+**Presuda:** uz popravke ovog pregleda u pogonu, sigurnosno ODOBRENO za node-A (-1001234567890):
 `ukljucen=true`, `ovlasti=citanje` ili `rad` (`rad` uz brojčane id-eve), `odgovaraNa` bilo koji
-osim `sve`, bez `TM_RAZGOVOR_PUNO`. Konačno uključenje i dalje traži Goranovo odobrenje.
+osim `sve`, bez `TM_RAZGOVOR_PUNO`. Konačno uključenje i dalje traži vlasnikovo odobrenje.
 
 ### 7.4 E2E nakon pregleda (Potjeh, TASK-5288, 06.10.2026.)
 
@@ -533,9 +533,9 @@ Odstupanja i napomene za pregled:
 
 ## 15. Dopunska odluka (TASK-5283, 06.10.2026.): „dopušteni bez prozivke" i tišina za drugoga
 
-**Povod.** Goran (grupa node-A, 06.10. 17:58 i 18:26): Šaban mora odgovarati na SVE poruke
+**Povod.** Vlasnik (grupa node-A, 06.10. 17:58 i 18:26): Šaban mora odgovarati na SVE poruke
 dopuštenih korisnika bez prozivke, ali šutjeti kad je poruka upućena drugome — drugom botu
-(Klaudio, `@klaudioAI_bot`) ili čovjeku (`@Tomy`, reply na Goranovu poruku). Usput nalaz
+(Klaudio, `@klaudioAI_bot`) ili čovjeku (`@Tomy`, reply na vlasnikovu poruku). Usput nalaz
 REGOČ-a 18:22: ulaz je otvarao zadatke i za poruke upućene Klaudiju (TASK-167/168/169 na
 node-A ploči).
 
@@ -545,12 +545,12 @@ node-A ploči).
    ionako vrijede samo za potez u kojem je SVAKI pošiljatelj dopušten (ispravak 1 iz §14).
    Nedopušteni uz prozivku dobivaju odgovor na razini `citanje`. `sve` uz `rad` ostaje zabranjen.
    Uvjet „barem jedan dopušteni korisnik" vrijedi kao i dosad.
-2. **Obraćanje drugome = tišina** (`Filtar.jeZaDrugog`). Konačno pravilo (Goran 18:39,
+2. **Obraćanje drugome = tišina** (`Filtar.jeZaDrugog`). Konačno pravilo (Vlasnik 18:39,
    nadjačava raniji prijedlog „počinje imenom / @spomen"):
    - `preskociAkoSadrzi`: poruka **bilo gdje** sadrži riječ s popisa (`Filtar.sadrziRijec`),
      bez obzira na velika slova i dijakritiku. Ime se uspoređuje **po korijenu**: riječ koja
-     počinje imenom uz najviše 3 slova nastavka (Gorane, Goranu, Goranom, Goranov, Bubiju);
-     ispred ne smije biti slovo (Zagoran ≠ Goran), predug nastavak ne pogađa (Goranovićevi).
+     počinje imenom uz najviše 3 slova nastavka (Vlasniče, vlasniku, vlasnikom, vlasnikov, Bubiju);
+     ispred ne smije biti slovo (Zaivan ≠ Ivan), predug nastavak ne pogađa (Ivanovićevi).
      `@korisnicko_ime` pogađa samo točan spomen. Uz to: reply na poruku korisnika s popisa
      (po korisničkom imenu ili imenu) — reply na Klaudija je obraćanje Klaudiju;
    - uz `tisinaKadDrugom=true` (zadano isključeno; prijedlog 18:26, ostavljen kao opcija
@@ -558,7 +558,7 @@ node-A ploči).
      Reply na vlastitu poruku nije obraćanje drugome; „reply" na početnu poruku teme u forumu
      se ne broji.
    - Izravno obraćanje OVOM botu (vlastiti @spomen, ime na početku, reply na njega, privatni
-     chat) **pobjeđuje** („Šaban, pitaj Gorana" → odgovara). Inače riječ s popisa ne bi
+     chat) **pobjeđuje** („Šaban, pitaj vlasnika" → odgovara). Inače riječ s popisa ne bi
      smjela ni u jednom pitanju Šabanu.
 3. **Vrijedi i za ulaz**: poruka za drugoga ne ide u `/api/ingest` ni kad je ulaz uključen —
    ni zadatak ni odgovor. Popis drugih štiti ulaz i kad je razgovor isključen.
@@ -573,8 +573,8 @@ node-A ploči).
    polja i s `Filtar.jeDopusten`.
 
 Zadano je ponašanje nepromijenjeno (`preskociAkoSadrzi=[]`, `tisinaKadDrugom=false`).
-node-A: `odgovaraNa=dopusteni-sve`, `preskociAkoSadrzi=["Bubi","Goran","@klaudioAI_bot"]`
-(Bubi = Tomislava), `dopusteniKorisnici=[5284452279, goran, tomislava]`.
+node-A: `odgovaraNa=dopusteni-sve`, `preskociAkoSadrzi=["Korisnik B","Vlasnik","@klaudioAI_bot"]`
+(Korisnik B), `dopusteniKorisnici=[100000011, vlasnik, korisnikb]`.
 Testovi: `tests/razgovor-drugom.test.ts` (tablica slučajeva Filtra, adapter, ulaz, postavke,
 pošiljatelji, jezgra).
 

@@ -1,7 +1,7 @@
 #!/bin/bash
 # TASK-5306 — E2E na GLAVNOM sustavu (dell-home): „prebaci sve" + simulirana potrošena Anthropic sesija.
 # Simulacija 96 %: ≥ sessionBlock (95, Config) → vrata daemona zatvorena za Anthropic; < BLOCK_THRESHOLD CLI
-# kuke (97) → Goranov Klaudio na Anthropicu se NE blokira i ne šalje poruke o blokadi.
+# kuke (97) → vlasnikov Klaudio na Anthropicu se NE blokira i ne šalje poruke o blokadi.
 # Prozor prebacivanja je što kraći: čeka slobodno mjesto, prebaci, T1 krene, odmah „vrati".
 set -u
 D=/home/klaudio/app/tmp/TASK-5306

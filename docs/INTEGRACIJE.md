@@ -84,7 +84,7 @@ ovisnosti paketa: instalacija (`scripts/install.sh`, `tm-cvor-azuriraj.sh` → `
 ih sama povuče kad je e-pošta uključena. Bez njih kartica kaže što nedostaje, a **ostatak
 paketa radi normalno**.
 
-**Korisnik = PUNA adresa** (`sabanAI@intergalaktik.hr`, ne `sabanAI`): poslužitelj
+**Korisnik = PUNA adresa** (`sabanAI@example.com`, ne `sabanAI`): poslužitelj
 mail.intergalaktik.hr golo ime odbija s `535 Incorrect authentication data` (izmjereno na
 node-A 08.10.2026., TASK-5371). Lozinke se upisuju samo na čvoru: Config → Tajne
 (`SMTP_PASSWORD`, `IMAP_PASSWORD`).

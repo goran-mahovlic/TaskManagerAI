@@ -2,13 +2,13 @@
 
 | | |
 |---|---|
-| **Stanje** | Prijedlog (dizajn, bez koda) — čeka Goranove odluke iz §9, zatim izvedbu (Jelena, §8) |
+| **Stanje** | Prijedlog (dizajn, bez koda) — čeka vlasnikove odluke iz §9, zatim izvedbu (Jelena, §8) |
 | **Datum** | 07.10.2026. |
 | **Broj** | Zapisan kao ADR-0004 (TASK-5304); preimenovan u ADR-0005 pri spajanju u main (TASK-5311) jer je ADR-0004 već profil čvora (TASK-5295, 06.10.). Commiti TASK-5304/5305 ga zovu „ADR-0004". |
 | **Autorica** | Kosjenka (Architect), TASK-5304 (PRJ-048) |
-| **Nalog** | Goran, grupa REGOČ, 07.10.2026.: (1) node-A se mora moći CIJELI preseliti na OpenRouter kad je Anthropic sesija potrošena; (2) mjerenje sesije na node-A „ne radi pa se potroši do 100 %"; (3) OpenRouter i ostali ne-Anthropic modeli NE smiju reagirati na potrošnju Anthropic sesije; (4) jedan padajući izbornik „prebaci sve na model" (Config) |
-| **Vrijedi za** | oba sustava: glavni (dell-home, `~/.claude/regoc`) i paket TaskManagerAI (node-A 192.168.10.20, `~/TaskManagerAI` + `~/.claude/regoc` na čvoru) |
-| **Nadograđuje** | `WorkStateJournal.ts` (vrata autonomije, Goranove odluke 28./29.07.2026.), TASK-5028 (`AutonomyThresholdSetting.ts`), ADR-0002 §6.2 (vrata razgovora), `tools/modeli/node_model_policy.py` |
+| **Nalog** | Vlasnik, grupa REGOČ, 07.10.2026.: (1) node-A se mora moći CIJELI preseliti na OpenRouter kad je Anthropic sesija potrošena; (2) mjerenje sesije na node-A „ne radi pa se potroši do 100 %"; (3) OpenRouter i ostali ne-Anthropic modeli NE smiju reagirati na potrošnju Anthropic sesije; (4) jedan padajući izbornik „prebaci sve na model" (Config) |
+| **Vrijedi za** | oba sustava: glavni (dell-home, `~/.claude/regoc`) i paket TaskManagerAI (node-A 10.0.0.20, `~/TaskManagerAI` + `~/.claude/regoc` na čvoru) |
+| **Nadograđuje** | `WorkStateJournal.ts` (vrata autonomije, vlasnikove odluke 28./29.07.2026.), TASK-5028 (`AutonomyThresholdSetting.ts`), ADR-0002 §6.2 (vrata razgovora), `tools/modeli/node_model_policy.py` |
 | **Kopija/poveznica** | `~/app/regoc_system/docs/ADR-0019-vrata-po-provideru-i-prekidac-svi-na-model.md` |
 
 ---
@@ -17,7 +17,7 @@
 
 Vrata potrošnje danas imaju **jedan** ulaz — Anthropic mjerenje (`session_usage.py` → `autonomyTierFromUsage`) — i
 primjenjuju ga na **sve** izvršitelje, bez obzira vozi li zadatak Opus preko pretplate ili GLM preko OpenRoutera. Zato
-potrošena Anthropic sesija zaustavlja i put koji s njom nema veze (Goranova točka 3), a na node-A su ista ta vrata
+potrošena Anthropic sesija zaustavlja i put koji s njom nema veze (Vlasnikova točka 3), a na node-A su ista ta vrata
 **ugašena** (SHADOW), pa Anthropic sesija ide do 100 % (točka 2). Model se bira na pet mjesta (agentOverrides,
 componentOverrides, TIER, `razgovor.model`, Klaudijev `KlaudioModel.ts`) i ne postoji jedan potez koji cijeli sustav
 prebacuje na drugi model (točke 1 i 4).
@@ -27,7 +27,7 @@ prebacuje na drugi model (točke 1 i 4).
 ## 2. Dijagnoza node-A: zašto je sesija 06.10. stigla do 100 % (točka d)
 
 Sva vremena su **UTC** (node-A radi u EDT, `daemon.log` i `session_usage.jsonl` pišu UTC). Izvori:
-`regoc@192.168.10.20:~/.claude/regoc/daemon.log`, `…/data/session_usage.jsonl`, `…/features.json`,
+`regoc@10.0.0.20:~/.claude/regoc/daemon.log`, `…/data/session_usage.jsonl`, `…/features.json`,
 `…/data/regoc.db` (tablica `settings`), transkripti `~/.claude/projects/*/*.jsonl` na čvoru.
 
 ### 2.1 Mjerenje RADI — nije uzrok
@@ -67,7 +67,7 @@ i 6 `openrouter:z-ai/glm-5.2`.
 (`WorkStateJournal.ts`: `SESSION_AUTONOMY_PERCENT=70`, `CAUTION=85`, `BLOCK=95`).
 `grep -rl "AutonomyThreshold\|autonomy.session" ~/.claude/regoc --include=*.ts` na **oba** stroja vraća 0 datoteka.
 Pragove iz `settings` čita samo razgovor (`TaskWebUI.ts:10845`, `kvotaPuna`). Postavka postoji i pamti se, ali daemon
-je ne vidi. Za Gorana to znači da broj koji je upisao na Config stranici ne radi ono što piše.
+je ne vidi. Za vlasnika to znači da broj koji je upisao na Config stranici ne radi ono što piše.
 Isti obrazac vrijedi i za strop usporednih agenata: Config kaže `agents.max_concurrent=1`, a daemon na node-A piše
 „Max concurrent spawns: 3". Daemon na node-A (7433 retka) zaostaje za glavnim (8339 redaka) i nema `ConcurrencySetting`.
 
@@ -95,7 +95,7 @@ Ostali kandidati koje je REGOČ naveo:
 - **Pet restarta daemona** u prozorima (15:16, 15:27, 17:07, 17:26 i 17:31) zbog isporuka. Restart u 17:26 ubio je
   TASK-178 nakon 30 s, pa je 0,49 USD potrošeno bez rezultata. Isporuka na čvor treba ići kroz
   `restart_kad_mirno.sh`, a ne izravno.
-- **„Sve je blokirano"** (Goranova točka 3): u 17:46 status prelazi u `rejected` i `autonomyTierFromUsage` vraća
+- **„Sve je blokirano"** (Vlasnikova točka 3): u 17:46 status prelazi u `rejected` i `autonomyTierFromUsage` vraća
   `answer-only` za **sve**. To uključuje i zadatke kojima je `agentOverrides` `openrouter:…`. Šabanova vrata kvote
   (`kvotaPuna`) također ne pitaju koji je model. Kad bi se `razgovor.model` i prebacio na OpenRouter, razgovor bi i
   dalje rekao „Kvota je pri kraju".
@@ -147,7 +147,7 @@ samo za `provider ∈ {anthropic, claude}` bez preusmjerenja.
   nedostupno → **fail-open** za OpenRouter, jer je kvota novac s vidljivim stanjem, a ne pretplata koja se tiho
   zaključava. Reaktivni osigurač (402/429 → hlađenje 10 min za tu obitelj) uvijek vrijedi.
 - **nema (Ollama)**: vrata kvote se ne pitaju. I dalje vrijede strop usporednih agenata, `SpawnBreaker` i pauza.
-- **Ručna pauza** (`PauseControl`) i **strop usporednih agenata** ostaju globalni. To nisu kvote nego Goranove kočnice.
+- **Ručna pauza** (`PauseControl`) i **strop usporednih agenata** ostaju globalni. To nisu kvote nego vlasnikove kočnice.
 
 ### 4.3 Gdje se vrata pomiču u kodu
 Danas se razina računa **jednom po prolazu, prije razrješenja izvršitelja** (`RegocDaemon.ts:7626` na glavnom,
@@ -177,7 +177,7 @@ Izvor: pregled koda glavnog sustava 07.10.2026. (`file:line` na glavnom stroju).
 | StaleWatchdog | `StaleWatchdog.ts:921-923` | koristi Anthropic razinu | razina obitelji zadatka |
 | **CLI kuka** | `session_usage.py --hook prompt` (`settings.json:119`, `session_usage.py:398-417`) | blokira **svaki** `claude` CLI poziv iznad praga, uključujući kimi/glm/minimax preko `ANTHROPIC_BASE_URL` | kuka propušta poziv kad je u okolini postavljen `ANTHROPIC_BASE_URL` koji nije Anthropic. Bez toga put iz §5.4/1 (OpenRouter kroz `claude` CLI) pada baš kad treba |
 | razgovor Šaban | `TaskManagerAI/src/TaskWebUI.ts:10845-10852` (`kvotaPuna`) | Anthropic % / `sessionBlock` | obitelj `razgovor` izvršitelja |
-| razgovor Klaudio | `~/.claude/tools/Telegram/telegram_agent.ts` | **nikakva** provjera potrošnje | dobiva ista vrata obitelji (odgovaranje ostaje dopušteno na svakoj razini, Goranovo pravilo 28.07.) |
+| razgovor Klaudio | `~/.claude/tools/Telegram/telegram_agent.ts` | **nikakva** provjera potrošnje | dobiva ista vrata obitelji (odgovaranje ostaje dopušteno na svakoj razini, vlasnikovo pravilo 28.07.) |
 | nalog (`delegateToAgent`) | `RegocDaemon.ts:4805`, vrata u `spawnAgentOnDemand:3187-3225` | bez provjere potrošnje (pauza, slot, backoff, osigurač) | ostaje tako, ali osigurač je po obitelji |
 
 ---
@@ -215,7 +215,7 @@ Djeluje na **sve generativne uloge**:
 | **embeddings** | `componentOverrides.embeddings` | **NIKAD**: promjena modela mijenja vektorski prostor i kvari RAG/Hindsight. Prekidač ga ne vidi. |
 
 U logu se vidi jedan redak: `[MODEL-SVI] jelena → openrouter:z-ai/glm-5.2 (prekidač; nadjačava agentOverrides
-anthropic:opus)`. Ploča dok je prekidač uključen pokazuje traku „Sustav vozi X (prebacio Goran u HH:MM)".
+anthropic:opus)`. Ploča dok je prekidač uključen pokazuje traku „Sustav vozi X (prebacio vlasnik u HH:MM)".
 
 ### 5.3 Popis podržanih providera/modela
 Izbornik se puni iz postojećeg koda, a ne iz ruke:
@@ -263,7 +263,7 @@ Postavke (`settings`):
 
 | Ključ | Značenje | Prijedlog zadanog |
 |---|---|---|
-| `model.prelazak.ukljucen` | uključuje automatski prelazak | **Goran odlučuje** (§9) — prijedlog: glavni `false`, node-A `true` |
+| `model.prelazak.ukljucen` | uključuje automatski prelazak | **Vlasnik odlučuje** (§9) — prijedlog: glavni `false`, node-A `true` |
 | `model.prelazak.cilj` | `provider:model` na koji se prelazi | izmjereni OpenRouter model s `alate` (npr. `openrouter:z-ai/glm-5.2`, već radi na node-A) |
 | `model.prelazak.prag` | Anthropic sesija % na kojoj se prelazi | = `autonomy.session_block` (node-A 90) |
 | `model.prelazak.dnevniStropUsd` | najviše USD na dan na cilju | 5 USD |
@@ -271,7 +271,7 @@ Postavke (`settings`):
 Ponašanje:
 - Kad je Anthropic sesija ≥ `prag` **ili** `rejected`, uloge koje se razrješavaju u obitelj `anthropic` dobivaju
   `cilj`. Tako rad ne staje, nego prelazi na drugi model.
-- Prelazak **ne nadjačava** ručni `model.svi`: Goranov izbor uvijek ima prednost.
+- Prelazak **ne nadjačava** ručni `model.svi`: Vlasnikov izbor uvijek ima prednost.
 - **Povratak** se događa sam kad prođe `session_reset_at` i svježe mjerenje pokaže manje od `autonomy.session_autonomy`.
   Prijelaz i povratak javljaju se **jednom** na Telegram („↪ Anthropic 91 % — prelazim na X do HH:MM").
 - Strop: kad OpenRouter mjerilo javi `limit_remaining < minStanjeUsd` ili je dnevni strop dosegnut, prelazak se gasi.
@@ -280,12 +280,12 @@ Ponašanje:
 
 ---
 
-## 7. Mjerilo sesije na node-A (točka 2 Goranova naloga)
+## 7. Mjerilo sesije na node-A (točka 2 vlasnikova naloga)
 Mjerilo nije kvar (§2.1). Popravak su §2.2 i §2.3:
 1. **Odmah (operativno, bez koda):** `features.json → autonomyGate.enabled=true` na node-A. Zastavica se učitava
    uživo, bez restarta, a na glavnom je već `true`. Dok §4 nije izveden, to znači da potrošena Anthropic sesija koči
    i OpenRouter zadatke na čvoru. To je i danas stanje glavnog stroja. Rješava ga K2.
-2. Daemon čita pragove iz `settings` (K1), pa Goranovih 75/80/90 stvarno vrijedi.
+2. Daemon čita pragove iz `settings` (K1), pa vlasnikovih 75/80/90 stvarno vrijedi.
 3. Daemon na node-A se usklađuje s glavnim (zaostaje 906 redaka; nema `ConcurrencySetting`).
 4. Kontrola da se ovo ne ponovi: `system_map_check`/bootcheck javlja **„mjerilo radi, a vrata su u SHADOW"** kao
    nesukladnost (svježa snimka s postotkom + `autonomyGate=false` → upozorenje na ploči).
@@ -310,13 +310,13 @@ node-A. Isporuka na čvor ide kroz `restart_kad_mirno.sh`, a ne kroz izravni res
 | **K8** | paket: isti moduli u `TaskManagerAI/src/core` (bez putanja), Config kartica, `docs`; usklađivanje daemona na node-A s glavnim | paket + node-A | `bun test` u paketu zelen; `StaleCodeCheck` na node-A exit 0; `Max concurrent spawns` u logu = Config vrijednost |
 | **K9** | E2E (Potjeh) na node-A: scenarij „Anthropic potrošen → jednim potezom sve na OpenRouter" | node-A | na sesiji ≥ 95 % ili `rejected`: (1) Config izbornik → OpenRouter; (2) Šaban odgovara; (3) jedan auto-exec i jedan nalog izvršeni na OpenRouteru; (4) nijedan novi Anthropic poziv u `session_usage` (postotak ne raste); (5) „Vrati" → idući zadatak opet na Anthropic |
 
-Redoslijed: K0 odmah → K1 → K2 (to rješava Goranovu točku 3) → K3 → K4 + K6 usporedno → K5 → K7 → K8 → K9.
+Redoslijed: K0 odmah → K1 → K2 (to rješava vlasnikovu točku 3) → K3 → K4 + K6 usporedno → K5 → K7 → K8 → K9.
 
 ---
 
-## 9. Odluke koje donosi Goran
+## 9. Odluke koje donosi vlasnik
 1. **Automatski prelazak (§6): zadano uključen ili isključen?** Prijedlog: node-A `uključen` (mala sesija, od 5 do
-   25 pp po Opus zadatku, §2.4); glavni `isključen` (Max pretplata, tamo Goran prebacuje ručno).
+   25 pp po Opus zadatku, §2.4); glavni `isključen` (Max pretplata, tamo vlasnik prebacuje ručno).
 2. **Cilj prelaska** i dnevni strop u USD. Prijedlog: `openrouter:z-ai/glm-5.2` (već radi na node-A) nakon K6 probe,
    strop 5 USD/dan.
 3. **Klasifikator u prekidaču**: izuzet (prijedlog, lokalni je i besplatan) ili uključen.
@@ -329,7 +329,7 @@ Redoslijed: K0 odmah → K1 → K2 (to rješava Goranovu točku 3) → K3 → K4
   radi kroz okolinu procesa.
 
 ## 11. Posljedice
-- **+** Potrošena Anthropic sesija više ne zaustavlja rad koji ide preko drugog providera. Goran jednim potezom seli
+- **+** Potrošena Anthropic sesija više ne zaustavlja rad koji ide preko drugog providera. Vlasnik jednim potezom seli
   cijeli sustav, a vidi i točno što se seli.
 - **+** Config pragovi postaju istiniti. Danas su na oba sustava ukrasni.
 - **−** Vrata se računaju po zadatku, a ne po prolazu, pa po prolazu ima nekoliko čitanja konfiguracije više (keš

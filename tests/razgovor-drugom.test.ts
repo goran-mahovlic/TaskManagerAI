@@ -94,7 +94,7 @@ describe('Postavke — dopusteni-sve, popis drugih, validator', () => {
   test('upis node-A postavki: audit po ključu, čitač vraća popis', () => {
     const d = db()
     const pr = setRazgovorPostavke(d, {
-      odgovaraNa: 'dopusteni-sve', dopusteniKorisnici: ['100000001', 'ivan', 'ana'],
+      odgovaraNa: 'dopusteni-sve', dopusteniKorisnici: ['100000011', 'ivan', 'ana'],
       preskociAkoSadrzi: ['@drugiAI_bot', 'Klaudio', 'Klaudio'], tisinaKadDrugom: true, ovlasti: 'rad',
     }, 'test', 'api')
     expect(pr.filter(x => x.changed).length).toBe(5)
@@ -137,7 +137,7 @@ function poruka(over: Partial<NonNullable<Update['message']>> = {}, id = 1): Upd
     update_id: id,
     message: {
       message_id: 100 + id, date: 1_700_000_000, text: 'koliko je zadataka?',
-      chat: { id: -5112799687, title: 'node-A', type: 'supergroup' },
+      chat: { id: -1001234567890, title: 'node-A', type: 'supergroup' },
       from: { id: 42, first_name: 'Ivan', username: 'ivan' },
       ...over,
     },
@@ -355,8 +355,8 @@ describe('sadrziRijec — konačno pravilo (bez obzira na velika slova i dijakri
 })
 
 describe('Filtar — node-A konačno: dopusteni-sve + preskociAkoSadrzi ["Bubi","Ivan","@drugiAI_bot"]', () => {
-  const NA = post({ odgovaraNa: 'dopusteni-sve', dopusteniKorisnici: ['100000001', 'ivan', 'ana'], preskociAkoSadrzi: ['Bubi', 'Ivan', '@drugiAI_bot'] })
-  const ivan = (o: Partial<UlaznaPoruka> = {}) => por({ posiljateljId: '100000001', posiljateljKorisnickoIme: 'ivan', ...o })
+  const NA = post({ odgovaraNa: 'dopusteni-sve', dopusteniKorisnici: ['100000011', 'ivan', 'ana'], preskociAkoSadrzi: ['Bubi', 'Ivan', '@drugiAI_bot'] })
+  const ivan = (o: Partial<UlaznaPoruka> = {}) => por({ posiljateljId: '100000011', posiljateljKorisnickoIme: 'ivan', ...o })
   const tomy = (o: Partial<UlaznaPoruka> = {}) => por({ posiljateljId: '55', posiljateljKorisnickoIme: 'ana', ...o })
   test.each([
     ['Ivan bez prozivke → odgovara', ivan(), true],

@@ -9,7 +9,7 @@
 
 ## Metoda
 - **Prebacivanje** ide istim `PUT /api/models/svi` koji zove gumb na Config stranici. **Povratak** je isti PUT s `{"model":"vrati"}`.
-- **Simulirana potrošena sesija** (`sim_snimka.py`): petlja svake 2 s prepisuje `data/session_usage.cache.json` (`cached_at` = sada) koji čitaju daemon i CLI kuka. Na node-A je 99 % (prag `sessionBlock` 90). Na glavnom je 96 %, što je ≥ 95 (Config), a < 97 (`BLOCK_THRESHOLD` kuke), pa se Goranov Klaudio ne blokira i ne šalje poruku o blokadi. Na kraju slijedi `kill` i svježe stvarno mjerenje.
+- **Simulirana potrošena sesija** (`sim_snimka.py`): petlja svake 2 s prepisuje `data/session_usage.cache.json` (`cached_at` = sada) koji čitaju daemon i CLI kuka. Na node-A je 99 % (prag `sessionBlock` 90). Na glavnom je 96 %, što je ≥ 95 (Config), a < 97 (`BLOCK_THRESHOLD` kuke), pa se vlasnikov Klaudio ne blokira i ne šalje poruku o blokadi. Na kraju slijedi `kill` i svježe stvarno mjerenje.
 - **Spawn** je pravi auto-exec daemona (probni zadaci P1, `potjeh`). Odgovor nosi žeton `PONG-…` kao dokaz da je model stvarno radio. Model se čita iz `data/run_log.jsonl` (`provider`, `model`, `session_percent_prije`).
 - **Razgovor:**
   - node-A (Šaban): `razgovor_proba.ts` vrti isporučeni `stvoriRazgovor` + `RazgovorPloca.modelPrebacen/modelIzKonfiguracije/ciljModelaRazgovora` nad pravim `model-config.json` i pravi `claude -p`. Kanal je lažan. Model se čita iz `message.model` u transkriptu sesije.

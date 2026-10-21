@@ -20,7 +20,7 @@ Provjereno u `~/.claude/regoc/tools/` i `~/app/regoc_system/integrations/`:
 * `TaskManagerSQL` ima polje `nextcloudFolder`, ali ono je **samo tekstualna etiketa** —
   nitko ništa ne čita ni ne piše na Nextcloud.
 * `integrations/*/README.md` u privatnom repozitoriju navode **naše stvarne vrijednosti**
-  (`regoc_ai@intergalaktik.hr`, `192.168.10.200`). Te se datoteke **ne smiju** kopirati u
+  (`regoc_ai@example.com`, `10.0.0.200`). Te se datoteke **ne smiju** kopirati u
   javni paket kakve jesu.
 
 Dakle: piše se novo, a ne prenosi postojeće.
@@ -68,7 +68,7 @@ $TM_<IME>_CONFIG  →  $TM_HOME/config/<ime>.json  →  config/<ime>.json uz pak
 * `ukljucen: false` — **nijedna integracija se ne pali sama.**
 * Svako polje koje bi bilo adresa, korisnik, mapa ili identitet: `''` ili `null`.
   **Nikad naša vrijednost.** Isti kvar koji je u živom daemonu upisao
-  `http://192.168.10.4:11434` kao zadano (`RegocDaemon.ts:2565`) ne smije se ponoviti.
+  `http://10.0.0.4:11434` kao zadano (`RegocDaemon.ts:2565`) ne smije se ponoviti.
 * Provjera odbija nepoznato polje imenom (tipfeler bi tiho stvorio mrtvu postavku — kvar
   koji je u REGOČ-u gutao `progress_notes`).
 

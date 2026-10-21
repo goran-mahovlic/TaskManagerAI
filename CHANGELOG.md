@@ -1,3 +1,19 @@
+## 2026-10-21 — sigurnosna dorada K5: zatamnjivanje loga, TM_BIND zadano, javni docs/ (TASK-5686)
+
+- Iz pregleda K5 (TASK-5659), nalazi S1–S3 i N2.
+- S1 `scripts/instalacija/zapis.sh` `zatamni()`: skriva i vrijednost u navodnicima (`IME_TOKEN="…"`,
+  `'…'`), Telegram token bez imena varijable (`api.telegram.org/bot<broj>:<35>/…`) i GitHub tokene
+  (`ghp_…`, `github_pat_…`).
+- S2 `src/core/vezanje.ts` `zadanaAdresa()`: bez `TM_BIND` ploča na macOS-u i u svakoj instalaciji
+  paketa (`$TM_HOME/config/postavke.env` postoji) sluša samo na `127.0.0.1`; `0.0.0.0` ostaje samo na
+  Linuxu bez postavke.env ili uz izričit `TM_BIND=0.0.0.0`.
+- S3 brana `tests/bez-nasih-vrijednosti.test.ts` pretražuje i `docs/` (pravila za adrese, e-poštu,
+  ID-ove chatova i korisnika, imena ljudi; osnovica 0), novi uzorak ID-a chata uz izuzeće izmišljenih
+  primjera, uid-ovi i prezime. `docs/`, testovi, `locales/` i `scripts/posalji-dokument.ts` nose
+  primjere (-1001234567890…-1001234567893, 10.0.0.x, 100000011, „vlasnik", example.com). Povijest NIJE prepisana.
+- N2 `deinstaliraj.sh` / `provjeri-cisto.sh`: ključ tunela je samo redak čiji komentar je točno
+  `tm-tunel`; tuđi ključ s `tm-tunel-x` ostaje.
+
 ## 2026-10-21 — K5 sigurnost: brana za root, upozorenje na neograničen sudo, suženi sudoers (TASK-5685)
 
 - V2: `install.sh` i `deinstaliraj.sh` pokrenuti kao root izlaze s 2 („pokreni kao korisnik usluge, bez sudo");

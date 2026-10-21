@@ -1,8 +1,8 @@
 #!/bin/bash
 # TASK-5306 — E2E na node-A: „prebaci sve" + simulirana potrošena Anthropic sesija + povratak na Claude.
-# Pokreće se s glavnog stroja; sve se izvodi na regoc@192.168.10.20 nad pogonom (daemon + ploča).
+# Pokreće se s glavnog stroja; sve se izvodi na regoc@10.0.0.20 nad pogonom (daemon + ploča).
 set -u
-N=regoc@192.168.10.20
+N=regoc@10.0.0.20
 OUT=/home/klaudio/app/tmp/TASK-5306/nodea
 mkdir -p "$OUT"
 S() { ssh -o BatchMode=yes "$N" "export PATH=\$HOME/.local/bin:\$HOME/.bun/bin:\$PATH; $1"; }

@@ -4,7 +4,7 @@
 # (pravilo zadatka: restart na node-A samo uz in_progress = 0). Rok 48 h. Daemon se NE dira.
 # POPRAVAK 07.10. 09:04 UTC: bez sidra `^` pgrep je brojao i vlastiti `bash -c` sesije ssh (naredba sadrži
 # „claude --print"), pa stanje nikad nije bilo „0 0" i čekač nije okinuo. Restart je izveden ručno uz in_progress=0.
-CILJ=regoc@192.168.10.20
+CILJ=regoc@10.0.0.20
 LOG=/home/klaudio/app/tmp/TASK-5308/restart_kad_mirno_nodea.log
 ROK=$(( $(date +%s) + 48*3600 ))
 SSH="ssh -o BatchMode=yes -o ConnectTimeout=10 $CILJ"

@@ -5,9 +5,9 @@
 | **Stanje** | Prihvaćeno (dizajn i model prijetnje, bez koda). Izvedba: Jelena (§11). Proba: Potjeh (§11). Pregled izvedbe: Malik. **Dopuna TASK-5357** (Jelena, 08.10.2026.): §4.2a primatelj koda iz profila čvora, §4.3 privatni LAN zadano dopušten — čeka Malikov pregled |
 | **Datum** | 08.10.2026. |
 | **Autor** | Malik (Security), TASK-5342 (PRJ-048) |
-| **Nalog** | Goran, grupa node-A, 08.10.2026.: u TaskManageru mora postojati upis lozinke/tajne koja se zapisuje na disk u spremište tajni čvora. Upis lozinke za mail na node-A tražio je prijavu na računalo, a to nije prihvatljivo. Upis ide kroz TaskManager i mora biti siguran. Vrijedi za **sve** TaskManagere: glavni, node-A, node-B i paket TaskManagerAI |
+| **Nalog** | Vlasnik, grupa node-A, 08.10.2026.: u TaskManageru mora postojati upis lozinke/tajne koja se zapisuje na disk u spremište tajni čvora. Upis lozinke za mail na node-A tražio je prijavu na računalo, a to nije prihvatljivo. Upis ide kroz TaskManager i mora biti siguran. Vrijedi za **sve** TaskManagere: glavni, node-A, node-B i paket TaskManagerAI |
 | **Nadograđuje** | `src/LoginCreds.ts` (TASK-4796), `core/ConfigModul.ts → zapisiTajnu/procitajTajnu/tajnaPostavljena`, `docs/PROFIL_CVORA_TAJNE.md`, ADR-0004 (profil čvora), ADR-0002 §7.1 (ovlasti razgovora) |
-| **Pravila** | CLAUDE.md pr. 19 (tajne lokalno; Goranov upis na samom čvoru je nalog), TASK-3043 (tajna nikad u transkript), TASK-3686/4722 (preglednik ne smije nuditi spremanje), TASK-5333 (CORS brana) |
+| **Pravila** | CLAUDE.md pr. 19 (tajne lokalno; vlasnikov upis na samom čvoru je nalog), TASK-3043 (tajna nikad u transkript), TASK-3686/4722 (preglednik ne smije nuditi spremanje), TASK-5333 (CORS brana) |
 | **Mjerenja** | PoC u radnoj mapi zadatka (`poc.ts`, izvan repozitorija), §1.3 |
 
 > Dokument je u javnom repozitoriju. Ne navodi nijednu vrijednost tajne, adresu ni chat ID.
@@ -35,7 +35,7 @@ Ploča **nema prijavu**. Sluša na `0.0.0.0`. Propušta je `isHostAllowed` (Host
 mijenjati, a zahtjev **bez** `Origin`, npr. `curl`, prolazi). Agent na čvoru radi kao isti korisnik
 i ima `curl` na `localhost`.
 
-### 1.2 Zašto Goran danas mora na stroj
+### 1.2 Zašto vlasnik danas mora na stroj
 
 Za mail (`SMTP_PASSWORD` / `IMAP_PASSWORD`, `EmailConfig.lozinkaEnv`), Nextcloud, GitHub/GitLab
 token i lozinku pgvectora ploča pokazuje samo **ime** varijable i „postavljeno/nije“. Polja za
@@ -75,7 +75,7 @@ Popravak je hitan i ne čeka cijeli ADR: §10, **TASK-5345** (Jelena).
 
 | # | Težina | Nalaz |
 |---|---|---|
-| N2 | srednja | rotacija ne gasi staru vrijednost: uz glavno spremište su tri kopije `*.bak*` (0600) sa starim vrijednostima. Novi tijek ne smije praviti kopije. Postojeće kopije pregledava Goran, ne agent |
+| N2 | srednja | rotacija ne gasi staru vrijednost: uz glavno spremište su tri kopije `*.bak*` (0600) sa starim vrijednostima. Novi tijek ne smije praviti kopije. Postojeće kopije pregledava vlasnik, ne agent |
 | N3 | srednja | `PUT /api/tasks/:id` ispisuje cijelo tijelo zahtjeva u konzolu (`console.log(… JSON.stringify(body))`). Tajna upisana u zadatak završi u dnevniku ploče. Novi endpoint ne smije proći ni kroz jedan takav ispis |
 | N4 | srednja | `process.env` zasjenjuje datoteku. Nakon rotacije kroz ploču proces tiho koristi staru vrijednost, a ploča javlja „postavljeno“ |
 | N5 | niska | `zapisiTajnu`: ime `tmp` je predvidivo i dijeli se unutar procesa. Nema zaključavanja između procesa, a `writeFileSync` slijedi simboličku poveznicu na mjestu `tmp` |
@@ -489,7 +489,7 @@ vjeruje, a petlja maila neka učitava samo svoje ime, ne cijelo spremište
 
 | # | Scenarij | Očekivano |
 |---|---|---|
-| P1 | Goran s mobitela preko Tailscalea: Config → Tajne → `SMTP_PASSWORD` → „Upiši" | stiže kod u **privatni** Telegram, ne u grupu; nakon upisa koda: „postoji", otisak, `zadnje` = sada |
+| P1 | Vlasnik s mobitela preko Tailscalea: Config → Tajne → `SMTP_PASSWORD` → „Upiši" | stiže kod u **privatni** Telegram, ne u grupu; nakon upisa koda: „postoji", otisak, `zadnje` = sada |
 | P2 | odmah nakon P1, proba maila (`/api/email/proba`) | „prijava prihvaćena" **bez** restarta ploče i daemona |
 | P3 | rotacija: novi upis iste tajne | otisak se promijeni; stari otisak je u `otisakPrije`; u mapi nema kopije |
 | P4 | Chrome i Firefox (desktop) i mobilni preglednik | **nijedan** ne nudi spremanje lozinke; upravitelj lozinki ne popunjava polje |
@@ -517,7 +517,7 @@ vjeruje, a petlja maila neka učitava samo svoje ime, ne cijelo spremište
 
 ## 13. Posljedice
 
-- (+) Goran upisuje i rotira tajne s mobitela, bez prijave na stroj, na sva četiri TaskManagera.
+- (+) vlasnik upisuje i rotira tajne s mobitela, bez prijave na stroj, na sva četiri TaskManagera.
 - (+) Zatvara se N1 (izvršenje kroz vrijednost), za postojeće upise i za nove.
 - (+) Jedan parser i jedan pisač umjesto tri i pet.
 - (−) Upis s ploče traži poznatog vlasnika: `tajne.potvrdaUid`, inače `VLASNIK_UID` ili privatni chat u profilu instance (§4.2a). Bez ijednog ostaje CLI na stroju.

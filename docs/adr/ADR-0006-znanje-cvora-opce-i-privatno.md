@@ -5,7 +5,7 @@
 | **Stanje** | Prihvaćeno (dizajn, bez koda). Izvedba: Jelena (§9). Proba: Potjeh (TASK-5332, §9). Pregled izolacije: Malik |
 | **Datum** | 07.10.2026. |
 | **Autorica** | Kosjenka (Architect), TASK-5330 (PRJ-048) |
-| **Nalog** | Goran, grupa node-A, 07.10.2026.: banka čvora mora znati **opći** REGOČ (agenti, pravila, alati i njihova uporaba, TaskManager, tijekovi), ali **ne naš privatni** (klijenti, osobe, naši i vanjski Nextcloud, DocuSeal, naši projekti, naše Telegram grupe i chat id-evi); mora znati projekte koji idu kroz **njegov** TaskManager i **njegov** Telegram. Uputa #191: čvor bez RAG-a to mora znati, a korpus, identitet i `~/CLAUDE.md` slažu se iz postavki. Uputa #192: čvor koristi **vanjski korisnik** i mora biti **jednako sposoban** kao naš sustav; razlika smije biti samo u podacima i tajnama; čvor je predložak za kloniranje; memorija se ne gasi dok izolacija ne bude gotova |
+| **Nalog** | Vlasnik, grupa node-A, 07.10.2026.: banka čvora mora znati **opći** REGOČ (agenti, pravila, alati i njihova uporaba, TaskManager, tijekovi), ali **ne naš privatni** (klijenti, osobe, naši i vanjski Nextcloud, DocuSeal, naši projekti, naše Telegram grupe i chat id-evi); mora znati projekte koji idu kroz **njegov** TaskManager i **njegov** Telegram. Uputa #191: čvor bez RAG-a to mora znati, a korpus, identitet i `~/CLAUDE.md` slažu se iz postavki. Uputa #192: čvor koristi **vanjski korisnik** i mora biti **jednako sposoban** kao naš sustav; razlika smije biti samo u podacima i tajnama; čvor je predložak za kloniranje; memorija se ne gasi dok izolacija ne bude gotova |
 | **Nadograđuje** | ADR-0004 (profil čvora; §13 tablica pariteta TASK-5307 — ovaj ADR dodaje osi **znanje** i **izolacija memorije**, ostale osi ne ponavlja), ADR-0001 §8 (brana „bez naših vrijednosti"), ADR-0002 §16 (memorija razgovora) |
 | **Mjerenja** | `docs/qa/TASK-5330/` (skripta `razvrstaj_kartu.py` i njezin izlaz) |
 
@@ -44,7 +44,7 @@ vještina za naš hardver navodi naše repoe. **Filtar po datoteci ne radi; po o
 znanje; čist rez traži promjenu na izvoru (§4).**
 
 **1.3 Vlasnik je uloga, a ne ime.** Najčešći „privatni" pogodak u inače općim pravilima je ime
-vlasnika („samo uz Goranovo odobrenje", „Goranova odluka 02.09."). Pravilo je opće („samo vlasnik
+vlasnika („samo uz vlasnikovo odobrenje", „Vlasnikova odluka 02.09."). Pravilo je opće („samo vlasnik
 odobrava prijenos tajne"), vrijednost uloge je naš podatak. Na čvoru je vlasnik netko drugi.
 
 **1.4 Sudar ID-eva projekata.** Ploča node-A ima vlastite projekte `PRJ-001 REGOČ`, `PRJ-002
@@ -188,7 +188,7 @@ bun scripts/znanje-cvora.ts upisi (--suho | --pisi)  # retain samo promijenjenih
 **Čišćenje sadašnje banke:** banka se ne čisti brisanjem dokumenata (Hindsight konsolidirana
 opažanja preživljavaju brisanje izvora). Gradi se **nova** banka `${MEMORIJA_BANKA}` iz čistog korpusa;
 `memorija.banka` se prebacuje kroz API ploče (vrijedi uživo, keš ≤ 5 s) tek kad mjerilo §9 Z1 prođe;
-stara `regoc_opus_nodea` ostaje do Goranove potvrde pa se briše. Memorija se pritom ne gasi (#192).
+stara `regoc_opus_nodea` ostaje do vlasnikove potvrde pa se briše. Memorija se pritom ne gasi (#192).
 
 ## 6. Mogućnosti čvora: jedan izvor za korpus, identitet i `~/CLAUDE.md` (uputa #191)
 
@@ -266,7 +266,7 @@ za vlastito (ključ → zasebna PostgreSQL shema).
 |---|---|---|---|---|---|
 | **A — zasebna instanca na čvoru** (`hindsight-api-slim` + vlastiti PostgreSQL ili SQLite-pg; embeddings na Ollami čvora ili CPU model ≈ 0,6–1,2 GB) | **potpuna**: podaci vanjskog korisnika nikad nisu kod nas, ni naši kod njega | srednja: novi modul profila `memorija-lokalno` (unit, venv, model), 1–2 dana | čvor: ≈ 2–4 GB RAM, ≈ 4–6 GB diska (procjena, slim bez torch modela); **node-A treba proširenje diska** (7,5 GB slobodno) | **čvor** (njegova Claude prijava ili OpenRouter, ADR-0005) | ispravno za vanjskog korisnika i kloniranje; čvor radi i kad smo mi ugašeni; nadogradnja Hindsighta po čvoru |
 | **B — posrednik s dopuštenom bankom na glavnom stroju** (mali HTTP proxy na `127.0.0.1:17794`; tunel čvora pokazuje na njega umjesto na 17792) | jaka na razini API-ja: dopušten samo `/v1/default/banks/${MEMORIJA_BANKA}/…` (recall, reflect, memories, documents); popis banaka vraća samo njegovu; sve ostalo 403 | **mala**: ≈ 100–150 redaka + test, pola dana; promjena `tunel-nodea.sh` (cilj porta) | zanemariva (jedan bun proces) | **mi** (naša kvota) | podaci vanjskog korisnika žive **kod nas**; čvor ovisi o našem pogonu; zatvara §1.5 odmah |
-| **C — zakupac po čvoru u našoj instanci** (vlastiti `TenantExtension`: ključ čvora → shema) | jaka (zasebna shema u bazi) | srednja: proširenje + ključ po čvoru (tajna, sloj „tajne" ADR-0004) + **svi naši klijenti Hindsighta moraju slati ključ** (daemon, ploča, `hindsight_pokus.py`, petlja) | mala | mi | širok zahvat u **naš** pogon zbog čvora; ključ je nova tajna za prijenos na VM (Goranovo odobrenje) |
+| **C — zakupac po čvoru u našoj instanci** (vlastiti `TenantExtension`: ključ čvora → shema) | jaka (zasebna shema u bazi) | srednja: proširenje + ključ po čvoru (tajna, sloj „tajne" ADR-0004) + **svi naši klijenti Hindsighta moraju slati ključ** (daemon, ploča, `hindsight_pokus.py`, petlja) | mala | mi | širok zahvat u **naš** pogon zbog čvora; ključ je nova tajna za prijenos na VM (Vlasnikovo odobrenje) |
 | **D — druga instanca na glavnom stroju samo za čvorove** | jaka (zaseban proces i baza) | mala–srednja | **+4 GB RAM** kod nas, + disk | mi | ista ovisnost kao B, skuplja od B, slabija od A |
 
 **Odluka:**
@@ -336,7 +336,7 @@ Novi čvor (ADR-0004 §13.5) dobiva **korak 3a** iza `primijeni`:
 | R4 | posrednik (B) + `tunel-nodea.sh` na novi port | Jelena, pregled Malik |
 | R5 | `scripts/znanje-cvora.ts`, moduli `mogucnosti`, `znanje`, `znanje-cvora`, `upravitelj` s blokovima | Jelena |
 | R6 | nova banka node-A, prebacivanje `memorija.banka`, proba P1–P5 | Potjeh (TASK-5332) |
-| R7 | (faza 2) disk node-A ≥ 15 GB slobodno; mjerenje slim instance | Goran (disk) / Jelena |
+| R7 | (faza 2) disk node-A ≥ 15 GB slobodno; mjerenje slim instance | Vlasnik (disk) / Jelena |
 | R8 | (zasebno) zapor privatnog popisa nad kompletom (§5.2), `ProjectGuess`/`IngestGateConfig` u postavke | Jelena, Malik |
 
 R4 ne čeka R1–R3: zatvara rupu §1.5 neovisno o korpusu.

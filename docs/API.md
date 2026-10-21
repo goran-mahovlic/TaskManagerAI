@@ -305,7 +305,7 @@ curl -X POST http://localhost:17781/api/ingest \
         "source": "email",
         "externalId": "inbox-42",
         "replyTo": "goran@example.com",
-        "senderName": "Goran",
+        "senderName": "Vlasnik",
         "text": "Popravi izvoz tjednog pregleda u CSV — brojke po projektu ne odgovaraju kartici."
       }'
 ```
@@ -521,7 +521,7 @@ Postavke (`config/dezurni.json`):
   "ukljucen": true,
   "provider": "ollama",
   "model": "qwen3:8b",
-  "baseUrl": "http://192.168.10.4:11434",
+  "baseUrl": "http://10.0.0.4:11434",
   "okidac_uzastopnih_gresaka": 2,
   "smije_podici": true,
   "razmak_straze_min": 30

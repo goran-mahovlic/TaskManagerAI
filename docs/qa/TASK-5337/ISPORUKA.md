@@ -47,5 +47,5 @@ Testovi: `tests/razgovor-zadatak.test.ts` 16 pass; cijeli paket 1670 pass, 0 fai
 `profil-cvora.ts primijeni --suho` i `provjeri --json` (profil `upravitelj-cvora` + `instanca.primjer.env`):
 `razgovor.dokumenti` **OK** (SEND_DOC uključen u postavkama). Dvije nove stavke profila (TASK-5337) su
 **PREDUVJET**: kod node-B je `3e58905`, pa ih nema. Treba ga ažurirati (`tm-cvor-azuriraj.sh`), a za to
-treba Goranovo odobrenje. Otisak prije = poslije (`nodeB_otisak.txt`), dakle ništa nije promijenjeno.
+treba vlasnikovo odobrenje. Otisak prije = poslije (`nodeB_otisak.txt`), dakle ništa nije promijenjeno.
 Puni izlaz: `nodeB_primijeni_suho.txt`.

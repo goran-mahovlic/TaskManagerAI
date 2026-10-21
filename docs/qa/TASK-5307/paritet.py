@@ -10,8 +10,8 @@ Uspoređuje lokalni stroj (glavni) s čvorom preko ssh-a u četiri osi:
 Ne čita i ne ispisuje nijednu tajnu: settings.json se svodi na imena kuka,
 features.json na `enabled`. Na čvoru ništa ne piše (jedino `cat`/`ls`/`grep`/`stat`).
 
-  python3 paritet.py regoc@192.168.10.20            # sažetak
-  python3 paritet.py regoc@192.168.10.20 --tsv      # i tablica značajki (ključ, glavni, čvor, kod na čvoru)
+  python3 paritet.py regoc@10.0.0.20            # sažetak
+  python3 paritet.py regoc@10.0.0.20 --tsv      # i tablica značajki (ključ, glavni, čvor, kod na čvoru)
 Izlaz: 0 = paritet, 1 = ima razlika (izvještaj), 2 = čvor nedostupan.
 """
 import json, os, re, subprocess, sys

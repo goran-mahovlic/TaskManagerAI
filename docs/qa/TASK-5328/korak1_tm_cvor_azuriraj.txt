@@ -1,6 +1,6 @@
 paket: main @ 3e58905  bundle 4.4M
 
-########## node-B (192.168.10.11:2222) ##########
+########## node-B (10.0.0.11:2222) ##########
 verzija: 8d52710 -> 3e58905
 kopija: /home/regoc/backup/taskmanagerai/20261007_202107 (zadataka u bazi: 21)
 lokalno zadrzano: config/jezik.json
@@ -17,9 +17,9 @@ zadataka: prije 21, poslije 21
 git rev-parse --short HEAD: 3e58905
 CVOR OK
 
-########## node-A (192.168.10.20) ##########
+########## node-A (10.0.0.20) ##########
 === SUD: M1=PASS M2=PASS M3=PASS M4=PASS ===
 VERDIKT: OK — usluga je nakon RUCNO podizanja sama dosla iz /home/regoc/TaskManagerAI pod systemd nadzorom
-########## node-B (192.168.10.11) ##########
+########## node-B (10.0.0.11) ##########
 === SUD: M1=PASS M2=PASS M3=PASS M4=PASS ===
 VERDIKT: OK — usluga je nakon RUCNO podizanja sama dosla iz /home/regoc/TaskManagerAI pod systemd nadzorom

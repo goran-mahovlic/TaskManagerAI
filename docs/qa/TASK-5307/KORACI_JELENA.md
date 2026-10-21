@@ -1,7 +1,7 @@
 # TASK-5307 → Jelena: paritet node-A s glavnim + paritet u paketu
 
 Odluke i razlozi: [ADR-0004 §13](../../adr/ADR-0004-profil-cvora.md#13-dopuna-task-5307-07102026--paritet-s-glavnim-sustavom-kuke-značajke-konzola-oporavak).
-Mjerenje prije: `mjerenje_2026-10-07.txt` (99 razlika). Mjerilo poslije: `python3 docs/qa/TASK-5307/paritet.py regoc@192.168.10.20 --tsv`.
+Mjerenje prije: `mjerenje_2026-10-07.txt` (99 razlika). Mjerilo poslije: `python3 docs/qa/TASK-5307/paritet.py regoc@10.0.0.20 --tsv`.
 
 Pravilo redoslijeda: **prvo ono što čvor čini opreznijim, zatim ono što dostavlja i vidi, a tek na
 kraju ono što samo stvara ili vraća zadatke u red.** Na čvoru je nedavno bila kaskada
@@ -39,10 +39,10 @@ Prije svake izmjene napravi kopiju `<datoteka>.bak-task5307-<vrijeme>`.
 | C6 | ✅ node-A (TASK-5323, ADR §13.9; `klaseUzivo` bez `lanac`) · ✅ node-B (TASK-5328, ADR §13.10; isto) Nakon C5 na node-A: `siroceOporavak`, `pozadinaPovrat`, `revizijaBlokiranih(+Live)`, `zatvaranjeKrozDaemon`, `r2IzricitaDodjela`, `sequentialHelpers` → `true` | **P7**: ubijen proces agenta → zadatak natrag u redu ≤ 15 min bez `/reclaim` |
 | C7 | `docs/INSTALL.md` „Novi čvor": zamijeniti 7 koraka s 5 + tajne (ADR §13.5) | pregled teksta |
 
-**Prije C5 odluči Goran:** P6, tj. pet nepredanih izmjena u `~/TaskManagerAI` na node-A
+**Prije C5 odluči vlasnik:** P6, tj. pet nepredanih izmjena u `~/TaskManagerAI` na node-A
 (`src/razgovor/*`, `tests/razgovor-dijelovi.test.ts`). `checkout -f` bi ih obrisao.
 
 ## Završno mjerilo (Potjeh)
 
-`paritet.py regoc@192.168.10.20` smije javiti samo razlike koje §13.2 označava s „van" ili
+`paritet.py regoc@10.0.0.20` smije javiti samo razlike koje §13.2 označava s „van" ili
 „uvjetno, uvjet nije ispunjen". Nijedna stavka s odlukom „u paket" ne smije ostati u razlikama.

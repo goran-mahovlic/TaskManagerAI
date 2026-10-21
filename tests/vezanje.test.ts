@@ -1,8 +1,8 @@
 // TM_BIND (plan Mac v3 P2/P3, R3): ploča na tuđoj Wi-Fi mreži ne smije slušati na 0.0.0.0.
 import { describe, expect, test } from 'bun:test'
-import { adreseVezanja } from '../src/core/vezanje'
+import { adreseVezanja, zadanaAdresa } from '../src/core/vezanje'
 import { podigni, spusti } from './helpers/posluzitelj'
-import { mkdtempSync, rmSync } from 'fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
 
@@ -22,6 +22,34 @@ describe('adreseVezanja', () => {
   })
   test('0.0.0.0 uz druge adrese pokriva sve (inače EADDRINUSE)', () => {
     expect(adreseVezanja('127.0.0.1,0.0.0.0').adrese).toEqual(['0.0.0.0'])
+  })
+})
+
+// TASK-5686 (S2, pregled K5 TASK-5659): ručni start.sh na Macu bez --cvor slušao je na 0.0.0.0,
+// pa je ploča bila vidljiva cijeloj Wi-Fi mreži. Otvoreno smije biti samo izričitim TM_BIND=0.0.0.0.
+describe('zadanaAdresa — kad TM_BIND nije postavljen', () => {
+  const dom = () => mkdtempSync(join(tmpdir(), 'tm-zadano-'))
+  test('macOS: samo petlja, i bez TM_HOME', () => {
+    expect(zadanaAdresa('darwin', undefined)).toBe('127.0.0.1')
+    expect(adreseVezanja(undefined, zadanaAdresa('darwin', undefined)).adrese).toEqual(['127.0.0.1'])
+  })
+  test('instalacija paketa ($TM_HOME/config/postavke.env bez TM_BIND): samo petlja i na Linuxu', () => {
+    const d = dom()
+    try {
+      mkdirSync(join(d, 'config'), { recursive: true })
+      writeFileSync(join(d, 'config', 'postavke.env'), 'TM_PORT=17790\n')
+      expect(zadanaAdresa('linux', d)).toBe('127.0.0.1')
+    } finally { rmSync(d, { recursive: true, force: true }) }
+  })
+  test('Linux bez postavke.env (postojeći node-A): ponašanje kao prije', () => {
+    const d = dom()
+    try {
+      expect(zadanaAdresa('linux', d)).toBe('0.0.0.0')
+      expect(zadanaAdresa('linux', undefined)).toBe('0.0.0.0')
+    } finally { rmSync(d, { recursive: true, force: true }) }
+  })
+  test('izričit TM_BIND=0.0.0.0 i dalje otvara (node-A ga postavi u svojoj instanci)', () => {
+    expect(adreseVezanja('0.0.0.0', zadanaAdresa('darwin', undefined)).adrese).toEqual(['0.0.0.0'])
   })
 })
 

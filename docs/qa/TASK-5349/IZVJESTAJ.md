@@ -54,6 +54,6 @@ Moguće je da API broji jedinice drugačije od ispisa sastavljača; to nisam dal
 - Pitanje: Šaban → Klaudio LAN-om s node-A (`pitaj_klaudija.ts`, isporučeni `stvoriBotKanal`, žive postavke, HMAC) → `poslano` (pitaj_klaudija.out).
 - Klaudio: bot-ulaz 485a97cb odgovoreno; `[ZNANJE-ČVORU] savjet → banka cvor_node_a (pid 1332699)`.
 - savjet.log: `paket sastavljen (236s) … 39 činjenica` · `filtar: 39 ulazi, 0 izbačeno` · **`OK savjet/glas → cvor_node_a (65.7s)`** · `trag: TASK-299 ← bilješka (http 200)`.
-- Ploča node-A TASK-299 (tagovi razgovor, chat:telegram:-5112799687): bilješka **„🧠 znanje od Klaudija upisano u banku cvor_node_a: „glas — …" (savjet/glas, 39 činjenica)"**.
+- Ploča node-A TASK-299 (tagovi razgovor, chat:telegram:-1001234567890): bilješka **„🧠 znanje od Klaudija upisano u banku cvor_node_a: „glas — …" (savjet/glas, 39 činjenica)"**.
 - Curenje nakon upisa: 0/90.
-- Nalaz N2: u istom chatu Šaban je Goranu (TASK-299, 09:43) rekao da su normalizacija i naglasna priprema uključene, a Klaudio (09:47) da ih na node-A još nema (TASK-5340). Jedan od njih nema točne činjenice o node-A; nisam provjeravao koji (izvan opsega).
+- Nalaz N2: u istom chatu Šaban je vlasniku (TASK-299, 09:43) rekao da su normalizacija i naglasna priprema uključene, a Klaudio (09:47) da ih na node-A još nema (TASK-5340). Jedan od njih nema točne činjenice o node-A; nisam provjeravao koji (izvan opsega).

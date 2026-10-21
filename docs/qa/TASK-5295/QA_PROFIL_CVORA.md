@@ -13,10 +13,10 @@
 
 | # | Mjerilo (ADR-0004 §10) | Ishod | Ključni dokaz |
 |---|---|---|---|
-| **P1** | node-A: `provjeri` → izlaz 0 (ili samo stavke `covjek`) | ❌ **nije ispunjeno doslovno** — izlaz **1**: OK 93 · RAZLIKA 1. Razlika je stvarna i namjerna promjena na čvoru, a ne kvar alata. Uz nju ide nalaz N1. | `razgovor.botKanal.ukljucen` profil=`true` čvor=`false` (Malik, TASK-5291, 22:30:58Z: „uključuje Goran") |
+| **P1** | node-A: `provjeri` → izlaz 0 (ili samo stavke `covjek`) | ❌ **nije ispunjeno doslovno** — izlaz **1**: OK 93 · RAZLIKA 1. Razlika je stvarna i namjerna promjena na čvoru, a ne kvar alata. Uz nju ide nalaz N1. | `razgovor.botKanal.ukljucen` profil=`true` čvor=`false` (Malik, TASK-5291, 22:30:58Z: „uključuje vlasnik") |
 | **P2** | node-B: `provjeri` + `primijeni --suho` ≈ §8 (63 + preduvjet → kod 3), otisak prije = poslije | ✅ izlaz **3** u oba, a svaki modul odgovara §8 (tablica niže). Otisak `f5cb881623fae8a0` = `f5cb881623fae8a0` (isti kao u §8) | `P2_B_provjeri.txt`, `P2_B_suho.txt`, `otisci.txt` |
 | **P3** | nijedna tajna u izlazu oba prolaza; kanarinac po J4 | ✅ **0 tajni**. Usporedba sa **stvarnim** vrijednostima na oba čvora (cijela vrijednost i svaki 12-znakovni odsječak): node-A 12 vrijednosti, node-B 4. Jedini pogodak je lažno pozitivan: `TASK_MANAGER_API` je javni URL `http://127.0.0.1:…`. J4 kanarinac: 1 pass | `P3_A.txt`, `P3_B.txt`, `P3_A_tmapi.txt` |
-| **P4** | `primijeni --pisi` na node-B tek uz Goranovo odobrenje i nakon §9 P1–P4 | ⏸ **OTVORENO — nije izvedeno.** U zadatku nema Goranova odobrenja, a §9 P1 nije ispunjen (`d6a79fc` nije u `main`) | `git merge-base --is-ancestor d6a79fc main` → ne; `P4_B_pisi_ssh_odbijeno.txt` (izlaz 4) |
+| **P4** | `primijeni --pisi` na node-B tek uz vlasnikovo odobrenje i nakon §9 P1–P4 | ⏸ **OTVORENO — nije izvedeno.** U zadatku nema vlasnikova odobrenja, a §9 P1 nije ispunjen (`d6a79fc` nije u `main`) | `git merge-base --is-ancestor d6a79fc main` → ne; `P4_B_pisi_ssh_odbijeno.txt` (izlaz 4) |
 
 Otisak node-A (`docs/qa/TASK-5295/otisak.sh`) prije = poslije = `6a7e6e36749d19d6`. Za node-B v. P2.
 
@@ -55,7 +55,7 @@ iz §8 je i dalje jednako, osim jedne koja se na čvoru promijenila **nakon** sn
 `settings_history` na node-A (čitano `mode=ro`):
 ```
 razgovor.botKanal.ukljucen  true   jelena-TASK-5290                                      2026-10-06T22:10:09Z
-razgovor.botKanal.ukljucen  false  malik-TASK-5291 (sigurnosni pregled: uključuje Goran)  2026-10-06T22:30:58Z
+razgovor.botKanal.ukljucen  false  malik-TASK-5291 (sigurnosni pregled: uključuje vlasnik)  2026-10-06T22:30:58Z
 ```
 Isto je izmjerila Jelena u J10 (`docs/qa/TASK-5297/README.md`). Zato P1 ne prolazi doslovno:
 izlaz je 1, a ne 0, i razlika nije stavka `covjek`.
@@ -64,7 +64,7 @@ izlaz je 1, a ne 0, i razlika nije stavka `covjek`.
 
 `primijeni --suho` na node-A javlja da bi **upisao `razgovor.botKanal.ukljucen=true`**. Prema
 povijesti postavki, uključenje kanala bot↔bot je Malikovom odlukom (TASK-5291) ostavljeno
-**Goranu**. ADR-0004 §5 pr. 7 („ovlast se ne podiže alatom") štiti samo `ovlasti=puno` i
+**Vlasniku**. ADR-0004 §5 pr. 7 („ovlast se ne podiže alatom") štiti samo `ovlasti=puno` i
 capguard. Uključenje kanala ima istu narav (otvara ulaz koji izvršava tuđe poruke), ali ga
 alat tretira kao običnu postavku vlasnika `paket`. Prijedlog za Kosjenku/Jelenu, a ne odluka QA-a:
 * ili `botKanal.ukljucen` ide pod stavku `covjek` (kao `TM_RAZGOVOR_PUNO`), pa alat upisuje
@@ -147,9 +147,9 @@ Nije izvedeno. Uvjeti iz §10 nisu ispunjeni:
 
 | Uvjet | Stanje 07.10. |
 |---|---|
-| Goranovo izričito odobrenje u zadatku | **nema** (opis i bilješke TASK-5298 ga ne sadrže) |
+| Vlasnikovo izričito odobrenje u zadatku | **nema** (opis i bilješke TASK-5298 ga ne sadrže) |
 | §9 P1 — `d6a79fc` u `main` | **ne** (`git merge-base --is-ancestor d6a79fc main` → ne). Na node-B to potvrđuje i izlaz 3 (6 značajki nedostaje) |
-| §9 P2 — commiti s node-A preuzeti/odbačeni | nije provjereno u ovom zadatku (Goranova odluka) |
+| §9 P2 — commiti s node-A preuzeti/odbačeni | nije provjereno u ovom zadatku (Vlasnikova odluka) |
 | §9 P3 — disk node-B | **89 %, 2,0 GB slobodno** (nepromijenjeno) |
 | §9 P4 — drugi bot i grupa za node-B | nema traga (node-B: `TAJNA-NEDOSTAJE TELEGRAM_BOT_TOKEN`) |
 

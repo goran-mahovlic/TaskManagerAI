@@ -21,7 +21,7 @@ povećava. Njega čisti TASK-5108 (Jelena).
 | Vidljivost | `api.github.com/repos/goran-mahovlic/TaskManagerAI` → HTTP 200, `"visibility": "public"` |
 | Već objavljeno | `origin/main` = `6afd595`: `60dbd06..6afd595` (2 commita, TASK-5008) je javno od 24.09.2026. |
 | Za push | `origin/main..HEAD` = **22 commita** (`ab14c05` … `3de05f8`) + commit ove revizije |
-| Autor | svih 24 commita od `60dbd06`: Goran Mahovlic (autor i committer) |
+| Autor | svih 24 commita od `60dbd06`: Ime Prezime (autor i committer) |
 | Radno stablo pri početku | **čisto** (`git status --short` prazan) |
 
 **„Nespremljene izmjene“ iz opisa zadatka** (`db/schema.sql`, `src/zod/schemas/message|project|rag.ts`)
@@ -73,7 +73,7 @@ Broj pojava je isti na `origin/main` i lokalno (ili manji lokalno), pa push dug 
 | D4 | nazivi internih projekata i RAG kolekcija | 34 → 34 | `tools/rag_audit.py`, `tools/razvrstaj_*.py`, `tools/uvoz_telegram_zadataka.py`, `src/core/TaskCreateBreaker.ts` |
 | D5 | e-pošta autora | brana: 7 | README/CONTRIBUTING (autorstvo je u redu), `.githooks/commit-msg` + test |
 
-**Upozorenje za Gorana:** sve iz D je u **javnoj povijesti** od 10. do 24.09.2026. Čišćenje vrha
+**Upozorenje za vlasnika:** sve iz D je u **javnoj povijesti** od 10. do 24.09.2026. Čišćenje vrha
 ga ne briše iz klonova. Adrese su privatne (RFC1918), pa izvana nisu dohvatljive. Chat ID sam
 po sebi ne daje pristup bez bot tokena. Rewrite povijesti (`git filter-repo` + force push) je
 odluka vlasnika. Preporuka: ne raditi rewrite, nego očistiti vrh (TASK-5108).

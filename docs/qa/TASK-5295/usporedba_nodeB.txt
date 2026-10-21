@@ -1,4 +1,4 @@
-RAZLIKA env.TM_ALLOWED_HOSTS: profil="10.0.0.11,cvor-b" cvor="192.168.10.11,192.168.10.20,node-a,node-b,regocAI"
+RAZLIKA env.TM_ALLOWED_HOSTS: profil="10.0.0.11,cvor-b" cvor="10.0.0.11,10.0.0.20,node-a,node-b,regocAI"
 RAZLIKA env.TM_DB: profil="/data/regoc.db" cvor="/home/regoc/.claude/regoc/data/regoc.db"
 RAZLIKA env.TM_AGENTS_REGISTRY: profil="/REGOC_AGENTS.json" cvor="/home/regoc/.claude/regoc/REGOC_AGENTS.json"
 RAZLIKA env.TM_MODEL_CONFIG: profil="/models/model-config.json" cvor="/home/regoc/.claude/regoc/models/model-config.json"

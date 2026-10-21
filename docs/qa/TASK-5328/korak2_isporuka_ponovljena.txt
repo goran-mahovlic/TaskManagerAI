@@ -1,8 +1,8 @@
 
-── 0. Dostupnost čvora 192.168.10.11:2222 ─────────────────────────────
+── 0. Dostupnost čvora 10.0.0.11:2222 ─────────────────────────────
 ✅ dostupan; HOME na čvoru = /home/regoc
 
-── 1. Goranovo pravilo: restart je dopušten samo kad nema zadataka u radu ─────────────────────────────
+── 1. Vlasnikovo pravilo: restart je dopušten samo kad nema zadataka u radu ─────────────────────────────
 zadataka in_progress na čvoru: 0
 
 ── 2. Raspon (što se mijenja) ─────────────────────────────
