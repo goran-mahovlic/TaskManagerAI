@@ -83,6 +83,12 @@ export interface EmailPostavke {
   smtp: SmtpPostavke
   imap: ImapPostavke
   primatelji: string[]
+  /**
+   * TASK-5509: vlasnik čvora — UVIJEK u CC-u odgovora na mail koji šalje ploča (`odgovorNa`).
+   * Iz postavke, nikad iz zahtjeva. Prazno = odgovor preko ploče se NE šalje: `primatelji` nisu
+   * zamjena (na node-A je ondje sandučić sustava, ne vlasnik).
+   */
+  vlasnik: string
   obavijestZadatak: ObavijestZadatkaPostavke
 }
 
@@ -98,6 +104,7 @@ export const ZADANE_POSTAVKE: EmailPostavke = {
     privitci: { ...ZADANI_POSTA_PRIVITCI, vrste: [...ZADANI_POSTA_PRIVITCI.vrste], posiljatelji: [] },
   },
   primatelji: [],
+  vlasnik: '',
   obavijestZadatak: { ukljucena: false, statusi: ['completed'], najviseNaSat: 10 },
 }
 
@@ -177,6 +184,10 @@ const modul = new ConfigModul<EmailPostavke>({
       },
     },
     primatelji: { tip: 'popis', obavezno: true },
+    vlasnik: {
+      tip: 'tekst', maxDuljina: 200, uzorak: /^([^\s@]+@[^\s@]+\.[^\s@]+)?$/,
+      uzorakPoruka: 'adresa e-pošte vlasnika (uvijek u CC-u odgovora na mail); prazno = odgovora preko ploče nema',
+    },
     obavijestZadatak: {
       tip: 'objekt',
       polja: {
@@ -223,6 +234,12 @@ export function validateEmailPatch(tijelo: unknown) {
   }
   p.ok = p.greske.length === 0
   return p
+}
+
+/** TASK-5509: adresa vlasnika za CC — samo postavka `vlasnik`; `null` = nije postavljena. */
+export function vlasnikEmail(cfg: EmailPostavke = loadEmailConfig()): string | null {
+  const a = String(cfg.vlasnik || '').trim()
+  return RE_EPOSTA.test(a) && !/[\r\n]/.test(a) ? a : null
 }
 
 export function stanjeEmail(cfg: EmailPostavke = loadEmailConfig()): StanjeIntegracije & {
@@ -325,31 +342,49 @@ export async function posaljiEmail(
  * i to samo na izričit nalog čovjeka u grupi („odgovori: …"). Poller ga nikad ne zove sam.
  */
 export async function posaljiOdgovorEmail(
-  x: { prima: string; predmet: string; tekst: string; uOdgovorNa?: string }, path?: string,
+  x: {
+    prima: string; predmet: string; tekst: string; uOdgovorNa?: string
+    /** TASK-5509: odgovor preko ploče — CC vlasnika, lanac niti i privitci (već provjerene putanje). */
+    cc?: string[]; references?: string; privitci?: { putanja: string; ime: string; sadrzaj?: Buffer }[]
+  },
+  path?: string,
+  /** Samo za testove: gotov nodemailer prijenos (npr. `streamTransport`) umjesto SMTP-a. */
+  prijenosZaTest?: any,
 ): Promise<Ishod> {
   const cfg = loadEmailConfig(path)
   if (!cfg.ukljucen) return { ok: false, greska: 'e-pošta je isključena' }
   if (cfg.smjer === 'ulaz') return { ok: false, greska: 'izlazna pošta (SMTP) nije uključena — smjer je samo ulaz' }
   if (!cfg.smtp.host) return { ok: false, greska: 'SMTP poslužitelj nije upisan' }
   if (!RE_EPOSTA.test(x.prima) || /[\r\n]/.test(x.prima)) return { ok: false, greska: 'adresa primatelja nije ispravna' }
-  const { procitajTajnu } = await import('./core/ConfigModul')
-  const lozinka = procitajTajnu(cfg.smtp.lozinkaEnv)
-  if (!lozinka) return { ok: false, greska: `SMTP lozinka nije upisana (${cfg.smtp.lozinkaEnv}) — Config → Tajne` }
-  let nodemailer: any
-  try { nodemailer = await import('nodemailer') } catch {
-    return { ok: false, greska: 'nedostaje knjižnica nodemailer — pokreni instalaciju paketa (bun install)' }
-  }
-  try {
-    const prijenos = (nodemailer.default || nodemailer).createTransport({
+  const cc = (x.cc || []).map(a => String(a).trim()).filter(Boolean)
+  if (cc.some(a => !RE_EPOSTA.test(a) || /[\r\n,;]/.test(a))) return { ok: false, greska: 'adresa u CC-u nije ispravna' }
+  let prijenos = prijenosZaTest
+  if (!prijenos) {
+    const { procitajTajnu } = await import('./core/ConfigModul')
+    const lozinka = procitajTajnu(cfg.smtp.lozinkaEnv)
+    if (!lozinka) return { ok: false, greska: `SMTP lozinka nije upisana (${cfg.smtp.lozinkaEnv}) — Config → Tajne` }
+    let nodemailer: any
+    try { nodemailer = await import('nodemailer') } catch {
+      return { ok: false, greska: 'nedostaje knjižnica nodemailer — pokreni instalaciju paketa (bun install)' }
+    }
+    prijenos = (nodemailer.default || nodemailer).createTransport({
       host: cfg.smtp.host, port: cfg.smtp.port,
       secure: cfg.smtp.tls && cfg.smtp.port === 465, requireTLS: cfg.smtp.tls,
       auth: { user: cfg.smtp.korisnik, pass: lozinka },
     })
+  }
+  try {
     const ref = x.uOdgovorNa && !/[\r\n]/.test(x.uOdgovorNa) ? x.uOdgovorNa : undefined
+    const lanac = x.references && !/[\r\n]/.test(x.references) ? x.references : ref
     const info = await prijenos.sendMail({
       from: cfg.smtp.posiljatelj, to: x.prima,
+      ...(cc.length ? { cc: cc.join(', ') } : {}),
       subject: x.predmet.replace(/[\r\n]+/g, ' ').slice(0, 300), text: x.tekst,
-      ...(ref ? { inReplyTo: ref, references: ref } : {}),
+      ...(ref ? { inReplyTo: ref } : {}),
+      ...(lanac ? { references: lanac } : {}),
+      // Sadržaj je pročitan pri provjeri (PostaOdgovor: O_NOFOLLOW, dev/ino) — putanja se ovdje
+      // NE razrješava ponovno, pa zamjena datoteke nakon provjere ne mijenja što odlazi.
+      ...(x.privitci?.length ? { attachments: x.privitci.filter(p => p.sadrzaj).map(p => ({ filename: p.ime, content: p.sadrzaj })) } : {}),
     })
     return { ok: true, detalj: { messageId: info?.messageId } }
   } catch (e: any) {

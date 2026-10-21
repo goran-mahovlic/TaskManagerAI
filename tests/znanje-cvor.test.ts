@@ -69,6 +69,15 @@ describe('dokumenti čvora', () => {
     expect(d).toContain('RAG NIJE uključen')
     expect(d).toContain('Hindsight banka `b`')
   })
+  test('stanje (TASK-5509): odgovor na mail samo preko ploče, s nalogom poteza i vlasnikom u CC', () => {
+    const d = dokumentStanje({ cvor: 'node-A', mogucnosti: {}, banka: 'b', ploca: 'http://127.0.0.1:17781' })
+    expect(d).toContain('## Odgovor na dolazni mail')
+    expect(d).toContain('curl -s -X POST http://127.0.0.1:17781/api/email/posalji')
+    expect(d).toContain('X-Regoc-Nalog: $TM_NALOG_POTEZA')
+    expect(d).toContain('vlasnika u CC')
+    expect(d).toContain('Nikad vlastita skripta')
+    expect(imaTajnu(d)).toBe(false)
+  })
 })
 
 describe('znanje-cvora.ts pod systemd (PATH bez bun-a)', () => {

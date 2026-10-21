@@ -126,7 +126,7 @@ describe('K1 istek roka auto-provjere = neprovjereno, nikad pad', () => {
     writeFileSync(join(root, 'Sporo.ts'), 'export const s = 1\n')
     let n = 0
     const o = await critiqueSpawnAsync(
-      { taskId: 'TASK-K1A', agentId: 'jelena', sinceMs: Date.now() - 60_000, live: true },
+      { taskId: 'TASK-K1A', agentId: 'agent-a', sinceMs: Date.now() - 60_000, live: true },
       cfgZa(root, { opsegMode: 'off' }), async () => { n++; return ISTEK },
     )
     expect(n).toBe(2)
@@ -199,7 +199,7 @@ describe('K2/K3 okolina (worktree bez ovisnosti, ENOSPC) = neprovjereno + dojava
       return ima ? OK : { exitCode: 1, stdout: '', stderr: 'error: expect(received).toEqual(expected)', timedOut: false }
     }
     const o = critiqueSpawn({
-      taskId: 'TASK-K2P', agentId: 'jelena', sinceMs: Date.now() - 60_000, live: true, transcripts: [t],
+      taskId: 'TASK-K2P', agentId: 'agent-a', sinceMs: Date.now() - 60_000, live: true, transcripts: [t],
       extraRoots: [{ path: wt, sinceMs: Date.now() - 60_000, vlastiti: true }],
     }, cfgZa(join(TMP, 'prazno-k2p')), runner)
     expect(vidjeno.length).toBeGreaterThan(0)
@@ -218,7 +218,7 @@ describe('K2/K3 okolina (worktree bez ovisnosti, ENOSPC) = neprovjereno + dojava
     const runner = (c: PlannedCheck): RunOutput => c.target.endsWith('TaskWebUI.ts')
       ? { exitCode: 1, stdout: '', stderr: 'error: Could not resolve: "zod". Maybe you need to "bun install"?', timedOut: false }
       : OK
-    const o = critiqueSpawn({ taskId: 'TASK-K2', agentId: 'jelena', sinceMs: Date.now() - 60_000, live: true, transcripts: [t] }, cfgZa(wt), runner)
+    const o = critiqueSpawn({ taskId: 'TASK-K2', agentId: 'agent-a', sinceMs: Date.now() - 60_000, live: true, transcripts: [t] }, cfgZa(wt), runner)
     expect(o.verdict.status).toBe('unverifiable')
     expect(o.enforce).toBe(false)
     expect(o.reasons.join(' ')).toContain('OKOLINA')
@@ -232,7 +232,7 @@ describe('K2/K3 okolina (worktree bez ovisnosti, ENOSPC) = neprovjereno + dojava
     writeFileSync(join(root, 'tests', 'a.test.ts'), 'test("a", () => {})\n')
     const t = transkript(join(TMP, 'tr-k3', 's.jsonl'), root, [{ name: 'Write', input: { file_path: join(root, 'tests', 'a.test.ts') } }])
     const runner = (): RunOutput => ({ exitCode: 1, stdout: '# Unhandled error between tests\nerror: ENOSPC: no space left on device, write', stderr: '', timedOut: false })
-    const o = critiqueSpawn({ taskId: 'TASK-K3', agentId: 'jelena', sinceMs: Date.now() - 60_000, live: true, transcripts: [t], diskNizak: () => true }, cfgZa(root), runner)
+    const o = critiqueSpawn({ taskId: 'TASK-K3', agentId: 'agent-a', sinceMs: Date.now() - 60_000, live: true, transcripts: [t], diskNizak: () => true }, cfgZa(root), runner)
     expect(o.verdict.status).toBe('unverifiable')
   })
 
@@ -252,7 +252,7 @@ describe('K2/K3 okolina (worktree bez ovisnosti, ENOSPC) = neprovjereno + dojava
     const t = transkript(join(TMP, 'tr-k3e', 's.jsonl'), root, [{ name: 'Write', input: { file_path: join(root, 'tests', 'c.test.ts') } }])
     const runner = (c: PlannedCheck): RunOutput => c.kind === 'test'
       ? { exitCode: 1, stdout: 'error: ENOSPC: no space left on device, write', stderr: '', timedOut: false } : OK
-    const o = critiqueSpawn({ taskId: 'TASK-K3E', agentId: 'jelena', sinceMs: Date.now() - 60_000, live: true, transcripts: [t], diskNizak: () => false }, cfgZa(root), runner)
+    const o = critiqueSpawn({ taskId: 'TASK-K3E', agentId: 'agent-a', sinceMs: Date.now() - 60_000, live: true, transcripts: [t], diskNizak: () => false }, cfgZa(root), runner)
     expect(o.verdict.status).toBe('fail')
     expect(o.enforce).toBe(true)
   })
@@ -264,7 +264,7 @@ describe('K2/K3 okolina (worktree bez ovisnosti, ENOSPC) = neprovjereno + dojava
     const runner = (c: PlannedCheck): RunOutput => c.kind === 'test'
       ? { exitCode: 1, stdout: '# Unhandled error between tests\nerror: Cannot find module "../Nema"', stderr: '', timedOut: false }
       : OK
-    const o = critiqueSpawn({ taskId: 'TASK-K3P', agentId: 'jelena', sinceMs: Date.now() - 60_000, live: true, transcripts: [t] }, cfgZa(root), runner)
+    const o = critiqueSpawn({ taskId: 'TASK-K3P', agentId: 'agent-a', sinceMs: Date.now() - 60_000, live: true, transcripts: [t] }, cfgZa(root), runner)
     expect(o.verdict.status).toBe('fail')
     expect(o.enforce).toBe(true)
   })
@@ -312,8 +312,8 @@ describe('K4 isti tuđi pad na ≥2 zadatka = zatečen + JEDAN zadatak popravka'
   })
 
   test('potpisi iz različitih worktreejeva istog repozitorija se poklapaju (posta-ulaz 5367/5371/5509)', () => {
-    const a = 'test:app/.regoc-worktrees/TaskManagerAI/TASK-5367__jelena__1791467895652/tests/posta-ulaz.test.ts:error: expect(received).toEqual(expected)'
-    const b = 'test:app/.regoc-worktrees/TaskManagerAI/TASK-5509__jelena__1791976374350/tests/posta-ulaz.test.ts:error: expect(received).toEqual(expected)'
+    const a = 'test:app/.regoc-worktrees/TaskManagerAI/TASK-5367__agent-a__1791467895652/tests/posta-ulaz.test.ts:error: expect(received).toEqual(expected)'
+    const b = 'test:app/.regoc-worktrees/TaskManagerAI/TASK-5509__agent-a__1791976374350/tests/posta-ulaz.test.ts:error: expect(received).toEqual(expected)'
     expect(normalizirajPotpis(a)).toBe(normalizirajPotpis(b))
     expect(normalizirajPotpis(a)).toContain('wt:TaskManagerAI/tests/posta-ulaz.test.ts')
   })
@@ -358,7 +358,7 @@ describe('K4 isti tuđi pad na ≥2 zadatka = zatečen + JEDAN zadatak popravka'
     const runner = (c: PlannedCheck): RunOutput => c.kind === 'test'
       ? { exitCode: 1, stdout: '', stderr: 'error: expect(received).toBe(expected)', timedOut: false } : OK
     // Bez transkripta (put zahtjeva zatvaranja): atribucija nedostupna, kao 5623/5625/5626.
-    return critiqueSpawn({ taskId: 'TASK-K4', agentId: 'potjeh', sinceMs, live: true, resultText, prijaviPopravakTesta: (z) => prijave.push(z) }, cfgZa(root), runner)
+    return critiqueSpawn({ taskId: 'TASK-K4', agentId: 'agent-b', sinceMs, live: true, resultText, prijaviPopravakTesta: (z) => prijave.push(z) }, cfgZa(root), runner)
   }
 
   test('critiqueSpawn bez transkripta, izvještaj ne spominje test → pass uz napomenu + jedna prijava popravka', () => {
@@ -375,7 +375,7 @@ describe('K4 isti tuđi pad na ≥2 zadatka = zatečen + JEDAN zadatak popravka'
 
   test('izvještaj spominje taj test → fail-closed (pad ostaje)', () => {
     const prijave: any[] = []
-    const o = slucaj('k4-spomenut', 'Dorađen tests/trajna.test.ts.', prijave)
+    const o = slucaj('k4-spomenut', 'Popravljen tests/trajna.test.ts.', prijave)
     expect(o.verdict.status).toBe('fail')
     expect(prijave.length).toBe(0)
   })
@@ -419,12 +419,12 @@ describe('replay i konfiguracija', () => {
       ts: '2026-10-20T20:35:58Z', taskId: 'TASK-5654', status: 'fail', signatures: [
         'test:.sustav/jezgra/tests/daemon-keeper-boot.test.ts:tests<put>:',
         'test:.sustav/jezgra/tests/samorestart-brana.test.ts:error: ENOSPC: no space left on device, write',
-        'parse:app/.regoc-worktrees/TaskManagerAI/TASK-9999__jelena__1/src/TaskWebUI.ts:error: Could not resolve: "zod". Maybe you need to "bun install"?',
+        'parse:app/.regoc-worktrees/TaskManagerAI/TASK-9999__agent-a__1/src/TaskWebUI.ts:error: Could not resolve: "zod". Maybe you need to "bun install"?',
         'parse:app/sustav_repo/docs/architecture/radna_mapa_5414/tmp-okolina.test.ts:error: Could not resolve: "../TmpOkolina"',
         'test:.sustav/jezgra/tests/pravi.test.ts:error: expect(received).toBe(expected)',
       ],
     }
-    const atrib = { izvori: ['x'], pisano: new Set([join(HOME, '.sustav/jezgra/tests/pravi.test.ts'), join(HOME, '.sustav/jezgra/tests/daemon-keeper-boot.test.ts'), join(HOME, '.sustav/jezgra/tests/samorestart-brana.test.ts'), join(HOME, 'app/.regoc-worktrees/TaskManagerAI/TASK-9999__jelena__1/src/TaskWebUI.ts')]), bash: [] }
+    const atrib = { izvori: ['x'], pisano: new Set([join(HOME, '.sustav/jezgra/tests/pravi.test.ts'), join(HOME, '.sustav/jezgra/tests/daemon-keeper-boot.test.ts'), join(HOME, '.sustav/jezgra/tests/samorestart-brana.test.ts'), join(HOME, 'app/.regoc-worktrees/TaskManagerAI/TASK-9999__agent-a__1/src/TaskWebUI.ts')]), bash: [] }
     const p = presudiZapisReplay(row, atrib, [], HOME)
     expect(p.novo).toBe('fail')
     expect(p.zadrzano).toEqual(['test:.sustav/jezgra/tests/pravi.test.ts:error: expect(received).toBe(expected)'])

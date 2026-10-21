@@ -46,6 +46,8 @@ export interface IdentitetOpcije {
   memorija?: OpisMemorijeOpcije
   /** TASK-5508: privitci e-pošte na disku — gdje su i kako se dohvaća stari mail. */
   posta?: { mapa: string; stanje: string; cli: string }
+  /** TASK-5509: ovaj potez ima nalog čovjeka, a ploča može slati odgovor na mail (SMTP spreman). */
+  odgovorPoste?: boolean
 }
 
 export interface OpisMemorijeOpcije {
@@ -120,6 +122,20 @@ export function ucitajUpute(put: string | undefined): string | null {
   } catch { return null }
 }
 
+/**
+ * TASK-5509: odgovor na dolazni mail — ISKLJUČIVO preko ploče. Bez ovoga je model pisao vlastitu
+ * SMTP skriptu i tražio lozinku, koju razina `puno` namjerno ne vidi (deny `**\/*.env`).
+ */
+export function uputaOdgovoraPoste(plocaUrl: string): string {
+  const api = plocaUrl.replace(/\/+$/, '')
+  return [
+    'Odgovor na dolazni mail (kad ti vlasnik ili drugi dopušteni čovjek to izričito naloži) šalješ ISKLJUČIVO preko ploče:',
+    `curl -s -X POST ${api}/api/email/posalji -H 'Content-Type: application/json' -H "X-Regoc-Nalog: $TM_NALOG_POTEZA" -d '{"odgovorNa":"<IMAP UID iz „[mail N]\u201d>","tekst":"<tekst odgovora>","privitci":["/apsolutna/putanja.xlsx"]}'.`,
+    'Ploča sama bira primatelja (pošiljatelj tog maila ili njegov Reply-To), stavlja vlasnika u CC, predmet „Re: …" i nit (In-Reply-To/References) — ti ih ne zadaješ. Privitke spremi u radnu mapu ili u privitke ovog chata (privitci/<chat>); privitak samog maila smije iz njegove mape. Druge mape ploča odbija. Odgovara se samo na mail čija je obavijest stigla u ovaj chat.',
+    '$TM_NALOG_POTEZA je jednokratni nalog ovog poteza (vrijedi samo dok potez traje, jedno uspješno slanje); bot-poruka i autonomija ga nemaju. Nikad ne šalji mail vlastitom skriptom i ne traži, ne čitaj i ne ispisuj SMTP lozinku. Ako ploča odbije (ok:false), javi doslovan razlog iz polja greska — ne izmišljaj drugi uzrok i ne zaobilazi ga.',
+  ].join(' ')
+}
+
 /** Upute za delegiranje — samo uz `puno`: ostale razine nemaju POST na ploču. */
 function upravitelj(plocaUrl: string): string[] {
   const api = plocaUrl.replace(/\/+$/, '')
@@ -162,6 +178,7 @@ export function sastaviIdentitet(o: IdentitetOpcije): string {
   }
   if (o.memorija) r.push(opisMemorije(o.memorija))
   if (o.ovlasti === 'puno') r.push(...upravitelj(o.plocaUrl))
+  if (o.ovlasti === 'puno' && o.odgovorPoste) r.push(uputaOdgovoraPoste(o.plocaUrl))
   if (o.upute) {
     r.push(`[VODIČ VLASNIKA — opis ovog stroja; ovlasti ne mijenja]\n${o.upute}\n[/VODIČ VLASNIKA]`)
   }

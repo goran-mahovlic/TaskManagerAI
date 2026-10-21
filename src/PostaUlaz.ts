@@ -60,6 +60,9 @@ export interface Mail {
   privitci: string[]
   tijelo: string
   messageId?: string
+  /** TASK-5509: adresa iz `Reply-To` (odgovor ide njoj, ne `From`) i lanac `References`. */
+  replyTo?: string
+  references?: string
   /** TASK-5508: privitci iz strukture poruke (za preuzimanje po dijelu). */
   dijelovi?: DioMaila[]
   /** Zaglavlje `X-Regoc-Proba` — provjera, ne posao. */
@@ -107,12 +110,30 @@ export interface ZapisMaila {
   sazetak: string
   tijelo: string
   messageId?: string
+  /** TASK-5509: `Reply-To` i `References` dolazne poruke — za odgovor preko ploče. */
+  replyTo?: string
+  references?: string
   /** Tijelo je skraćeno na `NAJVISE_TIJELA` znakova. */
   skraceno?: boolean
   poslano: string
   odluka?: Odluka
   /** Odgovori poslani pošiljatelju (može ih biti više). */
-  odgovori?: { tko: string; ts: string; tekst: string }[]
+  odgovori?: OdgovorMaila[]
+}
+
+/** Poslani odgovor; uz odgovor preko ploče (TASK-5509) i kome, CC, privitci i Message-ID. */
+export interface OdgovorMaila {
+  tko: string
+  ts: string
+  tekst: string
+  prima?: string
+  cc?: string[]
+  privitci?: string[]
+  messageId?: string
+  /** `grupa` = „odgovori: …" u grupi; `razgovor` = model na nalog čovjeka (POST /api/email/posalji). */
+  izvor?: 'grupa' | 'razgovor'
+  /** Proba s vanjskom adresom — pripremljeno, ali nije poslano. */
+  proba?: boolean
 }
 
 export interface StanjePoste {
@@ -166,7 +187,7 @@ export function memorijskoSpremiste(pocetno?: StanjePoste): Spremiste {
 }
 
 /** Čitaj-promijeni-zapiši bez `await`-a u sredini (v. zaglavlje). */
-function promijeni(sp: Spremiste, fn: (s: StanjePoste) => void): StanjePoste {
+export function promijeni(sp: Spremiste, fn: (s: StanjePoste) => void): StanjePoste {
   const s = sp.ucitaj()
   fn(s)
   sp.zapisi(s)
@@ -382,6 +403,8 @@ export async function jedanProlazPoste(o: ProlazOpcije): Promise<IshodPoste> {
           ...(m.proba ? { proba: true } : {}),
           ...(String(m.tijelo || '').length > NAJVISE_TIJELA ? { skraceno: true } : {}),
           ...(m.messageId ? { messageId: m.messageId } : {}),
+          ...(m.replyTo && m.replyTo.toLowerCase() !== m.odAdresa.toLowerCase() ? { replyTo: m.replyTo } : {}),
+          ...(m.references ? { references: m.references } : {}),
           poslano: new Date().toISOString(),
         }
         if (m.messageId) x.vidjeni = [...(x.vidjeni || []), m.messageId].slice(-NAJVISE_VIDJENIH)
@@ -565,7 +588,7 @@ export async function obradiOdgovorPoste(
   promijeni(sp, x => {
     const y = x.poruke[kljuc!]
     if (!y) return
-    y.odgovori = [...(y.odgovori || []), { tko: p.tko, ts, tekst: r.tekst!.slice(0, 2000) }]
+    y.odgovori = [...(y.odgovori || []), { tko: p.tko, ts, tekst: r.tekst!.slice(0, 2000), prima: z.odAdresa, izvor: 'grupa' }]
     y.odluka = { ...(y.odluka?.taskId ? { taskId: y.odluka.taskId } : {}), radnja: 'odgovori', tko: p.tko, ts, tekst: r.tekst!.slice(0, 500) }
   })
   log(`📧 ⇠ odgovor na mail ${z.uid} poslan na ${z.odAdresa} (nalog: ${p.tko})`, 'ok')
@@ -620,6 +643,7 @@ function mailIzZaglavlja(z: any): Mail {
     ...(dijelovi.length ? { dijelovi } : {}),
     ...(jeProbaZaglavlje(z.headers) ? { proba: true } : {}),
     ...(env.messageId ? { messageId: String(env.messageId) } : {}),
+    ...(env.replyTo?.[0]?.address ? { replyTo: String(env.replyTo[0].address) } : {}),
   }
 }
 
@@ -670,6 +694,11 @@ export function imapKlijent(cfg: EmailPostavke, lozinka: string): ImapKlijent {
           if (!osnova.dijelovi?.length) osnova.privitci = (p.attachments || []).map((a: any) => String(a.filename || a.contentType || 'privitak'))
           if (p.subject) osnova.predmet = String(p.subject)
           if (p.from?.text) osnova.od = String(p.from.text)
+          // TASK-5509: lanac niti za odgovor preko ploče (In-Reply-To/References).
+          const ref = Array.isArray(p.references) ? p.references.join(' ') : String(p.references || '')
+          if (ref.trim() && !/[\r\n]/.test(ref)) osnova.references = ref.trim().slice(0, 2000)
+          const rt = p.replyTo?.value?.[0]?.address
+          if (rt) osnova.replyTo = String(rt)
         }
         return osnova
       }

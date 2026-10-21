@@ -136,6 +136,41 @@ ali nema zapisa u ulaz, „zadatak" ne otvara zadatak, a „odgovori: …" ne š
 **Slanje na zahtjev**: `POST /api/email/posalji {"predmet","tekst","prima"?}`. Dopušteno je samo s
 ovog stroja (localhost) i samo na adrese iz `primatelji`. Vraća `messageId` iz SMTP odgovora.
 
+**Odgovor na dolazni mail preko ploče** (TASK-5509): isti endpoint s poljem `odgovorNa`:
+
+```bash
+curl -s -X POST http://127.0.0.1:17781/api/email/posalji -H 'Content-Type: application/json' \
+  -H "X-Regoc-Nalog: $TM_NALOG_POTEZA" \
+  -d '{"odgovorNa":"8","tekst":"Poštovana, …","privitci":["/…/privitci/<chat>/tablica.xlsx"]}'
+```
+
+- `odgovorNa`: IMAP UID iz obavijesti „[mail N]" (ili `uid:N`), ili ključ zapisa iz `posta.json`
+  (`kljuc:K`). Ako je isti broj i UID i ključ, ploča traži izričit oblik (409).
+- **Primatelj** je pošiljatelj te poruke, ili njezin `Reply-To` — iz STVARNO primljene poruke, nikad
+  iz zahtjeva. Predmet je `Re: <izvorni>`, uz `In-Reply-To` i `References` (postojeći lanac + Message-ID).
+- **Vlasnik je uvijek u CC-u**: postavka `vlasnik` (kartica E-pošta, ili
+  `PUT /api/email/config {"vlasnik":"…"}`). Bez nje se ne šalje (409) — `primatelji` NISU zamjena
+  (na čvoru je ondje često sandučić sustava). Zahtjev ga ne može izostaviti ni zamijeniti.
+- **Privitci** samo iz radne mape chata, iz `privitci/<chat>` (Telegram, chat naloga) i iz mape
+  privitaka tog maila (`privitci/posta/<uid>`): apsolutna putanja, `realpath` unutar tih mapa
+  (simbolička poveznica van se odbija), bez `..`, najviše 10 datoteka i 15 MB ukupno. Sadržaj se
+  čita pri provjeri (O_NOFOLLOW, isti dev/ino) i šalje iz memorije — putanja se ne razrješava ponovno.
+- **Chat**: odgovara se samo na mail čija je obavijest stigla u chat naloga (inače 403).
+- **Nalog čovjeka** (zaglavlje `X-Regoc-Nalog` ili polje `nalog`): jednokratni token koji razgovor
+  izdaje SAMO potezu na razini `puno` u kojem su svi pošiljatelji dopušteni ljudi (model ga vidi kao
+  `$TM_NALOG_POTEZA`). Vezan je uz chat i pošiljatelja, vrijedi dok potez traje (rok = rok poteza +
+  1 min) i opoziva se na kraju poteza. Uspješno slanje ga troši; neuspjelo (SMTP, kriva putanja) ne.
+  Bot-poruka, autonomija i agenti ga nemaju → 403. Lozinku i dalje drži samo ploča.
+- **Proba** (`X-Regoc-Proba` na dolaznom mailu): vanjskoj adresi ništa ne odlazi — odgovor je
+  `{ok:true, proba:true, poslano:null, priprema:{prima, cc, predmet, inReplyTo, references, privitci}}`.
+  Proba čiji je pošiljatelj interna adresa (`primatelji`, vlasnik, sam sandučić) šalje se stvarno.
+- **Trag**: Konzola (`📧 ⇠ odgovor na mail N … poslan na X, CC Y, privitci: … · <messageId> (nalog: ime (uid:N))`)
+  i `posta.json` → `poruke.<ključ>.odgovori[]` (`tko`, `prima`, `cc`, `privitci`, `messageId`, `izvor: "razgovor"`).
+  Ako je iz maila otvoren zadatak, dobiva bilješku.
+- Ishodi: 200 poslano (ili proba), 400 tekst/privitak, 403 nalog, 404 nepoznat mail, 409 vlasnik/adresa/dvoznačno,
+  502 SMTP. Model u uputi (identitet razgovora i `cvor/stanje` u znanju čvora) ima pravilo: odgovor
+  ide ISKLJUČIVO ovim putem, nikad vlastitom skriptom ni čitanjem tajni, a odbijenicu javlja doslovno.
+
 **Obavijest o zadatku mailom** (`obavijestZadatak`, TASK-5378) je zasebna postavka, **zadano
 isključena** — uključena e-pošta ne znači da svaki zadatak ide mailom:
 

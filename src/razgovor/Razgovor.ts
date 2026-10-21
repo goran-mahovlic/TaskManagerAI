@@ -30,6 +30,7 @@ import { ocistiStareZapise, zapisiPotez } from './Zapis'
 import type { ZadaciRazgovora } from './ZadatakRazgovora'
 import type { PrijenosIshod, PrijenosUlaz } from './BotKanal'
 import { TOKENA_DEZURNOG, type DezurniRazgovora } from '../Dezurni'
+import { NALOG_ENV, type NaloziPoteza } from '../PostaOdgovor'
 
 /** Što jezgra treba od kanala bot↔bot (ADR-0003) — bez njega razgovor radi kao prije. */
 export interface BotKanalJezgre {
@@ -105,6 +106,13 @@ export interface RazgovorOvisnosti {
   tajneUputa?: (p: UlaznaPoruka) => string | null
   /** Rezervni model kad primarni padne (429/401/limit/nedostupan) — TASK-5359. */
   dezurni?: DezurniRazgovora
+  /**
+   * TASK-5509: nalozi poteza — ljudski potez na razini `puno` dobiva jednokratni nalog (okolina
+   * `TM_NALOG_POTEZA`) za slanje odgovora na mail preko ploče; opoziva se na kraju poteza.
+   */
+  nalozi?: Pick<NaloziPoteza, 'izdaj' | 'opozovi'>
+  /** TASK-5509: ploča može slati odgovor na mail (SMTP spreman) — uputa modelu; čita se po potezu. */
+  odgovorPoste?: () => boolean
 }
 
 export interface RazgovorJezgra extends Razgovor {
@@ -151,6 +159,14 @@ export interface SesijaChata {
   zadnjiMs: number
   teme: string[]
   memorija: string[]
+}
+
+/**
+ * TASK-5509: podsjetnik u potezu s nalogom — odgovor na mail ide SAMO preko ploče (tajnu drži ploča,
+ * nalog je jednokratan). Puna uputa je u identitetu (`Identitet.uputaOdgovoraPoste`).
+ */
+export function uputaNaloga(port: number): string {
+  return `[NALOG POTEZA: ovaj potez je pokrenuo dopušteni čovjek — smiješ poslati odgovor na dolazni mail, ali SAMO kad to izričito traži: curl -s -X POST http://127.0.0.1:${port}/api/email/posalji -H 'Content-Type: application/json' -H "X-Regoc-Nalog: $TM_NALOG_POTEZA" -d '{"odgovorNa":"<uid>","tekst":"…","privitci":["/aps/putanja"]}'. Nikad vlastitom skriptom ni čitanjem tajni. Ako ploča odbije, javi doslovan razlog.]`
 }
 
 const PRIGUSENJE_MS = 10 * 60_000
@@ -435,7 +451,7 @@ export function stvoriRazgovor(d: RazgovorOvisnosti): RazgovorJezgra {
 
     // Što je bot u međuvremenu samo pročitao (poruke za drugoga), ako je iz ove sesije.
     const procitano = c.procitano.splice(0).filter(x => t0 - x.ms <= s.sesijaNeaktivnostMin * 60_000)
-    const prompt = [
+    let prompt = [
       procitano.length ? `[PROČITANO U CHATU — nije bilo upućeno tebi, ne odgovaraj na to izravno]\n${procitano.map(x => `[OD: ${oznakaPosiljatelja(x.p)}] ${neutralizirajTekst(x.tekst)}`).join('\n')}\n[/PROČITANO]` : '',
       prethodne.length ? `[PRETHODNI KONTEKST: teme prethodnog razgovora u ovom chatu]\n${prethodne.map(t => `• ${neutralizirajTekst(t)}`).join('\n')}\n[/PRETHODNI KONTEKST]` : '',
       mem?.blok || '',
@@ -461,18 +477,29 @@ export function stvoriRazgovor(d: RazgovorOvisnosti): RazgovorJezgra {
     const smije = (x: { p: UlaznaPoruka }) => x.p.izvor === 'bot' ? botOvlasti === 'rad' && izvornikDopusten(x.p) : jeDopusten(x.p, s.dopusteniKorisnici)
     let ovlasti: RazgovorPostavke['ovlasti'] = s.ovlasti !== 'citanje' && stavke.every(smije) && procitano.every(smije) ? s.ovlasti : 'citanje'
     if (botOvlasti && ovlasti !== 'citanje') ovlasti = botOvlasti
+    // TASK-5509: nalog čovjeka za slanje pošte preko ploče — samo ljudski potez na `puno` (svi
+    // pošiljatelji dopušteni, nijedna bot-poruka); vezan uz chat i pošiljatelja, rok = rok poteza.
+    const nalog = ovlasti === 'puno' && !botPotez && d.nalozi
+      ? d.nalozi.izdaj({
+        kanal: p.kanal, chatId: p.chatId, posiljateljId: p.posiljateljId, posiljateljIme: p.posiljateljIme,
+        radniDir, rokMs: s.rokSek * 1000 + 60_000,
+      })
+      : null
+    const odgovorPoste = !!nalog && !!d.odgovorPoste?.()
+    // Kratko i u svakom potezu: nastavljena sesija nema novi sistemski prompt (identitet).
+    if (odgovorPoste) prompt = `${uputaNaloga(d.port)}\n\n${prompt}`
     const lanac = botPotez ? [...stavke].reverse().find(x => x.p.izvor === 'bot')!.p.lanac || null : null
     const kontrola = botPotez ? new AbortController() : null
     c.botKontrola = kontrola
     const oznaka = `${p.kanal}:${p.chatId}`
     const cilj = ciljPoteza(s)
     if (cilj.greska) log(`[razgovor] ${c.kljuc}: model ${specPoteza(s)} — ${cilj.greska}`)
-    const okolinaPoteza = { ...okolinaRazgovora(d.env, oznaka), ...cilj.env }
+    const okolinaPoteza: Record<string, string | undefined> = { ...okolinaRazgovora(d.env, oznaka), ...cilj.env, ...(nalog ? { [NALOG_ENV]: nalog } : {}) }
     // Preusmjereni poziv (ANTHROPIC_BASE_URL) ne smije nositi prijavu pretplate.
     if (cilj.env.ANTHROPIC_BASE_URL) delete okolinaPoteza.CLAUDE_CODE_OAUTH_TOKEN
     // `rez` = dežurni kroz isti CLI (TASK-5359): drugi model i preusmjerena okolina, alati ostaju.
     const okolinaDezurnog = (env: Record<string, string>) => {
-      const o: Record<string, string | undefined> = { ...okolinaRazgovora(d.env, oznaka), ...env }
+      const o: Record<string, string | undefined> = { ...okolinaRazgovora(d.env, oznaka), ...env, ...(nalog ? { [NALOG_ENV]: nalog } : {}) }
       delete o.CLAUDE_CODE_OAUTH_TOKEN
       return o
     }
@@ -483,6 +510,7 @@ export function stvoriRazgovor(d: RazgovorOvisnosti): RazgovorJezgra {
         zapisi: { korijen: d.korijen, ingestLog: d.ingestLog },
         agenti: d.agenti?.() || [], upute: d.upute?.() || null,
         ...(d.posta?.() ? { posta: d.posta!()! } : {}),
+        ...(odgovorPoste ? { odgovorPoste: true } : {}),
         memorija: {
           nacin: s.memorijaRazgovor, banka: s.memorijaBanka, url: s.memorijaUrl || d.env.TM_HINDSIGHT_URL || '',
           rag: d.ragUkljucen?.() ?? null, autoMemorija: autoMemorijaCC(d.home, radniDir),
@@ -591,6 +619,7 @@ export function stvoriRazgovor(d: RazgovorOvisnosti): RazgovorJezgra {
     } finally {
       if (tipka) clearInterval(tipka)
       if (c.botKontrola === kontrola) c.botKontrola = null
+      d.nalozi?.opozovi(nalog)
     }
     // „Prekini komunikaciju" za vrijeme bot-poteza: odgovor ne ide ni u grupu ni drugom botu.
     if (botPotez && (kontrola?.signal.aborted || bk?.jeZaustavljen(p.chatId))) {

@@ -63,8 +63,10 @@ import {
 } from './NextcloudConfig'
 import {
   loadEmailConfig, validateEmailPatch, saveEmailConfig, stanjeEmail, probajEmail, EMAIL_CONFIG_PATH,
-  emailKonfigModul, posaljiOdgovorEmail, posaljiEmail,
+  emailKonfigModul, posaljiOdgovorEmail, posaljiEmail, vlasnikEmail,
 } from './EmailConfig'
+// TASK-5509: odgovor na dolazni mail preko ploče, na jednokratni nalog poteza čovjeka.
+import { NALOG_ZAGLAVLJE, naloziPoteza, odgovoriNaMail } from './PostaOdgovor'
 import { Obavjestavac, jeProbniZadatak } from './ObavijestZadatka'
 import { odlukaPrijenosa } from './TajneApi'
 import {
@@ -11724,6 +11726,9 @@ function razgovorSloj(): RazgovorSloj {
     posta: () => {
       try { const pp = postaPrivitciZaRazgovor(); return pp ? { mapa: pp.mapa, stanje: POSTA_STANJE_PUTANJA, cli: `bun ${join(PAKET_KORIJEN_POSTA, 'scripts', 'posta-privitci.ts')}` } : null } catch { return null }
     },
+    // TASK-5509: ljudski potez na `puno` dobiva jednokratni nalog za odgovor na mail preko ploče.
+    nalozi: naloziPoteza,
+    odgovorPoste: () => { try { const c = loadEmailConfig(); return c.ukljucen && c.smjer !== 'ulaz' && stanjeEmail(c).smtpSpreman } catch { return false } },
     // TASK-5337: trag razgovora (i bot↔bot) kao zadatak na ovoj ploči.
     ploca: plocaIzTaskManagera(taskManager as any),
     // TASK-5293: identitet upravitelja — agenti iz registra, vodič vlasnika samo iz okoline stroja.
@@ -11795,6 +11800,31 @@ const postaOpcije: PetljaOpcije = {
   },
   konzola: postaKonzola,
   log: (r: string) => console.log(r),
+}
+
+/**
+ * TASK-5509: `POST /api/email/posalji` s `odgovorNa`. Privitci smiju iz radne mape chata (iz naloga),
+ * iz `privitci/<chat>` (Telegram) i iz mape privitaka tog maila; vlasnik za CC iz postavke `vlasnik`.
+ */
+function odgovorNaMailPloce(b: any, nalog: string | null) {
+  return odgovoriNaMail({ odgovorNa: b.odgovorNa, tekst: b.tekst, privitci: b.privitci, nalog }, {
+    nalozi: naloziPoteza,
+    spremiste: datotecnoSpremiste(),
+    vlasnik: () => vlasnikEmail(loadEmailConfig()),
+    interneAdrese: () => {
+      const cfg = loadEmailConfig()
+      return [...cfg.primatelji, cfg.smtp.posiljatelj, cfg.smtp.korisnik].filter(Boolean)
+    },
+    // Radna mapa chata, privitci TOG chata i privitci maila na koji se odgovara — ne cijeli korijen.
+    dopusteneMape: (n, mail) => {
+      const tg = { ...ZADANI_PRIVITCI_RAZG, ...(loadTelegramConfig().privitci || {}) }
+      return [n.radniDir, mapaPrivitakaRazg(tg, n.chatId), join(korijenPostePrivitaka(loadEmailConfig().imap.privitci), String(mail.uid))]
+    },
+    home: homedir(),
+    posalji: x => posaljiOdgovorEmail(x),
+    konzola: postaKonzola,
+    dodajBiljesku: async (id, tekst) => { taskManager.addProgressNote(id, 'eposta', tekst) },
+  })
 }
 
 async function postaOdgovor(p: OdgovorUGrupi): Promise<string | null> {
@@ -18508,6 +18538,12 @@ async function obradiZahtjev(req: Request): Promise<Response | undefined> {
       }
       let b: any
       try { b = await req.json() } catch { return json({ ok: false, greska: 'Neispravan JSON' }, 400) }
+      // TASK-5509: odgovor na dolazni mail — primatelj iz primljene poruke, vlasnik u CC, nalog čovjeka.
+      if (b && typeof b === 'object' && b.odgovorNa !== undefined && b.odgovorNa !== null && b.odgovorNa !== '') {
+        const r = await odgovorNaMailPloce(b, req.headers.get(NALOG_ZAGLAVLJE) || (typeof b.nalog === 'string' ? b.nalog : null))
+        console.log(`[EMAIL] odgovor na mail ${String(b.odgovorNa).slice(0, 40)}: ${r.status === 200 ? ((r.tijelo as any).proba ? 'PROBA (nije poslano)' : 'POSLANO ' + String((r.tijelo as any).poslano?.messageId || '')) : `NIJE (${r.status}) — ${(r.tijelo as any).greska}`}`)
+        return json(r.tijelo, r.status)
+      }
       const predmet = String(b?.predmet || '').trim()
       const tekst = String(b?.tekst || '')
       if (!predmet || !tekst.trim()) return json({ ok: false, greska: 'predmet i tekst su obavezni' }, 400)

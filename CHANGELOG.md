@@ -112,6 +112,24 @@
   spremište tajni prima točno ime `CLAUDE_CODE_OAUTH_TOKEN` (Claude pretplata na macOS-u ide kroz
   `claude setup-token`), ostala imena s prefiksom `CLAUDE_` ostaju zabranjena.
 
+## 2026-10-14 — odgovor na dolazni mail preko ploče, na nalog čovjeka (TASK-5509)
+
+- Povod (node-A, 14.10.): bot razgovora je na nalog vlasnika napravio tablicu i nacrt odgovora, ali
+  mail nije mogao poslati — razina `puno` namjerno ne čita tajne (SMTP lozinku). Slanje je odradio
+  drugi agent ručno.
+- Novo: `POST /api/email/posalji` s `odgovorNa` (UID ili ključ iz `posta.json`): primatelj je
+  pošiljatelj primljene poruke (ili `Reply-To`), vlasnik UVIJEK u CC-u (nova postavka `vlasnik`;
+  bez nje nema slanja), `Re:` predmet, `In-Reply-To`/`References`, privitci samo iz radne mape
+  chata / `privitci/<chat>` / privitaka tog maila (realpath, bez `..`, O_NOFOLLOW, 10 datoteka /
+  15 MB); mail mora biti obaviješten u chatu naloga.
+- Nalog čovjeka (`src/PostaOdgovor.ts`): ljudski potez na `puno` dobiva jednokratni token
+  (`TM_NALOG_POTEZA`, zaglavlje `X-Regoc-Nalog`) vezan uz chat i pošiljatelja; opoziva se na kraju
+  poteza. Bot-poruka, autonomija i agenti ga nemaju → 403.
+- Proba (`X-Regoc-Proba`) vanjskoj adresi ne šalje ništa, vraća pripremu.
+- `PostaUlaz` sprema `Reply-To` i `References` dolazne poruke; `posta.json` → `odgovori[]` nosi
+  kome, CC, privitke i Message-ID. Uputa modelu u identitetu razgovora, u svakom potezu s nalogom
+  i u znanju čvora (`cvor/stanje`). Detalji: docs/INTEGRACIJE.md.
+
 ## 2026-10-08 — naredba `pdf`: PDF s hrvatskim slovima, provjeren prije slanja (TASK-5369)
 
 - Povod (TASK-5360): node-A je poslao PDF iz vlastite reportlab skripte s Helveticom (WinAnsi,
