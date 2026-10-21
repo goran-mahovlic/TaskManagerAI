@@ -67,10 +67,15 @@ s korakom `D10-provjera` izlaz 8 (`provjeri-cisto`: 3 ostatka). Na Macu su ostal
 napravila instalacija, a manifest `instalirano.json` ih nije poznavao:
 - `~/.config/uv/uv-receipt.json`, koji piše službeni instalator uv-a,
 - veza `~/.local/bin/python3.13` (stvara je `uv python install`; nakon brisanja Pythona visi),
-- `~/Library/Fonts/DejaVu*.ttf` (5 fontova iz `instaliraj-pdf.sh`); `provjeri-cisto` ih nije vidio.
+- `~/Library/Fonts/DejaVu*.ttf` (5 fontova iz `instaliraj-pdf.sh`); `provjeri-cisto` ih nije vidio,
+- `~/Library/Caches/bun` (nastao u 19:58:50; bun na macOS-u predmemoriju drži izvan `~/.bun`).
+
+`~/Library/Caches/com.apple.python` je nastao 20.10., prije instalacije, i ostaje.
 
 Popravci:
-- `install.sh` upisuje receipt i nove veze `~/.local/bin/python*`;
+- `install.sh`: `ALATNE_MAPE` (opći mehanizam iz B3: upisuje se samo ono čega prije nije bilo) dobiva
+  `~/.config/uv`, `~/.local/bin/python3.13`, `~/Library/Caches/bun` i `~/Library/Caches/pip`, uz
+  ispravnu obradu veza;
 - `instaliraj-pdf.sh` kroz `TM_PDF_STVORENO` javlja fontove i mapu koje je sam stvorio;
 - `pip_u_venv` dobiva `--no-cache-dir`.
 

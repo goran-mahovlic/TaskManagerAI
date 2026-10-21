@@ -134,4 +134,9 @@ describe('install.sh — macOS: pgvector i Hindsight koriste samostalan PostgreS
     expect(fn).toContain('$TM_HOME/rag/home/.pg0/installation')
     expect(fn).toContain('$d/home/.pg0/installation')
   })
+  test('alatne mape: uv-receipt, veza python3.13 i predmemorije macOS-a idu u manifest ako ih prije nije bilo', () => {
+    const red = install.split('\n').findIndex(l => l.startsWith('ALATNE_MAPE='))
+    const alatne = install.split('\n').slice(red, red + 2).join(' ')
+    for (const m of ['$HOME/.config/uv', '$HOME/.local/bin/python$PYTHON_BAZE', '$HOME/Library/Caches/bun', '$HOME/Library/Caches/pip']) expect(alatne).toContain(m)
+  })
 })
