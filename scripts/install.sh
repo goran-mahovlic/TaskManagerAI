@@ -729,6 +729,27 @@ k_baze_venv() {
 # pg0 nosi vlastitu binarku u paketu (site-packages/pg0/bin/pg0), ne u venv/bin
 pg0_bin() { "$BAZE_VENV/bin/python" -c 'import os, pg0; print(os.path.join(os.path.dirname(pg0.__file__), "bin", "pg0"))'; }
 pg0() { HOME="$TM_HOME/rag/home" "$(pg0_bin)" "$@"; }
+pg0_instalacija() { ls -d "$TM_HOME"/rag/home/.pg0/installation/*/ 2>/dev/null | tail -1; }
+
+# macOS (K8 krug 1, TASK-5662): PostgreSQL iz pg0 vezan je uz Homebrewov OpenSSL, pa na čvoru bez
+# njega initdb pada (dyld). pg0 binarke raspakira tek u `start` (drugog načina nema), zato ih
+# jednokratni start raspakira — na Macu bez Homebrewova openssl@3 initdb tu pada, i to je očekivano —
+# a scripts/macos/pg0-openssl.sh ih prije pravog starta učini samostalnima.
+pg0_macos_openssl() {
+  local inst; inst="$(pg0_instalacija)"
+  if [ -z "$inst" ]; then
+    local r="$TM_HOME/tmp/pg0-raspakiraj"
+    mkdir -p "$TM_HOME/tmp"
+    pg0 start --name tm-raspakiraj -p 15433 -d "$r/data" -u raspakiraj -P raspakiraj -n raspakiraj \
+      -c listen_addresses=127.0.0.1 -c unix_socket_directories= > "$TM_HOME/rag/pg0-raspakiraj.log" 2>&1 || true
+    pg0 drop --name tm-raspakiraj -f >/dev/null 2>&1
+    rm -rf "$r"
+    inst="$(pg0_instalacija)"
+    [ -n "$inst" ] || { tail -5 "$TM_HOME/rag/pg0-raspakiraj.log" | sed 's/^/      /'; echo "    GREŠKA: pg0 nije raspakirao PostgreSQL"; return 6; }
+  fi
+  bash "$PAKET/scripts/macos/pg0-openssl.sh" "$inst" | sed 's/^/  /'
+  return "${PIPESTATUS[0]}"
+}
 
 k_baze_pgvector() {
   [ "$BAZE" = 1 ] || { razlog "nije traženo (--baze)"; return 0; }
@@ -736,9 +757,14 @@ k_baze_pgvector() {
   if [ -f "$spremno" ] && [ -f "$TM_HOME/rag/pg0/data/PG_VERSION" ]; then razlog "pgvector spreman ($(cat "$spremno"))"; return 0; fi
   naredba "pg0 start --name tm-rag -p 15433 (127.0.0.1) → CREATE EXTENSION vector → pg0 stop"
   promjena
-  if suho; then echo "    (suho) inicijalizirala bih pg0 u $TM_HOME/rag/pg0 (vrata 15433, samo 127.0.0.1), ekstenziju vector, pa zaustavila"; return 0; fi
+  if suho; then
+    echo "    (suho) inicijalizirala bih pg0 u $TM_HOME/rag/pg0 (vrata 15433, samo 127.0.0.1), ekstenziju vector, pa zaustavila"
+    [ "$OS" = darwin ] && echo "    (suho) macOS: PostgreSQL iz pg0 bez Homebrewova OpenSSL-a (scripts/macos/pg0-openssl.sh)"
+    return 0
+  fi
   mkdir -p "$TM_HOME/rag/home"; chmod 700 "$TM_HOME/rag"
   u_manifest "$TM_HOME/rag" mapa
+  [ "$OS" = darwin ] && { pg0_macos_openssl || return $?; }
   # lozinka lokalne baze: generira se ovdje, ide SAMO u spremište tajni (0600), nikad u log
   local lozinka; lozinka="$(LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 32)"
   printf '%s' "$lozinka" | bun scripts/tajna.ts postavi TM_PGVECTOR_LOKALNA_PASSWORD >/dev/null || { echo "    GREŠKA: lozinka nije upisana u spremište tajni"; return 6; }
@@ -786,6 +812,14 @@ k_baze_hindsight() {
   if [ "${#n[@]}" -gt 0 ]; then promjena; radi "mape ${n[*]}" -- mkdir -p "${n[@]}"; suho || { chmod 700 "$d"; u_manifest "$d" mapa; }; fi
   pisi_sadrzaj "$(hindsight_env)" "$d/hindsight.env" 600
   [ $? = 10 ] && { promjena; echo "    $(suho && echo '(suho) ')$d/hindsight.env"; }
+  # macOS: Hindsightov pg0 (HOME=$d/home) raspakirao bi vlastiti PostgreSQL s Homebrewovim
+  # OpenSSL-om i pao pri prvom startu — zato dijeli instalaciju koju je popravio pgvector korak.
+  local pg_izv="$TM_HOME/rag/home/.pg0/installation" pg_cilj="$d/home/.pg0/installation"
+  if [ "$OS" = darwin ] && [ ! -e "$pg_cilj" ]; then
+    if suho; then promjena; echo "    (suho) veza $pg_cilj → $pg_izv"
+    elif [ -d "$pg_izv" ]; then promjena; mkdir -p "$d/home/.pg0" && ln -s "$pg_izv" "$pg_cilj" && echo "    veza $pg_cilj → $pg_izv"
+    else upozori "macOS: nema PostgreSQL-a iz pgvector koraka — Hindsightov pg0 pao bi na OpenSSL-u (pokreni instalaciju bez --preskoci baze-pgvector)"; fi
+  fi
   [ "$KORAK_PROMJENA" = 1 ] || razlog "hindsight.env i mape na mjestu (usluga zaustavljena)"
 }
 

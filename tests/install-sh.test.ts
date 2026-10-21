@@ -149,6 +149,9 @@ describe('install.sh --suho', () => {
       // omotač se postavlja samo kad naredbe nema (ovdje je PATH s /usr/bin, pa ovisi o stroju)
       expect(r.izlaz).toMatch(/\(suho\).*\.local\/bin\/setsid|setsid: postoji/)
       expect(r.izlaz).toMatch(/zapisala bih \/Library\/LaunchDaemons\/hr\.regoc\.taskmanager\.plist/)
+      // K8 krug 1 (TASK-5662): PostgreSQL iz pg0 na Macu bez Homebrewova OpenSSL-a, Hindsight ga dijeli
+      expect(r.izlaz).toContain('macOS: PostgreSQL iz pg0 bez Homebrewova OpenSSL-a (scripts/macos/pg0-openssl.sh)')
+      expect(r.izlaz).toMatch(/\(suho\) veza .*hindsight\/home\/\.pg0\/installation → .*rag\/home\/\.pg0\/installation/)
     } finally { rmSync(o.korijen, { recursive: true, force: true }) }
   }, 60_000)
 })
