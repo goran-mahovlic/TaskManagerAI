@@ -13,8 +13,11 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'fs'
 import { dirname, join, relative } from 'path'
 import { tmpdir } from 'os'
+import { osigurajOvisnosti } from './helpers/ovisnosti'
 
 const KORIJEN = join(import.meta.dir, '..')
+// svježa kopija stabla nema node_modules → bun install prije testova (uputa #421)
+const NODE_MODULES = osigurajOvisnosti(KORIJEN)
 const BUN_DIR = dirname(process.execPath)
 const radna = () => process.env.TMPDIR || tmpdir()
 
@@ -44,7 +47,7 @@ function pokreni(o: Okruzje, argv: string[], env: Record<string, string> = {}) {
     env: {
       HOME: o.home, PATH: `${env.PREDPATH ? env.PREDPATH + ':' : ''}${BUN_DIR}:/usr/bin:/bin`, USER: 'proba', LANG: 'C.UTF-8',
       TMPDIR: join(o.korijen, 'tmp'), TM_PORT: String(env.TM_PORT || 20000 + Math.floor(Math.random() * 20000)),
-      TM_POSUDI_IZ: join(KORIJEN, 'node_modules'), TM_BEZ_MREZE: '1', ...env,
+      TM_POSUDI_IZ: NODE_MODULES, TM_BEZ_MREZE: '1', ...env,
     },
     stdout: 'pipe', stderr: 'pipe',
   })

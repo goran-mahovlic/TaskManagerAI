@@ -14,8 +14,11 @@ import { describe, expect, test } from 'bun:test'
 import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'fs'
 import { dirname, join, relative } from 'path'
 import { tmpdir } from 'os'
+import { osigurajOvisnosti } from './helpers/ovisnosti'
 
 const KORIJEN = join(import.meta.dir, '..')
+// svježa kopija stabla nema node_modules → bun install prije testova (uputa #421)
+const NODE_MODULES = osigurajOvisnosti(KORIJEN)
 const BUN_DIR = dirname(process.execPath)
 const radna = () => process.env.TMPDIR || tmpdir()
 mkdirSync(radna(), { recursive: true })
@@ -43,7 +46,7 @@ function okruzje(ime: string): Okruzje {
 function env(o: Okruzje, dodatno: Record<string, string> = {}): Record<string, string> {
   return {
     HOME: o.home, PATH: `${dodatno.PREDPATH ? dodatno.PREDPATH + ':' : ''}${BUN_DIR}:/usr/bin:/bin`, USER: 'proba', LANG: 'C.UTF-8',
-    TMPDIR: join(o.korijen, 'tmp'), TM_POSUDI_IZ: join(KORIJEN, 'node_modules'), TM_BEZ_MREZE: '1',
+    TMPDIR: join(o.korijen, 'tmp'), TM_POSUDI_IZ: NODE_MODULES, TM_BEZ_MREZE: '1',
     // vrata na kojima ovdje sigurno nitko ne sluša (stroj na kojem test radi ima svoju ploču na 17781)
     TM_CISTO_VRATA: '1 2', ...dodatno,
   }
