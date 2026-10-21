@@ -19,6 +19,8 @@
 set -uo pipefail
 
 PAKET="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=scripts/instalacija/pip-u-venv.sh
+. "$PAKET/scripts/instalacija/pip-u-venv.sh"
 REPORTLAB_VERZIJA="4.4.4"
 PYPDF_VERZIJA="6.1.1"
 VENV="${TM_PDF_VENV:-$HOME/.local/share/regoc-pdf/venv}"
@@ -142,8 +144,7 @@ else
     "$VENV/bin/python" -c 'import reportlab' 2>/dev/null || NEDOSTAJE+=("reportlab==$REPORTLAB_VERZIJA")
     "$VENV/bin/python" -c 'import pypdf' 2>/dev/null || NEDOSTAJE+=("pypdf==$PYPDF_VERZIJA")
     if [ "${#NEDOSTAJE[@]}" -gt 0 ]; then
-      # Debian bez ensurepip-a: pip sustava instalira u venv (isto kao instaliraj-glas.sh).
-      python3 -m pip --python "$VENV/bin/python" install -q "${NEDOSTAJE[@]}" \
+      pip_u_venv "$VENV" "${NEDOSTAJE[@]}" \
         || fali "pip install ${NEDOSTAJE[*]} (nema mreže? uključi allow_internet ili instaliraj python3-reportlab python3-pypdf)"
     fi
     uvozi && ok "reportlab + pypdf dostupni" || { fali "import reportlab, pypdf"; exit 1; }
