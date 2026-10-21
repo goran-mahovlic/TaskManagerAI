@@ -183,7 +183,7 @@ describe('J10 — prijenos', () => {
     expect(odlukaPrijenosa('127.0.0.1', false, p)).toMatchObject({ dopusten: true, vrsta: 'loopback' })
     expect(odlukaPrijenosa('::1', false, p)).toMatchObject({ dopusten: true, vrsta: 'loopback' })
     expect(odlukaPrijenosa('::ffff:127.0.0.1', false, p)).toMatchObject({ dopusten: true, vrsta: 'loopback' })
-    expect(odlukaPrijenosa('100.101.102.103', false, p)).toMatchObject({ dopusten: true, vrsta: 'tailscale' })
+    expect(odlukaPrijenosa('100.64.0.24', false, p)).toMatchObject({ dopusten: true, vrsta: 'tailscale' })
     expect(odlukaPrijenosa('100.63.0.1', false, p)).toMatchObject({ dopusten: false })
     expect(odlukaPrijenosa('fd7a:115c:a1e0::1', false, p)).toMatchObject({ dopusten: true, vrsta: 'tailscale' })
     expect(odlukaPrijenosa('192.168.1.5', false, p)).toMatchObject({ dopusten: false, razlog: 'tajne_lan_http' })

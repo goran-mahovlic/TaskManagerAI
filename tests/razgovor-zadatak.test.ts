@@ -3,7 +3,7 @@
  *
  * node-A 07.10.2026.: Šaban je napravio xlsx u `privitci/<chat>`, oznaku SEND_DOC je jezgra
  * prepoznala, ali ju je odbila („izvan dopuštene mape") jer je dopuštena bila samo radna mapa.
- * Razgovor bot↔bot (Šaban ↔ @klaudioAI_bot) nije ostavio nikakav trag na ploči, pa vlasnik nije
+ * Razgovor bot↔bot (Šaban ↔ @drugiAI_bot) nije ostavio nikakav trag na ploči, pa vlasnik nije
  * vidio je li poruka primljena ni radi li se išta.
  *
  * Autorica: Jelena (Engineer), TASK-5337.
@@ -95,7 +95,7 @@ function okolina(o: Partial<RazgovorPostavke> = {}, dodatno: Partial<RazgovorOvi
     env: { PATH: '/bin' },
     log: () => {},
     zadaci,
-    botKanal: () => ({ jeZaustavljen: () => false, ovlasti: () => 'citanje', prenesi: async (u: any) => (prijenos === 'poslano' && !String(u.tekst).includes('@klaudioAI_bot') ? 'bez-spomena' : prijenos) as any }),
+    botKanal: () => ({ jeZaustavljen: () => false, ovlasti: () => 'citanje', prenesi: async (u: any) => (prijenos === 'poslano' && !String(u.tekst).includes('@drugiAI_bot') ? 'bez-spomena' : prijenos) as any }),
     ...dodatno,
   })
   return { r, izv, kanal, ploca, zadaci }
@@ -195,7 +195,7 @@ describe('zadatak razgovora na ploči čvora', () => {
 
   test('upit drugom botu → zadatak odmah, bilješka „poslano", ostaje u radu; odgovor bota se upisuje i zatvara', async () => {
     const o = okolina({}, {}, 'poslano')
-    o.izv.odgovori = [{ resultText: '@klaudioAI_bot kako da pošaljem datoteku?' }]
+    o.izv.odgovori = [{ resultText: '@drugiAI_bot kako da pošaljem datoteku?' }]
     o.r.primi(por({ tekst: 'pitaj klaudija kako se šalje datoteka' }), o.kanal)
     await o.r.mirno()
     expect(o.ploca.zadaci.size).toBe(1)
@@ -217,11 +217,11 @@ describe('zadatak razgovora na ploči čvora', () => {
   })
 
   test('poruka upućena drugom botu dok je zadatak otvoren → bilješka „pročitano"', async () => {
-    const o = okolina({ preskociAkoSadrzi: ['@klaudioAI_bot'] } as any, {}, 'poslano')
-    o.izv.odgovori = [{ resultText: '@klaudioAI_bot pomozi' }]
+    const o = okolina({ preskociAkoSadrzi: ['@drugiAI_bot'] } as any, {}, 'poslano')
+    o.izv.odgovori = [{ resultText: '@drugiAI_bot pomozi' }]
     o.r.primi(por({ tekst: 'pitaj klaudija' }), o.kanal)
     await o.r.mirno()
-    o.r.primi(por({ tekst: '@klaudioAI_bot otvori taj zadatak', obracanjeBotu: false, privatno: false }), o.kanal)
+    o.r.primi(por({ tekst: '@drugiAI_bot otvori taj zadatak', obracanjeBotu: false, privatno: false }), o.kanal)
     await o.r.mirno()
     const z = [...o.ploca.zadaci.values()][0]!
     expect(z.biljeske.join('\n')).toContain('otvori taj zadatak')

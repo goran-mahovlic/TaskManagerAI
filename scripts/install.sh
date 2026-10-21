@@ -943,6 +943,7 @@ if [ -n "$CVOR" ]; then
   echo "lokalno upiši (ništa od ovoga ne ide u repozitorij):"
   echo "  • $TM_HOME/config/postavke.env — TM_BIND, TM_ALLOWED_HOSTS"
   [ -n "$PROFIL" ] && echo "  • $TM_HOME/config/profil.instanca.env — chat, uid, banka čvora"
+  echo "  • $TM_HOME/config/memorija.json — izvor memorije i RAG-a: nasa / lokalna / iskljuceno"
   echo "  • tajne: bun scripts/tajna.ts postavi IME (vrijednost na upit), ili Config → Tajne"
   echo "  • AI servis po izboru: bun scripts/prijava-ai.ts (čarobnjak) ili Config → Prijava"
 fi

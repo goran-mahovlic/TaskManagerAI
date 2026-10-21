@@ -70,6 +70,13 @@ config/credentials.env
 __pycache__/
 *.pyc
 config/postavke.env
+# Granica repozitorij ↔ čvor (plan Mac v2 P4.1, TASK-5658): lokalne postavke i vjerodajnice
+# žive samo u $TM_HOME/config; u repozitoriju su samo primjeri bez vrijednosti (*.primjer*).
+*.env
+!*.primjer.env
+config/memorija.json
+vjerodajnice*
+*.local.*
 # Vratari zatvaranja: živa postavka po instalaciji; isporučuju se *.example.json.
 config/step-schema.json
 config/completion-gate.json

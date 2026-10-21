@@ -168,6 +168,62 @@ const PRAVILA: Pravilo[] = [
     osnovicaPojava: 0,
     osnovicaDatoteka: [],
   },
+  // ── Granica repozitorij ↔ čvor (plan Mac v2 P4.1, TASK-5658) ───────────────────────────
+  {
+    ime: 'adrese tailneta (100.64.0.0/10) izvan primjernih blokova 100.64.0.0/24 i 100.127.255.0/24',
+    // Tailscale dodjeljuje adrese iz 100.64.0.0/10. Blokovi 100.64.0.0/24 i 100.127.255.0/24
+    // (donji i gornji rub raspona, za testove granice) su u paketu PRIMJERNI — kao 192.0.2.0/24
+    // iz RFC 5737; svaka druga adresa iz raspona je nečija stvarna adresa čvora.
+    uzorak: '\\b100\\.(?:6[4-9]|[7-9]\\d|1[01]\\d|12[0-7])\\.\\d{1,3}\\.\\d{1,3}\\b'
+      + '(?<!\\b100\\.64\\.0\\.\\d{1,3})(?<!\\b100\\.127\\.255\\.\\d{1,3})',
+    objasnjenje: 'adresa čvora dolazi iz `tailscale ip -4` pri instalaciji (install.sh → $TM_HOME/config/postavke.env); '
+      + 'u primjerima `100.x.y.z` ili adresa iz 100.64.0.0/24',
+    osnovicaPojava: 0,
+    osnovicaDatoteka: [],
+  },
+  {
+    ime: 'imena naših strojeva (čvorova)',
+    // Slaže se iz dijelova iz istog razloga kao tailnet gore.
+    uzorak: ['mac', 'mini-pv|mac', 'mini_pv|\\bnode', '-?[ab]\\.', 'tail'].join(''),
+    objasnjenje: 'ime čvora je argument `install.sh --cvor <ime>` i živi samo u $TM_HOME/config; '
+      + 'primjeri koriste `cvor-b`, `node-x`',
+    osnovicaPojava: 0,
+    osnovicaDatoteka: [],
+  },
+  {
+    ime: 'imena naših banaka memorije (Hindsight)',
+    // Slaže se iz dijelova iz istog razloga kao tailnet gore.
+    uzorak: ['reg', 'oc_sustav_[a-z]+|cvor_', 'mac', 'mini|cvor_', 'node', '[ab]\\b'].join(''),
+    objasnjenje: 'banka čvora je `MEMORIJA_BANKA` u $TM_HOME/config/profil.instanca.env (primjer: banka_cvor_b)',
+    osnovicaPojava: 0,
+    osnovicaDatoteka: [],
+  },
+  {
+    ime: 'tokeni i ključevi API-ja (oblik stvarnog ključa)',
+    // Lažni ključevi u testovima su namjerno očiti (`AAAA…`, `sk-or-v1-abc…`) i ne odgovaraju
+    // obliku: stvarni Telegram token ima mala slova i brojke u tijelu, OpenRouter 64 heks znaka,
+    // Anthropic `sk-ant-…` ≥ 80 znakova, GitHub `gh?_` + 36, GitLab `glpat-` + 20.
+    uzorak: [
+      '\\b\\d{8,10}:AA(?=[\\w-]{33}\\b)(?=[\\w-]*[a-z])(?=[\\w-]*\\d)[\\w-]{33}\\b',
+      'sk-or-v1-[0-9a-f]{64}',
+      'sk-ant-[a-z]{3}\\d{2}-[\\w-]{80,}',
+      '\\bgh[pousr]_(?=[A-Za-z0-9]*\\d)[A-Za-z0-9]{36}\\b',
+      'glpat-[\\w-]{20}',
+    ].join('|'),
+    objasnjenje: 'tajne se upisuju samo lokalno: `bun scripts/tajna.ts postavi IME` (vrijednost na upit) ili Config → Tajne',
+    osnovicaPojava: 0,
+    osnovicaDatoteka: [],
+  },
+  {
+    ime: 'naš bot i Telegram uid vlasnika',
+    // Slaže se iz dijelova iz istog razloga kao tailnet gore.
+    uzorak: ['(?i:klaudio', 'ai_bot|martina', 'filesbot)|5284', '452279'].join(''),
+    objasnjenje: 'ime drugog bota i uid vlasnika su postavke čvora (BOTKANAL_DRUGI, VLASNIK_UID u '
+      + 'profil.instanca.env); testovi koriste `drugiAI_bot` i `100000001`',
+    // TASK-5658: sve pojave u 6 dat. → 0 (testovi kanala bot↔bot i komentar u src/razgovor/BotKanal.ts).
+    osnovicaPojava: 0,
+    osnovicaDatoteka: [],
+  },
 ]
 
 interface Nalaz { pojava: number; datoteke: string[] }

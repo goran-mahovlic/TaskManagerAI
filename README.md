@@ -117,6 +117,128 @@ curl -X POST http://localhost:17781/api/tasks \
 
 ---
 
+## Install on a new machine (Linux / macOS)
+
+This is the whole installation of a **node** (board as a service, local databases, log), from
+GitHub only. Run the commands below in order. Don't copy anything from another machine (no `scp`,
+no bundle, no settings files), and don't edit files in `~/TaskManagerAI`. Anything that belongs
+to this machine only goes in `~/.taskmanager/` (step 5).
+
+Supported: **Debian/Ubuntu** and **macOS 14 or newer**.
+Disk space: at least 8 GB free for `--baze` (local databases and embedding models, about 2.3 GB
+downloaded); 2 GB without it.
+
+**1. Prerequisites — Debian/Ubuntu** (the only step that needs root):
+
+```bash
+sudo apt-get update
+sudo apt-get install -y git curl unzip ca-certificates python3 python3-venv
+```
+
+**1. Prerequisites — macOS.** Command Line Tools provide `git`, `python3` and `perl`. `curl`,
+`launchctl` and `lsof` come with the system. Homebrew is **not** needed. If Homebrew is there and
+belongs to another user, the install leaves it alone. The board runs as a LaunchDaemon, so the
+install needs administrator rights (`sudo`). `sudo -v` asks for your password once, before you
+start:
+
+```bash
+xcode-select --install
+sudo -v
+```
+
+**2. Get the code and install.** Use a name for this node: lowercase letters, digits, `-`
+(e.g. `office-mac`).
+
+```bash
+git clone https://github.com/goran-mahovlic/TaskManagerAI.git ~/TaskManagerAI
+cd ~/TaskManagerAI
+bash scripts/install.sh --cvor <name> --profil upravitelj-cvora --baze
+```
+
+`install.sh` fetches everything else itself from public addresses (bun, `uv` + Python 3.13,
+`pg0`, `hindsight-api`, the bge-m3 models). Each official installer is fetched with up to 3 tries (5/15/45 s
+apart), and only then does the install give up with exit code 4. The Linux tools it needs also get macOS replacements (`setsid`, `timeout` in `~/.local/bin`,
+launchd instead of systemd). It prints the table of these replacements as part of the prerequisite step.
+The local databases are installed **stopped** and take no RAM or CPU until you switch them on
+(step 5). The install is idempotent: if it stops, fix the cause and run the same command again.
+It will report "0 changes" for the steps that are already done. If `sudo` has timed out by the
+service step (on macOS), run `sudo -v` and the same command again.
+
+At the end it prints the log folder, the board URL and the list of what to fill in locally.
+
+**3. Check.**
+
+```bash
+export PATH="$HOME/.bun/bin:$HOME/.local/bin:$PATH"
+cat ~/.taskmanager/log/install/zadnji/install-rezultat.json
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:17781/health
+bash scripts/bootcheck.sh
+```
+
+`install-rezultat.json` must say `"ishod":"uspjeh"` and `curl` must print `200`. Each step is in
+`~/.taskmanager/log/install/zadnji/koraci.jsonl`, with its command, its exit code and the tail of
+stderr. The readable log is `install.log` next to it. If a step fails, those two files say which
+one and why. Exit codes: 2 usage, 3 prerequisite, 4 network, 5 dependencies, 6 database, 7 service,
+8 check after start. `bootcheck.sh` prints PASS/FAIL per check. M5 (AI login) stays at
+a warning until step 4.
+
+**4. Choose an AI service.** The install doesn't pick a service and doesn't ask for a key. You choose
+any of the ones offered, for example the `claude` subscription (Pro/Max, `claude setup-token`),
+an `openrouter` key, `anthropic`, `openai`, `google`, `deepseek`, `kimi`, `glm`, `qwen`,
+`minimax`, a local `ollama`, or your own OpenAI-compatible endpoint. The first command lists them
+all with their login state. The second is a wizard that walks you through logging in. The key is
+typed at a prompt and never passed as an argument. The same can be done on the board under
+Config → Prijava. `claude` (subscription or `setup-token`) needs the Claude CLI. If you choose
+it, run the same install command once more with `--claude` added:
+`bash scripts/install.sh --cvor <name> --profil upravitelj-cvora --baze --claude`.
+On macOS the login goes into the Keychain, which the service can't read. So use
+`claude setup-token` there and store the token as the `CLAUDE_CODE_OAUTH_TOKEN` secret (step 5).
+
+```bash
+bun scripts/prijava-ai.ts popis
+bun scripts/prijava-ai.ts
+```
+
+**5. Local settings and secrets — only on this machine, never in the repository.** The install
+leaves three files to fill in, in `~/.taskmanager/config/` (mode 0600). The repository holds
+only their empty examples, `config/postavke.env.primjer` and `config/memorija.primjer.json`.
+
+| File | What you fill in |
+|---|---|
+| `postavke.env` | `TM_BIND`, `TM_ALLOWED_HOSTS` — written by the install with loopback and this machine's tailnet address; add other names you reach the board by |
+| `profil.instanca.env` | Telegram group/chat IDs, owner's uid, this node's memory bank (`MEMORIJA_BANKA`) |
+| `memorija.json` | memory and RAG source switch: `nasa` (shared system over a tunnel), `lokalna` (this node's databases), `iskljuceno`; empty host/port = defaults on 127.0.0.1 |
+
+Secrets (bot token, API keys, database passwords) go into the node's secret store. The value is
+asked for at a prompt, so it doesn't stay in shell history. The board does the same under
+Config → Tajne.
+
+```bash
+"${EDITOR:-nano}" ~/.taskmanager/config/profil.instanca.env
+bun scripts/tajna.ts postavi <NAME>
+bun scripts/tajna.ts popis
+```
+
+After changing settings, restart the board with
+`systemctl --user restart regoc-taskmanager` (Linux) or
+`sudo launchctl kickstart -k system/hr.regoc.taskmanager` (macOS).
+
+**6. Remove completely** (e.g. to install again from zero):
+
+```bash
+bash scripts/deinstaliraj.sh --do-nule
+cd ~ && rm -rf ~/TaskManagerAI
+```
+
+`--do-nule` removes the services and **only** what the install recorded in
+`~/.taskmanager/instalirano.json`, plus the marked lines in `~/.zshrc`/`~/.bashrc`. It doesn't
+touch anyone else's Homebrew, tailscale or files. Before deleting it saves a copy of
+`~/.taskmanager` to `~/taskmanager-backup-<time>.tgz`. At the end it runs `provjeri-cisto.sh`,
+which prints nothing when the machine is clean. Details:
+[docs/INSTALL.md](docs/INSTALL.md) §2.1–§2.3, §10.
+
+---
+
 ## Settings
 
 Everything is optional; with no settings at all it runs on defaults. Copy `env.example` to

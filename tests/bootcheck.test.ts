@@ -246,6 +246,12 @@ describe('M7 izvori memorije i RAG-a odgovaraju prekidačima', () => {
     expect(r.sud).toBe('PASS')
     expect(r.detalji.join(' ')).toContain('izvedeno')
   })
+  test('TASK-5658: memorija.json = config/memorija.primjer.json (prazni host/port) → zadane adrese na 127.0.0.1', async () => {
+    const primjer = readFileSync(join(KORIJEN, 'config/memorija.primjer.json'), 'utf-8')
+    const r = await B.m7(linux({}, { http: { 'http://127.0.0.1:17792/health': 200 } }, { [`${H}/config/memorija.json`]: primjer }))
+    expect(r.sud).toBe('PASS')
+    expect(r.detalji.join(' ')).toContain('http://127.0.0.1:17792/health → 200')
+  })
 })
 
 describe('macOS: cijeli bootcheck kroz prave funkcije platforme (launchctl, ps, lsof, sntp)', () => {

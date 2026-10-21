@@ -24,7 +24,7 @@ describe('prijenos — privatni LAN i Tailscale bez dodatne postavke', () => {
     for (const ip of ['192.168.1.50', '10.0.2.2', '172.20.1.5', '::ffff:192.168.1.7', 'fd12:3456::1', 'fe80::1']) {
       expect(odlukaPrijenosa(ip, false, p)).toMatchObject({ dopusten: true, vrsta: 'lan-http' })
     }
-    expect(odlukaPrijenosa('100.101.1.2', false, p)).toMatchObject({ dopusten: true, vrsta: 'tailscale' })
+    expect(odlukaPrijenosa('100.64.0.21', false, p)).toMatchObject({ dopusten: true, vrsta: 'tailscale' })
   })
   test('vlasnik i dalje smije isključiti LAN HTTP izričitim "dopustiLanHttp": false', () => {
     const put = join(mapa, 'tajne.json')
@@ -90,9 +90,9 @@ describe('Telegram — „upiši lozinku za mail"', () => {
   const imena = [{ ime: 'SMTP_PASSWORD', izvor: 'email.smtp' }, { ime: 'IMAP_PASSWORD', izvor: 'email.imap' }, { ime: 'GITHUB_TOKEN', izvor: 'github' }]
   test('uputa: korak po korak, poveznica na obrazac s imenima, bez naredbe na stroju', () => {
     const u = uputaZaUpis({ izvor: 'email', imena, cvor: 'node-A', bot: 'cvor_bot',
-      adrese: [{ url: 'http://192.168.1.20:17781', vrsta: 'lan' }, { url: 'http://100.90.1.2:17781', vrsta: 'tailscale' }] })
+      adrese: [{ url: 'http://192.168.1.20:17781', vrsta: 'lan' }, { url: 'http://100.64.0.22:17781', vrsta: 'tailscale' }] })
     expect(u).toContain('http://192.168.1.20:17781/#tajne&ime=SMTP_PASSWORD,IMAP_PASSWORD')
-    expect(u).toContain('http://100.90.1.2:17781/#tajne&ime=SMTP_PASSWORD,IMAP_PASSWORD')
+    expect(u).toContain('http://100.64.0.22:17781/#tajne&ime=SMTP_PASSWORD,IMAP_PASSWORD')
     expect(u).toContain('@cvor_bot')
     expect(u).toContain('/start')
     expect(u).toMatch(/1\.[\s\S]*2\.[\s\S]*3\.[\s\S]*4\./)
@@ -101,11 +101,11 @@ describe('Telegram — „upiši lozinku za mail"', () => {
   })
   test('adresePloce: samo adrese ovog stroja koje ploča prihvaća, LAN i Tailscale', () => {
     const a = adresePloce({
-      port: 17781, dopusten: h => ['192.168.1.20', '100.90.1.2'].includes(h),
-      sucelja: { enp0s3: [{ family: 'IPv4', address: '192.168.1.20', internal: false }], tailscale0: [{ family: 'IPv4', address: '100.90.1.2', internal: false }],
+      port: 17781, dopusten: h => ['192.168.1.20', '100.64.0.22'].includes(h),
+      sucelja: { enp0s3: [{ family: 'IPv4', address: '192.168.1.20', internal: false }], tailscale0: [{ family: 'IPv4', address: '100.64.0.22', internal: false }],
         lo: [{ family: 'IPv4', address: '127.0.0.1', internal: true }], docker0: [{ family: 'IPv4', address: '172.17.0.1', internal: false }] } as any,
     })
-    expect(a).toEqual([{ url: 'http://192.168.1.20:17781', vrsta: 'lan' }, { url: 'http://100.90.1.2:17781', vrsta: 'tailscale' }])
+    expect(a).toEqual([{ url: 'http://192.168.1.20:17781', vrsta: 'lan' }, { url: 'http://100.64.0.22:17781', vrsta: 'tailscale' }])
     expect(adresePloce({ port: 1, dopusten: () => true, sucelja: {}, javniUrl: 'https://ploca.lan/' })).toEqual([{ url: 'https://ploca.lan', vrsta: 'javni' }])
   })
 })

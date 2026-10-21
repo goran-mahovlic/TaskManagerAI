@@ -116,6 +116,11 @@ describe('Z2 — brana', () => {
       expect(branaKorpusa(t, []).length).toBeGreaterThan(0)
     }
   })
+  test('TASK-5658: ime banke glavnog stroja je pogodak i bez privatnog popisa (banka čvora je MEMORIJA_BANKA)', () => {
+    const banka = ['reg', 'oc_sustav_', 'opus'].join('')   // iz dijelova: brana paketa traži doslovni niz
+    expect(branaKorpusa(`recall iz banke ${banka}`, []).map(p => p.kat)).toContain('banka')
+    expect(branaKorpusa('MEMORIJA_BANKA=banka_cvor_b', [])).toEqual([])
+  })
   test('loopback i ${SUSTAV_DIR} nisu pogodak', () => {
     expect(branaKorpusa('ploča na http://127.0.0.1:17781, alati u ${SUSTAV_DIR}/tools', [])).toEqual([])
   })

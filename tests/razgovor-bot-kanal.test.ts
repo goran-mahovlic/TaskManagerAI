@@ -59,7 +59,7 @@ class SporiIzvrsitelj {
 function okolina(o: Partial<RazgovorPostavke> = {}, bkOvlasti: 'citanje' | 'rad' = 'citanje') {
   const postavke: RazgovorPostavke = {
     ...RAZGOVOR_ZADANO, ukljucen: true, burstMs: 10, radniDir: join(mapa, 'radni'),
-    odgovaraNa: 'dopusteni-sve', dopusteniKorisnici: ['5284452279'], preskociAkoSadrzi: ['Ivan', '@klaudioAI_bot'], ...o,
+    odgovaraNa: 'dopusteni-sve', dopusteniKorisnici: ['100000001'], preskociAkoSadrzi: ['Ivan', '@drugiAI_bot'], ...o,
   }
   const izv = new SporiIzvrsitelj()
   const kanal = new Kanalic()
@@ -80,13 +80,13 @@ function okolina(o: Partial<RazgovorPostavke> = {}, bkOvlasti: 'citanje' | 'rad'
 }
 
 const covjek = (tekst: string, o: Partial<UlaznaPoruka> = {}): UlaznaPoruka => ({
-  kanal: 'telegram', chatId: CHAT, porukaId: '10', posiljateljId: '5284452279', posiljateljIme: 'Ivan',
+  kanal: 'telegram', chatId: CHAT, porukaId: '10', posiljateljId: '100000001', posiljateljIme: 'Ivan',
   posiljateljKorisnickoIme: 'ivan', posiljateljJeBot: false, tekst, ts: '', privatno: false, obracanjeBotu: false, ...o,
 })
 const odBota = (tekst: string, skok = 1): UlaznaPoruka => ({
   kanal: 'telegram', chatId: CHAT, porukaId: '501', posiljateljId: 'bot:klaudio', posiljateljIme: 'Klaudio (bot)',
   posiljateljJeBot: true, tekst, ts: '', privatno: false, obracanjeBotu: true, izvor: 'bot',
-  lanac: { izvor: 'klaudio', lanacId: 'L1', skok, izvornik: { id: '5284452279', ime: 'Ivan' } },
+  lanac: { izvor: 'klaudio', lanacId: 'L1', skok, izvornik: { id: '100000001', ime: 'Ivan' } },
 })
 
 describe('B2 filtar', () => {
@@ -99,10 +99,10 @@ describe('B2 filtar', () => {
     await r.mirno()
     expect(izv.zahtjevi).toHaveLength(1)
   })
-  test('„@klaudioAI_bot" i „Ivan" u bot-poruci ne utišavaju je (§15 ne vrijedi za izvor bot)', () => {
-    const s = { ...RAZGOVOR_ZADANO, ukljucen: true, preskociAkoSadrzi: ['Ivan', '@klaudioAI_bot'] }
-    expect(trebaOdgovoriti(odBota('Ivan pita, javi @klaudioAI_bot'), s)).toBe(true)
-    expect(trebaOdgovoriti(covjek('Ivan pita, javi @klaudioAI_bot'), s)).toBe(false)
+  test('„@drugiAI_bot" i „Ivan" u bot-poruci ne utišavaju je (§15 ne vrijedi za izvor bot)', () => {
+    const s = { ...RAZGOVOR_ZADANO, ukljucen: true, preskociAkoSadrzi: ['Ivan', '@drugiAI_bot'] }
+    expect(trebaOdgovoriti(odBota('Ivan pita, javi @drugiAI_bot'), s)).toBe(true)
+    expect(trebaOdgovoriti(covjek('Ivan pita, javi @drugiAI_bot'), s)).toBe(false)
   })
   test('isključen razgovor: ni bot-poruka ne prolazi', () => {
     expect(trebaOdgovoriti(odBota('x'), { ...RAZGOVOR_ZADANO, ukljucen: false })).toBe(false)
@@ -162,10 +162,10 @@ describe('B3 ovlasti bot-poteza', () => {
 describe('B4 prijenos iz poteza', () => {
   test('ljudski potez: prenesi s id-em vidljive poruke i izvornikom; bot-potez: lanac', async () => {
     const { r, izv, kanal, prijenosi } = okolina()
-    izv.odgovor = '@klaudioAI_bot koja je verzija?'
+    izv.odgovor = '@drugiAI_bot koja je verzija?'
     r.primi(covjek('pitaj Klaudija verziju'), kanal)
     await r.mirno()
-    expect(prijenosi[0]).toMatchObject({ chatId: CHAT, telegramPorukaId: '901', lanac: null, izvornik: { id: '5284452279', ime: 'Ivan' } })
+    expect(prijenosi[0]).toMatchObject({ chatId: CHAT, telegramPorukaId: '901', lanac: null, izvornik: { id: '100000001', ime: 'Ivan' } })
     r.primi(odBota('2.1.0', 2), kanal)
     await r.mirno()
     expect(prijenosi[1]).toMatchObject({ telegramPorukaId: '902', lanac: { lanacId: 'L1', skok: 2 } })
@@ -194,7 +194,7 @@ describe('B6 „odmah"', () => {
   test('ljudski potez u letu završava, odgovor ide u grupu, prijenos odbija zastavica', async () => {
     const { r, izv, kanal, prijenosi, zaustavi } = okolina()
     izv.cekaj = 60
-    izv.odgovor = 'pitam @klaudioAI_bot'
+    izv.odgovor = 'pitam @drugiAI_bot'
     r.primi(covjek('bok'), kanal)
     await Bun.sleep(30)
     zaustavi()
@@ -266,7 +266,7 @@ describe('B5 poller', () => {
   })
   test('obična poruka: kanal je vidi (nulira strop), pa ide dalje kao prije', async () => {
     const api = new Api0()
-    api.updates = [upd('kako si', 5284452279)]
+    api.updates = [upd('kako si', 100000001)]
     const { r, ljudske } = sloj(async () => null)
     await jedanProlaz(tcfg(), { ...ZADANO_STANJE }, api, r)
     expect(ljudske).toHaveLength(1)
@@ -289,17 +289,17 @@ describe('TASK-5291 sigurnosni pregled kroz jezgru', () => {
   const odBotaZa = (izvornik: { id: string; ime: string } | null): UlaznaPoruka => ({ ...odBota('x'), lanac: { ...odBota('x').lanac!, izvornik } })
 
   test('N4: botKanal.ovlasti=rad, ali lanac je pokrenuo nedopušteni (Klaudio pere tuđi nalog) → citanje', async () => {
-    const { r, izv, kanal } = okolina({ ovlasti: 'puno', dopusteniKorisnici: ['5284452279', 'goran'] }, 'rad')
+    const { r, izv, kanal } = okolina({ ovlasti: 'puno', dopusteniKorisnici: ['100000001', 'goran'] }, 'rad')
     r.primi(odBotaZa({ id: '999', ime: 'goran' }), kanal)
     await r.mirno()
     expect(alati(izv.zahtjevi[0]!)).toBe('Read,Glob,Grep,Bash')
   })
   test('N4: izvornik bez id-a (ili samo ime) → citanje; dopušteni po id-u → rad', async () => {
-    const { r, izv, kanal } = okolina({ ovlasti: 'puno', dopusteniKorisnici: ['5284452279', 'goran'] }, 'rad')
+    const { r, izv, kanal } = okolina({ ovlasti: 'puno', dopusteniKorisnici: ['100000001', 'goran'] }, 'rad')
     r.primi(odBotaZa(null), kanal)
     await r.mirno()
     expect(alati(izv.zahtjevi[0]!)).toBe('Read,Glob,Grep,Bash')
-    r.primi(odBotaZa({ id: '5284452279', ime: 'Ivan' }), kanal)
+    r.primi(odBotaZa({ id: '100000001', ime: 'Ivan' }), kanal)
     await r.mirno()
     expect(alati(izv.zahtjevi[1]!)).toBe('Read,Glob,Grep,Bash,Edit,Write')
   })
@@ -345,7 +345,7 @@ describe('TASK-5394 zapisDrugogBota', () => {
     const { izv, kanal } = okolina()
     const postavke: RazgovorPostavke = {
       ...RAZGOVOR_ZADANO, ukljucen: true, burstMs: 10, radniDir: join(mapa, 'radni'),
-      odgovaraNa: 'dopusteni-sve', dopusteniKorisnici: ['5284452279'],
+      odgovaraNa: 'dopusteni-sve', dopusteniKorisnici: ['100000001'],
     }
     const r = stvoriRazgovor({
       postavke: () => postavke, izvrsitelj: izv, jePauza: () => false, kvotaPuna: () => false,

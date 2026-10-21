@@ -1,3 +1,20 @@
+## 2026-10-21 — README „Instalacija na novi stroj", primjeri postavki bez vrijednosti, brana granice repo ↔ čvor (TASK-5658)
+
+- Plan Mac v2 K4a, P3.2: README (EN i HR) ima odjeljak „Instalacija na novi stroj (Linux / macOS)":
+  preduvjeti za Debian (`apt-get`) i macOS (`xcode-select --install`, `sudo -v`), `git clone` →
+  `install.sh --cvor <name> --profil upravitelj-cvora --baze`, provjera (`install-rezultat.json`, `/health`,
+  `bootcheck.sh`), izbor AI servisa po volji (`prijava-ai.ts popis` / čarobnjak), lokalne postavke i tajne,
+  uklanjanje `--do-nule`. `tests/readme-instalacija.test.ts` drži da svaka naredba i zastavica postoje,
+  da su preduvjeti oni koje traži `install.sh` i da EN i HR imaju iste naredbe.
+- P4.1: `config/postavke.env.primjer` i `config/memorija.primjer.json` bez ijedne vrijednosti (prazni
+  host/port/banka; zadane vrijednosti su u kodu). `.gitignore`: `*.env` (osim `*.primjer.env`),
+  `config/memorija.json`, `vjerodajnice*`, `*.local.*`. `install.sh` na kraju imenuje i `memorija.json`.
+- Brana `bez-nasih-vrijednosti` proširena: adrese tailneta izvan primjernih blokova 100.64.0.0/24 i
+  100.127.255.0/24, imena naših strojeva, imena banaka memorije, oblici stvarnih tokena (Telegram,
+  OpenRouter, Anthropic, GitHub, GitLab), ime našeg bota i uid vlasnika. Sve osnovice su 0. Testovi
+  kanala bot↔bot rabe izmišljeni bot i uid. Korpus znanja: opći uzorak `banka` (`src/znanje/Korpus.ts`),
+  a dvije stavke s imenom banke redigirane su (MANIFEST obnovljen).
+
 ## 2026-10-21 — `scripts/bootcheck.sh`: provjera čvora M1–M7 na Linuxu i macOS-u (TASK-5657)
 
 - Plan Mac v3 K4: bootcheck je sada u paketu (`scripts/bootcheck.sh` + `scripts/bootcheck.ts`), za oba OS-a:

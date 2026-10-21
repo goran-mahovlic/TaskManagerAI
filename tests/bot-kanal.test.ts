@@ -27,13 +27,13 @@ function pz(raw: unknown, put = '', o: { tajna?: string; ip?: string; pomakS?: n
 }
 const zStanje = (tajna = TAJNA): Zahtjev => ({ ip: IP, tijelo: '', potpis: potpisi(tajna, 'GET', `${PUT_RUTE}/stanje`, '', Math.floor(sada / 1000)) })
 const CHAT = '-5112799687'
-const VLASNIK = '5284452279'
+const VLASNIK = '100000001'
 const DRUGA = '8872962604'
 
 function okolina(o: Partial<BotKanalPostavke> = {}) {
   const postavke: BotKanalPostavke = {
     ...BOT_KANAL_ZADANO, ukljucen: true, chatovi: [CHAT], adrese: ['10.0.0.2'],
-    drugi: [{ ime: 'klaudio', korisnickoIme: 'klaudioAI_bot', url: 'http://10.0.0.2:17781' }],
+    drugi: [{ ime: 'klaudio', korisnickoIme: 'drugiAI_bot', url: 'http://10.0.0.2:17781' }],
     stopKorisnici: [VLASNIK, DRUGA], ...o,
   }
   let stanje: BotKanalStanje = praznoStanje()
@@ -114,9 +114,9 @@ describe('B1 ugovor rute', () => {
 })
 
 describe('B4 odlazni prijenos', () => {
-  test('odgovor sa @klaudioAI_bot → 1 POST s tajnom, novi lanac skok 1, telegramPorukaId', async () => {
+  test('odgovor sa @drugiAI_bot → 1 POST s tajnom, novi lanac skok 1, telegramPorukaId', async () => {
     const { bk, pozivi } = okolina()
-    const r = await bk.prenesi({ chatId: CHAT, tekst: '@KlaudioAI_bot koja je verzija CLI-ja?', telegramPorukaId: '777', izvornik: { id: VLASNIK, ime: 'Ivan' } })
+    const r = await bk.prenesi({ chatId: CHAT, tekst: '@DrugiAI_bot koja je verzija CLI-ja?', telegramPorukaId: '777', izvornik: { id: VLASNIK, ime: 'Ivan' } })
     expect(r).toBe('poslano')
     expect(pozivi).toHaveLength(1)
     expect(pozivi[0]!.url).toBe('http://10.0.0.2:17781/api/razgovor/od-bota')
@@ -126,27 +126,27 @@ describe('B4 odlazni prijenos', () => {
   })
   test('nastavak lanca: isti lanacId, skok+1, izvornik iz lanca', async () => {
     const { bk, pozivi } = okolina()
-    await bk.prenesi({ chatId: CHAT, tekst: 'evo @klaudioAI_bot: 3', telegramPorukaId: '9', lanac: { izvor: 'klaudio', lanacId: 'L7', skok: 2, izvornik: { id: DRUGA, ime: 'Ana' } } })
+    await bk.prenesi({ chatId: CHAT, tekst: 'evo @drugiAI_bot: 3', telegramPorukaId: '9', lanac: { izvor: 'klaudio', lanacId: 'L7', skok: 2, izvornik: { id: DRUGA, ime: 'Ana' } } })
     expect(pozivi[0]!.tijelo).toMatchObject({ lanacId: 'L7', skok: 3, izvornik: { id: DRUGA } })
   })
   test('bez spomena, chat izvan popisa, isključeno, zastavica → 0 POST-ova', async () => {
     const { bk, pozivi, postavke } = okolina()
-    expect(await bk.prenesi({ chatId: CHAT, tekst: 'klaudioAI_bot bez @', telegramPorukaId: '1' })).toBe('bez-spomena')
-    expect(await bk.prenesi({ chatId: CHAT, tekst: '@klaudioAI_botx', telegramPorukaId: '1' })).toBe('bez-spomena')
-    expect(await bk.prenesi({ chatId: '-1', tekst: '@klaudioAI_bot', telegramPorukaId: '1' })).toBe('iskljuceno')
+    expect(await bk.prenesi({ chatId: CHAT, tekst: 'drugiAI_bot bez @', telegramPorukaId: '1' })).toBe('bez-spomena')
+    expect(await bk.prenesi({ chatId: CHAT, tekst: '@drugiAI_botx', telegramPorukaId: '1' })).toBe('bez-spomena')
+    expect(await bk.prenesi({ chatId: '-1', tekst: '@drugiAI_bot', telegramPorukaId: '1' })).toBe('iskljuceno')
     await bk.zaustavi(CHAT, 'Ivan', 'rucno', false)
-    expect(await bk.prenesi({ chatId: CHAT, tekst: '@klaudioAI_bot', telegramPorukaId: '1' })).toBe('zaustavljeno')
+    expect(await bk.prenesi({ chatId: CHAT, tekst: '@drugiAI_bot', telegramPorukaId: '1' })).toBe('zaustavljeno')
     postavke.ukljucen = false
-    expect(await bk.prenesi({ chatId: CHAT, tekst: '@klaudioAI_bot', telegramPorukaId: '1' })).toBe('iskljuceno')
+    expect(await bk.prenesi({ chatId: CHAT, tekst: '@drugiAI_bot', telegramPorukaId: '1' })).toBe('iskljuceno')
     expect(pozivi).toHaveLength(0)
   })
   test('pad mreže: 2 pokušaja, 1 dojava u grupu u 10 min', async () => {
     const { bk, pozivi, grupa, fetchStatus, pomakni } = okolina()
     fetchStatus(0)
-    expect(await bk.prenesi({ chatId: CHAT, tekst: '@klaudioAI_bot a', telegramPorukaId: '1' })).toBe('pad')
+    expect(await bk.prenesi({ chatId: CHAT, tekst: '@drugiAI_bot a', telegramPorukaId: '1' })).toBe('pad')
     expect(pozivi).toHaveLength(2)
     pomakni(60_000)
-    await bk.prenesi({ chatId: CHAT, tekst: '@klaudioAI_bot b', telegramPorukaId: '2' })
+    await bk.prenesi({ chatId: CHAT, tekst: '@drugiAI_bot b', telegramPorukaId: '2' })
     expect(grupa.filter(g => g.includes('nije dostupan'))).toHaveLength(1)
   })
   test('spominje: točan spomen, bez obzira na velika slova', () => {
@@ -221,7 +221,7 @@ describe('B7 strop i skok', () => {
     const { bk, grupa, stanje } = okolina()
     for (let i = 0; i < 3; i++) {
       expect(bk.primi(pz(tijelo({ telegramPorukaId: 100 + i, lanacId: `L${100 + i}` }))).status).toBe(202)
-      expect(await bk.prenesi({ chatId: CHAT, tekst: '@klaudioAI_bot', telegramPorukaId: String(200 + i) })).toBe('poslano')
+      expect(await bk.prenesi({ chatId: CHAT, tekst: '@drugiAI_bot', telegramPorukaId: String(200 + i) })).toBe('poslano')
     }
     const r = bk.primi(pz(tijelo({ telegramPorukaId: 300, lanacId: `L${300}` })))
     expect(r.status).toBe(409)
@@ -256,7 +256,7 @@ describe('B7 strop i skok', () => {
   })
   test('odlazno: skok bi prešao strop → ne šalje se, zastavica strop', async () => {
     const { bk, pozivi } = okolina()
-    expect(await bk.prenesi({ chatId: CHAT, tekst: '@klaudioAI_bot', telegramPorukaId: '1', lanac: { izvor: 'klaudio', lanacId: 'L', skok: 6, izvornik: null } })).toBe('strop')
+    expect(await bk.prenesi({ chatId: CHAT, tekst: '@drugiAI_bot', telegramPorukaId: '1', lanac: { izvor: 'klaudio', lanacId: 'L', skok: 6, izvornik: null } })).toBe('strop')
     expect(pozivi.filter(p => p.url.endsWith('/od-bota'))).toHaveLength(0)
     expect(bk.jeZaustavljen(CHAT)).toBe(true)
   })
@@ -271,7 +271,7 @@ describe('B8 vlastita poruka', () => {
   })
   test('vlastiti telegramPorukaId (odjek) → 409 vlastita', async () => {
     const { bk } = okolina()
-    await bk.prenesi({ chatId: CHAT, tekst: '@klaudioAI_bot pitanje', telegramPorukaId: '4242' })
+    await bk.prenesi({ chatId: CHAT, tekst: '@drugiAI_bot pitanje', telegramPorukaId: '4242' })
     const r = bk.primi(pz(tijelo({ telegramPorukaId: 4242, lanacId: `L${4242}` })))
     expect(r.status).toBe(409)
     expect(r.tijelo.razlog).toBe('vlastita')
@@ -335,11 +335,11 @@ describe('BotKanalPostavke', () => {
       expect(getBotKanalPostavke(db).postavke.ukljucen).toBe(false)
       setBotKanalPostavke(db, {
         ukljucen: true, chatovi: [CHAT], adrese: ['10.0.0.2'], stopKorisnici: [VLASNIK, DRUGA],
-        drugi: [{ ime: 'klaudio', korisnickoIme: '@klaudioAI_bot', url: 'http://10.0.0.2:17781/' }],
+        drugi: [{ ime: 'klaudio', korisnickoIme: '@drugiAI_bot', url: 'http://10.0.0.2:17781/' }],
       }, 'ploca')
       const p = getBotKanalPostavke(db).postavke
       expect(p).toMatchObject({ ukljucen: true, chatovi: [CHAT], strop: 6, ovlasti: 'citanje' })
-      expect(p.drugi[0]).toEqual({ ime: 'klaudio', korisnickoIme: 'klaudioAI_bot', url: 'http://10.0.0.2:17781' })
+      expect(p.drugi[0]).toEqual({ ime: 'klaudio', korisnickoIme: 'drugiAI_bot', url: 'http://10.0.0.2:17781' })
       const n = (db.query(`SELECT COUNT(*) n FROM settings_history WHERE key LIKE 'razgovor.botKanal.%'`).get() as any).n
       expect(n).toBe(5)
       expect(parseBotKanalPatch({ ovlasti: 'puno' }).ok).toBe(false)
@@ -437,8 +437,8 @@ describe('TASK-5291 sigurnosni pregled', () => {
   })
   test('N3: host adrese ploče izvan popisa adresa → tajna ne ide nikamo (prijenos i stop)', async () => {
     const { bk, pozivi, postavke } = okolina()
-    postavke.drugi = [{ ime: 'klaudio', korisnickoIme: 'klaudioAI_bot', url: 'http://napadac.example:8080' }]
-    expect(await bk.prenesi({ chatId: CHAT, tekst: '@klaudioAI_bot pitanje', telegramPorukaId: '9' })).toBe('pad')
+    postavke.drugi = [{ ime: 'klaudio', korisnickoIme: 'drugiAI_bot', url: 'http://napadac.example:8080' }]
+    expect(await bk.prenesi({ chatId: CHAT, tekst: '@drugiAI_bot pitanje', telegramPorukaId: '9' })).toBe('pad')
     await bk.zaustavi(CHAT, 'Ivan', 'rucno')
     expect(pozivi).toEqual([])
   })
@@ -452,7 +452,7 @@ describe('TASK-5291 N1b: Config rute s adrese drugog bota', () => {
       const db = new Database(put)
       setBotKanalPostavke(db, {
         ukljucen: true, chatovi: [CHAT], adrese: ['10.0.0.2'], stopKorisnici: [VLASNIK],
-        drugi: [{ ime: 'klaudio', korisnickoIme: 'klaudioAI_bot', url: 'http://10.0.0.2:17781' }],
+        drugi: [{ ime: 'klaudio', korisnickoIme: 'drugiAI_bot', url: 'http://10.0.0.2:17781' }],
       }, 'ploca')
       db.close()
       const postavke = { ...BOT_KANAL_ZADANO, ukljucen: true, chatovi: [CHAT], stopKorisnici: [VLASNIK] }
@@ -473,7 +473,7 @@ describe('TASK-5291 N1b: Config rute s adrese drugog bota', () => {
     const m = mkdtempSync(join(tmpdir(), 'tm-bk-db-'))
     try {
       const db = new Database(join(m, 't.db'))
-      setBotKanalPostavke(db, { adrese: ['10.0.0.2'], drugi: [{ ime: 'klaudio', korisnickoIme: 'klaudioAI_bot', url: 'http://10.9.9.9:17781' }] }, 'x')
+      setBotKanalPostavke(db, { adrese: ['10.0.0.2'], drugi: [{ ime: 'klaudio', korisnickoIme: 'drugiAI_bot', url: 'http://10.9.9.9:17781' }] }, 'x')
       expect(getBotKanalPostavke(db).upozorenja.join(' ')).toContain('nije u popisu adresa')
       db.close()
     } finally { rmSync(m, { recursive: true, force: true }) }
@@ -545,7 +545,7 @@ describe('TASK-5299 HMAC potpis', () => {
   })
   test('tajna nikad na žici: odlazni prijenos i stop nose samo potpis, ne tajnu ni Authorization', async () => {
     const { bk, pozivi } = okolina()
-    expect(await bk.prenesi({ chatId: CHAT, tekst: '@klaudioAI_bot verzija?', telegramPorukaId: '7' })).toBe('poslano')
+    expect(await bk.prenesi({ chatId: CHAT, tekst: '@drugiAI_bot verzija?', telegramPorukaId: '7' })).toBe('poslano')
     await bk.zaustavi(CHAT, 'Ivan', 'rucno')
     expect(pozivi).toHaveLength(2)
     for (const p of pozivi) {
@@ -562,7 +562,7 @@ describe('TASK-5299 HMAC potpis', () => {
     const { bk } = okolina()
     expect(bk.primi(pz(tijelo(), '', { tajna: TAJNA_SLANJA })).status).toBe(401)
     const postavke = { ...BOT_KANAL_ZADANO, ukljucen: true, chatovi: [CHAT], adrese: ['10.0.0.2'],
-      drugi: [{ ime: 'klaudio', korisnickoIme: 'klaudioAI_bot', url: 'http://10.0.0.2:17781' }] }
+      drugi: [{ ime: 'klaudio', korisnickoIme: 'drugiAI_bot', url: 'http://10.0.0.2:17781' }] }
     const ista = stvoriBotKanal({ ja: 'saban', postavke: () => postavke, tajnaPrimanja: () => TAJNA, tajnaSlanja: () => TAJNA,
       spremiste: { citaj: praznoStanje, pisi: () => {} }, sat: () => sada })
     const r = ista.primi(pz(tijelo()))
@@ -571,7 +571,7 @@ describe('TASK-5299 HMAC potpis', () => {
   })
   test('prekratka tajna (< 32 znaka) = nije postavljena', () => {
     const postavke = { ...BOT_KANAL_ZADANO, ukljucen: true, chatovi: [CHAT], adrese: ['10.0.0.2'],
-      drugi: [{ ime: 'klaudio', korisnickoIme: 'klaudioAI_bot', url: 'http://10.0.0.2:17781' }] }
+      drugi: [{ ime: 'klaudio', korisnickoIme: 'drugiAI_bot', url: 'http://10.0.0.2:17781' }] }
     const kratka = stvoriBotKanal({ ja: 'saban', postavke: () => postavke, tajnaPrimanja: () => 'kratko', tajnaSlanja: () => TAJNA_SLANJA,
       spremiste: { citaj: praznoStanje, pisi: () => {} }, sat: () => sada })
     expect(kratka.primi(pz(tijelo(), '', { tajna: 'kratko' })).status).toBe(403)

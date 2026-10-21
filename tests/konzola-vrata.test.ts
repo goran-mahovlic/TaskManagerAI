@@ -10,7 +10,7 @@ const z = (ip: string | null, h?: Record<string, string>) => ({ metoda: 'POST', 
 
 describe('vrataKonzole — prijenos (isti sud kao tajne, bez iznimke za LAN HTTP)', () => {
   test('loopback i Tailscale prolaze', () => {
-    for (const ip of ['127.0.0.1', '::1', '::ffff:127.0.0.1', '100.64.0.7', '100.127.1.1', 'fd7a:115c:a1e0::5'])
+    for (const ip of ['127.0.0.1', '::1', '::ffff:127.0.0.1', '100.64.0.7', '100.127.255.1', 'fd7a:115c:a1e0::5'])
       expect(vrataKonzole(z(ip))).toBeNull()
   })
   test('LAN, javna adresa i nepoznat peer se odbijaju (403)', () => {

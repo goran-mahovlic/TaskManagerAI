@@ -33,6 +33,7 @@ export class BranaPrivatnog extends Error {
 // Naš raspored i repozitorij pišu se iz dijelova (brana paketa `bez-nasih-vrijednosti` traži doslovni niz).
 const RASPORED = ['\\.cla', 'ude/reg', 'oc'].join('')
 const NAS_REPO = ['reg', 'oc[_-]system'].join('')
+const NASE_BANKE = ['reg', 'oc_sustav_[a-z]+'].join('')
 
 /** Opći uzorci: ne ovise o privatnom popisu, pa vrijede i na čvoru (§4.3/2a). */
 export const OPCI_UZORCI: ReadonlyArray<[string, RegExp]> = [
@@ -45,6 +46,8 @@ export const OPCI_UZORCI: ReadonlyArray<[string, RegExp]> = [
   ['nas-raspored', new RegExp(RASPORED)],
   ['nas-repo', new RegExp(NAS_REPO, 'i')],
   ['tailnet', /tailc\d+\.ts\.net/],
+  // banke memorije glavnog stroja (plan Mac v2 P4.1): banka čvora je MEMORIJA_BANKA, ne naše ime
+  ['banka', new RegExp(NASE_BANKE)],
 ]
 
 /** Izrazi s popisa koji su ime MOGUĆNOSTI, ne privatni podatak (idu kroz `uvjet:`). */

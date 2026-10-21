@@ -26,7 +26,7 @@ export type RazlogStopa = 'fraza' | 'strop' | 'rucno'
 export interface DrugiBot {
   /** Ime u ugovoru (`izvor`), npr. `klaudio` / `saban`. */
   ime: string
-  /** Telegram korisničko ime bez `@`, npr. `klaudioAI_bot` — spomen u odgovoru = prijenos. */
+  /** Telegram korisničko ime bez `@`, npr. `drugiAI_bot` — spomen u odgovoru = prijenos. */
   korisnickoIme: string
   /** Ploča drugog kraja, npr. `http://10.0.0.2:17781`. */
   url: string

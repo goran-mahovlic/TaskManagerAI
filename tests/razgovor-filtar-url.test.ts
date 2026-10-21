@@ -27,7 +27,7 @@ afterEach(() => { rmSync(mapa, { recursive: true, force: true }) })
 const VLASNIK = '1001'
 const NODEA: RazgovorPostavke = {
   ...RAZGOVOR_ZADANO, ukljucen: true, ime: 'Pomoćnik', odgovaraNa: 'dopusteni-sve',
-  dopusteniKorisnici: [VLASNIK, '77'], preskociAkoSadrzi: ['Robi', 'Ivan', '@klaudioAI_bot'],
+  dopusteniKorisnici: [VLASNIK, '77'], preskociAkoSadrzi: ['Robi', 'Ivan', '@drugiAI_bot'],
   tisinaKadDrugom: false, vlasnici: [VLASNIK],
 }
 
@@ -62,8 +62,8 @@ describe('sadrziRijec ne gleda unutar URL-a, e-maila ni koda', () => {
     ['`ivan`', 'Ivan', false],
     ['```ivan je tu```', 'Ivan', false],
     ['Ivan, vidi https://x/?s=bubi', 'Ivan', true],
-    ['javi @klaudioAI_bot', '@klaudioAI_bot', true],
-    ['https://t.me/klaudioAI_bot', '@klaudioAI_bot', false],
+    ['javi @drugiAI_bot', '@drugiAI_bot', true],
+    ['https://t.me/drugiAI_bot', '@drugiAI_bot', false],
   ])('„%s" ⊃ %s → %s', (tekst, rijec, ok) => {
     expect(sadrziRijec(tekst, rijec)).toBe(ok)
   })
@@ -85,9 +85,9 @@ describe('TASK-5373 prihvatni slučajevi (Filtar)', () => {
     expect(razlogZaDrugog(por({ ...ANA, tekst: 'Ivan, jesi vidio?' }), NODEA)).toBe('sadrži „Ivan"')
     expect(trebaOdgovoriti(por({ ...ANA, tekst: 'Ivan, jesi vidio?' }), NODEA)).toBe(false)
   })
-  test('poruka s @klaudioAI_bot → šuti (i od vlasnika)', () => {
-    expect(trebaOdgovoriti(por({ tekst: '@klaudioAI_bot što ima?', spomeni: ['klaudioai_bot'] }), NODEA)).toBe(false)
-    expect(trebaOdgovoriti(por({ ...ANA, tekst: '@klaudioAI_bot što ima?' }), NODEA)).toBe(false)
+  test('poruka s @drugiAI_bot → šuti (i od vlasnika)', () => {
+    expect(trebaOdgovoriti(por({ tekst: '@drugiAI_bot što ima?', spomeni: ['drugiai_bot'] }), NODEA)).toBe(false)
+    expect(trebaOdgovoriti(por({ ...ANA, tekst: '@drugiAI_bot što ima?' }), NODEA)).toBe(false)
   })
   test('ime na popisu koje NIJE pošiljateljevo ne izuzima: Ana piše „Ivan ovdje"', () => {
     expect(trebaOdgovoriti(por({ ...ANA, tekst: 'Ivan ovdje' }), NODEA)).toBe(false)

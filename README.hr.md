@@ -113,6 +113,123 @@ curl -X POST http://localhost:17781/api/tasks \
 
 ---
 
+## Instalacija na novi stroj (Linux / macOS)
+
+Ovo je cijela instalacija **čvora** (ploča kao usluga, lokalne baze, log), isključivo s GitHuba.
+Naredbe ispod izvodiš redom. S drugog stroja se ništa ne kopira (ni `scp`, ni bundle, ni
+datoteke postavki), a datoteke u `~/TaskManagerAI` se ne uređuju ručno. Sve što pripada samo
+ovom stroju ide u `~/.taskmanager/` (korak 5).
+
+Podržano: **Debian/Ubuntu** i **macOS 14 ili noviji**. Disk: barem 8 GB slobodno uz `--baze`
+(lokalne baze i modeli za ugrađivanje, oko 2,3 GB preuzimanja), bez toga 2 GB.
+
+**1. Preduvjeti — Debian/Ubuntu** (jedini korak koji traži root):
+
+```bash
+sudo apt-get update
+sudo apt-get install -y git curl unzip ca-certificates python3 python3-venv
+```
+
+**1. Preduvjeti — macOS.** Command Line Tools donose `git`, `python3` i `perl`. `curl`,
+`launchctl` i `lsof` dolaze sa sustavom. Homebrew **nije** potreban. Ako postoji, a pripada drugom
+korisniku, instalacija ga ne dira. Ploča radi kao LaunchDaemon, pa instalacija treba
+administratorsko pravo (`sudo`). `sudo -v` jednom traži lozinku, prije početka:
+
+```bash
+xcode-select --install
+sudo -v
+```
+
+**2. Kod i instalacija.** Izaberi ime čvora: mala slova, brojke i `-` (npr. `ured-mac`).
+
+```bash
+git clone https://github.com/goran-mahovlic/TaskManagerAI.git ~/TaskManagerAI
+cd ~/TaskManagerAI
+bash scripts/install.sh --cvor <name> --profil upravitelj-cvora --baze
+```
+
+`install.sh` sve ostalo dohvaća sam, s javnih adresa (bun, `uv` + Python 3.13, `pg0`,
+`hindsight-api`, modeli bge-m3). Svaki službeni instalator dohvaća u najviše 3 pokušaja
+(razmak 5/15/45 s), a tek tada odustaje s izlazom 4. Za Linux alate koje treba postavlja i
+macOS zamjene (`setsid`, `timeout` u `~/.local/bin`, launchd umjesto systemd-a). Tablicu tih
+zamjena ispisuje u koraku preduvjeta.
+Lokalne baze instalira **zaustavljene**: ne troše RAM ni CPU dok ih ne uključiš (korak 5).
+Instalacija je idempotentna. Ako stane, ukloni uzrok i pokreni istu naredbu ponovno. Za korake
+koji su već gotovi javit će „0 promjena". Ako je na macOS-u `sudo` istekao do koraka usluga,
+pokreni `sudo -v` pa istu naredbu još jednom.
+
+Na kraju ispiše mapu loga, adresu ploče i popis onoga što treba upisati lokalno.
+
+**3. Provjera.**
+
+```bash
+export PATH="$HOME/.bun/bin:$HOME/.local/bin:$PATH"
+cat ~/.taskmanager/log/install/zadnji/install-rezultat.json
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:17781/health
+bash scripts/bootcheck.sh
+```
+
+`install-rezultat.json` mora imati `"ishod":"uspjeh"`, a `curl` mora ispisati `200`. Svaki
+korak je u `~/.taskmanager/log/install/zadnji/koraci.jsonl`, s naredbom, izlaznim kodom i repom
+stderr-a. Čitljivi log je `install.log` u istoj mapi. Ako korak padne, te dvije datoteke kažu
+koji i zašto. Izlazni kodovi: 2 uporaba, 3 preduvjet, 4 mreža, 5 ovisnosti, 6 baza, 7 usluga,
+8 provjera nakon podizanja. `bootcheck.sh` ispisuje PASS/FAIL po provjeri. M5 (prijava na AI)
+ostaje upozorenje do koraka 4.
+
+**4. Izbor AI servisa.** Instalacija ne bira servis i ne traži ključ. Biraš bilo koji od ponuđenih,
+npr. pretplatu `claude` (Pro/Max, `claude setup-token`), ključ za `openrouter`, `anthropic`,
+`openai`, `google`, `deepseek`, `kimi`, `glm`, `qwen`, `minimax`, lokalni `ollama` ili vlastiti
+OpenAI-kompatibilan poslužitelj. Prva naredba ispisuje sve servise sa stanjem prijave. Druga je
+čarobnjak koji vodi kroz prijavu. Ključ se upisuje na upit, nikad kao argument. Isto se radi na
+ploči: Config → Prijava. Za `claude` (pretplata ili `setup-token`) treba Claude CLI. Ako ga
+izabereš, pokreni istu naredbu instalacije još jednom, s dodanim `--claude`:
+`bash scripts/install.sh --cvor <name> --profil upravitelj-cvora --baze --claude`.
+Na macOS-u prijava ide u Keychain, koji usluga ne vidi. Zato ondje koristi `claude setup-token`,
+a token spremi kao tajnu `CLAUDE_CODE_OAUTH_TOKEN` (korak 5).
+
+```bash
+bun scripts/prijava-ai.ts popis
+bun scripts/prijava-ai.ts
+```
+
+**5. Lokalne postavke i tajne — samo na ovom stroju, nikad u repozitoriju.** Instalacija u
+`~/.taskmanager/config/` (prava 0600) ostavlja tri datoteke koje dopunjuješ. U repozitoriju su
+samo njihovi prazni primjeri, `config/postavke.env.primjer` i `config/memorija.primjer.json`.
+
+| Datoteka | Što upisuješ |
+|---|---|
+| `postavke.env` | `TM_BIND`, `TM_ALLOWED_HOSTS` — instalacija upiše petlju i adresu tailneta ovog stroja; dodaj druga imena pod kojima pristupaš ploči |
+| `profil.instanca.env` | ID-eve Telegram grupe i chatova, uid vlasnika, banku memorije ovog čvora (`MEMORIJA_BANKA`) |
+| `memorija.json` | prekidač izvora memorije i RAG-a: `nasa` (dijeljeni sustav preko tunela), `lokalna` (baze ovog čvora), `iskljuceno`; prazan host/port = zadano na 127.0.0.1 |
+
+Tajne (token bota, API ključevi, lozinke baza) idu u spremište tajni čvora. Vrijednost se traži
+na upit, pa ne ostaje u povijesti ljuske. Na ploči je isto pod Config → Tajne.
+
+```bash
+"${EDITOR:-nano}" ~/.taskmanager/config/profil.instanca.env
+bun scripts/tajna.ts postavi <NAME>
+bun scripts/tajna.ts popis
+```
+
+Nakon promjene postavki ploču ponovno pokreni s
+`systemctl --user restart regoc-taskmanager` (Linux) ili
+`sudo launchctl kickstart -k system/hr.regoc.taskmanager` (macOS).
+
+**6. Potpuno uklanjanje** (npr. za instalaciju ponovno od nule):
+
+```bash
+bash scripts/deinstaliraj.sh --do-nule
+cd ~ && rm -rf ~/TaskManagerAI
+```
+
+`--do-nule` uklanja usluge i **samo** ono što je instalacija zapisala u
+`~/.taskmanager/instalirano.json`, uz označene retke u `~/.zshrc`/`~/.bashrc`. Tuđi Homebrew,
+tailscale i tuđe datoteke ne dira. Prije brisanja sprema kopiju `~/.taskmanager` u
+`~/taskmanager-backup-<vrijeme>.tgz`. Na kraju pokreće `provjeri-cisto.sh`, koji ne ispiše
+ništa kad je stroj čist. Pojedinosti: [docs/INSTALL.md](docs/INSTALL.md) §2.1–§2.3, §10.
+
+---
+
 ## Postavke
 
 Sve je neobavezno; bez ijedne postavke radi na zadanim vrijednostima. Kopiraj `env.example` u
