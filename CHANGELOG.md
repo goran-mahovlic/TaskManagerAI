@@ -1,3 +1,14 @@
+## 2026-10-21 — Mac K8 krug 1: PostgreSQL iz pg0 bez Homebrewova OpenSSL-a, pdf venv na macOS-u (TASK-5662)
+
+- Prva instalacija s GitHuba na Macu (`894bddd`) pala je na `K2.18-baze-pgvector` (izlaz 6): pg0 0.15.2
+  raspakira PostgreSQL vezan uz `/opt/homebrew/opt/openssl@3`. Novi `scripts/macos/pg0-openssl.sh`
+  daje libssl/libcrypto 3 iz javnog wheela psycopg-binary 3.3.6 (pinan sha256) u `installation/<v>/lib`,
+  reference prepisuje na `@loader_path` i potpisuje ad-hoc. `install.sh` ga zove prije pravog `pg0 start`,
+  a Hindsight na macOS-u dijeli popravljenu instalaciju. Test: `tests/pg0-openssl-macos.test.ts`.
+- `scripts/instaliraj-pdf.sh`: `pip_u_venv` (`scripts/instalacija/pip-u-venv.sh`) prvo koristi pip
+  venva (ensurepip), jer pip CLT Pythona 3.9 nema `--python`. Test: `tests/pip-u-venv.test.ts`.
+- Zapis krugova: `docs/qa/mac-instalacija-krugovi.md`.
+
 ## 2026-10-21 — K6 dorada: nalazi QA svježe instalacije B1–B7 (TASK-5693)
 
 - Iz QA K6 (TASK-5660), kandidat main 306c442. Svaki popravak ima test koji pada na starom kodu.
