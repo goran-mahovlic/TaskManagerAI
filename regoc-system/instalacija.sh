@@ -13,7 +13,9 @@
 #   2. poveznice iz POVEZNICE.tsv: moduli koje kod uvozi izvan ~/.claude/regoc (../skills, ../VoiceServer,
 #      kuka SecurityValidator, mjerilo session_usage.py) — samo ako na tom mjestu nema ničega;
 #   3. ~/.claude/settings.json iz settings.json.primjer (kuka SecurityValidator) — samo ako ga nema;
-#   4. uz --tm-home: credentials.env → $TM_HOME/config/credentials.env (spremište tajni paketa).
+#   4. uz --tm-home: credentials.env → $TM_HOME/config/credentials.env (spremište tajni paketa);
+#   5. uz --tm-home: data/regoc.db → $TM_HOME/data/tasks.db (baza ploče paketa; komplet je čita kao regoc.db);
+#   6. messages.db: tablice iz schema.sql ako ih nema (daemon ih sam ne stvara).
 # Sve stvoreno izvan kompleta javlja se u $TM_KOMPLET_STVORENO (put|vrsta) — paket to stavlja u manifest.
 set -euo pipefail
 
@@ -24,7 +26,7 @@ while [ $# -gt 0 ]; do
     --paket) PAKET="${2:-}"; shift ;;
     --tm-home) TM_HOME="${2:-}"; shift ;;
     --suho) SUHO=1 ;;
-    -h|--help) sed -n '2,18p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,20p' "$0"; exit 0 ;;
     *) echo "nepoznat argument: $1" >&2; exit 2 ;;
   esac
   shift
@@ -95,6 +97,40 @@ if [ -n "$TM_HOME" ]; then
   else
     promijeni "poveznica credentials.env → $SPR (spremište tajni paketa)" && ln -s "$SPR" "$K/credentials.env" || true
   fi
+fi
+
+# 5. baza ploče (TASK-5662, Mac krug 3): komplet ploču čita iz ~/.claude/regoc/data/regoc.db
+#    (TaskManagerSQL, postavke autonomije i stropa, AgentSelection…), a paket je drži u
+#    $TM_HOME/data/tasks.db. Bez poveznice daemon čita nepostojeću bazu („unable to open database
+#    file") i pragovi ostaju zadani. SQLite prati poveznicu, pa -wal/-shm idu uz pravu bazu.
+#    Postojeća baza kompleta (čvor koji je već imao vlastitu regoc.db) se ne dira.
+if [ -n "$TM_HOME" ]; then
+  BAZA="$TM_HOME/data/tasks.db"
+  if [ -L "$K/data/regoc.db" ]; then
+    [ "$(readlink "$K/data/regoc.db")" = "$BAZA" ] || javi "ostavljam data/regoc.db (poveznica na drugo mjesto: $(readlink "$K/data/regoc.db"))"
+  elif [ -e "$K/data/regoc.db" ]; then
+    javi "ostavljam data/regoc.db (vlastita baza kompleta, nije poveznica na bazu paketa)"
+  else
+    promijeni "poveznica data/regoc.db → $BAZA (baza ploče paketa)" && { mkdir -p "$K/data"; ln -s "$BAZA" "$K/data/regoc.db"; } || true
+  fi
+fi
+
+# 6. red poruka (TASK-5662, Mac krug 3): RegocDaemon otvara messages.db izravno (getDb) i schema.sql
+#    nikad ne pokreće — na svježem čvoru glavna petlja svake sekunde pada na „no such table: messages".
+#    Tablice se stvaraju jednom (CREATE … IF NOT EXISTS); postojeća baza s tablicom messages se ne dira.
+if [ -f "$K/schema.sql" ]; then
+  BUN="$(command -v bun || echo "$HOME/.bun/bin/bun")"
+  ima="$("$BUN" -e 'const { Database } = require("bun:sqlite"); const fs = require("fs"); const p = process.argv[1];
+    if (!fs.existsSync(p)) { console.log(0); process.exit(0) }
+    const db = new Database(p, { readonly: true });
+    console.log(db.query("select count(*) n from sqlite_master where type=\x27table\x27 and name=\x27messages\x27").get().n)' "$K/messages.db" 2>/dev/null || echo greska)"
+  case "$ima" in
+    1) ;;
+    0) promijeni "messages.db ← schema.sql (tablice reda poruka)" && "$BUN" -e 'const { Database } = require("bun:sqlite");
+         const db = new Database(process.argv[1]); db.exec(require("fs").readFileSync(process.argv[2], "utf-8")); db.close()' \
+         "$K/messages.db" "$K/schema.sql" || true ;;
+    *) echo "GREŠKA: messages.db se ne može pročitati ($K/messages.db)" >&2; exit 5 ;;
+  esac
 fi
 
 [ -n "$PAKET" ] && javi "paket: $PAKET"

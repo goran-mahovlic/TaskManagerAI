@@ -14,6 +14,8 @@ Instalaciju izvodi korisnik usluge `regoc` preko SSH-a. Log se čita ovako:
 | Krug | Datum | Commit (GitHub) | Naredba | Ishod | Korak koji je pao | Izlaz | Trajanje | Popravak (commit) |
 |---|---|---|---|---|---|---|---|---|
 | 1 | 2026-10-21 19:58 | `894bddd` | README korak 2, bez `--komplet` (README ga ne navodi; `config/komplet.lock` na GitHubu ne postoji) | pad | `K2.18-baze-pgvector` | 6 | 35,6 s | grana `zadatak/TASK-5662` (vidi niže) |
+| 2 | 2026-10-22 02:59 | `1172fa2` | README korak 2, bez `--komplet` (isti razlog) | **uspjeh** | — | 0 | 76,0 s | — |
+| 3 | 2026-10-22 17:04 | `a5e4257` | README korak 2, **s `--komplet`** (D3 = B, komplet je `regoc-system/`) | instalacija **uspjeh**, daemon u pogonu **pad** | — (`hr.regoc.daemon`: glavna petlja) | 0 | 109,9 s | `~/.claude/regoc` `b1434df` + grana `zadatak/TASK-5662` (vidi niže) |
 
 ## Krug 1 — 2026-10-21
 
@@ -89,3 +91,111 @@ izlazom 5. README ga zato ne navodi. Usluga `daemon` (RegocDaemon) na Macu za sa
 
 **Sljedeće:** vlasnik pusha granu → `deinstaliraj.sh --do-nule` + `rm -rf ~/TaskManagerAI` →
 `provjeri-cisto.sh` = 0 → krug 2.
+
+## Krug 2 — 2026-10-22
+
+**Prije:** vlasnik je pushao granu (TASK-5697), `origin/main` = `1172fa2` (`git ls-remote` na Macu).
+`provjeri-cisto.sh` (pokrenut sa stroja REGOČ-a kroz `ssh … 'bash -s' <`) → „čisto (0 ostataka)", izlaz 0.
+Na Macu su ostali samo `~/.taskmanager-log-arhiva/` i `~/taskmanager-backup-20261021-201848.tgz`, a njih
+provjera namjerno ne broji.
+
+**Izvedeno:** isto kao u krugu 1: `git clone …` → `bash scripts/install.sh --cvor <čvor> --profil upravitelj-cvora --baze`
+(`sudo -n true` umjesto `sudo -v`).
+
+**Ishod:** `install-rezultat.json` → `"ishod":"uspjeh"`, `"izlaz":0`, 28 koraka (promijenjeno 18,
+preskočeno 10), 76,0 s, `paket_commit` = `1172fa2`. Nijedan korak u `koraci.jsonl` nema izlaz ≠ 0.
+`K2.18-baze-pgvector` (pad kruga 1) je prošao za 3,5 s, a `K2.7-pdf` više ne upozorava.
+Jedino upozorenje je `K2.3-preduvjeti`: `regoc` ima neograničen sudo (vidi K9/Malik, `sudoers.primjer`).
+
+**Provjere K8 (sve na Macu ili preko tailneta):**
+
+| Kriterij | Izmjereno |
+|---|---|
+| ishod instalacije | `uspjeh`, 0 koraka s izlazom ≠ 0, iz prvog pokušaja nakon čišćenja |
+| `launchctl print system/hr.regoc.taskmanager` | `state = running`; `pgvector` i `hindsight` su učitani i ugašeni (instaliraju se ugašeni, troše 0 RAM-a) |
+| HTTP preko tailneta | `http://<tailnet-IP>:17781/health` → 200; tuđi `Host` → 403 |
+| vrata s LAN-a | ploča sluša samo na `127.0.0.1` i `<tailnet-IP>` (`lsof`); `curl <LAN-IP>:{17781,15432,15433,17792,17796,17797}` → odbijeno (rc 7) |
+| bootcheck | `VERDIKT: PASS` (M1–M4, M6 PASS; upozorenja M5 bez AI prijave, M7 memorija `nasa` bez tunela, M8 sudo) |
+| `git -C ~/TaskManagerAI status --porcelain` | prazno |
+| preživi restart | `launchctl bootout` + `bootstrap` → 200; zatim pravi restart Maca (`shutdown -r`, boottime 20.10. 14:54 → 22.10. 03:04:53): 25 s nakon podizanja `state = running` (PID 426), tailnet 200, tuđi Host 403, bootcheck `vrsta=POST-BOOT` PASS, `git status` prazan, vrata s LAN-a odbijena |
+
+U mirovanju na Macu radi samo ploča: jedan `bun`, RSS oko 64 MB, CPU ≈ 0.
+
+**Napomena o restartu:** Martinina sesija na konzoli je prije restarta mirovala 29,6 h, a od programa je
+bio otvoren samo Chrome. Restart ju je odjavio (`who` = 0 korisnika).
+
+**Otvoreno, nije pad instalacije:**
+1. **D2 = B (komplet):** plan v3 K8 traži `--komplet` i `hr.regoc.daemon` u stanju `state = running`.
+   `config/komplet.lock` i javni modul `regoc-komplet` (K3a) još ne postoje, a odluka D3 (zaseban
+   repozitorij ili mapa u paketu) nije donesena. Zato README `--komplet` ne navodi, a `K2.14-komplet`
+   javlja „nije traženo". Kad K3a bude objavljen, isti krug se ponavlja s `--komplet`.
+2. **Ime MagicDNS:** ime MagicDNS čvora (port 17781) daje 403, jer instalacija u
+   `TM_ALLOWED_HOSTS` upisuje samo tailnet IP. README kaže da ostala imena dodaje vlasnik čvora
+   (lokalno, `postavke.env`). Moguće poboljšanje: `install.sh` uzima i `Self.DNSName` iz `tailscale status --json`.
+
+**Sljedeće:** K3a + D3 → krug 3 s `--komplet`. Za paket bez kompleta K8 je prošao čisto.
+
+## Krug 3 — 2026-10-22 (s `--komplet`)
+
+**Prije:** vlasnik je pushao komplet (`origin/main` = `a5e4257`, TASK-5705/5706, uputa #446).
+`deinstaliraj.sh --do-nule --da --bez-kopije` → izlaz 0, `D10-provjera` „čisto (0 ostataka)";
+`rm -rf ~/TaskManagerAI`; `provjeri-cisto.sh` (sa stroja REGOČ-a kroz `ssh … 'bash -s' <`) → 0.
+
+**Izvedeno:** `git clone …` → `bash scripts/install.sh --cvor <čvor> --profil upravitelj-cvora --baze --komplet`.
+
+**Ishod instalacije:** `install-rezultat.json` → `"ishod":"uspjeh"`, `"izlaz":0`, 30 koraka (promijenjeno 22,
+preskočeno 8), 109,9 s, `paket_commit` = `a5e4257`. `K2.14-komplet` je prošao za 4,2 s (provjera
+`regoc-system/MANIFEST.sha256` → kopija u `~/.claude/regoc`). Jedino upozorenje je opet `K2.3-preduvjeti` (sudo).
+
+**Provjere K8:**
+
+| Kriterij | Izmjereno |
+|---|---|
+| ishod instalacije | `uspjeh`, 0 koraka s izlazom ≠ 0, iz prvog pokušaja nakon čišćenja |
+| `launchctl print system/hr.regoc.taskmanager` | `state = running` |
+| `launchctl print system/hr.regoc.daemon` | `state = running` (RunAtLoad, KeepAlive kod pada: `kill -9` → novi PID za < 15 s, `runs = 2`) |
+| HTTP preko tailneta | `<tailnet-IP>` → 200; ime MagicDNS → 200 (nakon lokalnog dopisivanja imena u `postavke.env`, uputa #444); tuđi `Host` → 403 |
+| vrata s LAN-a | ploča sluša samo na `127.0.0.1` i `<tailnet-IP>`; `curl <LAN-IP>:{17781,15432,15433,17792,17796,17797}` → rc 7 |
+| bootcheck | `VERDIKT: PASS` (upozorenja M5 bez AI prijave, M7 memorija, M8 sudo, M9 tajne kompleta — očekivano, upisuje ih vlasnik čvora, K9) |
+| `git status --porcelain` | prazno |
+| preživi restart | `launchctl bootout` + `bootstrap` obje usluge → `state = running`, 200. Pravi restart Maca **nije** napravljen: vlasnica stroja je bila prijavljena na konzoli (otvoren preglednik), a restart je odjavljuje (krug 2) |
+| mirovanje | ploča RSS ≈ 63 MB, daemon ≈ 57–76 MB, CPU 0,0 % |
+
+**Pad (pogon daemona, ne instalacije):** u `~/.taskmanager/log/daemon.log` glavna petlja svake sekunde:
+
+```
+Error in main loop: SQLiteError: no such table: messages
+⚠️ [autonomija] postavka pragova nečitljiva (SQLiteError: unable to open database file)
+```
+
+**Uzroci (izmjereno):**
+1. `RegocDaemon` otvara `~/.claude/regoc/messages.db` izravno (`getDb`) i ne pokreće shemu. Tablice
+   stvara `MessageQueue` iz `schema.sql`, a ni nje nema: izvoz kompleta prati samo graf uvoza `.ts`,
+   a `initSchema()` bez datoteke tiho preskače. Na stroju REGOČ-a baza je stara, pa se to nije vidjelo.
+2. Komplet ploču čita iz `~/.claude/regoc/data/regoc.db` (TaskManagerSQL, pragovi autonomije, strop),
+   a paket je drži u `$TM_HOME/data/tasks.db`. Na čvorovima Linuxa paket i daemon dijele istu bazu.
+
+Ista slika ponovljena je lokalno: komplet iz `a5e4257` u privremenom HOME-u, baza iz `init-db`,
+daemon 25 s → 25× `no such table: messages`.
+
+**Popravak:**
+- izvoz (`gradi_komplet.sh`): `PODACI=(schema.sql)`, datoteke koje kod čita u pogonu, a nisu u grafu uvoza;
+- `regoc-system/instalacija.sh`: korak 5, uz `--tm-home` veza `data/regoc.db → $TM_HOME/data/tasks.db`
+  (postojeća baza kompleta se ne dira); korak 6, `schema.sql` → `messages.db` ako nema tablice `messages`.
+  Oba koraka su idempotentna (drugo pokretanje: `ISTO`).
+- test `regoc-system/tests/pogon.test.ts` (5): na `a5e4257` crveno (4/4, pa 1/1 za korak 6), nakon
+  popravka zeleno; testovi kompleta 33 pass, 0 fail; brane izvoza 0 pogodaka.
+- ista lokalna proba nakon popravka: 0× `no such table: messages`, 0× `unable to open database`,
+  0× `Error in main loop`. Ostaje jedno upozorenje pri prvom pokretanju, `[staleWatchdog] no such
+  table: agent_checkpoints` (tablicu stvara `AgentDaemon` kad prvi put radi), i to nije petlja.
+
+Do kruga 4 je `hr.regoc.daemon` na Macu ugašen (`launchctl bootout`), da dnevnik ne raste retkom u sekundi.
+
+**Otvoreno, nije pad instalacije (K9):**
+1. **Registar agenata:** daemon javlja „Agent registry not loaded" jer `REGOC_AGENTS.json` (tim i
+   uloge) namjerno nije u javnom kompletu. Koje agente čvor ima lokalne su postavke čvora.
+2. **`GEMINI.md`** (pravila sustava za daemon) se traži u `~/app/regoc_system/`, kojeg na čvoru nema.
+   Daemon radi i bez toga, uz upozorenje.
+
+**Sljedeće:** vlasnik pusha granu `zadatak/TASK-5662` → `deinstaliraj.sh --do-nule` + `rm -rf ~/TaskManagerAI`
+→ `provjeri-cisto.sh` = 0 → krug 4 s `--komplet`, zatim pravi restart Maca u dogovoru s vlasnicom stroja.

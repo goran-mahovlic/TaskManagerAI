@@ -1,3 +1,15 @@
+## 2026-10-22 — Mac K8 krug 3: komplet radi i na svježem čvoru (messages.db, baza ploče) (TASK-5662)
+
+- Krug 3 na Macu (`a5e4257`, `install.sh --komplet`): instalacija `uspjeh` iz prvog pokušaja, `hr.regoc.daemon`
+  `state = running`, ali glavna petlja daemona svake sekunde pada na `no such table: messages`, a pragove
+  autonomije ne može pročitati (`unable to open database file`).
+- `regoc-system/schema.sql` je sada u kompletu (izvoz nosi i datoteke koje kod čita u pogonu, a nisu u grafu uvoza).
+- `regoc-system/instalacija.sh`: korak 5, uz `--tm-home` veza `data/regoc.db → $TM_HOME/data/tasks.db`
+  (komplet i paket čitaju istu bazu ploče, kao na čvorovima Linuxa; postojeća baza kompleta se ne dira);
+  korak 6, `schema.sql` → `messages.db` ako nema tablice `messages`. Oba su idempotentna.
+- Test `regoc-system/tests/pogon.test.ts` (5). Zapis kruga: `docs/qa/mac-instalacija-krugovi.md`
+  (iz zapisa kruga 2 maknuti su ime čvora, tailnet i LAN adrese).
+
 ## 2026-10-22 — Mac K3b: komplet sustava kao mapa regoc-system/ u paketu (TASK-5705, D3 = B)
 
 - **Odluka D3 = B (vlasnik, 22. 10. 2026.):** komplet izvornog sustava (RegocDaemon i sve što `--komplet`
