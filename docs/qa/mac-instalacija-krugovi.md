@@ -122,7 +122,7 @@ Jedino upozorenje je `K2.3-preduvjeti`: `regoc` ima neograničen sudo (vidi K9/M
 
 U mirovanju na Macu radi samo ploča: jedan `bun`, RSS oko 64 MB, CPU ≈ 0.
 
-**Napomena o restartu:** Martinina sesija na konzoli je prije restarta mirovala 29,6 h, a od programa je
+**Napomena o restartu:** sesija vlasnice stroja na konzoli je prije restarta mirovala 29,6 h, a od programa je
 bio otvoren samo Chrome. Restart ju je odjavio (`who` = 0 korisnika).
 
 **Otvoreno, nije pad instalacije:**
