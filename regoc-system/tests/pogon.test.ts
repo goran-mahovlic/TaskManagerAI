@@ -142,3 +142,24 @@ describe.skipIf(PREDLOZAK)('relative imports resolve in the komplet itself (not 
     expect([...fali]).toEqual([])
   }, 120_000)
 })
+
+describe.skipIf(PREDLOZAK)('process scans: one platform call, not one `ps` per PID', () => {
+  // On macOS lib/platforma.cmdline(pid) is one `ps` per process. RegocDaemon's live-process scan
+  // (orphan and zombie recovery, every 15 s) looped pidovi() → cmdline(pid): ≈ 400 `ps` per pass,
+  // the idle daemon used ≈ 7.5 % CPU (TASK-5662, Mac round 5). procesi() is a single `ps -A`.
+  test('no module outside lib/platforma.ts loops over pidovi()', () => {
+    const petlje: string[] = []
+    const obidi = (d: string) => {
+      for (const e of readdirSync(d, { withFileTypes: true })) {
+        if (['node_modules', 'tests', '.git'].includes(e.name)) continue
+        const p = join(d, e.name)
+        if (e.isDirectory()) obidi(p)
+        else if (e.isFile() && p.endsWith('.ts') && relative(KORIJEN, p) !== join('lib', 'platforma.ts')) {
+          if (/for \(const \w+ of \w*[pP]idovi\(\)\)/.test(readFileSync(p, 'utf-8'))) petlje.push(relative(KORIJEN, p))
+        }
+      }
+    }
+    obidi(KORIJEN)
+    expect(petlje).toEqual([])
+  })
+})

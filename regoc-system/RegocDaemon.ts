@@ -282,7 +282,7 @@ import {
 } from './SpawnSlotRules'
 // TASK-4895: singleton brava (A) i zabrana starta iz agentskog spawna (B).
 import { acquireDaemonSingleton, spawnEnvRefusal, SPAWN_ENV_EXIT_CODE } from './DaemonSingleton'
-import { cmdline as platformaCmdline, cpuVrijeme as platformaCpuVrijeme, odvojeno, pidovi as platformaPidovi } from './lib/platforma'
+import { cpuVrijeme as platformaCpuVrijeme, odvojeno, procesi as platformaProcesi } from './lib/platforma'
 import { homedir } from 'os'
 import { okolina, ollamaUrl, chromaUrl } from './lib/okolina-sustava' // TASK-5700 (K3a)
 import { procitajTajnuSpremista } from './lib/spremiste-tajni' // TASK-5705
@@ -7037,12 +7037,8 @@ const ZOMBIE_ACTION_COOLDOWN_MS = 60_000
  */
 function taskIdsWithLiveProcess(): Set<string> {
   try {
-    const cmdlines: string[] = []
-    for (const pid of platformaPidovi()) {
-      const c = platformaCmdline(pid)     // null = proces je nestao
-      if (c !== null) cmdlines.push(c)
-    }
-    return extractLiveTaskIds(cmdlines)
+    // Jedan poziv platforme (macOS: jedan `ps -A`), ne `ps` po PID-u svakih 15 s (TASK-5662, Mac krug 5).
+    return extractLiveTaskIds(platformaProcesi().map(p => p.cmd))
   } catch { return new Set<string>() }
 }
 

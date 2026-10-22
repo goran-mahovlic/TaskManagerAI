@@ -17,6 +17,7 @@ Instalaciju izvodi korisnik usluge `regoc` preko SSH-a. Log se čita ovako:
 | 2 | 2026-10-22 02:59 | `1172fa2` | README korak 2, bez `--komplet` (isti razlog) | **uspjeh** | — | 0 | 76,0 s | — |
 | 3 | 2026-10-22 17:04 | `a5e4257` | README korak 2, **s `--komplet`** (D3 = B, komplet je `regoc-system/`) | instalacija **uspjeh**, daemon u pogonu **pad** | — (`hr.regoc.daemon`: glavna petlja) | 0 | 109,9 s | `~/.claude/regoc` `b1434df` + grana `zadatak/TASK-5662` (vidi niže) |
 | 4 | 2026-10-22 20:50 | `c8e9b5d` | README korak 2, s `--komplet` | **uspjeh**; daemon u pogonu radi (0× `no such table`) | — (čišćenje prije kruga: `D10-provjera` izlaz 8; u pogonu: `./tools/decompose`, CPU daemona u mirovanju ≈ 8 %) | 0 | 149,3 s | grana `zadatak/TASK-5662` `428e8cb` + `~/.claude/regoc` `4d57427` (vidi niže) |
+| 5 | 2026-10-22 21:58 | `449d543` | README korak 2, s `--komplet` | **uspjeh**; daemon u pogonu radi (0× `tools/decompose`), petlja orkestratora pod kočnicom ne kreće | — (čišćenje prije kruga: `D10-provjera` izlaz 8, ostaci stare inačice; u pogonu: CPU daemona u mirovanju ≈ 7,5 %) | 0 | 97,3 s | grana `zadatak/TASK-5662` + `~/.claude/regoc` (vidi niže) |
 
 ## Krug 1 — 2026-10-21
 
@@ -260,3 +261,52 @@ Do kruga 5 je `hr.regoc.daemon` na Macu ugašen (`launchctl bootout`), da ne tro
 **Sljedeće:** vlasnik pusha granu `zadatak/TASK-5662` → `deinstaliraj.sh --do-nule` + `rm -rf ~/TaskManagerAI`
 → `provjeri-cisto.sh` = 0 → krug 5 s `--komplet` (provjera: 0× `tools/decompose`, CPU daemona u mirovanju),
 pravi restart Maca kad vlasnica stroja nije prijavljena.
+
+## Krug 5 — 2026-10-22 (s `--komplet`, `449d543`)
+
+**Prije:** vlasnik je pushao `449d543` (krug 4 `d6a3c24` i PR-ovi #1–#3 s doradom C1/C2), `git ls-remote` na Macu →
+`refs/heads/main` = `449d543`. Na konzoli je bila prijavljena vlasnica stroja.
+
+**Čišćenje:** klon kruga 4 prebačen na `449d543`, pa `deinstaliraj.sh --do-nule --da --bez-kopije` → izlaz 8,
+`D10-provjera` „1 ostatak" (`~/.cache`). Ostatak su `~/.cache/claude/staging` i `~/.tmp`, isto kao u krugu 4. To nije
+novi pad: instalacija kruga 4 (`c8e9b5d`) je prethodila popravku `428e8cb`, pa ih nije upisala u manifest. Uklonila
+sam ih ručno, zatim `rm -rf ~/TaskManagerAI`, `git clone …` i `provjeri-cisto.sh` → „čisto (0 ostataka)", izlaz 0.
+Prvo čišćenje nakon instalacije s `428e8cb` ili novijim bit će prva prava provjera tog popravka.
+
+**Izvedeno:** `git clone …` → `bash scripts/install.sh --cvor <čvor> --profil upravitelj-cvora --baze --komplet`
+(`sudo -n true` umjesto `sudo -v`).
+
+**Ishod instalacije:** `install-rezultat.json` → `"ishod":"uspjeh"`, `"izlaz":0`, 30 koraka (promijenjeno 22,
+preskočeno 8), 97,3 s, `paket_commit` = `449d543`. Jedino upozorenje je `K2.3-preduvjeti` (sudo).
+
+**Provjere K8:**
+
+| Kriterij | Izmjereno |
+|---|---|
+| ishod instalacije | `uspjeh`, iz prvog pokušaja nakon čišćenja |
+| `launchctl print system/hr.regoc.{taskmanager,daemon}` | oba `state = running`; `pgvector`, `hindsight`, `znanje` učitani i ugašeni |
+| pogon daemona | `daemon.log`: 0× `tools/decompose`, 0× `Cannot find module`, 0× `no such table: messages`, 0× `unable to open database`, 0× `Error in main loop`; „[WATCHDOG] Klaudio nije instaliran … watchdog miruje" (popravak kruga 4 radi) |
+| petlja orkestratora pod kočnicom (C1, uputa #449) | `POST /api/pause {paused:true}` → `POST /api/orchestrator/petlja/start` → **409** „ručna kočnica je uključena"; `radi:false`, `pokrenuto:0`; kočnica otpuštena. Nakon restarta usluga petlja ne kreće sama (`zeljeno:false`) |
+| HTTP preko tailneta | `<tailnet-IP>` → 200; ime MagicDNS → 403, pa 200 nakon lokalnog dopisivanja u `postavke.env` (uputa #449); tuđi `Host` → 403 |
+| vrata s LAN-a | ploča sluša samo na `127.0.0.1` i `<tailnet-IP>`; `curl <LAN-IP>:{17781,15432,15433,17792,17796,17797}` → rc 7 |
+| bootcheck | `VERDIKT: PASS (upozorenja: M5, M7, M8, M9)`, ista očekivana upozorenja (K9) |
+| `git status --porcelain` | prazno |
+| preživi restart | `launchctl bootout` + `bootstrap` obje usluge → `state = running` (novi PID-ovi), tailnet 200, MagicDNS 200, tuđi Host 403. Pravi restart Maca **nije** napravljen: vlasnica stroja je bila prijavljena na konzoli (uputa #449) |
+
+**Nalaz u pogonu (nije pad instalacije, popravljen za krug 6):** daemon u mirovanju i dalje troši ≈ 7,5 % CPU-a
+(9,06 s CPU u 120 s), iako watchdog Klaudija sad miruje. `sample` pokazuje glavnu nit u `kevent` ispod JS-a
+(čekanje `spawnSync`), a djeca daemona su sami `ps -A -o pid=` i `(ps)` (219 različitih PID-ova `ps` u 300 uzastopnih očitanja popisa procesa).
+Uzrok je `taskIdsWithLiveProcess()` u `RegocDaemon.ts` (siroče- i zombi-oporavak, svakih 15 s): `pidovi()`, pa
+`cmdline(pid)` za svaki PID. To je isti obrazac kao u watchdogu u krugu 4, samo na drugom mjestu. Na Macu je stari
+sken izmjeren na 519 ms i 805 `ps` po prolazu, a `procesi()` (jedan `ps -A`) na 16 ms za 806 procesa.
+Popravak: `taskIdsWithLiveProcess()` čita naredbe jednim pozivom `platforma.procesi()`. Testovi:
+`tests/daemon-sken-procesa.wiring.test.ts` u `~/.claude/regoc` (crveno → zeleno) i u kompletu
+`tests/pogon.test.ts` „no module outside lib/platforma.ts loops over pidovi()" (crveno na kompletu iz `449d543`,
+`RegocDaemon.ts`; zeleno na novom, 35 pass, 0 fail; brane izvoza 0 pogodaka).
+
+Do kruga 6 je `hr.regoc.daemon` na Macu ugašen (`launchctl bootout`), da ne troši CPU dok vlasnica radi.
+
+**Sljedeće:** vlasnik pusha granu `zadatak/TASK-5662` → `deinstaliraj.sh --do-nule` (prvi put s manifestom iz
+`428e8cb`+, očekivano izlaz 0 bez ručnog čišćenja) + `rm -rf ~/TaskManagerAI` → `provjeri-cisto.sh` = 0 → krug 6
+s `--komplet` (provjera: CPU daemona u mirovanju, 0× `ps` po PID-u), pravi restart Maca kad vlasnica stroja nije
+prijavljena.
