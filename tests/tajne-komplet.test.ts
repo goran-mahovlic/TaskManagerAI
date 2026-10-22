@@ -14,6 +14,7 @@ import { PotvrdaVlasnika } from '../src/core/PotvrdaVlasnika'
 import { dopustenaImena, imeZabranjeno } from '../src/LoginCreds'
 import { tajneKompleta } from '../src/TajneKompleta'
 import { imenaTajniPloce } from '../src/TajnePloca'
+import { DAVATELJI_AI } from '../src/core/davateljiAI'
 
 const KORIJEN = join(import.meta.dir, '..')
 const PRAVI = join(KORIJEN, 'regoc-system', 'TAJNE.json')
@@ -95,6 +96,16 @@ describe('pravi regoc-system/TAJNE.json', () => {
     const or = t.find(x => x.ime === 'OPENROUTER_API_KEY')!
     expect(or.izvor).toBe('davatelj.openrouter')
     expect(or.opis?.hr).toContain('OpenRouter')
+  })
+
+  test('odluka 6 (TASK-5663): svaka tajna iz kataloga AI servisa je na popisu ploče, i Claude pretplata', () => {
+    delete process.env.TM_SUSTAV_DIR
+    const t = new Map(imenaTajniPloce([]).map(x => [x.ime, x.izvor]))
+    for (const d of DAVATELJI_AI) for (const ime of d.tajne) expect(t.has(ime)).toBe(true)
+    expect(t.get('CLAUDE_CODE_OAUTH_TOKEN')).toBe('davatelj.claude')
+    // davatelj iz model-configa i dalje ima prednost za izvor
+    const s = imenaTajniPloce([{ id: 'moj', envKey: 'OPENROUTER_API_KEY' }])
+    expect(s.find(x => x.ime === 'OPENROUTER_API_KEY')!.izvor).toBe('davatelj.moj')
   })
 
   test('TAJNE.json nosi samo imena i opise — nijedno polje vrijednosti', () => {

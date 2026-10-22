@@ -28,6 +28,7 @@ import { ENV_LOZINKE } from './rag/rag-backend-config'
 import { tajneKompleta } from './TajneKompleta'
 import { imenaTajniKanala } from './razgovor/BotKanal'
 import { createBotKanalReader } from './razgovor/BotKanalPostavke'
+import { DAVATELJI_AI } from './core/davateljiAI'
 
 export const tajnePostavkePutanja = (): string => konfigPutanja('tajne.json', 'TM_TAJNE_POSTAVKE')
 
@@ -67,8 +68,11 @@ export function imenaTajniPloce(davatelji: { id: string; envKey?: string }[], bo
   uzmi(() => imenaTajniKanala(createBotKanalReader(botKanalDb, 0)().drugi.map(d => d.ime)))
   // TASK-5705 (uputa #441): tajne kompleta regoc-system/ iz njegovog TAJNE.json (samo uz --komplet)
   try { moduli.push(...tajneKompleta()) } catch { /* bez kompleta */ }
+  // Odluka 6 (TASK-5663): korisnik čvora sam bira AI servis, pa su na popisu tajne SVIH davatelja
+  // iz kataloga — i CLAUDE_CODE_OAUTH_TOKEN (Claude pretplata), koji model-config nema kao envKey.
+  const katalog = DAVATELJI_AI.flatMap(d => d.tajne.map(ime => ({ envKey: ime, izvor: `davatelj.${d.id}` })))
   return dopustenaImena({
-    davatelji: davatelji.filter(d => d.envKey).map(d => ({ envKey: d.envKey, izvor: `davatelj.${d.id}` })),
+    davatelji: [...davatelji.filter(d => d.envKey).map(d => ({ envKey: d.envKey, izvor: `davatelj.${d.id}` })), ...katalog],
     moduli,
     dodatna: ucitajPostavkeTajni().dodatnaImena,
   })
