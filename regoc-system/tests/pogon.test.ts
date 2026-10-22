@@ -11,15 +11,19 @@
  */
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
 import { cpSync, mkdtempSync, rmSync, symlinkSync, existsSync, mkdirSync, readlinkSync, lstatSync, writeFileSync } from 'fs'
-import { join } from 'path'
+import { join, basename } from 'path'
 import { tmpdir } from 'os'
 import { spawnSync } from 'child_process'
 import { Database } from 'bun:sqlite'
 
 const KORIJEN = join(import.meta.dir, '..')
+// The template (deploy/…/predlozak) is not a komplet: no sources, schema.sql, MANIFEST or generated
+// lists until gradi_komplet.sh builds one. There the tests skip instead of failing (TASK-5662).
+const PREDLOZAK = basename(KORIJEN) === 'predlozak' && !existsSync(join(KORIJEN, 'MANIFEST.sha256'))
 let dom: string, k: string, tm: string
 
 beforeAll(() => {
+  if (PREDLOZAK) return
   dom = mkdtempSync(join(process.env.TMPDIR || tmpdir(), 'komplet-pogon-'))
   k = join(dom, '.claude', 'regoc')
   tm = join(dom, '.taskmanager')
@@ -36,7 +40,7 @@ afterAll(() => { if (dom) rmSync(dom, { recursive: true, force: true }) })
 
 const okolina = () => ({ ...process.env, HOME: dom, TM_KOMPLET_STVORENO: join(dom, 'stvoreno.txt') })
 
-describe('messages.db', () => {
+describe.skipIf(PREDLOZAK)('messages.db', () => {
   test('schema.sql is part of the komplet', () => {
     expect(existsSync(join(KORIJEN, 'schema.sql'))).toBe(true)
   })
@@ -55,7 +59,7 @@ describe('messages.db', () => {
   }, 60_000)
 })
 
-describe('instalacija.sh: messages.db for the daemon', () => {
+describe.skipIf(PREDLOZAK)('instalacija.sh: messages.db for the daemon', () => {
   // RegocDaemon opens messages.db directly (getDb) and never runs schema.sql — on a fresh node
   // the main loop then fails every second. instalacija.sh creates the tables once.
   test('after instalacija.sh messages.db has the messages table; second run: ISTO', () => {
@@ -78,7 +82,7 @@ describe('instalacija.sh: messages.db for the daemon', () => {
   })
 })
 
-describe('instalacija.sh --tm-home', () => {
+describe.skipIf(PREDLOZAK)('instalacija.sh --tm-home', () => {
   test('data/regoc.db points to the package board database; second run: ISTO', () => {
     const a = ['instalacija.sh', '--tm-home', tm]
     const r1 = spawnSync('bash', [join(k, a[0]!), ...a.slice(1)], { env: okolina(), encoding: 'utf-8' })

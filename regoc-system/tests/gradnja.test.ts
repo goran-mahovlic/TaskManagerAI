@@ -10,15 +10,19 @@
  */
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
 import { cpSync, mkdtempSync, readFileSync, rmSync, symlinkSync, existsSync, mkdirSync, readdirSync } from 'fs'
-import { join } from 'path'
+import { join, basename } from 'path'
 import { tmpdir } from 'os'
 import { spawnSync } from 'child_process'
 
 const KORIJEN = join(import.meta.dir, '..')
-const ULAZI = readFileSync(join(KORIJEN, 'ULAZI.txt'), 'utf-8').split('\n').map(s => s.trim()).filter(s => s && !s.startsWith('#'))
+// The template (deploy/…/predlozak) is not a komplet: no sources, schema.sql, MANIFEST or generated
+// lists until gradi_komplet.sh builds one. There the tests skip instead of failing (TASK-5662).
+const PREDLOZAK = basename(KORIJEN) === 'predlozak' && !existsSync(join(KORIJEN, 'MANIFEST.sha256'))
+const ULAZI = PREDLOZAK ? [] : readFileSync(join(KORIJEN, 'ULAZI.txt'), 'utf-8').split('\n').map(s => s.trim()).filter(s => s && !s.startsWith('#'))
 let dom: string, k: string
 
 beforeAll(() => {
+  if (PREDLOZAK) return
   dom = mkdtempSync(join(process.env.TMPDIR || tmpdir(), 'komplet-gradnja-'))
   k = join(dom, '.claude', 'regoc')
   mkdirSync(join(dom, '.claude'), { recursive: true })
@@ -33,7 +37,7 @@ afterAll(() => { if (dom) rmSync(dom, { recursive: true, force: true }) })
 const STVORENO = () => join(dom, 'stvoreno.txt')
 const okolina = () => ({ ...process.env, HOME: dom, TM_KOMPLET_STVORENO: STVORENO() })
 
-describe('instalacija.sh', () => {
+describe.skipIf(PREDLOZAK)('instalacija.sh', () => {
   test('first run: PROMIJENJENO, second run: ISTO', () => {
     const r1 = spawnSync('bash', [join(k, 'instalacija.sh')], { env: okolina(), encoding: 'utf-8' })
     expect(r1.status).toBe(0)
@@ -52,7 +56,7 @@ describe('instalacija.sh', () => {
   })
 })
 
-describe('bun build', () => {
+describe.skipIf(PREDLOZAK)('bun build', () => {
   test('ULAZI.txt names the daemon', () => {
     expect(ULAZI).toContain('RegocDaemon.ts')
   })

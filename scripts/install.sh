@@ -669,6 +669,9 @@ k_komplet() {
     echo "    komplet kopiran u $KOMPLET_DIR"
   fi
   greska="$(manifest_valja "$KOMPLET_DIR")" || { echo "    GREŠKA: $KOMPLET_DIR nakon kopije — $greska"; return 5; }
+  # ~/.tmp je radna mapa daemona kompleta (dnevnik, stanje); stvara se ovdje, prije upisa manifesta,
+  # pa ide u manifest ako je prije nije bilo — inače je prvi start daemona stvori izvan manifesta
+  suho || mkdir -p "$HOME/.tmp"
   if [ -f "$KOMPLET_DIR/package.json" ] && ! bez_buna; then
     local zig zapis="$KOMPLET_DIR/node_modules/.tm-instalacija"
     zig="$(cat "$KOMPLET_DIR/package.json" "$KOMPLET_DIR/bun.lock" 2>/dev/null | (shasum -a 256 2>/dev/null || sha256sum) | cut -c1-64)"
@@ -953,8 +956,9 @@ k_provjera() {
 # (P3.4: --do-nule briše po manifestu). Zajedničke roditeljske mape smiju samo ako su prazne.
 # K8 krug 1 (Mac, TASK-5662) — nakon --do-nule ostali su: ~/.config/uv (uv-receipt.json instalatora
 # uv-a), veza ~/.local/bin/python3.13 (`uv python install`) i ~/Library/Caches/bun (bun na macOS-u).
-ALATNE_MAPE="$HOME/.bun $HOME/.cache/uv $HOME/.cache/pip $HOME/.cache/huggingface $HOME/.local/share/uv $HOME/.local/share/claude $HOME/.local/state/claude $HOME/.claude $HOME/.claude.json \
-$HOME/.config/uv $HOME/.local/bin/python$PYTHON_BAZE $HOME/Library/Caches/bun $HOME/Library/Caches/pip"
+# K8 krug 4 (s --komplet): ~/.cache/claude (staging Claude instalatora) i ~/.tmp (radna mapa daemona kompleta).
+ALATNE_MAPE="$HOME/.bun $HOME/.cache/uv $HOME/.cache/pip $HOME/.cache/huggingface $HOME/.cache/claude $HOME/.local/share/uv $HOME/.local/share/claude $HOME/.local/state/claude $HOME/.claude $HOME/.claude.json \
+$HOME/.config/uv $HOME/.local/bin/python$PYTHON_BAZE $HOME/Library/Caches/bun $HOME/Library/Caches/pip $HOME/.tmp"
 ROD_MAPE="$HOME/.local/bin $HOME/.local/share $HOME/.local/state $HOME/.local $HOME/.cache $HOME/.config/systemd/user $HOME/.config/systemd $HOME/.config"
 # Stanje PRIJE instalacije bilježi PRVO pokretanje u $TM_HOME/instalacija-prije.txt i svako
 # sljedeće ga čita (QA K6 B3): inače ponovni prolaz nakon pada vidi ~/.bun, ~/.cache/uv… kao da

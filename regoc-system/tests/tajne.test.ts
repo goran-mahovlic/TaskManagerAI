@@ -6,16 +6,19 @@
  */
 import { describe, test, expect, afterAll } from 'bun:test'
 import { cpSync, mkdtempSync, readFileSync, rmSync, readlinkSync, lstatSync, mkdirSync, existsSync } from 'fs'
-import { join } from 'path'
+import { join, basename } from 'path'
 import { tmpdir } from 'os'
 import { spawnSync } from 'child_process'
 
 const KORIJEN = join(import.meta.dir, '..')
-const T = JSON.parse(readFileSync(join(KORIJEN, 'TAJNE.json'), 'utf-8'))
+// The template (deploy/…/predlozak) is not a komplet: no sources, schema.sql, MANIFEST or generated
+// lists until gradi_komplet.sh builds one. There the tests skip instead of failing (TASK-5662).
+const PREDLOZAK = basename(KORIJEN) === 'predlozak' && !existsSync(join(KORIJEN, 'MANIFEST.sha256'))
+const T = PREDLOZAK ? { tajne: [] } : JSON.parse(readFileSync(join(KORIJEN, 'TAJNE.json'), 'utf-8'))
 const dom = mkdtempSync(join(process.env.TMPDIR || tmpdir(), 'komplet-tajne-'))
 afterAll(() => rmSync(dom, { recursive: true, force: true }))
 
-describe('TAJNE.json', () => {
+describe.skipIf(PREDLOZAK)('TAJNE.json', () => {
   test('names only: each entry has name, components, required flag and HR/EN text — no value field', () => {
     expect(T.tajne.length).toBeGreaterThan(0)
     for (const t of T.tajne) {
@@ -35,7 +38,7 @@ describe('TAJNE.json', () => {
   })
 })
 
-describe('instalacija.sh --tm-home', () => {
+describe.skipIf(PREDLOZAK)('instalacija.sh --tm-home', () => {
   test('credentials.env → $TM_HOME/config/credentials.env (dangling until the first entry); second run ISTO', () => {
     const k = join(dom, '.claude', 'regoc'); mkdirSync(join(dom, '.claude'), { recursive: true })
     cpSync(KORIJEN, k, { recursive: true, verbatimSymlinks: true,

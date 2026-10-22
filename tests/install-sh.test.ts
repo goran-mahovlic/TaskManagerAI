@@ -388,6 +388,39 @@ describe('install.sh --komplet (regoc-system/ u paketu, TASK-5705)', () => {
     } finally { rmSync(o.korijen, { recursive: true, force: true }) }
   }, 90_000)
 
+  // K8 krug 4 (Mac, TASK-5662): nakon kruga s --komplet --do-nule je stao na D10 (provjeri-cisto: 1 ostatak).
+  // Daemon kompleta piše u ~/.tmp (regoc_daemon.log, regoc_status.json…), a Claude CLI instalator ostavlja
+  // ~/.cache/claude/staging — ni jedno nije bilo u manifestu, pa ~/.cache nije bila prazna, a ~/.tmp nitko nije ni vidio.
+  test('--komplet → daemon piše u ~/.tmp → --do-nule → provjeri-cisto = 0; ~/.tmp vlasnika stroja ostaje', () => {
+    for (const vlasnikova of [false, true]) {
+      // Claude instalator radi u K2.13, prije upisa manifesta — ovdje ga glumi instalacija.sh lažnog kompleta
+      const o = okruzje(`tmp-${vlasnikova}`, p => {
+        komplet(p); const k = join(p, 'regoc-system')
+        writeFileSync(join(k, 'instalacija.sh'), readFileSync(join(k, 'instalacija.sh'), 'utf-8') + 'mkdir -p "$HOME/.cache/claude/staging"\n'); manifest(k)
+      })
+      try {
+        const moja = join(o.home, '.tmp', 'moje.txt')
+        if (vlasnikova) { mkdirSync(dirname(moja), { recursive: true }); writeFileSync(moja, 'vlasnik') }
+        const r = pokreni(o, ARG)
+        expect(r.kod, r.izlaz).toBe(0)
+        expect(existsSync(join(o.home, '.tmp'))).toBe(true)              // mapa daemona postoji prije prvog pokretanja
+        writeFileSync(join(o.home, '.tmp', 'regoc_daemon.log'), 'daemon\n')
+        mkdirSync(join(o.korijen, 'tmp'), { recursive: true })
+        const s = (ime: string, argv: string[]) => Bun.spawnSync(['bash', `scripts/${ime}`, ...argv], {
+          cwd: o.paket, stdout: 'pipe', stderr: 'pipe',
+          env: { HOME: o.home, PATH: `${BUN_DIR}:/usr/bin:/bin`, USER: 'proba', LANG: 'C.UTF-8', TMPDIR: join(o.korijen, 'tmp'), TM_CISTO_VRATA: '1 2' },
+        })
+        const d = s('deinstaliraj.sh', ['--do-nule', '--da', '--bez-kopije'])
+        expect(d.exitCode, d.stdout.toString() + d.stderr.toString()).toBe(0)
+        const c = s('provjeri-cisto.sh', [])
+        expect(c.stdout.toString(), c.stderr.toString()).toBe('')
+        expect(existsSync(join(o.home, '.cache'))).toBe(false)
+        if (vlasnikova) expect(readFileSync(moja, 'utf-8')).toBe('vlasnik')
+        else expect(existsSync(join(o.home, '.tmp'))).toBe(false)
+      } finally { rmSync(o.korijen, { recursive: true, force: true }) }
+    }
+  }, 180_000)
+
   test('odredište postoji, a nije komplet → izlaz 5, ne prepisuje se', () => {
     const o = okruzje('tudje', komplet)
     try {

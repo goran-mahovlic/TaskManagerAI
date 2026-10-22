@@ -6,10 +6,13 @@
  */
 import { describe, test, expect } from 'bun:test'
 import { readFileSync, existsSync, readdirSync, lstatSync } from 'fs'
-import { join, relative } from 'path'
+import { join, relative, basename } from 'path'
 import { spawnSync } from 'child_process'
 
 const KORIJEN = join(import.meta.dir, '..')
+// The template (deploy/…/predlozak) is not a komplet: no sources, schema.sql, MANIFEST or generated
+// lists until gradi_komplet.sh builds one. There the tests skip instead of failing (TASK-5662).
+const PREDLOZAK = basename(KORIJEN) === 'predlozak' && !existsSync(join(KORIJEN, 'MANIFEST.sha256'))
 const PRESKOCI = new Set(['.git', 'node_modules', 'data', 'config', 'tmp'])
 
 function popisDatoteka(): string[] {
@@ -30,7 +33,8 @@ function popisDatoteka(): string[] {
 
 const sha256 = (p: string) => new Bun.CryptoHasher('sha256').update(readFileSync(p)).digest('hex')
 
-describe('MANIFEST.sha256', () => {
+describe.skipIf(PREDLOZAK)('MANIFEST.sha256', () => {
+  if (PREDLOZAK) { test('komplet only', () => {}); return }
   const redovi = readFileSync(join(KORIJEN, 'MANIFEST.sha256'), 'utf-8').trim().split('\n')
   const karta = new Map(redovi.map(r => { const m = r.match(/^([0-9a-f]{64}) {2}(.+)$/); if (!m) throw new Error(`bad line: ${r}`); return [m[2], m[1]] }))
 

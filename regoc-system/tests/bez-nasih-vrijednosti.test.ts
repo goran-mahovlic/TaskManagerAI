@@ -5,13 +5,17 @@
  * (`gradi_komplet.sh --javno`) from the same list that gates the export itself.
  */
 import { describe, test, expect } from 'bun:test'
-import { readFileSync, readdirSync, lstatSync } from 'fs'
-import { join, relative } from 'path'
+import { readFileSync, readdirSync, lstatSync, existsSync } from 'fs'
+import { join, relative, basename } from 'path'
 
 const KORIJEN = join(import.meta.dir, '..')
+// The template (deploy/…/predlozak) is not a komplet: no sources, schema.sql, MANIFEST or generated
+// lists until gradi_komplet.sh builds one. There the tests skip instead of failing (TASK-5662).
+const PREDLOZAK = basename(KORIJEN) === 'predlozak' && !existsSync(join(KORIJEN, 'MANIFEST.sha256'))
 const PRESKOCI = new Set(['.git', 'node_modules', 'data', 'config', 'tmp'])
-const OPCE: Array<[string, string]> = JSON.parse(readFileSync(join(import.meta.dir, 'brane-opce.json'), 'utf-8')).opce
-const TAJNE: string = JSON.parse(readFileSync(join(import.meta.dir, 'brane-opce.json'), 'utf-8')).tajne
+const BRANE = PREDLOZAK ? { opce: [], tajne: '' } : JSON.parse(readFileSync(join(import.meta.dir, 'brane-opce.json'), 'utf-8'))
+const OPCE: Array<[string, string]> = BRANE.opce
+const TAJNE: string = BRANE.tajne
 
 function* datoteke(d: string): Generator<string> {
   for (const i of readdirSync(d)) {
@@ -22,7 +26,8 @@ function* datoteke(d: string): Generator<string> {
   }
 }
 
-describe('no private values in the komplet', () => {
+describe.skipIf(PREDLOZAK)('no private values in the komplet', () => {
+  if (PREDLOZAK) { test('komplet only', () => {}); return }
   const pravila = [...OPCE.map(([k, r]) => [k, new RegExp(r)] as const), ['secret', new RegExp(TAJNE)] as const]
   const pogodci: string[] = []
   let broj = 0
