@@ -16,6 +16,7 @@ Instalaciju izvodi korisnik usluge `regoc` preko SSH-a. Log se čita ovako:
 | 1 | 2026-10-21 19:58 | `894bddd` | README korak 2, bez `--komplet` (README ga ne navodi; `config/komplet.lock` na GitHubu ne postoji) | pad | `K2.18-baze-pgvector` | 6 | 35,6 s | grana `zadatak/TASK-5662` (vidi niže) |
 | 2 | 2026-10-22 02:59 | `1172fa2` | README korak 2, bez `--komplet` (isti razlog) | **uspjeh** | — | 0 | 76,0 s | — |
 | 3 | 2026-10-22 17:04 | `a5e4257` | README korak 2, **s `--komplet`** (D3 = B, komplet je `regoc-system/`) | instalacija **uspjeh**, daemon u pogonu **pad** | — (`hr.regoc.daemon`: glavna petlja) | 0 | 109,9 s | `~/.claude/regoc` `b1434df` + grana `zadatak/TASK-5662` (vidi niže) |
+| 4 | 2026-10-22 20:50 | `c8e9b5d` | README korak 2, s `--komplet` | **uspjeh**; daemon u pogonu radi (0× `no such table`) | — (čišćenje prije kruga: `D10-provjera` izlaz 8; u pogonu: `./tools/decompose`, CPU daemona u mirovanju ≈ 8 %) | 0 | 149,3 s | grana `zadatak/TASK-5662` `428e8cb` + `~/.claude/regoc` `4d57427` (vidi niže) |
 
 ## Krug 1 — 2026-10-21
 
@@ -199,3 +200,63 @@ Do kruga 4 je `hr.regoc.daemon` na Macu ugašen (`launchctl bootout`), da dnevni
 
 **Sljedeće:** vlasnik pusha granu `zadatak/TASK-5662` → `deinstaliraj.sh --do-nule` + `rm -rf ~/TaskManagerAI`
 → `provjeri-cisto.sh` = 0 → krug 4 s `--komplet`, zatim pravi restart Maca u dogovoru s vlasnicom stroja.
+
+## Krug 4 — 2026-10-22 (s `--komplet`, `c8e9b5d`)
+
+**Prije:** vlasnik je pushao `c8e9b5d` (TASK-5718), `git ls-remote` na Macu → `refs/heads/main` = `c8e9b5d`.
+Na konzoli je bila prijavljena vlasnica stroja.
+
+**Čišćenje (pad, nije instalacija):** `deinstaliraj.sh --do-nule --da --bez-kopije` (iz klona kruga 3) → izlaz 8,
+`D10-provjera` „1 ostatak": `~/.cache` nije prazna (`~/.cache/claude/staging`, prazna mapa Claude instalatora),
+a `~/.tmp` (`regoc_daemon.log`, `regoc_status.json`, `regoc_mode.json` daemona kompleta) provjera nije ni
+vidjela. Ni jedno nije bilo u manifestu: `~/.cache/claude` nije bila na popisu `ALATNE_MAPE`, a `~/.tmp`
+stvara tek daemon kompleta.
+Popravak `428e8cb`: `ALATNE_MAPE` += `~/.cache/claude`, `~/.tmp`; `k_komplet` stvara `~/.tmp` prije upisa
+manifesta. `~/.tmp` koja je postojala prije instalacije ostaje vlasniku. Test `install-sh` „--komplet → daemon
+piše u ~/.tmp → --do-nule → provjeri-cisto = 0" je crven na `c8e9b5d`, a s popravkom zelen.
+Ostatke kruga 3 (stara inačica ih nije upisala u manifest) uklonila sam ručno: 3 datoteke u `~/.tmp`, prazne
+mape `~/.cache/claude/staging`, `~/.cache/claude` i `~/.cache`. Zatim `rm -rf ~/TaskManagerAI` i
+`provjeri-cisto.sh` → „čisto (0 ostataka)", izlaz 0.
+
+**Izvedeno:** `git clone …` → `bash scripts/install.sh --cvor <čvor> --profil upravitelj-cvora --baze --komplet`
+(`sudo -n true` umjesto `sudo -v`).
+
+**Ishod instalacije:** `install-rezultat.json` → `"ishod":"uspjeh"`, `"izlaz":0`, 30 koraka (promijenjeno 22,
+preskočeno 8), 149,3 s, `paket_commit` = `c8e9b5d`. Jedino upozorenje je `K2.3-preduvjeti` (sudo).
+
+**Provjere K8:**
+
+| Kriterij | Izmjereno |
+|---|---|
+| ishod instalacije | `uspjeh`, 0 koraka s izlazom ≠ 0, iz prvog pokušaja nakon čišćenja |
+| `launchctl print system/hr.regoc.{taskmanager,daemon}` | oba `state = running`; `pgvector`, `hindsight`, `znanje` učitani i ugašeni |
+| pogon daemona (popravak kruga 3) | `daemon.log`: 0× `no such table: messages`, 0× `unable to open database`, 0× `Error in main loop`; `messages.db` ima tablicu `messages`; `data/regoc.db → $TM_HOME/data/tasks.db`; „Vrata autonomije: sesija 70/85/95 %, tjedan 90 %" (postavka pročitana) |
+| HTTP preko tailneta | `<tailnet-IP>` → 200; ime MagicDNS → 403 dok ga vlasnik ne upiše, pa 200 nakon lokalnog dopisivanja u `postavke.env` (uputa #448, isto kao u krugu 3); tuđi `Host` → 403 |
+| vrata s LAN-a | ploča sluša samo na `127.0.0.1` i `<tailnet-IP>`; `curl <LAN-IP>:{17781,15432,15433,17792,17796,17797}` → rc 7 |
+| bootcheck | `VERDIKT: PASS (upozorenja: M5, M7, M8, M9)`, ista očekivana upozorenja kao u krugu 3 (K9) |
+| `git status --porcelain` | prazno |
+| preživi restart | `launchctl bootout` + `bootstrap` obje usluge → `state = running` (novi PID-ovi), tailnet 200, MagicDNS 200, tuđi Host 403. Pravi restart Maca **nije** napravljen: vlasnica stroja je bila prijavljena na konzoli (uputa #448) |
+
+**Nalazi u pogonu (nisu pad instalacije, popravljeni za krug 5):**
+1. **`./tools/decompose`:** `[razlaganje] pump pao: Cannot find module './tools/decompose'` svake minute.
+   Na stroju REGOČ-a `tools/decompose.ts` je poveznica na `orkestracija/decompose.ts`. Izvoz je uzimao samo
+   cilj iz metafilea, pa `bun build` prolazi (bun nerazriješen dinamički `import()` označi kao `external`, ne kao
+   grešku), a u pogonu modula nema. Popravak u izvozu (`gradi_komplet.sh`, `~/.claude/regoc` `4d57427`):
+   poveznice kroz koje kod uvozi (polje `original` u metafileu) ulaze u komplet same, bez ručnog popisa.
+   Test kompleta `pogon.test.ts` („every relative import reachable from ULAZI.txt names an existing file")
+   je crven na kompletu iz `c8e9b5d` (`RegocDaemon.ts → ./tools/decompose`), a zelen na novom kompletu (34 pass, 0 fail).
+2. **CPU u mirovanju:** daemon je trošio 9,1 s CPU-a u 120 s (≈ 7,6 %). `sample` pokazuje `__posix_spawn`, a
+   u stablu procesa vidi se `ps -o command= -p <pid>` za svaki PID na stroju. Uzrok je watchdog Klaudija:
+   kad nema pid-datoteke, svake minute provjerava naredbu svakog procesa. Na Linuxu je to čitanje `/proc`,
+   na macOS-u jedan `ps` po procesu (≈ 400). Klaudija na čvoru nema (`telegram_agent.ts` nije u kompletu), pa je
+   watchdog uz to svaki put restartao modul koji ne postoji. Popravak (`~/.claude/regoc` `4d57427`): watchdog
+   miruje kad `telegram_agent.ts` nije instaliran; sken procesa ide jednim pozivom (`platforma.procesi()`,
+   na macOS-u jedan `ps -A`). Testovi `klaudio-liveness` (2 nova, crveno → zeleno).
+3. **Otvoreno (K9 / komplet):** `[odlucitelj] alat tools/odlucitelj.py nije pronađen` (Python alati daemona nisu
+   dio kompleta), `REGOC_AGENTS.json` i `GEMINI.md` kao u krugu 3. Ne ruše petlju, a postavke su čvora.
+
+Do kruga 5 je `hr.regoc.daemon` na Macu ugašen (`launchctl bootout`), da ne troši CPU dok vlasnica radi.
+
+**Sljedeće:** vlasnik pusha granu `zadatak/TASK-5662` → `deinstaliraj.sh --do-nule` + `rm -rf ~/TaskManagerAI`
+→ `provjeri-cisto.sh` = 0 → krug 5 s `--komplet` (provjera: 0× `tools/decompose`, CPU daemona u mirovanju),
+pravi restart Maca kad vlasnica stroja nije prijavljena.

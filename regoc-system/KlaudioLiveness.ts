@@ -24,7 +24,7 @@
 import { existsSync, readFileSync, writeFileSync, readdirSync, unlinkSync } from 'fs'
 import { join } from 'path'
 import { homedir } from 'os'
-import { cmdline, pidovi } from './lib/platforma'
+import { cmdline, pidovi, procesi } from './lib/platforma'
 
 const HOME = process.env.HOME || homedir()
 
@@ -42,6 +42,11 @@ export interface LivenessDeps {
   isAlive: (pid: number) => boolean
   cmdlineOf: (pid: number) => string | null
   scanPids: () => number[]
+  /**
+   * TASK-5662: svi procesi s naredbom JEDNIM pozivom (platforma.procesi). Kad postoji, sken ga koristi
+   * umjesto cmdlineOf po PID-u — na macOS-u je to jedan `ps` po procesu (~400 svake minute).
+   */
+  scanProcesses?: () => Array<{ pid: number; cmd: string }>
   /** TASK-4894: brisanje pid filea koji laže. Neobavezno — stari pozivatelji ga nemaju. */
   removePidFile?: (path: string) => void
 }
@@ -76,6 +81,15 @@ export function findKlaudioPid(deps: LivenessDeps, paths: PidFilePaths): number 
   }
 
   // 3) Oba fajla lažu — nađi proces skenom i posvoji ga.
+  if (deps.scanProcesses) {
+    for (const { pid, cmd } of deps.scanProcesses()) {
+      if (cmd.includes(KLAUDIO_CMDLINE_MARKER) && deps.isAlive(pid)) {
+        syncWatchdogPidFile(deps, paths, pid)
+        return pid
+      }
+    }
+    return null
+  }
   for (const pid of deps.scanPids()) {
     if (isKlaudio(pid)) {
       syncWatchdogPidFile(deps, paths, pid)
@@ -168,6 +182,9 @@ export const realDeps: LivenessDeps = {
   },
   scanPids(): number[] {
     return pidovi()
+  },
+  scanProcesses(): Array<{ pid: number; cmd: string }> {
+    return procesi()
   },
 }
 

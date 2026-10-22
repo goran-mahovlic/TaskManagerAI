@@ -10,8 +10,8 @@
  * Everything runs in a temporary HOME; nothing outside it is read or written.
  */
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
-import { cpSync, mkdtempSync, rmSync, symlinkSync, existsSync, mkdirSync, readlinkSync, lstatSync, writeFileSync } from 'fs'
-import { join, basename } from 'path'
+import { cpSync, mkdtempSync, rmSync, symlinkSync, existsSync, mkdirSync, readlinkSync, lstatSync, writeFileSync, readdirSync, readFileSync, realpathSync } from 'fs'
+import { join, basename, dirname, relative } from 'path'
 import { tmpdir } from 'os'
 import { spawnSync } from 'child_process'
 import { Database } from 'bun:sqlite'
@@ -108,4 +108,37 @@ describe.skipIf(PREDLOZAK)('instalacija.sh --tm-home', () => {
       expect(r.stdout).toContain('ostavljam data/regoc.db')
     } finally { rmSync(d2, { recursive: true, force: true }) }
   })
+})
+
+describe.skipIf(PREDLOZAK)('relative imports resolve in the komplet itself (not only in the bundle)', () => {
+  // `bun build` follows a link such as tools/decompose.ts → orkestracija/decompose.ts and records only
+  // the target, so the build passes while `await import('./tools/decompose')` fails at runtime when
+  // the link is missing (TASK-5662, Mac round 4: the decomposition pump failed every minute).
+  // The metafile lists every import the entries really reach (type-only imports are erased), with
+  // the specifier as written in `original`; each relative one must name a file of the komplet tree.
+  test('every relative import reachable from ULAZI.txt names an existing file', () => {
+    const r = spawnSync('bash', [join(k, 'instalacija.sh'), '--tm-home', tm], { env: okolina(), encoding: 'utf-8' })
+    expect(r.status).toBe(0)
+    const ulazi = readFileSync(join(k, 'ULAZI.txt'), 'utf-8').split('\n').map(s => s.trim()).filter(s => s && !s.startsWith('#'))
+    expect(ulazi).toContain('RegocDaemon.ts')
+    const fali = new Set<string>()
+    for (const u of ulazi) {
+      const meta = join(dom, `meta-${u.replace(/\//g, '_')}.json`)
+      const b = spawnSync(process.execPath, ['build', u, '--target=bun', `--outdir=${join(dom, 'out-uvozi')}`, `--metafile=${meta}`],
+        { cwd: k, env: okolina(), encoding: 'utf-8' })
+      expect(b.status).toBe(0)
+      for (const [ulaz, v] of Object.entries<any>(JSON.parse(readFileSync(meta, 'utf-8')).inputs)) {
+        if (ulaz.includes('node_modules/')) continue
+        for (const i of v.imports ?? []) {
+          // an unresolved dynamic import does not fail the build: bun marks it external and keeps the specifier
+          const o: string = i.original ?? (i.external ? i.path : '')
+          if (!o.startsWith('./') && !o.startsWith('../')) continue
+          // bun resolves from the real path of a linked module (the link itself may sit elsewhere)
+          const osnova = join(dirname(realpathSync(join(k, ulaz))), o)
+          if (!['', '.ts', '.tsx', '.js', '.json', '/index.ts'].some(x => existsSync(osnova + x))) fali.add(`${relative(k, realpathSync(join(k, ulaz)))} → ${o}`)
+        }
+      }
+    }
+    expect([...fali]).toEqual([])
+  }, 120_000)
 })

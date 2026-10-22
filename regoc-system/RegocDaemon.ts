@@ -1272,10 +1272,21 @@ function isKlaudioRunning(): boolean {
   return isKlaudioAlive()
 }
 
+let klaudioNijeInstaliranJavljeno = false
+
 async function watchdogCheckKlaudio(): Promise<void> {
   // Appliance/headless (bez Telegrama): ENABLE_KLAUDIO=0 → watchdog no-op (inače beskonačni restart-spam).
   const _kf = (process.env.ENABLE_KLAUDIO ?? '').toLowerCase()
   if (_kf === '0' || _kf === 'false' || _kf === 'off' || _kf === 'no') return
+  // TASK-5662 (Mac, krug 4): čvor s kompletom nema Klaudija (telegram_agent.ts nije dio kompleta).
+  // Bez ove provjere watchdog je svake minute skenirao sve procese i restartao modul koji ne postoji.
+  if (!existsSync(join(TELEGRAM_HOME, 'telegram_agent.ts'))) {
+    if (!klaudioNijeInstaliranJavljeno) {
+      klaudioNijeInstaliranJavljeno = true
+      log(`[WATCHDOG] Klaudio nije instaliran na ovom stroju (${join(TELEGRAM_HOME, 'telegram_agent.ts')}) — watchdog miruje`)
+    }
+    return
+  }
   try {
     if (isKlaudioRunning()) {
       // TASK-3685: oporavak — čim je Klaudio opet živ, brojač neuspjeha pada na 0.
