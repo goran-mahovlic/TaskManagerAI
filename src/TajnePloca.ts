@@ -17,7 +17,7 @@ import { adresePloce, citajInstancu, prepoznajZahtjevTajne, primateljiKoda, uput
 import type { UlaznaPoruka } from './razgovor/Kanal'
 import { obradiTajne, type KontekstTajni, type OdgovorTajni, type PostavkeTajni } from './TajneApi'
 import { datotekaTajniZaPisanje } from './core/ConfigModul'
-import { konfigPutanja, stanjePutanja, TM_ROOT } from './core/paths'
+import { konfigPutanja, stanjePutanja, TM_DB, TM_ROOT } from './core/paths'
 import { join } from 'path'
 import { loadEmailConfig } from './EmailConfig'
 import { loadNextcloudConfig } from './NextcloudConfig'
@@ -26,6 +26,8 @@ import { loadGitLabConfig } from './GitLabConfig'
 import { loadTelegramConfig, telegramBotToken, telegramApiBaza } from './TelegramConfig'
 import { ENV_LOZINKE } from './rag/rag-backend-config'
 import { tajneKompleta } from './TajneKompleta'
+import { imenaTajniKanala } from './razgovor/BotKanal'
+import { createBotKanalReader } from './razgovor/BotKanalPostavke'
 
 export const tajnePostavkePutanja = (): string => konfigPutanja('tajne.json', 'TM_TAJNE_POSTAVKE')
 
@@ -50,7 +52,7 @@ export function ucitajPostavkeTajni(
 }
 
 /** §6.1 — računa se uživo pri svakom zahtjevu (promjena modula odmah mijenja popis). */
-export function imenaTajniPloce(davatelji: { id: string; envKey?: string }[]): DopustenoIme[] {
+export function imenaTajniPloce(davatelji: { id: string; envKey?: string }[], botKanalDb: string = TM_DB): DopustenoIme[] {
   const moduli: DopustenoIme[] = []
   const uzmi = (fn: () => { ime?: string; izvor: string }[]) => {
     try { for (const m of fn()) if (m.ime) moduli.push({ ime: m.ime, izvor: m.izvor }) } catch { /* modul bez konfiguracije */ }
@@ -61,6 +63,8 @@ export function imenaTajniPloce(davatelji: { id: string; envKey?: string }[]): D
   uzmi(() => [{ ime: loadGitLabConfig().tokenEnv, izvor: 'gitlab' }])
   uzmi(() => [{ ime: loadTelegramConfig().botTokenEnv, izvor: 'telegram' }])
   uzmi(() => [{ ime: ENV_LOZINKE, izvor: 'rag.pgvector' }])
+  // TASK-5728: tajne kanala bot↔bot (zajednički par + par po drugom botu iz Config → Razgovor).
+  uzmi(() => imenaTajniKanala(createBotKanalReader(botKanalDb, 0)().drugi.map(d => d.ime)))
   // TASK-5705 (uputa #441): tajne kompleta regoc-system/ iz njegovog TAJNE.json (samo uz --komplet)
   try { moduli.push(...tajneKompleta()) } catch { /* bez kompleta */ }
   return dopustenaImena({

@@ -403,3 +403,44 @@ Ovo provodi §13 (a). Ugovor je opisan u `docs/API.md` → „Kanal bot↔bot".
   „naše vrijednosti" nad commitovima TASK-194 i test arhitekture koji traži putanju čvora. Ostali
   testovi: kanal i razgovor na čvoru 122/0, Klaudijev kraj 16/0, glavna ploča 5/0, ukršteni E2E
   oba kraja 1/0 (Klaudio → Šaban → glavna ploča s 172.24.0.1 → stop, tajne nisu na žici).
+
+## 15. Tajne po drugom botu (TASK-5728, Jelena; pregled Malik)
+
+Klaudio uz Šabana dobiva drugog sugovornika: bota na drugom čvoru (Mac), u njegovoj grupi. Uz jedan
+par tajni Mac bi dobio iste tajne kao Šaban i mogao bi se predstaviti kao on, a i obratno.
+- **Par po drugom botu.** Imena su `TM_BOT_KANAL_TAJNA_SLANJE_<IME>` i `…_PRIMANJE_<IME>`. `<IME>` je
+  `DrugiBot.ime` velikim slovima, a svaki znak osim slova i brojke postaje `_` (`imeTajneZa`).
+  Zajednički par bez sufiksa vrijedi samo uz izričito dopuštenje (`tajnaZaBota`). Klaudijev kraj
+  ga dopušta samo Šabanu (`ZAJEDNICKE_TAJNE_ZA`), a paket samo dok ima jednog drugog bota.
+- **Potpis određuje pošiljatelja.** Vrata provjeravaju potpis tajnom primanja svakog drugog bota.
+  Bot čija je tajna potvrdila potpis je pošiljatelj. Ako je `izvor` u tijelu drugi poznati bot,
+  odgovor je `401`, a nepoznati izvor i dalje dobiva `403`. Dva bota s istom tajnom primanja ne
+  primaju se, jer se iz potpisa ne vidi tko je poslao.
+- **Bot je vezan uz svoje chatove.** `DrugiBot.chatovi` na Klaudijevu kraju dolazi iz
+  `grupe.json`, gdje je svaka grupa vezana uz svog bota. Na paketu se upisuje u
+  `razgovor.botKanal.drugi`, a uz dva ili više botova je obavezan. Pravila koja iz toga slijede:
+  - prijenos, zapis i stop idu samo botovima tog chata, svakom potpisani njegovom tajnom;
+  - poruka, zapis ili stop za tuđi chat dobiva `403`;
+  - `GET /stanje` vraća samo zastavice chatova tog bota.
+- **Tajne nikad ne idu modelu.** `okolinaRazgovora` izbacuje i hrvatska imena (`TAJN`, `LOZINK`).
+  Bez toga bi `TM_BOT_KANAL_TAJNA_*` iz okoline ploče završio u okolini `claude -p` (Malik, nalaz 1).
+  Klaudio zatamnjuje sve vrijednosti `TM_BOT_KANAL_TAJNA_*` u odgovoru bot-poteza (`tajne.sve()`).
+- **Stranica Tajne čvora.** Popis nudi zajednički par i par za svakog drugog bota iz postavki
+  kanala (`imenaTajniKanala`). `imeZabranjeno` ima usku iznimku samo za ta imena; ostali `TM_*`
+  ostaju zabranjeni. Paket tajnu čita uživo iz okoline i spremišta čvora (`procitajTajnu`), pa
+  upis na stranici vrijedi bez restarta.
+- **Prijenos vrijednosti za Mac.** Vrijednosti prenose ljudi (vlasnik glavnog stroja ↔ vlasnik
+  Maca), nikad agent ni chat:
+  - vlasnik glavnog stroja u `~/.claude/tools/Telegram/config/.env` (0600) upisuje
+    `TM_BOT_KANAL_TAJNA_SLANJE_<IME>` i `TM_BOT_KANAL_TAJNA_PRIMANJE_<IME>` (`<IME>` = ime bota Maca u `grupe.json`), svaku od
+    64 hex znaka (`openssl rand -hex 32`);
+  - vlasnik Maca na stranici Tajne svoje ploče upisuje **samo**
+    `TM_BOT_KANAL_TAJNA_PRIMANJE_KLAUDIO` (= `…_SLANJE_<IME>` glavnog stroja) i
+    `TM_BOT_KANAL_TAJNA_SLANJE_KLAUDIO` (= `…_PRIMANJE_<IME>` glavnog stroja);
+  - Šabanov zajednički par se na Mac **ne** prepisuje (Malik, nalaz 5).
+- **Uključenje grupe Maca.** Unos u `grupe.json` ostaje `ukljucen:false` dok tajne
+  nisu upisane na oba kraja i dok Klaudio i glavna ploča nisu restartani s ovim kodom.
+- **Otvoreno za sljedeći krug (Malik).** Ova dva nalaza nisu riješena u TASK-5728:
+  - nalaz 3: `stopKorisnici` se na Klaudijevu kraju spajaju preko grupa, a trebali bi vrijediti
+    po chatu;
+  - nalaz 4: u potpis treba uključiti ime primatelja i odbiti iste tajne slanja među botovima.

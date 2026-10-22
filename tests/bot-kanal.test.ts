@@ -373,7 +373,7 @@ describe('BotKanalPostavke', () => {
       const put = join(m, 't.db')
       new Database(put).close()
       const r = botKanalGet(put, null, { TM_BOT_KANAL_TAJNA_PRIMANJE: TAJNA })
-      expect((r.tijelo as any).tajna).toEqual({ slanje: 'nedostaje', primanje: 'postavljena' })
+      expect((r.tijelo as any).tajna).toEqual({ slanje: 'nedostaje', primanje: 'postavljena', poBotu: [] })
       expect(JSON.stringify(r.tijelo)).not.toContain(TAJNA)
     } finally { rmSync(m, { recursive: true, force: true }) }
   })

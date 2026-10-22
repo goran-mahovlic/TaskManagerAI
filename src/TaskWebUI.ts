@@ -82,7 +82,7 @@ import { probajUlaz, stanjeUlaza, pokreniTelegramPoller, uskladiTelegramPoller, 
 import { posaljiDokumenteZadatka } from './razgovor/SendDocZadatka'
 import {
   botKanalGet, botKanalPut, botKanalRucno, odBotaPost, odBotaZapis, razgovorGet, razgovorPut, razgovorPovijestGet, sklopiRazgovor,
-  zadnjiPosiljatelji, plocaIzTaskManagera, type RazgovorSloj,
+  zadnjiPosiljatelji, plocaIzTaskManagera, tajneKanala, type RazgovorSloj,
 } from './razgovor/RazgovorPloca'
 import { citajKonzolu, zapisiKonzolu } from './razgovor/Zapis'
 import { probaModela as probaDezurnog, simulirajPad as simulirajPadPrimarnog, citajStanje as citajStanjeDezurnog } from './Dezurni'
@@ -9791,7 +9791,10 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       var csv = function(a) { return _esc((a || []).join(', ')); };
       return '<b>' + _T('cfg_bk_naslov', 'Bot↔bot (LAN)') + '</b>' +
         '<div class="cfg-napomena">' + _T('cfg_bk_opis', 'Telegram botu ne isporučuje poruke drugog bota, pa dva bota razgovaraju preko LAN-a (poruka u grupi ostaje za ljude). Odgovor koji spominje @drugog bota ide mu i LAN-om. „Prekini komunikaciju" od stop-korisnika odmah zaustavlja razmjenu; nastavak samo gumbom ili „Nastavi komunikaciju". Bot-poruka nikad ne otvara zadatak.') +
-          '<br>' + _T('cfg_bk_tajna', 'Tajne (TM_BOT_KANAL_TAJNA_SLANJE / _PRIMANJE u okolini stroja, HMAC potpis)') + ': <b>' + _esc(d.tajna ? ('slanje ' + d.tajna.slanje + ' · primanje ' + d.tajna.primanje) : '?') + '</b> · ' + _T('cfg_bk_ja', 'ime ovog kraja') + ': <code>' + _esc(d.ja || '?') + '</code>' +
+          '<br>' + _T('cfg_bk_tajna', 'Tajne (TM_BOT_KANAL_TAJNA_SLANJE / _PRIMANJE u okolini stroja, HMAC potpis)') + ': <b>' + _esc(d.tajna ? ('slanje ' + d.tajna.slanje + ' · primanje ' + d.tajna.primanje) : '?') + '</b>' +
+          // TASK-5728: par po drugom botu (<IME> sufiks) — upisuje se na stranici Tajne.
+          ((d.tajna && d.tajna.poBotu) || []).map(function(t) { return ' · <code>' + _esc(t.ime) + '</code>: ' + _esc('slanje ' + t.slanje + ' · primanje ' + t.primanje) + ' <span style="color:var(--text-secondary)">(' + _esc(t.imeSlanja + ' / ' + t.imePrimanja) + ')</span>'; }).join('') +
+          ' · ' + _T('cfg_bk_ja', 'ime ovog kraja') + ': <code>' + _esc(d.ja || '?') + '</code>' +
           '<br>' + _T('cfg_bk_ovdje', 'Ovaj kraj') + ': ' + _bkZastavice(d.zastavice) +
           '<br>' + _T('cfg_bk_drugi_kraj', 'Drugi kraj') + ': ' + drugiKraj +
         '</div>' + upoz +
@@ -11771,6 +11774,8 @@ function razgovorSloj(): RazgovorSloj {
     plocaUrl: `http://127.0.0.1:${PORT}`,
     instalacija: process.env.TM_NAZIV || osHostname(),
     env: process.env,
+    // TASK-5728: tajne kanala bot↔bot i iz spremišta čvora (stranica Tajne), bez restarta ploče.
+    citajTajnu: ime => procitajTajnu(ime),
     dokumentiMape: [join(TM_DATA, 'izvjestaji')],
     // TASK-5337: datoteke primljene u chat i one koje bot izradi uz njih (privitci/<chatId>).
     dokumentiMapeChata: (kanal: string, chatId: string) => {
@@ -11980,11 +11985,14 @@ async function handleOdBota(req: Request, put: string): Promise<Response> {
 async function handleBotKanalConfigGet(): Promise<Response> {
   try {
     const sloj = razgovorSloj()
-    const r = botKanalGet(TM_DB, sloj, process.env)
+    const citaj = (ime: string) => procitajTajnu(ime)
+    const r = botKanalGet(TM_DB, sloj, citaj)
     // Stanje drugog kraja (ADR-0003 §7) — kartica pokazuje oba; tajna ide samo u zaglavlje.
     const tijelo = r.tijelo as any
-    const slanje = process.env.TM_BOT_KANAL_TAJNA_SLANJE || ''
+    const tajne = tajneKanala(citaj, () => (tijelo.postavke?.drugi || []).length)
     tijelo.drugiKraj = await Promise.all((tijelo.postavke?.drugi || []).map(async (d: any) => {
+      // TASK-5728: svaki drugi bot svojom tajnom slanja.
+      const slanje = tajne.slanje(d.ime) || ''
       if (slanje.length < MIN_TAJNA || !tijelo.postavke.ukljucen) return { ime: d.ime, greska: 'kanal isključen ili tajna slanja nedostaje' }
       // TASK-5291 (N3): upit samo hostu s popisa adresa — `drugi.url` može promijeniti bilo tko s mreže.
       if (!smijeTajnuNa(d.url, tijelo.postavke.adrese || [])) return { ime: d.ime, greska: 'host adrese ploče nije u popisu adresa — upit ne ide' }

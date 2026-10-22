@@ -169,7 +169,10 @@ const ZABRANA = [
  * Prefiks `CLAUDE_` ostaje zabranjen za sva ostala imena (npr. CLAUDE_CONFIG_DIR).
  */
 const IZNIMKE_ZABRANE = new Set(['CLAUDE_CODE_OAUTH_TOKEN'])
-export const imeZabranjeno = (ime: string): boolean => !IZNIMKE_ZABRANE.has(ime) && ZABRANA.some(r => r.test(ime))
+/** Tajne kanala bot↔bot (TASK-5728): zajednički par i par po drugom botu — vlasnik čvora ih upisuje na stranici Tajne. */
+const IZNIMKA_KANALA = /^TM_BOT_KANAL_TAJNA_(SLANJE|PRIMANJE)(_[A-Z0-9_]{1,40})?$/
+export const imeZabranjeno = (ime: string): boolean =>
+  !IZNIMKE_ZABRANE.has(ime) && !IZNIMKA_KANALA.test(ime) && ZABRANA.some(r => r.test(ime))
 
 const SUFIKS_DODATNIH = /^[A-Z][A-Z0-9_]{1,63}_(PASSWORD|PASS|TOKEN|SECRET|KEY|API_KEY)$/
 

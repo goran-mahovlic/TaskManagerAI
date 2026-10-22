@@ -23,7 +23,7 @@ import { procitajPosiljatelje, zabiljeziPosiljatelja, type Posiljatelj } from '.
 import { ciljRazgovora, SNIMKA_KLJUC, type CiljRazgovora } from '../core/models/PrebaciSve'
 import { procitajTajnu } from '../core/ConfigModul'
 import type { RazgovorUlaza } from '../TelegramPoller'
-import { MIN_TAJNA, cistaAdresa, stvoriBotKanal, type BotKanal, type Zahtjev } from './BotKanal'
+import { MIN_TAJNA, TAJNA_PRIMANJA, TAJNA_SLANJA, cistaAdresa, imeTajneZa, stvoriBotKanal, tajnaZaBota, type BotKanal, type Zahtjev } from './BotKanal'
 import {
   botKanalPovijest, createBotKanalReader, getBotKanalPostavke, parseBotKanalPatch, setBotKanalPostavke, spremisteUBazi,
 } from './BotKanalPostavke'
@@ -124,6 +124,22 @@ export interface SklapanjeOpcije extends Omit<RazgovorOvisnosti, 'postavke' | 'i
   agentiPut?: string
   /** Vlasnik čvora: primatelji koda za tajne (TASK-5373) — vlastito ime ga ne utišava. */
   vlasnici?: () => string[]
+  /**
+   * Tajna po imenu (TASK-5728): okolina pa spremište tajni čvora, da tajnu kanala upisanu na stranici
+   * Tajne kanal vidi bez restarta. Zadano samo `env`.
+   */
+  citajTajnu?: (ime: string) => string | null | undefined
+}
+
+/**
+ * Tajne kanala za jednog drugog bota: `<TAJNA>_<IME>`, a zajednički par samo dok je drugi bot jedan
+ * (čvor s jednim drugim krajem, kao do sada) — s dva ili više svaki mora imati svoj par (TASK-5728).
+ */
+export function tajneKanala(citaj: (ime: string) => string | null | undefined, brojDrugih: () => number) {
+  return {
+    slanje: (drugi: string) => tajnaZaBota(citaj, TAJNA_SLANJA, drugi, brojDrugih() <= 1),
+    primanje: (drugi: string) => tajnaZaBota(citaj, TAJNA_PRIMANJA, drugi, brojDrugih() <= 1),
+  }
 }
 
 const VLASNICI_KES_MS = 5000
@@ -155,12 +171,14 @@ export function sklopiRazgovor(o: SklapanjeOpcije): RazgovorSloj {
   const bkPostavke = createBotKanalReader(o.dbPath)
   let ulaz: RazgovorUlaza
   let jezgra: RazgovorJezgra
-  // ADR-0003: kanal bot↔bot — tajne (po jedna po smjeru, TASK-5299) samo iz okoline stroja, nikad iz postavki.
+  // ADR-0003: kanal bot↔bot — tajne (po jedna po smjeru, TASK-5299; po drugom botu, TASK-5728) samo iz
+  // okoline stroja ili spremišta tajni čvora, nikad iz postavki.
+  const tajne = tajneKanala(o.citajTajnu ?? (ime => o.env[ime]), () => bkPostavke().drugi.length)
   const botKanal = stvoriBotKanal({
     ja: imeUKanalu(postavke().ime || 'bot'),
     postavke: bkPostavke,
-    tajnaSlanja: () => o.env.TM_BOT_KANAL_TAJNA_SLANJE,
-    tajnaPrimanja: () => o.env.TM_BOT_KANAL_TAJNA_PRIMANJE,
+    tajnaSlanja: tajne.slanje,
+    tajnaPrimanja: tajne.primanje,
     spremiste: spremisteUBazi(o.dbPath),
     zadaniStopKorisnici: () => postavke().dopusteniKorisnici,
     javiUGrupu: (chatId, tekst) => ulaz.aktivniKanal?.posaljiTekst(chatId, tekst),
@@ -248,16 +266,28 @@ export function odBotaZapis(sloj: RazgovorSloj, z: Zahtjev): ApiOdgovor {
   return { status: 202, tijelo: r.tijelo }
 }
 
-const stanjeTajne = (t: string | undefined) => !t ? 'nedostaje' : t.length < MIN_TAJNA ? 'prekratka' : 'postavljena'
+const stanjeTajne = (t: string | null | undefined) => !t ? 'nedostaje' : t.length < MIN_TAJNA ? 'prekratka' : 'postavljena'
 
-/** Kartica Config → Razgovor → Bot↔bot: postavke, zastavice, jesu li tajne postavljene (ne i one). */
-export function botKanalGet(dbPath: string, sloj: RazgovorSloj | null, env: Record<string, string | undefined>): ApiOdgovor {
+/**
+ * Kartica Config → Razgovor → Bot↔bot: postavke, zastavice, jesu li tajne postavljene (ne i one).
+ * `env` je okolina ili čitač tajne (okolina + spremište, TASK-5728); `poBotu` = stanje para za svakog drugog bota.
+ */
+export function botKanalGet(
+  dbPath: string, sloj: RazgovorSloj | null,
+  env: Record<string, string | undefined> | ((ime: string) => string | null | undefined),
+): ApiOdgovor {
+  const citaj = typeof env === 'function' ? env : (ime: string) => env[ime]
   return sDb(dbPath, db => {
     const { postavke, upozorenja } = getBotKanalPostavke(db)
+    const tajne = tajneKanala(citaj, () => postavke.drugi.length)
+    const poBotu = postavke.drugi.map(d => ({
+      ime: d.ime, slanje: stanjeTajne(tajne.slanje(d.ime)), primanje: stanjeTajne(tajne.primanje(d.ime)),
+      imeSlanja: imeTajneZa(TAJNA_SLANJA, d.ime), imePrimanja: imeTajneZa(TAJNA_PRIMANJA, d.ime),
+    }))
     return {
       status: 200,
       tijelo: {
-        postavke, upozorenja, tajna: { slanje: stanjeTajne(env.TM_BOT_KANAL_TAJNA_SLANJE), primanje: stanjeTajne(env.TM_BOT_KANAL_TAJNA_PRIMANJE) },
+        postavke, upozorenja, tajna: { slanje: stanjeTajne(citaj(TAJNA_SLANJA)), primanje: stanjeTajne(citaj(TAJNA_PRIMANJA)), poBotu },
         ja: sloj ? imeUKanalu(sloj.ulaz.postavke().ime || 'bot') : null,
         zastavice: sloj ? sloj.botKanal.stanje().zastavice : {},
         povijest: botKanalPovijest(db, 20),

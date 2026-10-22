@@ -19,7 +19,11 @@
 // tajnom SLANJA, a provjerava tajnom PRIMANJA (= tajna slanja drugog kraja). Adresa je druga brava
 // samo gdje se vidi prava adresa (`provjeraAdrese`); iza docker-proxyja svi su `172.24.0.1`.
 //
-// Autorica: Jelena (Engineer), TASK-5290, TASK-5299 — po dizajnu Kosjenke (ADR-0003, TASK-5289).
+// Više drugih botova (TASK-5728): par tajni je PO DRUGOM BOTU (`<TAJNA>_<IME>`), pa potpis kaže
+// tko je pošiljatelj — `izvor` u tijelu mora biti taj bot, a bot smije samo u svoje `chatovi`.
+// Zajednički par (bez sufiksa) vrijedi samo za bota kojem ga kraj izričito dopusti (`tajnaZaBota`).
+//
+// Autorica: Jelena (Engineer), TASK-5290, TASK-5299, TASK-5728 — po dizajnu Kosjenke (ADR-0003, TASK-5289).
 
 export type RazlogStopa = 'fraza' | 'strop' | 'rucno'
 
@@ -30,6 +34,11 @@ export interface DrugiBot {
   korisnickoIme: string
   /** Ploča drugog kraja, npr. `http://10.0.0.2:17781`. */
   url: string
+  /**
+   * Chatovi u kojima je ovaj bot drugi kraj (TASK-5728). Bez popisa = svi `chatovi` (kraj s jednim
+   * drugim botom). S popisom bot ne prima zapise ni prijenose drugih grupa i ne smije u njih pisati.
+   */
+  chatovi?: string[]
 }
 
 export interface BotKanalPostavke {
@@ -154,6 +163,42 @@ export const POTPIS_ROK_S = 60
 export const MIN_TAJNA = 32
 const PONOVLJENO_MS = 10 * 60_000
 
+/** Imena tajni kanala (okolina stroja / spremište tajni); par po botu nosi sufiks `_<IME>` (TASK-5728). */
+export const TAJNA_SLANJA = 'TM_BOT_KANAL_TAJNA_SLANJE'
+export const TAJNA_PRIMANJA = 'TM_BOT_KANAL_TAJNA_PRIMANJE'
+
+/** `TM_BOT_KANAL_TAJNA_SLANJE` + `martinafiles` → `TM_BOT_KANAL_TAJNA_SLANJE_MARTINAFILES`. */
+export function imeTajneZa(osnova: string, drugi: string): string {
+  return `${osnova}_${drugi.toUpperCase().replace(/[^A-Z0-9]/g, '_')}`
+}
+
+/**
+ * Tajna za jednog drugog bota: najprije njegova (`<osnova>_<IME>`); zajednički par (`<osnova>`)
+ * samo uz `zajednicka` — inače bi svaki novi bot dobio tajnu postojećeg i mogao se predstaviti kao on.
+ */
+export function tajnaZaBota(
+  citaj: (ime: string) => string | null | undefined, osnova: string, drugi: string, zajednicka: boolean,
+): string | undefined {
+  return citaj(imeTajneZa(osnova, drugi)) || (zajednicka ? citaj(osnova) || undefined : undefined)
+}
+
+/** Imena tajni kanala za stranicu Tajne: zajednički par + par po svakom drugom botu (samo imena). */
+export function imenaTajniKanala(drugi: string[]): { ime: string; izvor: string }[] {
+  const out = [{ ime: TAJNA_SLANJA, izvor: 'botKanal' }, { ime: TAJNA_PRIMANJA, izvor: 'botKanal' }]
+  for (const d of drugi) {
+    for (const o of [TAJNA_SLANJA, TAJNA_PRIMANJA]) {
+      const ime = imeTajneZa(o, d)
+      if (!out.some(x => x.ime === ime)) out.push({ ime, izvor: `botKanal.${d}` })
+    }
+  }
+  return out
+}
+
+/** Drugi botovi kojima pripada `chatId` (bez vlastitog popisa chatova = svi chatovi kanala). */
+export function drugiUChatu(p: Pick<BotKanalPostavke, 'drugi'>, chatId: string): DrugiBot[] {
+  return p.drugi.filter(x => !x.chatovi || x.chatovi.includes(chatId))
+}
+
 function hmacHex(tajna: string, poruka: string): string {
   return new Bun.CryptoHasher('sha256', tajna).update(poruka).digest('hex')
 }
@@ -257,12 +302,13 @@ export interface BotKanalOvisnosti {
   ja: string
   postavke: () => BotKanalPostavke
   /**
-   * Tajne kanala, po jedna po smjeru (TASK-5299) — nikad u postavkama, zapisu, okolini modela ni na
-   * žici. `tajnaSlanja` potpisuje odlazno (`TM_BOT_KANAL_TAJNA_SLANJE`), `tajnaPrimanja` provjerava
-   * dolazno (`TM_BOT_KANAL_TAJNA_PRIMANJE` = tajna slanja drugog kraja).
+   * Tajne kanala, po jedna po smjeru (TASK-5299) i po drugom botu (TASK-5728, argument = `DrugiBot.ime`)
+   * — nikad u postavkama, zapisu, okolini modela ni na žici. `tajnaSlanja` potpisuje odlazno
+   * (`TM_BOT_KANAL_TAJNA_SLANJE[_<IME>]`), `tajnaPrimanja` provjerava dolazno
+   * (`TM_BOT_KANAL_TAJNA_PRIMANJE[_<IME>]` = tajna slanja drugog kraja).
    */
-  tajnaSlanja: () => string | undefined
-  tajnaPrimanja: () => string | undefined
+  tajnaSlanja: (drugi: string) => string | undefined
+  tajnaPrimanja: (drugi: string) => string | undefined
   spremiste: Spremiste
   /** Kad je `stopKorisnici` prazan: dopušteni korisnici razgovora koji su brojčani. */
   zadaniStopKorisnici?: () => string[]
@@ -352,36 +398,71 @@ export function stvoriBotKanal(d: BotKanalOvisnosti): BotKanal {
   }
 
   /**
-   * Autentikacija i opći uvjeti rute — `null` = prolazi. Potpis se provjerava nad metodom i putem
-   * RUTE koja obrađuje zahtjev (ne nad onim što klijent tvrdi) i nad sirovim tijelom.
+   * Autentikacija i opći uvjeti rute — `{ od }` = prolazi, `od` je bot čija je tajna potpisala zahtjev.
+   * Potpis se provjerava nad metodom i putem RUTE koja obrađuje zahtjev (ne nad onim što klijent
+   * tvrdi) i nad sirovim tijelom, tajnom primanja SVAKOG drugog bota (TASK-5728).
    */
-  function vrata(z: Zahtjev, metoda: 'GET' | 'POST', put: string, chatId?: string): Odgovor | null {
+  function vrata(z: Zahtjev, metoda: 'GET' | 'POST', put: string, chatId?: string): { greska: Odgovor } | { od: DrugiBot } {
+    const ne = (status: number, error: string) => ({ greska: { status, tijelo: { error } } })
     const p = d.postavke()
-    if (!p.ukljucen) return { status: 403, tijelo: { error: 'kanal bot↔bot je isključen' } }
-    const primanje = tajna(d.tajnaPrimanja)
-    if (!primanje) return { status: 403, tijelo: { error: 'tajna primanja kanala nije postavljena na ovom stroju' } }
-    if (primanje === d.tajnaSlanja()) return { status: 403, tijelo: { error: 'tajne slanja i primanja moraju biti različite (po jedna po smjeru)' } }
-    const ishod = provjeriPotpis(z.potpis, primanje, metoda, `${PUT_RUTE}${put}`, typeof z.tijelo === 'string' ? z.tijelo : '', sat())
-    if (ishod !== 'ok') {
-      const zasto = ishod === 'istekao' ? `potpis je stariji ili noviji od ${POTPIS_ROK_S} s (sat?)` : ishod === 'nedostaje' ? `nema zaglavlja ${ZAGLAVLJE_POTPISA}` : 'neispravan potpis'
-      return { status: 401, tijelo: { error: zasto } }
+    if (!p.ukljucen) return ne(403, 'kanal bot↔bot je isključen')
+    const kandidati: { bot: DrugiBot; primanje: string }[] = []
+    let isteSmjer = false
+    for (const bot of p.drugi) {
+      const primanje = tajna(() => d.tajnaPrimanja(bot.ime))
+      if (!primanje) continue
+      if (primanje === d.tajnaSlanja(bot.ime)) { isteSmjer = true; continue }
+      kandidati.push({ bot, primanje })
     }
-    if (p.provjeraAdrese !== false && !p.adrese.includes(cistaAdresa(z.ip))) return { status: 403, tijelo: { error: 'adresa nije na popisu' } }
-    if (chatId !== undefined && !p.chatovi.includes(chatId)) return { status: 403, tijelo: { error: 'chat nije na popisu' } }
+    // Dva bota s istom tajnom primanja: potpis ne kaže tko je — ne prima se nijedan od njih.
+    const jedinstveni = kandidati.filter(k => kandidati.filter(x => x.primanje === k.primanje).length === 1)
+    if (jedinstveni.length < kandidati.length) log('[bot-kanal] dva druga bota imaju istu tajnu primanja — ne primaju se (TASK-5728)')
+    if (!jedinstveni.length) {
+      return isteSmjer ? ne(403, 'tajne slanja i primanja moraju biti različite (po jedna po smjeru)')
+        : ne(403, 'tajna primanja kanala nije postavljena na ovom stroju')
+    }
+    const tijelo = typeof z.tijelo === 'string' ? z.tijelo : ''
+    let ishod: IshodPotpisa = 'neispravan'
+    let od: DrugiBot | null = null
+    for (const k of jedinstveni) {
+      const i = provjeriPotpis(z.potpis, k.primanje, metoda, `${PUT_RUTE}${put}`, tijelo, sat())
+      if (i === 'ok') { od = k.bot; break }
+      if (i === 'istekao' || (i === 'nedostaje' && ishod !== 'istekao')) ishod = i
+    }
+    if (!od) {
+      return ne(401, ishod === 'istekao' ? `potpis je stariji ili noviji od ${POTPIS_ROK_S} s (sat?)` : ishod === 'nedostaje' ? `nema zaglavlja ${ZAGLAVLJE_POTPISA}` : 'neispravan potpis')
+    }
+    if (p.provjeraAdrese !== false && !p.adrese.includes(cistaAdresa(z.ip))) return ne(403, 'adresa nije na popisu')
+    if (chatId !== undefined) {
+      const g = chatDrugog(p, od, chatId)
+      if (g) return { greska: g }
+    }
+    return { od }
+  }
+
+  /** Chat mora biti na popisu kanala i na popisu bota pošiljatelja (TASK-5728). */
+  function chatDrugog(p: BotKanalPostavke, od: DrugiBot, chatId: string): Odgovor | null {
+    if (!p.chatovi.includes(chatId)) return { status: 403, tijelo: { error: 'chat nije na popisu' } }
+    if (od.chatovi && !od.chatovi.includes(chatId)) return { status: 403, tijelo: { error: `chat nije na popisu za ${od.ime}` } }
     return null
   }
 
   /** Potpisano tijelo kao objekt; `null` = nije JSON. */
   const json = (z: Zahtjev): unknown => { try { return JSON.parse(String(z.tijelo ?? '')) } catch { return null } }
 
-  async function zaDrugog(put: string, tijelo: unknown): Promise<boolean> {
+  /** Drugi botovi chata koji imaju tajnu slanja (bez nje bot ne dobiva ništa). */
+  const primateljiChata = (p: BotKanalPostavke, chatId: string): { bot: DrugiBot; slanje: string }[] =>
+    drugiUChatu(p, chatId).map(bot => ({ bot, slanje: tajna(() => d.tajnaSlanja(bot.ime)) })).filter(x => x.slanje)
+
+  /** Poruka svim drugim botovima TOG chata, svakom potpisana njegovom tajnom (TASK-5728). */
+  async function zaDrugog(put: string, tijelo: { chatId: string }): Promise<boolean> {
     const p = d.postavke()
-    const slanje = tajna(d.tajnaSlanja)
-    if (!slanje || !p.drugi.length) return false
+    const primatelji = primateljiChata(p, tijelo.chatId)
+    if (!primatelji.length) return false
     let ok = true
-    for (const drugi of p.drugi) {
-      if (!smijeTajnuNa(drugi.url, p.adrese)) { log(`[bot-kanal] ${drugi.ime}: host adrese ploče nije u popisu adresa — poruka ne ide`); ok = false; continue }
-      const r = await posalji(drugi.url, put, tijelo, slanje)
+    for (const { bot, slanje } of primatelji) {
+      if (!smijeTajnuNa(bot.url, p.adrese)) { log(`[bot-kanal] ${bot.ime}: host adrese ploče nije u popisu adresa — poruka ne ide`); ok = false; continue }
+      const r = await posalji(bot.url, put, tijelo, slanje)
       ok = ok && r
     }
     return ok
@@ -463,17 +544,20 @@ export function stvoriBotKanal(d: BotKanalOvisnosti): BotKanal {
 
   return {
     primi(z) {
-      const prije = vrata(z, 'POST', '')
-      if (prije) return prije
+      const vr = vrata(z, 'POST', '')
+      if ('greska' in vr) return vr.greska
       const raw = json(z)
       if (raw === null) return { status: 400, tijelo: { error: 'Neispravan JSON' } }
       const v = provjeriTijelo(raw)
       if (!v.ok) return { status: v.status, tijelo: { error: v.error } }
       const m = v.value
       const p = d.postavke()
-      if (!p.chatovi.includes(m.chatId)) return { status: 403, tijelo: { error: 'chat nije na popisu' } }
-      if (!p.drugi.some(x => x.ime === m.izvor) && m.izvor !== d.ja) return { status: 403, tijelo: { error: 'izvor nije na popisu' } }
       if (m.izvor === d.ja) return { status: 409, tijelo: { razlog: 'vlastita' } }
+      // Potpis je tajnom bota `vr.od` — tijelo ne smije tvrditi da je netko drugi (TASK-5728).
+      if (!p.drugi.some(x => x.ime === m.izvor)) return { status: 403, tijelo: { error: 'izvor nije na popisu' } }
+      if (m.izvor !== vr.od.ime) return { status: 401, tijelo: { error: 'potpis ne pripada izvoru poruke' } }
+      const g = chatDrugog(p, vr.od, m.chatId)
+      if (g) return g
       // Ponovljena poruka (snimljena pa ponovno poslana u roku potpisa ili s novim potpisom) — TASK-5299.
       const t = sat()
       for (const [k, ms] of primljeno) if (t - ms > PONOVLJENO_MS) primljeno.delete(k)
@@ -499,18 +583,18 @@ export function stvoriBotKanal(d: BotKanalOvisnosti): BotKanal {
 
     primiStop(z) {
       const t = tijeloChata(json(z))
-      if (!t) return vrata(z, 'POST', '/stop') || { status: 400, tijelo: { error: 'chatId je obavezan' } }
-      const prije = vrata(z, 'POST', '/stop', t.chatId)
-      if (prije) return prije
+      if (!t) { const vr = vrata(z, 'POST', '/stop'); return 'greska' in vr ? vr.greska : { status: 400, tijelo: { error: 'chatId je obavezan' } } }
+      const vr = vrata(z, 'POST', '/stop', t.chatId)
+      if ('greska' in vr) return vr.greska
       void zaustavi(t.chatId, t.by, t.razlog || 'fraza', false)
       return { status: 200, tijelo: { ok: true, zaustavljen: true } }
     },
 
     primiNastavak(z) {
       const t = tijeloChata(json(z))
-      if (!t) return vrata(z, 'POST', '/nastavi') || { status: 400, tijelo: { error: 'chatId je obavezan' } }
-      const prije = vrata(z, 'POST', '/nastavi', t.chatId)
-      if (prije) return prije
+      if (!t) { const vr = vrata(z, 'POST', '/nastavi'); return 'greska' in vr ? vr.greska : { status: 400, tijelo: { error: 'chatId je obavezan' } } }
+      const vr = vrata(z, 'POST', '/nastavi', t.chatId)
+      if ('greska' in vr) return vr.greska
       // Nastavak s drugog kraja NE skida zastavicu (TASK-5291, N2): stop bi inače bio jak koliko
       // i slabiji kraj — tko ima tajnu ili ljusku na drugom stroju poništio bi stop vlasnika. Oba
       // kraja „Nastavi komunikaciju" vide sami iz grupe; gumb nastavlja samo svoj kraj.
@@ -520,17 +604,19 @@ export function stvoriBotKanal(d: BotKanalOvisnosti): BotKanal {
     },
 
     primiZapis(z) {
-      const prije = vrata(z, 'POST', '/zapis')
-      if (prije) return prije
+      const vr = vrata(z, 'POST', '/zapis')
+      if ('greska' in vr) return vr.greska
       const raw = json(z)
       if (raw === null) return { status: 400, tijelo: { error: 'Neispravan JSON' } }
       const v = provjeriZapis(raw)
       if (!v.ok) return { status: v.status, tijelo: { error: v.error } }
       const m = v.value
       const p = d.postavke()
-      if (!p.chatovi.includes(m.chatId)) return { status: 403, tijelo: { error: 'chat nije na popisu' } }
-      if (!p.drugi.some(x => x.ime === m.izvor) && m.izvor !== d.ja) return { status: 403, tijelo: { error: 'izvor nije na popisu' } }
       if (m.izvor === d.ja) return { status: 409, tijelo: { razlog: 'vlastita' } }
+      if (!p.drugi.some(x => x.ime === m.izvor)) return { status: 403, tijelo: { error: 'izvor nije na popisu' } }
+      if (m.izvor !== vr.od.ime) return { status: 401, tijelo: { error: 'potpis ne pripada izvoru zapisa' } }
+      const g = chatDrugog(p, vr.od, m.chatId)
+      if (g) return g
       const t = sat()
       for (const [k, ms] of primljeno) if (t - ms > PONOVLJENO_MS) primljeno.delete(k)
       const kljuc = `zapis\n${m.izvor}\n${m.chatId}\n${m.telegramPorukaId ?? `${m.ts}\n${m.tekst.length}`}`
@@ -540,9 +626,13 @@ export function stvoriBotKanal(d: BotKanalOvisnosti): BotKanal {
     },
 
     stanjeZaDrugog(z) {
-      const prije = vrata(z, 'GET', '/stanje')
-      if (prije) return prije
-      return { status: 200, tijelo: { ja: d.ja, zastavice: st().zastavice } }
+      const vr = vrata(z, 'GET', '/stanje')
+      if ('greska' in vr) return vr.greska
+      // Samo zastavice chatova tog bota — drugi bot ne vidi stanje tuđih grupa (TASK-5728).
+      const p = d.postavke()
+      const zastavice = Object.fromEntries(Object.entries(st().zastavice)
+        .filter(([c]) => p.chatovi.includes(c) && (!vr.od.chatovi || vr.od.chatovi.includes(c))))
+      return { status: 200, tijelo: { ja: d.ja, zastavice } }
     },
 
     async ljudska(m) {
@@ -573,9 +663,9 @@ export function stvoriBotKanal(d: BotKanalOvisnosti): BotKanal {
 
     async prenesi(u) {
       const p = d.postavke()
-      const slanje = tajna(d.tajnaSlanja)
-      if (!p.ukljucen || !p.chatovi.includes(u.chatId) || !slanje) return 'iskljuceno'
-      const drugi = p.drugi.filter(x => spominje(u.tekst, x.korisnickoIme))
+      const primatelji = p.ukljucen && p.chatovi.includes(u.chatId) ? primateljiChata(p, u.chatId) : []
+      if (!primatelji.length) return 'iskljuceno'
+      const drugi = primatelji.filter(x => spominje(u.tekst, x.bot.korisnickoIme))
       if (!drugi.length) return 'bez-spomena'
       const s = st()
       if (s.zastavice[u.chatId]?.zaustavljen) return 'zaustavljeno'
@@ -591,7 +681,7 @@ export function stvoriBotKanal(d: BotKanalOvisnosti): BotKanal {
       }
       zabiljeziPrijenos(u.chatId, u.telegramPorukaId)
       let ok = true
-      for (const x of drugi) {
+      for (const { bot: x, slanje } of drugi) {
         const smijeTajnu = smijeTajnuNa(x.url, p.adrese)
         if (!smijeTajnu) log(`[bot-kanal] ${x.ime}: host adrese ploče nije u popisu adresa — poruka ne ide`)
         const r = smijeTajnu && await posalji(x.url, '', tijelo, slanje)
@@ -610,8 +700,7 @@ export function stvoriBotKanal(d: BotKanalOvisnosti): BotKanal {
 
     async zapisi(u) {
       const p = d.postavke()
-      const slanje = tajna(d.tajnaSlanja)
-      if (!p.ukljucen || !p.chatovi.includes(u.chatId) || !slanje || !p.drugi.length || !u.tekst.trim()) return 'iskljuceno'
+      if (!p.ukljucen || !p.chatovi.includes(u.chatId) || !primateljiChata(p, u.chatId).length || !u.tekst.trim()) return 'iskljuceno'
       const tijelo: BotZapis = {
         izvor: d.ja, chatId: u.chatId, tekst: u.tekst.slice(0, MAX_TEKST),
         telegramPorukaId: u.telegramPorukaId || null, ts: new Date(sat()).toISOString(),

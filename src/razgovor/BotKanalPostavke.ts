@@ -4,7 +4,8 @@
 // Zastavica po chatu (`razgovor.botKanal.stanje`) upisuje sustav (stop-fraza, strop, gumb);
 // brojilo stropa i vlastite poslane poruke žive u procesu (restart ih hvata `skok ≤ strop`).
 //
-// Tajne (`TM_BOT_KANAL_TAJNA_SLANJE` / `_PRIMANJE`, TASK-5299) NISU postavka — samo okolina stroja (ADR-0003 §3).
+// Tajne (`TM_BOT_KANAL_TAJNA_SLANJE` / `_PRIMANJE`, TASK-5299; `…_<IME>` po drugom botu, TASK-5728) NISU
+// postavka — samo okolina stroja ili spremište tajni čvora (ADR-0003 §3).
 //
 // Autorica: Jelena (Engineer), TASK-5290.
 
@@ -59,7 +60,17 @@ function provjeri(polje: Polje, v: unknown): { ok: true; value: unknown } | { ok
           const u = new URL(url)
           if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new Error()
         } catch { return { ok: false, error: 'botKanal.drugi.url mora biti http(s) adresa ploče' } }
-        out.push({ ime, korisnickoIme: ki, url })
+        // TASK-5728: chatovi u kojima je bot drugi kraj — s dva ili više botova obavezni (inače svaki
+        // bot smije u svaku grupu i vidi tuđe zapise).
+        if (o?.chatovi === undefined) { out.push({ ime, korisnickoIme: ki, url }); continue }
+        const chatovi = Array.isArray(o.chatovi) ? o.chatovi.map(c => String(c).trim()).filter(Boolean) : null
+        if (!chatovi || chatovi.length > 50 || chatovi.some(c => !/^-?\d{1,20}$/.test(c))) {
+          return { ok: false, error: 'botKanal.drugi.chatovi: popis brojčanih id-eva chatova' }
+        }
+        out.push({ ime, korisnickoIme: ki, url, chatovi: [...new Set(chatovi)] })
+      }
+      if (out.length > 1 && out.some(x => !x.chatovi?.length)) {
+        return { ok: false, error: 'botKanal.drugi: uz dva ili više botova svaki mora imati svoje chatovi' }
       }
       return { ok: true, value: out }
     }

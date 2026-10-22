@@ -168,7 +168,8 @@ const DOPUSTENE_VARIJABLE = ['PATH', 'HOME', 'USER', 'LOGNAME', 'LANG', 'LC_ALL'
  * pročitao (Bash je ograničen na curl prema ploči).
  */
 const AUTENTIKACIJA_MODELA = ['ANTHROPIC_API_KEY', 'CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_BASE_URL']
-const TAJNA = /TOKEN|SECRET|KEY|PASS|PWD|CRED/i
+// TASK-5728 (Malik): i hrvatska imena — `TM_BOT_KANAL_TAJNA_*` inače ide u okolinu modela.
+const TAJNA = /TOKEN|SECRET|KEY|PASS|PWD|CRED|TAJN|LOZINK/i
 
 export function okolinaRazgovora(env: Record<string, string | undefined>, oznaka: string): Record<string, string> {
   const out: Record<string, string> = {}
