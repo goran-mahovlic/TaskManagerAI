@@ -42,6 +42,8 @@ function petlja(sastavi: () => PetljaSastav, log: string[] = []) {
     bravaPath: join(dir, 'orchestrator.lock'),
     sastavi,
     log: r => log.push(r),
+    // Testovi ne smiju čitati živu kočnicu stroja; kočnica ima vlastite testove niže.
+    pauza: () => false,
   })
 }
 
@@ -176,5 +178,85 @@ describe('autostart (preživi restart ploče)', () => {
     expect(p.autostart().ok).toBe(false)
     expect(p.stanje().radi).toBe(false)
     expect(log.join('\n')).toContain('isključen')
+  })
+})
+
+// ─── TASK-5715 (nalazi C1, Ž3 i Ž5 pregleda TASK-5712) ────────────────────────
+
+describe('C1: ručna kočnica zaustavlja petlju s ploče', () => {
+  function petljaSKocnicom(sastavi: () => PetljaSastav, kocnica: () => boolean, log: string[] = []) {
+    return new OrchestratorPetlja({
+      stanjePath: join(dir, 'orchestrator-petlja.json'),
+      bravaPath: join(dir, 'orchestrator.lock'),
+      sastavi, log: r => log.push(r), pauza: kocnica,
+    })
+  }
+
+  test('Pokreni pod kočnicom: odbijeno, 0 prolaza, brava se ne uzima, želja se ne mijenja', async () => {
+    const { s, prolaza } = sastav()
+    const p = petljaSKocnicom(() => s, () => true)
+    const r = p.start()
+    expect(r.ok).toBe(false)
+    expect(r.razlog || '').toContain('kočnica')
+    await Bun.sleep(30)
+    expect(prolaza()).toBe(0)
+    expect(existsSync(join(dir, 'orchestrator.lock'))).toBe(false)
+    expect(existsSync(join(dir, 'orchestrator-petlja.json'))).toBe(false)
+    expect(p.stanje().razlog || '').toContain('kočnica')
+  })
+
+  test('autostart pod kočnicom ne kreće; želja ostaje za kasnije', async () => {
+    writeFileSync(join(dir, 'orchestrator-petlja.json'), JSON.stringify({ ukljucen: true }))
+    const { s, prolaza } = sastav()
+    const log: string[] = []
+    const p = petljaSKocnicom(() => s, () => true, log)
+    expect(p.autostart().ok).toBe(false)
+    await Bun.sleep(30)
+    expect(prolaza()).toBe(0)
+    expect(p.stanje().radi).toBe(false)
+    expect(p.stanje().zeljeno).toBe(true)
+    expect(log.join('\n')).toContain('kočnica')
+  })
+
+  test('zadana kočnica je pause.state.json (REGOC_PAUSE_STATE u testu)', () => {
+    const src = readFileSync(join(import.meta.dir, '..', 'src', 'OrchestratorPetlja.ts'), 'utf-8')
+    expect(src).toContain('readPauseState().paused')
+  })
+})
+
+describe('Ž3: Zaustavi→Pokreni usred prolaza ne daje dva istodobna prolaza', () => {
+  test('najviše jedan prolaz u letu', async () => {
+    let uLetu = 0, najvise = 0, prolaza = 0
+    const s: PetljaSastav = {
+      cfg: cfg({ pollIntervalMs: 1 } as any), greske: [],
+      orkestrator: {
+        async jedanProlaz() {
+          uLetu++; najvise = Math.max(najvise, uLetu); prolaza++
+          await Bun.sleep(15)
+          uLetu--
+          return { spawn: { pokrenuto: 0, odbijeno: 0 }, poruka: {}, napomene: [] } as any
+        },
+      },
+    }
+    const p = petlja(() => s)
+    expect(p.start().ok).toBe(true)
+    await Bun.sleep(3)
+    for (let i = 0; i < 3; i++) { p.stop(); expect(p.start().ok).toBe(true); await Bun.sleep(2) }
+    await Bun.sleep(60)
+    p.stop()
+    expect(prolaza).toBeGreaterThan(1)
+    expect(najvise).toBe(1)
+  })
+})
+
+describe('Ž5: promjena želje se bilježi (tko)', () => {
+  test('start/stop upisuju tko je mijenjao', () => {
+    const { s } = sastav()
+    const log: string[] = []
+    const p = petlja(() => s, log)
+    p.start('ploca 127.0.0.1')
+    expect(JSON.parse(readFileSync(join(dir, 'orchestrator-petlja.json'), 'utf-8')).tko).toBe('ploca 127.0.0.1')
+    p.stop('ploca 127.0.0.1')
+    expect(log.join('\n')).toContain('isključena (ploca 127.0.0.1)')
   })
 })

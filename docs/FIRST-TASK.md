@@ -35,8 +35,15 @@ restart. Nothing else in `.env` is needed for this walkthrough.
 
 ## 2. Create a project and give it a root folder
 
+Root folders are off until you say where the agent may work. Before starting the board, set
+the list of allowed roots (separated by `:`), e.g. in `.env`:
+
+```bash
+TM_PROJECTS_ROOTS=/absolute/path/to/projects
+```
+
 On the board: **Projects → + New project**. Fill in the name and, in **Root folder**, the
-absolute path of the repository the agent should work in. Save.
+absolute path of the repository the agent should work in (inside one of the roots). Save.
 
 Or through the API:
 
@@ -49,8 +56,11 @@ curl -X POST http://localhost:17781/api/projects \
 **Check:** the project appears in the list with a `PRJ-…` id, and `GET /api/projects` shows
 your path under `root_path`.
 
-**Pitfall:** the path must be absolute and must exist. The board rejects a missing folder with
-`root_path_missing`. Without a root folder the agent runs in whatever directory the
+**Pitfall:** the path must be absolute, inside an allowed root, and must exist. Without
+`TM_PROJECTS_ROOTS` the board answers `root_path_disabled`, outside the roots
+`root_path_not_allowed`, a missing folder `root_path_missing`. `/`, `$HOME`, `~/.claude`,
+`~/.ssh`, `$TM_HOME` and system folders are always refused (`root_path_forbidden`), and symbolic
+links are resolved. The folder can only be set from this machine or over Tailscale, not from the LAN. Without a root folder the agent runs in whatever directory the
 orchestrator was started from, which is rarely what you want.
 
 ## 3. Add a task
@@ -114,17 +124,22 @@ session can edit files and report back to the board:
 ```json
 "args": ["--print", "--output-format", "json",
          "--permission-mode", "acceptEdits",
-         "--allowedTools", "Bash(curl:*),Bash(git:*)"]
+         "--allowedTools", "Bash(curl:*),Bash(git add:*),Bash(git commit:*),Bash(git status:*),Bash(git diff:*)"]
 ```
 
 **Check:** `bun scripts/orchestrator.ts --stanje` says `"ukljucen": true` and
 `"spreman": true`.
 
 **Pitfall:** print mode cannot ask you for permission, so anything not allowed in advance is
-denied. The flags above cover file edits, calling the board and committing. Because the agent
-runs inside your repository, that repository's own `.claude/settings.json` allowlist applies
-too. If your repo's skills run scripts (Python, a test runner), allow those there, or the
-agent will tell you it was denied and work around it by hand.
+denied. The flags above cover file edits, calling the board and committing. Do not allow
+`Bash(git:*)`: `git -c core.pager=…` or `git config alias.x '!sh'` run anything, and
+`Bash(curl:*)` already lets the agent send data anywhere — this is close to full shell access,
+be aware of it.
+In a project root folder `claude` runs with `--setting-sources user`: the repository's
+`.claude/settings.json` (its hooks and allowlist) is NOT loaded, so a foreign repository cannot
+bring commands the agent would execute. If you trust your projects' repositories, set
+`"projectCwdArgs": []` on the executor in `orchestrator.json` — then their allowlist applies
+too (e.g. for skill scripts).
 
 ## 6. Run one pass
 
@@ -144,7 +159,9 @@ bun scripts/orchestrator.ts
 **Start**. The board then runs the same loop itself, remembers that it is on, and brings it
 back up after a restart. **Stop** means no new agents are started; a running one finishes on
 its own. Only one loop may run: while the board holds it, the command-line script refuses
-with the board's process id, and the other way round. (The Console tab is not the way: it
+with the board's process id, and the other way round. The manual brake (Pause) applies: under
+the brake the loop does not start (not even after a restart), and a running loop asks the brake
+and the quota gate before every agent. Start works only from this machine or over Tailscale. (The Console tab is not the way: it
 kills any command after 30 seconds.)
 
 **Check:** on the board, **Status** shows a live spawn. `ps -ef | grep "claude --print"`

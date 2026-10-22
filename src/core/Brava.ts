@@ -35,10 +35,25 @@ export function uzmiBravu(path: string, ime = 'proces'): Brava {
     const drugi = vlasnikBrave(path)
     if (drugi) return { ok: false, razlog: `${ime} već radi u procesu ${drugi} (${path})` }
     osigurajMapu(path)
-    writeFileSync(path, String(process.pid), 'utf-8')
+    // TASK-5715 (Ž4): mrtvu bravu maknemo, pa ISKLJUČIVO stvaranje (`wx`): od dva procesa
+    // koja krenu istodobno samo jedan dobije bravu, drugi dobije EEXIST.
+    if (existsSync(path)) { try { unlinkSync(path) } catch { /* netko drugi ju je već maknuo */ } }
+    try {
+      writeFileSync(path, String(process.pid), { encoding: 'utf-8', flag: 'wx' })
+    } catch (e: any) {
+      if (e?.code === 'EEXIST') {
+        const pid = vlasnikBrave(path)
+        return { ok: false, razlog: `${ime} već radi u procesu ${pid ?? '?'} (${path})` }
+      }
+      throw e
+    }
+    const nas = String(process.pid)
     return {
       ok: true,
-      osloboditi: () => { try { unlinkSync(path) } catch { /* već je maknuta */ } },
+      // Brišemo samo SVOJU bravu: ako ju je u međuvremenu uzeo drugi proces, ostaje njegova.
+      osloboditi: () => {
+        try { if (readFileSync(path, 'utf-8').trim() === nas) unlinkSync(path) } catch { /* već je maknuta */ }
+      },
     }
   } catch (e: any) {
     return { ok: false, razlog: `brava se ne može uzeti: ${String(e?.message || e)}` }

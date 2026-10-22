@@ -58,6 +58,7 @@ export class HttpBoard implements Board {
       tags: t.tags,
       createdAt: t.createdAt ?? t.created_at,
       startedAt: t.startedAt ?? t.started_at ?? null,
+      paused: t.paused === true || t.paused === 1,
     }
   }
 
@@ -165,3 +166,45 @@ export class DatotecniLogger implements Logger {
 }
 
 export const SistemskiSat = { now: () => Date.now() }
+
+// ─── Vrata prije spawna: ručna kočnica + kvota (TASK-5715, nalaz C1) ──────────
+
+/**
+ * Je li kvota puna: ISTI pragovi i isti izvor potrošnje kao razgovor i daemon
+ * (`sessionBlock`/`weeklyBlock` iz `/api/config/autonomy`, potrošnja iz `/api/session-usage`).
+ * Nepoznata potrošnja nije puna (nema podatka ≠ puno), isto kao u razgovoru.
+ */
+export function kvotaPunaIz(
+  u: { session_percent?: unknown; weekly_percent?: unknown } | null,
+  t: { sessionBlock?: unknown; weeklyBlock?: unknown } | null,
+): boolean {
+  if (!u || !t) return false
+  const s = u.session_percent, w = u.weekly_percent
+  return (typeof s === 'number' && typeof t.sessionBlock === 'number' && s >= t.sessionBlock) ||
+    (typeof w === 'number' && typeof t.weeklyBlock === 'number' && w >= t.weeklyBlock)
+}
+
+/**
+ * Kočnica iz `pause.state.json` (isti zapis koji čitaju ploča, daemon i razgovor), kvota preko
+ * API-ja ploče (keš 5 s). Vrijedi i za `scripts/orchestrator.ts` i za petlju u procesu ploče.
+ */
+export class VrataPloce {
+  private base: string
+  private kes: { at: number; puna: boolean } | null = null
+  constructor(baseUrl: string, private pauzaFn: () => boolean, private kesMs = 5000) {
+    this.base = baseUrl.replace(/\/+$/, '')
+  }
+  pauza(): boolean { return this.pauzaFn() }
+  async kvotaPuna(): Promise<boolean> {
+    const sada = Date.now()
+    if (this.kes && sada - this.kes.at < this.kesMs) return this.kes.puna
+    const dohvati = async (put: string) => {
+      const r = await fetch(this.base + put, { signal: AbortSignal.timeout(5000) })
+      return r.ok ? r.json() : null
+    }
+    let puna = false
+    try { puna = kvotaPunaIz(await dohvati('/api/session-usage'), await dohvati('/api/config/autonomy')) } catch { puna = false }
+    this.kes = { at: sada, puna }
+    return puna
+  }
+}

@@ -15,10 +15,13 @@
  *      živi uz podatke, ne u orchestrator.json.
  *   3. Stop znači „ne pokreći nove agente". Agent koji već radi radi do kraja i sam se
  *      javlja ploči; petlja ga ne ubija.
+ *   4. Ručna kočnica vrijedi (TASK-5715, nalaz C1): pod kočnicom se petlja ne pokreće ni
+ *      gumbom ni autostartom, a jezgra kočnicu i kvotu pita prije SVAKOG spawna (port `vrata`).
  */
 import { existsSync, readFileSync, writeFileSync } from 'fs'
 import { osigurajMapu, stanjePutanja } from './core/paths'
 import { uzmiBravu, vlasnikBrave, type Brava } from './core/Brava'
+import { readPauseState } from './core/PauseControl'
 import { orkestratorUkljucen, type OrchestratorPostavke } from './core/orchestrator/OrchestratorConfig'
 import type { IshodProlaza } from './core/orchestrator/Orchestrator'
 import { sastaviOrkestrator } from './core/orchestrator'
@@ -38,6 +41,8 @@ export interface PetljaOpcije {
   bravaPath?: string
   sastavi?: () => PetljaSastav
   log?: (r: string) => void
+  /** Ručna kočnica; zadano `pause.state.json` (isti zapis kao ploča i daemon). */
+  pauza?: () => boolean
 }
 
 export interface PetljaStanje {
@@ -63,8 +68,12 @@ export class OrchestratorPetlja {
   private readonly bravaPath: string
   private readonly sastavi: () => PetljaSastav
   private readonly log: (r: string) => void
+  private readonly pauza: () => boolean
 
   private radi = false
+  /** Generacija lanca prolaza (Ž3): Zaustavi→Pokreni usred prolaza ne smije ostaviti dva lanca. */
+  private gen = 0
+  private uLetu: Promise<unknown> | null = null
   private tajmer: ReturnType<typeof setTimeout> | null = null
   private brava: Brava | null = null
   private pokrenutaU: string | null = null
@@ -78,6 +87,7 @@ export class OrchestratorPetlja {
     this.bravaPath = opcije.bravaPath || PETLJA_BRAVA_PUTANJA
     this.sastavi = opcije.sastavi || (() => sastaviOrkestrator())
     this.log = opcije.log || ((r: string) => console.log(r))
+    this.pauza = opcije.pauza || (() => readPauseState().paused)
   }
 
   // ─── Trajno stanje ─────────────────────────────────────────────────────────
@@ -91,10 +101,11 @@ export class OrchestratorPetlja {
     }
   }
 
-  private zapisiZelju(ukljucen: boolean): void {
+  private zapisiZelju(ukljucen: boolean, tko: string): void {
     try {
       osigurajMapu(this.stanjePath)
-      writeFileSync(this.stanjePath, JSON.stringify({ ukljucen, ts: new Date().toISOString() }, null, 2) + '\n', 'utf-8')
+      writeFileSync(this.stanjePath, JSON.stringify({ ukljucen, tko, ts: new Date().toISOString() }, null, 2) + '\n', 'utf-8')
+      this.log(`[orchestrator-petlja] želja: ${ukljucen ? 'uključena' : 'isključena'} (${tko})`)
     } catch (e: any) {
       this.log(`[orchestrator-petlja] stanje se ne može zapisati: ${e?.message || e}`)
     }
@@ -118,8 +129,11 @@ export class OrchestratorPetlja {
   // ─── Životni ciklus ────────────────────────────────────────────────────────
 
   /** Pokreni petlju. Korisnikova želja se pamti SAMO kad je pokretanje uspjelo. */
-  start(): Ishod {
+  start(tko = 'ploca'): Ishod {
     if (this.radi) return { ok: true, razlog: 'petlja već radi' }
+    let kocnica = false
+    try { kocnica = this.pauza() } catch { kocnica = false }
+    if (kocnica) return this.odbij('ručna kočnica je uključena — otpusti je (Nastavi) pa pokreni petlju')
 
     const sastav = this.sastavi()
     if (!orkestratorUkljucen(sastav.cfg)) {
@@ -139,23 +153,31 @@ export class OrchestratorPetlja {
     this.prolaza = 0
     this.pokrenuto = 0
     this.zadnjiProlaz = null
-    this.zapisiZelju(true)
+    this.zapisiZelju(true, tko)
     for (const g of sastav.greske) this.log(`[orchestrator-petlja] napomena: ${g}`)
     this.log(`[orchestrator-petlja] pokrenuta u procesu ploče (svakih ${sastav.cfg.pollIntervalMs} ms)`)
 
     const orkestrator = sastav.orkestrator
     const interval = Math.max(1, sastav.cfg.pollIntervalMs)
+    const gen = ++this.gen
+    const ziv = () => this.radi && gen === this.gen
     const korak = async () => {
-      if (!this.radi) return
+      if (!ziv()) return
+      // Prolaz starog lanca (Zaustavi→Pokreni usred prolaza) mora završiti prije novog:
+      // dva istodobna prolaza mogla bi istom zadatku dati dva agenta.
+      if (this.uLetu) { try { await this.uLetu } catch { /* njegov pad nije naš */ } }
+      if (!ziv()) return
       try {
-        const ishod = await orkestrator.jedanProlaz()
+        const let_ = orkestrator.jedanProlaz()
+        this.uLetu = let_
+        const ishod = await let_.finally(() => { if (this.uLetu === let_) this.uLetu = null })
         this.prolaza++
         this.pokrenuto += ishod?.spawn?.pokrenuto || 0
         this.zadnjiProlaz = new Date().toISOString()
       } catch (e: any) {
         this.log(`[orchestrator-petlja] prolaz je pao: ${e?.message || e}`)
       }
-      if (!this.radi) return
+      if (!ziv()) return
       this.tajmer = setTimeout(korak, interval)
       if (typeof (this.tajmer as any)?.unref === 'function') (this.tajmer as any).unref()
     }
@@ -164,20 +186,21 @@ export class OrchestratorPetlja {
   }
 
   /** Zaustavi petlju i zapamti da korisnik NE želi da se digne nakon restarta. */
-  stop(): void {
+  stop(tko = 'ploca'): void {
     const radila = this.radi
     this.radi = false
+    this.gen++
     if (this.tajmer) { clearTimeout(this.tajmer); this.tajmer = null }
     if (this.brava?.osloboditi) this.brava.osloboditi()
     this.brava = null
-    this.zapisiZelju(false)
+    this.zapisiZelju(false, tko)
     if (radila) this.log('[orchestrator-petlja] zaustavljena — agenti koji već rade dovršavaju sami')
   }
 
   /** Pri pokretanju ploče: digni petlju ako ju je korisnik zadnji put ostavio uključenu. */
   autostart(): Ishod {
     if (!this.zeljeno()) return { ok: false, razlog: 'petlja nije bila uključena' }
-    const r = this.start()
+    const r = this.start('autostart')
     if (!r.ok) this.log(`[orchestrator-petlja] autostart nije uspio: ${r.razlog}`)
     return r
   }

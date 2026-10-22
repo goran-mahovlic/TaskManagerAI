@@ -100,7 +100,7 @@ export class PredloskomSastavljenPrompt implements PromptComposer {
       projectId: ctx.task.projectId || '',
       manualPath: MANUAL_PATH,
       projectPath: ctx.projectPath
-        ? `## Radna mapa\nRadi u mapi: ${ctx.projectPath} (tu je pokrenut i tvoj proces).\n`
+        ? `## Radna mapa\nRadi u mapi: \`${ctx.projectPath}\` (tu je pokrenut i tvoj proces).\n`
         : '',
       systemFacts: facts.length
         ? '## Infrastruktura (iz konfiguracije ove instalacije)\n' + facts.map(r => `- ${r}`).join('\n') + '\n'

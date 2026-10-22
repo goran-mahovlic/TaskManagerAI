@@ -34,6 +34,8 @@ const DOPUSTENO = new Set([
 const IZNIMKE: { datoteka: string; redak: RegExp; razlog: string }[] = [
   { datoteka: 'src/KonzolaVrata.ts', redak: /PUT_TAJNI|\/proc\/<pid>\/environ/,
     razlog: 'nije poziv nego sigurnosni uzorak koji ODBIJA naredbe konzole prema okolini procesa (na macOS-u bezopasan, i dalje odbija)' },
+  { datoteka: 'src/core/RadnaMapaProjekta.ts', redak: /'\/etc', '\/proc', '\/sys'/,
+    razlog: 'nije poziv nego popis mapa koje radna mapa projekta NE smije biti (TASK-5715, C2); na macOS-u ih nema pa ništa ne mijenja' },
   { datoteka: 'src/core/CompletionGuard.ts', redak: /kind: 'command', re: \/\\b\(curl\|git/,
     razlog: 'nije poziv nego popis riječi po kojima se u odgovoru prepoznaje naredba kao dokaz' },
   { datoteka: 'scripts/profil-cvora-stanje.ts', redak: /nar\(\['systemctl', '--user', 'is-active', ime\]\)/,

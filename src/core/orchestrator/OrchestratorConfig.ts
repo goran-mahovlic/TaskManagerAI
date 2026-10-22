@@ -47,6 +47,12 @@ export interface ExecutorConfigCli {
   modelFlag?: string | null
   /** Nastavak postojeće sesije (`extra.resume`), npr. `--resume` (ADR-0002 §6.1). */
   resumeFlag?: string | null
+  /**
+   * Dodatni argumenti kad zadatak radi u radnoj mapi projekta (TASK-5715, nalaz C2). Bez polja
+   * vrijedi za `claude` `['--setting-sources', 'user']`: `.claude/settings.json` (hookovi) iz
+   * tuđeg repozitorija se ne učitava. `[]` = vlasnik vjeruje repozitorijima svojih projekata.
+   */
+  projectCwdArgs?: string[] | null
 }
 
 export interface ExecutorConfigHttp {

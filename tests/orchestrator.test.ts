@@ -548,7 +548,7 @@ describe('radna mapa projekta (projects.root_path) ide izvođaču kao cwd', () =
   const MAPA = ['', 'srv', 'projekti', 'alfa'].join('/')
 
   test('zadatak u projektu s radnom mapom: izvođač dobije cwd = ta mapa', async () => {
-    const { ports, board, executor } = sloziPortove()
+    const { ports, board, executor } = sloziPortove({ radnaMapa: (p: string) => ({ ok: true, put: p }) })
     board.projekti.set('P-1', { id: 'P-1', rootPath: MAPA })
     board.dodaj({ id: 'T-1', title: 'Napiši nešto', assignee: 'pisac', projectId: 'P-1' })
     const o = new Orchestrator(ports, postavke())
@@ -598,5 +598,133 @@ describe('radna mapa projekta (projects.root_path) ide izvođaču kao cwd', () =
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
+  })
+})
+
+// ─── TASK-5715 (nalazi C1/C2 pregleda TASK-5712) ─────────────────────────────
+
+describe('C1: ručna kočnica i vrata kvote vrijede za SVAKI spawn jezgre', () => {
+  test('kočnica uključena → 0 spawnova, zadatak ostaje pending, prolaz kaže zašto', async () => {
+    const { ports, board, executor } = sloziPortove({ vrata: { pauza: () => true, kvotaPuna: () => false } })
+    board.dodaj({ id: 'T-1', assignee: 'pisac' })
+    const o = new Orchestrator(ports, postavke())
+    const ishod = await o.jedanProlaz()
+    expect(executor.pozivi.length).toBe(0)
+    expect(ishod.spawn.pokrenuto).toBe(0)
+    expect(board.zadaci.get('T-1')!.status).toBe('pending')
+    expect(ishod.napomene.join(' ')).toContain('kočnica')
+  })
+
+  test('kočnica se čita prije SVAKOG spawna: uključena nakon prvog → drugi ne krene', async () => {
+    let pauza = false
+    const { ports, board, executor } = sloziPortove({ vrata: { pauza: () => pauza, kvotaPuna: () => false } })
+    const izv = executor as any
+    const run = izv.run.bind(izv)
+    izv.run = async (r: any) => { pauza = true; return run(r) }
+    board.dodaj({ id: 'T-1', assignee: 'pisac' })
+    board.dodaj({ id: 'T-2', assignee: 'pisac' })
+    await new Orchestrator(ports, postavke()).jedanProlaz()
+    expect(executor.pozivi.length).toBe(1)
+    expect(board.zadaci.get('T-2')!.status).toBe('pending')
+  })
+
+  test('kvota puna → 0 spawnova', async () => {
+    const { ports, board, executor } = sloziPortove({ vrata: { pauza: () => false, kvotaPuna: async () => true } })
+    board.dodaj({ id: 'T-1', assignee: 'pisac' })
+    const ishod = await new Orchestrator(ports, postavke()).jedanProlaz()
+    expect(executor.pozivi.length).toBe(0)
+    expect(ishod.napomene.join(' ')).toContain('kvot')
+  })
+
+  test('pauziran zadatak (tasks.paused) se preskače, ostali idu', async () => {
+    const { ports, board, executor } = sloziPortove({ vrata: { pauza: () => false, kvotaPuna: () => false } })
+    board.dodaj({ id: 'T-1', assignee: 'pisac', paused: true } as any)
+    board.dodaj({ id: 'T-2', assignee: 'pisac' })
+    await new Orchestrator(ports, postavke()).jedanProlaz()
+    expect(executor.pozivi.map(p => p.taskId)).toEqual(['T-2'])
+    expect(board.zadaci.get('T-1')!.status).toBe('pending')
+  })
+
+  test('HttpBoard čita `paused` iz API-ja ploče', async () => {
+    const { HttpBoard } = await import('../src/core/orchestrator/Adapters')
+    const b = new HttpBoard('http://ploca') as any
+    expect(b.uTask({ id: 'T-1', title: 'x', status: 'pending', paused: true }).paused).toBe(true)
+    expect(b.uTask({ id: 'T-1', title: 'x', status: 'pending', paused: 0 }).paused).toBe(false)
+  })
+})
+
+describe('C2: radna mapa se ponovo provjerava prije spawna', () => {
+  test('odbijena mapa → zadatak blocked s razlogom, izvođač se ne zove', async () => {
+    const { ports, board, executor } = sloziPortove({
+      radnaMapa: () => ({ ok: false, kod: 'root_path_not_allowed', poruka: 'nije u korijenu' }),
+    })
+    board.projekti.set('P-1', { id: 'P-1', rootPath: '/x' })
+    board.dodaj({ id: 'T-1', assignee: 'pisac', projectId: 'P-1' })
+    await new Orchestrator(ports, postavke()).jedanProlaz()
+    expect(executor.pozivi.length).toBe(0)
+    const z = board.zakrpe.find(k => k.patch.status === 'blocked')!
+    expect(z.patch.blockedReason).toContain('nije u korijenu')
+  })
+
+  test('izvođač dobije RAZRIJEŠENU putanju (realpath), ne upisanu', async () => {
+    const { ports, board, executor } = sloziPortove({ radnaMapa: () => ({ ok: true, put: '/stvarna' }) })
+    board.projekti.set('P-1', { id: 'P-1', rootPath: '/veza' })
+    board.dodaj({ id: 'T-1', assignee: 'pisac', projectId: 'P-1' })
+    await new Orchestrator(ports, postavke()).jedanProlaz()
+    expect(executor.pozivi[0]!.cwd).toBe('/stvarna')
+    expect(executor.pozivi[0]!.prompt).toContain('`/stvarna`')
+  })
+
+  test('bez porta provjere jezgra NE šalje mapu (fail-closed)', async () => {
+    const { ports, board, executor } = sloziPortove()
+    board.projekti.set('P-1', { id: 'P-1', rootPath: '/x' })
+    board.dodaj({ id: 'T-1', assignee: 'pisac', projectId: 'P-1' })
+    await new Orchestrator(ports, postavke()).jedanProlaz()
+    expect(executor.pozivi.length).toBe(0)
+    expect(board.zakrpe.some(k => k.patch.status === 'blocked')).toBe(true)
+  })
+
+  test('CLI claude u radnoj mapi projekta dobiva --setting-sources user (tuđi .claude/ se ne učitava)', async () => {
+    const { argumentiRadneMape } = await import('../src/core/orchestrator/Executors')
+    expect(argumentiRadneMape({ kind: 'cli', command: 'claude', args: [], promptChannel: 'arg' })).toEqual(['--setting-sources', 'user'])
+    expect(argumentiRadneMape({ kind: 'cli', command: '/opt/bin/claude', args: [], promptChannel: 'arg' })).toEqual(['--setting-sources', 'user'])
+    expect(argumentiRadneMape({ kind: 'cli', command: 'claude', args: [], promptChannel: 'arg', projectCwdArgs: [] } as any)).toEqual([])
+    expect(argumentiRadneMape({ kind: 'cli', command: 'drugi', args: [], promptChannel: 'arg' })).toEqual([])
+  })
+})
+
+describe('C1/C2: sastav uvijek daje vrata i provjeru radne mape', () => {
+  test('kvotaPunaIz: isti pragovi kao razgovor; nepoznato nije puno', async () => {
+    const { kvotaPunaIz } = await import('../src/core/orchestrator/Adapters')
+    const t = { sessionBlock: 95, weeklyBlock: 90 }
+    expect(kvotaPunaIz({ session_percent: 95, weekly_percent: 10 }, t)).toBe(true)
+    expect(kvotaPunaIz({ session_percent: 10, weekly_percent: 90 }, t)).toBe(true)
+    expect(kvotaPunaIz({ session_percent: 94, weekly_percent: 89 }, t)).toBe(false)
+    expect(kvotaPunaIz({ session_percent: null }, t)).toBe(false)
+    expect(kvotaPunaIz(null, t)).toBe(false)
+  })
+
+  test('sastaviOrkestrator: portovi vrata i radnaMapa postoje i bez ičega izvana', async () => {
+    const { sastaviOrkestrator } = await import('../src/core/orchestrator')
+    const s = sastaviOrkestrator(postavke(), { executor: new IzvodacUMemoriji(), agents: new KonfiguracijskiRegistar(AGENTI) })
+    const p = (s.orkestrator as any).p as OrchestratorPorts
+    expect(typeof p.vrata?.pauza).toBe('function')
+    expect(typeof p.vrata?.kvotaPuna).toBe('function')
+    const r = p.radnaMapa!('/')
+    expect(r.ok).toBe(false)
+  })
+})
+
+describe('C1: kočnica u dnevniku samo pri promjeni', () => {
+  test('tri prolaza pod kočnicom → jedan redak; otpuštanje → jedan redak', async () => {
+    let pauza = true
+    const { ports, logger } = sloziPortove({ vrata: { pauza: () => pauza, kvotaPuna: () => false } })
+    ;(ports.board as any).dodaj({ id: 'T-1', assignee: 'pisac' })
+    const o = new Orchestrator(ports, postavke())
+    for (let i = 0; i < 3; i++) await o.jedanProlaz()
+    expect(logger.redci.filter(r => r.includes('kočnica')).length).toBe(1)
+    pauza = false
+    await o.jedanProlaz()
+    expect(logger.redci.filter(r => r.includes('vrata otvorena')).length).toBe(1)
   })
 })

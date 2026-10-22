@@ -18,7 +18,7 @@
 
 import { mkdtempSync, rmSync, statSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
-import { join } from 'path'
+import { basename, join } from 'path'
 import type { ExecRequest, ExecResult, Executor } from './Ports'
 import type { ExecutorConfig, ExecutorConfigCli, ExecutorConfigHttp } from './OrchestratorConfig'
 
@@ -49,6 +49,16 @@ export function radnaMapaIzvodacaGreska(cwd: string): string | null {
   }
 }
 
+/**
+ * Argumenti za rad u radnoj mapi projekta (TASK-5715, C2): `claude` iz `cwd` učitava
+ * `.claude/settings.json` (hookovi = izvršavanje naredbi), pa ga u tuđoj mapi pokrećemo samo s
+ * korisničkim postavkama. `projectCwdArgs` u orchestrator.json to izričito mijenja.
+ */
+export function argumentiRadneMape(c: ExecutorConfigCli): string[] {
+  if (Array.isArray(c.projectCwdArgs)) return c.projectCwdArgs.map(String)
+  return basename(c.command || '') === 'claude' ? ['--setting-sources', 'user'] : []
+}
+
 export class CliExecutor implements Executor {
   ime: string
   private cfg: ExecutorConfigCli
@@ -70,6 +80,10 @@ export class CliExecutor implements Executor {
     const extra = req.extra || {}
     if (c.resumeFlag && typeof extra.resume === 'string' && extra.resume) argv.push(c.resumeFlag, extra.resume)
     if (Array.isArray(extra.args)) argv.push(...extra.args.map(String))
+    // Radna mapa: postavke samo od korisnika — osim ako pozivatelj (npr. razgovor sa
+    // `--setting-sources ''`) već sam bira izvore.
+    const radne = req.cwd ? argumentiRadneMape(c) : []
+    if (radne.length && !argv.includes(radne[0]!)) argv.push(...radne)
     const okolina = extra.env && typeof extra.env === 'object' ? extra.env as Record<string, string> : null
 
     let tmpMapa: string | null = null

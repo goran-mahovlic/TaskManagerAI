@@ -133,3 +133,17 @@ export function odlukaNaredbe(
   }
   return { argv: [izvrsna!, ...arg] }
 }
+
+// ─── Radnje koje znače izvršavanje koda (TASK-5715, nalaz Ž1 pregleda TASK-5712) ─────────
+
+/**
+ * Pokretanje petlje orkestratora i postavljanje radne mape projekta su izvršavanje koda
+ * (agent radi u toj mapi s alatima ljuske). Isti prijenos kao konzola: samo loopback ili
+ * Tailscale, nikad LAN. CSRF zaglavlje ovdje ne treba: Origin/Host brana ploče već vrijedi.
+ */
+export function vrataIzvrsavanja(ip: string | null, radnja: string): Odbijeno | null {
+  const p = odlukaPrijenosa(ip, false, { dopustiLanHttp: false })
+  if (p.dopusten && (p.vrsta === 'loopback' || p.vrsta === 'tailscale')) return null
+  return odbij(403, `izvrsavanje_prijenos_${p.vrsta}`,
+    `${radnja} je dopušteno samo s ovog stroja (localhost) ili preko Tailscalea — s LAN-a je zatvoreno. Koristi SSH tunel: ssh -L 17781:localhost:17781 <stroj>.`)
+}

@@ -34,8 +34,15 @@ pokreni ponovno. Ništa drugo iz `.env` za ovaj vodič ne treba.
 
 ## 2. Stvori projekt i daj mu radnu mapu
 
+Radne mape su isključene dok ne kažeš u kojim mapama agent smije raditi. Prije pokretanja
+ploče postavi popis dopuštenih korijena (odvojen s `:`), npr. u `.env`:
+
+```bash
+TM_PROJECTS_ROOTS=/apsolutna/putanja/do/projekata
+```
+
 Na ploči: **Projekti → + Novi projekt**. Upiši ime i, u polje **Radna mapa**, apsolutnu
-putanju repozitorija u kojem agent treba raditi. Spremi.
+putanju repozitorija u kojem agent treba raditi (unutar nekog korijena). Spremi.
 
 Ili kroz API:
 
@@ -48,8 +55,11 @@ curl -X POST http://localhost:17781/api/projects \
 **Provjera:** projekt je na popisu s `PRJ-…` oznakom, a `GET /api/projects` pod `root_path`
 pokazuje tvoju putanju.
 
-**Zamka:** putanja mora biti apsolutna i mapa mora postojati; ploča nepostojeću odbija s
-`root_path_missing`. Bez radne mape agent radi u mapi iz koje je pokrenut orkestrator, a to
+**Zamka:** putanja mora biti apsolutna, unutar dopuštenog korijena, i mapa mora postojati.
+Bez `TM_PROJECTS_ROOTS` ploča odbija s `root_path_disabled`, izvan korijena s
+`root_path_not_allowed`, nepostojeću s `root_path_missing`. `/`, `$HOME`, `~/.claude`, `~/.ssh`,
+`$TM_HOME` i sistemske mape odbija uvijek (`root_path_forbidden`), a simboličku vezu razrješava.
+Mapu se postavlja samo s ovog stroja ili preko Tailscalea, ne s LAN-a. Bez radne mape agent radi u mapi iz koje je pokrenut orkestrator, a to
 rijetko kad želiš.
 
 ## 3. Dodaj zadatak
@@ -111,7 +121,7 @@ sesija treba da bi uređivala datoteke i javljala se ploči:
 ```json
 "args": ["--print", "--output-format", "json",
          "--permission-mode", "acceptEdits",
-         "--allowedTools", "Bash(curl:*),Bash(git:*)"]
+         "--allowedTools", "Bash(curl:*),Bash(git add:*),Bash(git commit:*),Bash(git status:*),Bash(git diff:*)"]
 ```
 
 **Provjera:** `bun scripts/orchestrator.ts --stanje` kaže `"ukljucen": true` i
@@ -119,9 +129,14 @@ sesija treba da bi uređivala datoteke i javljala se ploči:
 
 **Zamka:** print način ne može te pitati za dopuštenje, pa je sve što nije unaprijed
 dopušteno odbijeno. Gornje zastavice pokrivaju uređivanje datoteka, poziv ploči i commit.
-Budući da agent radi u tvom repozitoriju, vrijedi i popis dopuštenja iz njegova
-`.claude/settings.json`. Ako vještine tog repozitorija pokreću skripte (Python, pokretač
-testova), dopusti ih ondje — inače će agent javiti da je odbijen i raditi ručno.
+Ne dopuštaj `Bash(git:*)`: `git -c core.pager=…` ili `git config alias.x '!sh'` znače
+izvršavanje bilo čega, a `Bash(curl:*)` već daje slanje podataka bilo kamo — to je skoro puni
+pristup ljusci, budi svjestan toga.
+U radnoj mapi projekta `claude` se pokreće s `--setting-sources user`: `.claude/settings.json`
+repozitorija (njegovi hookovi i dopuštenja) se NE učitava, da tuđi repozitorij ne donese
+naredbe koje će agent izvršiti. Ako vjeruješ repozitorijima svojih projekata, u
+`orchestrator.json` izvođaču postavi `"projectCwdArgs": []` — tada vrijedi i njihov popis
+dopuštenja (npr. za skripte vještina).
 
 ## 6. Pokreni jedan prolaz
 
@@ -140,6 +155,9 @@ bun scripts/orchestrator.ts
 **Pokreni**. Ploča tada istu petlju vrti sama, pamti da je uključena i nakon restarta je sama
 diže. **Zaustavi** znači „ne pokreći nove agente"; onaj koji radi dovršava sam. Petlja smije
 biti samo jedna: dok je drži ploča, skripta iz terminala odbija s PID-om ploče, i obrnuto.
+Ručna kočnica (Pauza) vrijedi: pod kočnicom se petlja ne pokreće (ni nakon restarta), a petlja
+koja radi prije svakog agenta pita kočnicu i vrata kvote. Pokreni radi samo s ovog stroja ili
+preko Tailscalea.
 (Konzola na ploči nije put: svaku naredbu ubija nakon 30 sekundi.)
 
 **Provjera:** na ploči **Status** pokazuje živ spawn. `ps -ef | grep "claude --print"`

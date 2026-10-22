@@ -85,14 +85,17 @@ export const ProjectSchema = z.object({
 
 /**
  * Radna mapa projekta: apsolutna putanja na disku u kojoj agent radi zadatke tog projekta.
- * Ovdje se provjerava samo OBLIK (apsolutna, bez `..`); postoji li mapa provjerava ploča pri
- * spremanju (`radnaMapaGreska` u ProjectManager). Prazan niz ili `null` = „bez mape".
+ * Ovdje se provjerava samo OBLIK (apsolutna, bez `..`, bez kontrolnih znakova); je li mapa u
+ * dopuštenom korijenu i postoji li provjerava ploča pri spremanju (`radnaMapaGreska` u
+ * ProjectManager, `core/RadnaMapaProjekta.ts`). Prazan niz ili `null` = „bez mape".
  */
 export const RootPathSchema = z.preprocess(
   v => (typeof v === 'string' ? (v.trim() === '' ? null : v.trim()) : v),
   z.string()
     .refine(p => p.startsWith('/'), 'root_path must be an absolute path')
     .refine(p => !p.split('/').includes('..'), 'root_path must not contain `..`')
+    // TASK-5715 (Ž2): novi redak u putanji bi u promptu agenta otvorio novi odjeljak.
+    .refine(p => !/[\x00-\x1f\x7f]/.test(p), 'root_path must not contain control characters')
     .nullable()
 )
 

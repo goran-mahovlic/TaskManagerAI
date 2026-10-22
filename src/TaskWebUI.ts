@@ -113,13 +113,13 @@ import { formatLocalTime } from './core/QuotaWakeup'
 // T10/TASK-3575: ploča čita POSTOJEĆI trag vratara (data/critic_gate.jsonl) — druga bi
 // baza značila da ploča i vrata mogu tvrditi suprotno o istom zadatku.
 import { unverifiedBoardState } from './core/UnverifiedReport'
-import { getProjectManager, radnaMapaGreska } from './core/ProjectManager'
+import { getProjectManager, radnaMapaOdbijenica } from './core/ProjectManager'
 import { getMessageQueue } from './core/MessageQueue'
 import { getRAGService, ragPodesen } from './RAGService'
 import { kljucPrisutan, kljucPrisutanUDatoteci, postaviTajnu, ukloniKljucIzDatoteke } from './LoginCreds'
 // TASK-5343 (ADR-0007): upis tajni s ploče — samo-za-pisanje, kod u vlasnikov privatni Telegram.
 import { obradiTajneZahtjev, osvjeziImeBota, ucitajPostavkeTajni, uputaTajniZaPoruku } from './TajnePloca'
-import { odlukaNaredbe, vrataKonzole } from './KonzolaVrata'
+import { odlukaNaredbe, vrataKonzole, vrataIzvrsavanja } from './KonzolaVrata'
 import { ocistiLoginKod, izvuciLoginUrl, maskirajLoginTail, loginOauthGreska, LOGIN_POTVRDA } from './LoginUnos'
 import { capguardPostavke, stanjeCapguarda, zatraziSposobnost } from './Capguard'
 import { tecajOdgovor } from './Tecaj'
@@ -16139,9 +16139,14 @@ async function handleCreateProject(req: Request): Promise<Response> {
     }
 
     // Radna mapa mora postojati — korisnik grešku vidi pri spremanju, ne kad agent krene.
-    const greskaMape = radnaMapaGreska(parseResult.data.root_path)
+    // TASK-5715 (Ž1): radna mapa bira gdje agent izvršava kod → samo localhost/Tailscale.
+    if (typeof parseResult.data.root_path === 'string') {
+      const zatvoreno = vrataIzvrsavanja(ipZahtjeva(req), 'Postavljanje radne mape projekta')
+      if (zatvoreno) return json({ error: zatvoreno.error, code: zatvoreno.greska }, zatvoreno.status)
+    }
+    const greskaMape = radnaMapaOdbijenica(parseResult.data.root_path)
     if (greskaMape) {
-      return new Response(JSON.stringify({ error: greskaMape, code: 'root_path_missing' }), {
+      return new Response(JSON.stringify(greskaMape), {
         status: 400,
         headers: { 'Content-Type': 'application/json' }
       })
@@ -16182,9 +16187,14 @@ async function handleUpdateProject(projectId: string, req: Request): Promise<Res
       })
     }
 
-    const greskaMape = radnaMapaGreska(parseResult.data.root_path)
+    // TASK-5715 (Ž1): radna mapa bira gdje agent izvršava kod → samo localhost/Tailscale.
+    if (typeof parseResult.data.root_path === 'string') {
+      const zatvoreno = vrataIzvrsavanja(ipZahtjeva(req), 'Postavljanje radne mape projekta')
+      if (zatvoreno) return json({ error: zatvoreno.error, code: zatvoreno.greska }, zatvoreno.status)
+    }
+    const greskaMape = radnaMapaOdbijenica(parseResult.data.root_path)
     if (greskaMape) {
-      return new Response(JSON.stringify({ error: greskaMape, code: 'root_path_missing' }), {
+      return new Response(JSON.stringify(greskaMape), {
         status: 400,
         headers: { 'Content-Type': 'application/json' }
       })
@@ -18695,6 +18705,10 @@ async function obradiZahtjev(req: Request): Promise<Response | undefined> {
       return await handleOrchestratorGet()
     }
     if (url.pathname === '/api/orchestrator/config' && req.method === 'PUT') {
+      // TASK-5715 (Ž1): zakrpa smije mijenjati `executors` (naredbu izvođača) i `enabled` —
+      // uz gumb Pokreni to je izvršavanje koda → ista vrata kao petlja (localhost/Tailscale).
+      const zatvoreno = vrataIzvrsavanja(ipZahtjeva(req), 'Mijenjanje postavki orkestratora')
+      if (zatvoreno) return json({ error: zatvoreno.error, greska: zatvoreno.greska }, zatvoreno.status)
       return handleOrchestratorPut(req)
     }
     // Petlja orkestratora u procesu ploče (gumb Pokreni/Zaustavi na Config → Orkestrator).
@@ -18702,11 +18716,15 @@ async function obradiZahtjev(req: Request): Promise<Response | undefined> {
       return json(orchestratorPetlja.stanje())
     }
     if (url.pathname === '/api/orchestrator/petlja/start' && req.method === 'POST') {
-      const r = orchestratorPetlja.start()
+      // TASK-5715 (Ž1): pokretanje agenata = izvršavanje koda → samo localhost/Tailscale.
+      const ip = ipZahtjeva(req)
+      const zatvoreno = vrataIzvrsavanja(ip, 'Pokretanje petlje orkestratora')
+      if (zatvoreno) return json({ error: zatvoreno.error, greska: zatvoreno.greska }, zatvoreno.status)
+      const r = orchestratorPetlja.start(`ploca ${ip || '?'}`)
       return r.ok ? json({ ok: true, stanje: orchestratorPetlja.stanje() }) : json({ error: r.razlog, stanje: orchestratorPetlja.stanje() }, 409)
     }
     if (url.pathname === '/api/orchestrator/petlja/stop' && req.method === 'POST') {
-      orchestratorPetlja.stop()
+      orchestratorPetlja.stop(`ploca ${ipZahtjeva(req) || '?'}`)
       return json({ ok: true, stanje: orchestratorPetlja.stanje() })
     }
 

@@ -41,6 +41,7 @@ export class Orchestrator {
   private radi = false
   private tajmer: ReturnType<typeof setTimeout> | null = null
   private zadnjiAutoExec = 0
+  private zadnjaVrata: string | null = null
 
   /**
    * `opcije.maxConcurrent` — živi izvor stropa (postavka TaskManagera, Config stranica).
@@ -150,6 +151,21 @@ export class Orchestrator {
   private async pokreniZadatke(ishod: IshodProlaza): Promise<void> {
     const cekaju = await this.p.board.list('pending')
     for (const t of cekaju) {
+      // TASK-5715 (C1): kočnica i kvota PRIJE svakog spawna — pritisnuta usred prolaza
+      // zaustavlja ostatak. Pauziran zadatak se preskače, ostali idu.
+      const zatvoreno = await this.vrataZatvorena()
+      if (zatvoreno) {
+        ishod.napomene.push(zatvoreno)
+        // U dnevnik samo promjena: kočnica preko noći inače piše redak svake sekunde.
+        if (zatvoreno !== this.zadnjaVrata) this.p.logger.log(`[orchestrator] ${zatvoreno} — ne pokrećem nove agente`)
+        this.zadnjaVrata = zatvoreno
+        break
+      }
+      if (this.zadnjaVrata) {
+        this.p.logger.log(`[orchestrator] vrata otvorena (${this.zadnjaVrata} više ne vrijedi)`)
+        this.zadnjaVrata = null
+      }
+      if (t.paused) continue
       const agent = this.odaberiAgenta(t)
       if (!agent) {
         this.p.logger.log(`[orchestrator] ${t.id}: nema agenta (assignee „${t.assignee || '—'}")`)
@@ -174,6 +190,15 @@ export class Orchestrator {
     }
   }
 
+  /** Razlog zašto se sada ne smije pokrenuti nijedan agent, ili `null`. Kvar vrata = otvoreno. */
+  private async vrataZatvorena(): Promise<string | null> {
+    const v = this.p.vrata
+    if (!v) return null
+    try { if (v.pauza()) return 'ručna kočnica je uključena' } catch { /* fail-open, kao PauseControl */ }
+    try { if (await v.kvotaPuna()) return 'vrata autonomije: kvota je puna' } catch { /* nepoznato ≠ puno */ }
+    return null
+  }
+
   private odaberiAgenta(t: Task): AgentInfo | null {
     if (t.assignee) return this.p.agents.get(t.assignee)
     const ruta = this.p.agents.route(`${t.title}\n${t.description || ''}`)
@@ -182,14 +207,29 @@ export class Orchestrator {
 
   /** Pokreni jedan zadatak i zapiši ishod na ploču. Iznimka ne smije oboriti petlju. */
   async pokreniZadatak(t: Task, agent: AgentInfo): Promise<ExecResult> {
+    // Radna mapa projekta: izvođač je dobije kao cwd, agent i u tekstu. Bez projekta ili
+    // bez mape sve ostaje kao prije (cwd se ne šalje). Provjera je PRIJE zauzimanja mjesta:
+    // odbijena mapa je kvar postavke, ne agenta, pa ne pokreće odgodu agenta.
+    const projekt = t.projectId ? await this.p.board.project(t.projectId) : null
+    // TASK-5715 (C2): mapa se provjerava i ovdje, ne samo pri spremanju — mogla je postati
+    // veza izvan dopuštenih korijena. Izvođač dobije RAZRIJEŠENU putanju. Bez porta provjere
+    // jezgra mapu ne šalje (fail-closed): agent ne smije raditi u neprovjerenoj mapi.
+    let radnaMapa: string | null = null
+    if (projekt?.rootPath) {
+      const r = this.p.radnaMapa
+        ? this.p.radnaMapa(projekt.rootPath)
+        : { ok: false as const, kod: 'root_path_unchecked', poruka: 'radna mapa se ne može provjeriti (nema provjere u sastavu)' }
+      if (!r.ok) {
+        await this.p.board.update(t.id, { status: 'blocked', blockedReason: `radna mapa projekta odbijena: ${r.poruka}` })
+        this.p.logger.log(`[orchestrator] ${t.id}: radna mapa odbijena (${r.kod}) — ${r.poruka}`)
+        return { exitCode: 1, resultText: '', greska: r.poruka }
+      }
+      radnaMapa = r.put
+    }
+
     this.queue.zauzmi(agent.id, t.id)
     const bezCekanja = oznakeNakonPokusaja(t.tags, { ok: true })
     await this.p.board.update(t.id, { status: 'in_progress', assignee: agent.id, ...(bezCekanja ? { tags: bezCekanja } : {}) })
-
-    // Radna mapa projekta: izvođač je dobije kao cwd, agent i u tekstu. Bez projekta ili
-    // bez mape sve ostaje kao prije (cwd se ne šalje).
-    const projekt = t.projectId ? await this.p.board.project(t.projectId) : null
-    const radnaMapa = projekt?.rootPath || null
 
     const prompt = this.p.prompt.build({
       task: t,

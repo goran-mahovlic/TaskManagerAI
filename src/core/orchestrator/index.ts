@@ -17,6 +17,7 @@ export { CliExecutor, HttpExecutor, napraviIzvodace } from './Executors'
 export { ProcLiveness, SignalLiveness, odaberiLiveness } from './Liveness'
 export {
   HttpBoard, PraznaMagistrala, TelegramNotifier, TihiNotifier, DatotecniLogger, SistemskiSat,
+  VrataPloce, kvotaPunaIz,
 } from './Adapters'
 
 import { Orchestrator } from './Orchestrator'
@@ -24,7 +25,9 @@ import { KonfiguracijskiRegistar } from './AgentRegistry'
 import { PredloskomSastavljenPrompt } from './PromptBuilder'
 import { napraviIzvodace } from './Executors'
 import { odaberiLiveness } from './Liveness'
-import { DatotecniLogger, HttpBoard, PraznaMagistrala, SistemskiSat, TelegramNotifier } from './Adapters'
+import { DatotecniLogger, HttpBoard, PraznaMagistrala, SistemskiSat, TelegramNotifier, VrataPloce } from './Adapters'
+import { readPauseState } from '../PauseControl'
+import { provjeriRadnuMapu } from '../RadnaMapaProjekta'
 import { loadOrchestratorConfig, type OrchestratorPostavke } from './OrchestratorConfig'
 import type { OrchestratorPorts } from './Ports'
 import { createConcurrencyReader, formatConcurrencyChange } from '../ConcurrencySetting'
@@ -76,6 +79,10 @@ export function sastaviOrkestrator(
     logger: portovi.logger || new DatotecniLogger(),
     // TASK-5359: rezervni model iz `dezurni.json` paketa kad primarni padne.
     dezurni: portovi.dezurni || dezurniRazgovora(),
+    // TASK-5715 (C1/C2): kočnica + kvota prije svakog spawna i provjera radne mape (dopušteni
+    // korijeni TM_PROJECTS_ROOTS) — uvijek, i za CLI i za petlju u procesu ploče.
+    vrata: portovi.vrata || new VrataPloce(cfg.api.baseUrl, () => readPauseState().paused),
+    radnaMapa: portovi.radnaMapa || ((p: string) => provjeriRadnuMapu(p)),
   }
   // Strop usporednih agenata je POSTAVKA TaskManagera (tablica `settings`, Config stranica),
   // ne polje orchestrator.json: čita se uživo (keš ≤5 s), pa promjena ne traži restart.

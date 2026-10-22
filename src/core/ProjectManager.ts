@@ -13,6 +13,7 @@ import Database from 'bun:sqlite'
 import { join } from 'path'
 import { existsSync, readFileSync, statSync } from 'fs'
 import { randomUUID } from 'crypto'
+import { provjeriRadnuMapu, opcijeIzOkoline, type OpcijeRadneMape } from './RadnaMapaProjekta'
 import {
   CreateProjectInputSchema,
   UpdateProjectInputSchema,
@@ -84,17 +85,27 @@ export function osigurajKolonuRadneMape(db: Database): boolean {
 }
 
 /**
- * Smije li se ova radna mapa spremiti: mora postojati i biti mapa. `null`/`undefined` znači
- * da se mapa ne postavlja i nije greška. Vraća poruku za korisnika ili `null` ako je u redu.
- * Provjera je na PLOČI jer korisnik grešku treba vidjeti pri spremanju, ne tek kad agent
- * krene (pretpostavka: ploča i orkestrator vide isti disk).
+ * Smije li se ova radna mapa spremiti. `null`/`undefined` znači da se mapa ne postavlja i nije
+ * greška. Vraća `{ error, code }` za korisnika ili `null` ako je u redu. Pravila (dopušteni
+ * korijeni `TM_PROJECTS_ROOTS`, realpath, zaštićene mape) su u `core/RadnaMapaProjekta.ts`
+ * (TASK-5715, nalaz C2). Provjera je na PLOČI jer korisnik grešku treba vidjeti pri spremanju,
+ * a orkestrator je ponavlja prije svakog spawna (mapa se može zamijeniti vezom).
  */
-export function radnaMapaGreska(putanja: string | null | undefined): string | null {
+export function radnaMapaOdbijenica(
+  putanja: string | null | undefined,
+  opcije: OpcijeRadneMape = opcijeIzOkoline(),
+): { error: string; code: string } | null {
   if (putanja === null || putanja === undefined) return null
-  let st
-  try { st = statSync(putanja) } catch { return `Radna mapa ne postoji: ${putanja}` }
-  if (!st.isDirectory()) return `Radna mapa nije mapa: ${putanja}`
-  return null
+  const r = provjeriRadnuMapu(putanja, opcije)
+  return r.ok ? null : { error: r.poruka, code: r.kod }
+}
+
+/** Isto kao `radnaMapaOdbijenica`, samo poruka. */
+export function radnaMapaGreska(
+  putanja: string | null | undefined,
+  opcije: OpcijeRadneMape = opcijeIzOkoline(),
+): string | null {
+  return radnaMapaOdbijenica(putanja, opcije)?.error ?? null
 }
 
 // ============================================

@@ -25,6 +25,8 @@ export interface Task {
   tags?: string[]
   createdAt?: string
   startedAt?: string | null
+  /** Pauza zadatka (`tasks.paused`, ručna kočnica po zadatku): auto-exec ga preskače. */
+  paused?: boolean
 }
 
 export interface TaskPatch {
@@ -186,6 +188,22 @@ export interface Clock { now(): number }
 export interface Logger { log(redak: string): void }
 
 /** Sve što jezgra treba. Ništa više, ništa manje. */
+/**
+ * Vrata prije spawna (TASK-5715, nalaz C1): ručna kočnica i kvota. Pitaju se prije SVAKOG
+ * spawna, ne jednom po prolazu — kočnica pritisnuta usred prolaza zaustavlja ostatak.
+ */
+export interface VrataSpawna {
+  /** Globalna ručna kočnica (`pause.state.json`). */
+  pauza(): boolean
+  /** Vrata autonomije: potrošnja sesije/tjedna iznad praga. Nepoznato = nije puno. */
+  kvotaPuna(): Promise<boolean> | boolean
+}
+
+/** Provjera radne mape projekta prije spawna (TASK-5715, nalaz C2); v. core/RadnaMapaProjekta. */
+export type ProvjeraRadneMape = (putanja: string) =>
+  | { ok: true; put: string }
+  | { ok: false; kod: string; poruka: string }
+
 export interface OrchestratorPorts {
   board: Board
   bus: MessageBus
@@ -196,6 +214,10 @@ export interface OrchestratorPorts {
   notifier: Notifier
   clock: Clock
   logger: Logger
+  /** Kočnica i kvota (C1). Bez njih jezgra ne zna za njih — `sastaviOrkestrator` ih uvijek daje. */
+  vrata?: VrataSpawna
+  /** Provjera radne mape (C2). BEZ nje jezgra radnu mapu NE šalje: zadatak ide u blocked. */
+  radnaMapa?: ProvjeraRadneMape
   /**
    * Rezervni model kad primarni padne (TASK-5359). Bez njega pad (429/401/limit) ide u
    * `blocked` kao prije. Strukturni tip, da jezgra ne uvozi modul domaćina.

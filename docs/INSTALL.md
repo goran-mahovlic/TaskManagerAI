@@ -404,9 +404,14 @@ natjecale za iste zadatke.
 „Radna mapa", ili `root_path` u API-ju): apsolutnu putanju repozitorija tog projekta. Zadatak
 iz takvog projekta orkestrator pokreće **u toj mapi** (radni direktorij procesa) i agentu je
 navodi u promptu. Projekt bez mape radi kao prije — u mapi iz koje je orkestrator pokrenut.
-Ploča odbija mapu koje nema (pretpostavka: ploča i orkestrator vide isti disk); nestane li
-poslije, izvođač odbija pokretanje i zadatak ide u `blocked` s razlogom — nikad tihi rad u
-tuđoj mapi. Jedan orkestrator tako opslužuje projekte u više mapa; više orkestratora nad istom
+Radne mape su **isključene** dok `TM_PROJECTS_ROOTS` (popis dopuštenih korijena, odvojen s `:`)
+nije postavljen. Mapa mora biti unutar korijena nakon razrješenja simboličkih veza; `/`,
+`$HOME`, `~/.claude`, `~/.ssh`, `$TM_HOME` i sistemske mape odbijaju se uvijek. Ploča to
+provjerava pri spremanju (samo s ovog stroja ili Tailscalea), a orkestrator ponovo prije svakog
+spawna; odbijena mapa → zadatak `blocked` s razlogom, nikad tihi rad u tuđoj mapi. U radnoj
+mapi `claude` dobiva `--setting-sources user` (hookovi repozitorija se ne učitavaju;
+`"projectCwdArgs": []` u izvođaču to isključuje). Ručna kočnica i vrata kvote vrijede za
+svaki spawn orkestratora, i iz terminala i iz petlje na ploči. Jedan orkestrator tako opslužuje projekte u više mapa; više orkestratora nad istom
 pločom NE treba (natjecali bi se za iste zadatke).
 
 **Čistači kreću u sjeni.** `watchdog.*.mode` je zadano `shadow`: sud o zaglavljenom zadatku

@@ -2,7 +2,7 @@
 // (cat/grep/tail…) preko LAN-a bez ikakve prijave. Brane: (b) vrata konzole — samo loopback
 // ili Tailscale + CSRF zaglavlje X-TM-Konzola; (a) bez čitača datoteka i bez putova tajni.
 import { describe, expect, test } from 'bun:test'
-import { odlukaNaredbe, vrataKonzole } from '../src/KonzolaVrata'
+import { odlukaNaredbe, vrataKonzole, vrataIzvrsavanja } from '../src/KonzolaVrata'
 
 const zag = (h: Record<string, string> = {}) =>
   new Headers({ 'Content-Type': 'application/json', 'X-TM-Konzola': '1', Host: 'ploca:17781', ...h })
@@ -85,5 +85,18 @@ describe('odlukaNaredbe — nema čitača datoteka ni putova tajni', () => {
   test('stare blokade ostaju (sudo, $(…), rm -rf), prazna naredba → 400', () => {
     ne('ls $(cat x)'); ne('sudo ls'); ne('ls; rm -rf /')
     expect(odlukaNaredbe('   ', 'work', {})).toMatchObject({ status: 400 })
+  })
+})
+
+describe('vrataIzvrsavanja (TASK-5715, Ž1): petlja i radna mapa samo s ovog stroja ili Tailscalea', () => {
+  test('loopback i Tailscale prolaze', () => {
+    for (const ip of ['127.0.0.1', '::1', '100.64.0.7']) expect(vrataIzvrsavanja(ip, 'x')).toBeNull()
+  })
+  test('LAN i nepoznat peer → 403 s imenom radnje', () => {
+    for (const ip of ['192.0.2.20', '10.0.0.5', null]) {
+      const r = vrataIzvrsavanja(ip, 'Pokretanje petlje')
+      expect(r?.status).toBe(403)
+      expect(r?.error).toContain('Pokretanje petlje')
+    }
   })
 })

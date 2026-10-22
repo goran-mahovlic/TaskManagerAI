@@ -59,13 +59,16 @@ describe('shema: root_path je neobavezna apsolutna putanja', () => {
 })
 
 describe('radnaMapaGreska: ploča odbija mapu koje nema', () => {
+  // TASK-5715: mapa mora biti u dopuštenom korijenu; ovdje je korijen sama privremena mapa.
+  const o = () => ({ korijeni: [dir], home: join(dir, 'home'), tmHome: join(dir, 'tm') })
+
   test('postojeća mapa: nema greške', () => {
-    expect(radnaMapaGreska(dir)).toBeNull()
+    expect(radnaMapaGreska(dir, o())).toBeNull()
   })
 
   test('nepostojeća mapa: poruka imenuje putanju', () => {
     const nema = join(dir, 'nema')
-    const g = radnaMapaGreska(nema)
+    const g = radnaMapaGreska(nema, o())
     expect(g).not.toBeNull()
     expect(g!).toContain(nema)
   })
@@ -73,12 +76,16 @@ describe('radnaMapaGreska: ploča odbija mapu koje nema', () => {
   test('datoteka umjesto mape: greška', () => {
     const dat = join(dir, 'datoteka.txt')
     writeFileSync(dat, 'x')
-    expect(radnaMapaGreska(dat)).not.toBeNull()
+    expect(radnaMapaGreska(dat, o())).not.toBeNull()
   })
 
   test('null/undefined (mapa se ne postavlja): nema greške', () => {
-    expect(radnaMapaGreska(null)).toBeNull()
-    expect(radnaMapaGreska(undefined)).toBeNull()
+    expect(radnaMapaGreska(null, o())).toBeNull()
+    expect(radnaMapaGreska(undefined, o())).toBeNull()
+  })
+
+  test('bez dopuštenih korijena (zadano) i postojeća mapa se odbija', () => {
+    expect(radnaMapaGreska(dir, { ...o(), korijeni: [] })).toContain('TM_PROJECTS_ROOTS')
   })
 })
 
