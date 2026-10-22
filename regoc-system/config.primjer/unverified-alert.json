@@ -1,0 +1,11 @@
+{
+  "_note": "T10/TASK-3575: dojava kad je vratar (CriticGate) prošao zadatak, a NIJE mogao ništa provjeriti. Čita UnverifiedReport.ts (RegocDaemon nakon izlaska spawna + ploča 17781 + CLI `bun UnverifiedReport.ts`). Nedostajuća/neispravna datoteka → DEFAULT_UNVERIFIED_CONFIG. Mijenja se BEZ restarta (keš 30 s). Uključivanje ide preko features.json: criticUnverifiedAlert.",
+  "_zasto_prag_ovdje": "Zahtjev (Goran, 01.09.2026.): prag mora biti u konfiguraciji, ne u kodu. Izmjereno na data/critic_gate.jsonl istog dana: pass 49, fail 4, unverifiable 53 — bez praga bi svaki drugi zadatak poslao poruku na Telegram i dojava bi se prvog tjedna isključila kao šum.",
+  "_zasto_ne_blokira": "unverifiable i partial NISU dokaz kvara nego izostanak dokaza. Blokira i dalje samo `fail` (naredba + izlazni kod). Ovdje se rad SAMO prijavljuje.",
+  "dailyAlertThreshold": 3,
+  "summaryHour": 20,
+  "timeZone": "Europe/Zagreb",
+  "maxReasons": 6,
+  "includePartial": true,
+  "maxSummaryTasks": 25
+}

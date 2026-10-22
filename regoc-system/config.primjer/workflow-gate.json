@@ -1,0 +1,22 @@
+{
+  "_note": "W0/TASK-4620 + W1/TASK-4614 — prekidač za tijekove rada. Čita WorkflowGate.ts (loadWorkflowGateConfig). DVA ULAZA: (1) ploča — TaskWebUI POST /api/tasks (otvaranje zadatka), (2) kanal — IngestGateLive.obradiUlaz (Telegram most, poruke iznad praga A; nose IZMJERENU težinu, pa se u izvještaju ne zbrajaju s pločom). Nedostajuća/neispravna datoteka ili nepoznata vrijednost → 'shadow' (nikad tiho 'on'). Mijenja se BEZ ponovnog pokretanja: keš pada čim se promijeni vrijeme izmjene ili veličina datoteke (gornja granica 30 s).",
+  "_razine": {
+    "1_po_zadatku": "oznaka `bez-workflowa` na zadatku — UVIJEK pobjeđuje, i izričitu oznaku `workflow:<id>` i način `on`",
+    "2_po_tijeku": "polje `enabled` u ~/app/TaskManager/TaskManagerAI/agents/workflows.json — false znači 'kao da tijeka nema'",
+    "3_globalno": "ovo polje `nacin`"
+  },
+  "_nacini": {
+    "off": "ne računa se ništa i ne piše se nijedan redak — put zadatka je bajt-identičan onome prije W0",
+    "shadow": "odluka se izračuna i zapiše u data/workflow_odluke.jsonl; NIŠTA se ne materijalizira (nula spawnova)",
+    "on": "odluka se materijalizira kao OZNAKA na zadatku (`workflow:<id>` ili `bez-workflowa`) uz razlog u progressNotes — W1. Postojeća čovjekova oznaka se ne dira i ne duplira. Otvaranje LANCA ZADATAKA je W2 i ima VLASTITI prekidač (`materijalizacija` niže) — `nacin: on` sam po sebi ne stvara nijedan zadatak i ne pokreće nijedan spawn."
+  },
+  "_zasto_shadow": "Nalog Goran 04.09.2026. (docs/PLAN-workflow-integracija.md §6.1): 'prekidač da radi ili ne radi preko tog novog sustava, čisto da imamo mogućnost testa'. Isti obrazac kao taskDecompose/criticGate/ulazna vrata — prvo mjeri na istom prometu, pa uključi.",
+  "_rollback": "nacin='off' → vrata se gase u sekundi, bez ponovnog pokretanja ploče.",
+  "nacin": "on",
+  "_mjerilo": "bun ~/.claude/regoc/tools/workflow-odluke-mjera.ts — kriterij za prelazak na 'on': 7 dana zapisa I manje od 10 % ručnih ispravaka (koliko je odluka čovjek poslije promijenio).",
+  "materijalizacija": "shadow",
+  "_materijalizacija": "W2/TASK-4616 — smije li se odabrani tijek pretvoriti u LANAC ZADATAKA (jedan zadatak po koraku, oznake `workflow:<id>`/`korak:<n>`/`vjestina:<X>`, recipročne veze blockedBy/blocks). Vrijednosti: 'off' | 'shadow' | 'on'; zadano 'shadow'. ZASEBAN je od `nacin` jer nosi drugi rizik: `nacin: on` upiše oznaku (bezopasno), a `materijalizacija: on` OTVARA ZADATKE koje auto-exec pokreće (troši spawnove). Uvjet za 'on' su OBA: `nacin: on` I `materijalizacija: on`. Čita WorkflowMaterializer.ts (loadMaterijalizacijaNacin), mijenja se bez ponovnog pokretanja. Dnevnik: data/tijek_lanci.jsonl. Ručno, izvan ploče: bun ~/.claude/regoc/tools/tijek-materijaliziraj.ts <TASK-ID>.",
+  "predlozak": "shadow",
+  "_predlozak": "TASK-5159 (dizajn TASK-5158 §3): predložak zadatka (šest odjeljaka: cilj, kontekst, zadaće, vještine i alati, tijek, gotovost i dokaz) pri POST /api/tasks — TaskBrief.ts. 'off' = ništa; 'shadow' (zadano) = blok se izračuna i zapiše u data/predlozak_zadatka.jsonl, zadatak se NE dira; 'on' = blok ide na kraj opisa (omeđen <!-- predlozak:v1 -->), oznake korak:n/uk i vjestina:X na zadatak, upozorenja (npr. nema [PROVJERA] cmd) u progressNotes. Mijenja se bez restarta. Nedostaje/neispravno → shadow. Uključenje (P2) odlučuje Goran.",
+  "_nacin_on": "TASK-5159 (Goran 03.10.2026.: 'nacin na on tek kad testovi prođu'): uključeno 04.10.2026. nakon što su testovi prošli i ploča vrti svjež kod (StaleCodeCheck rc=0, PID 2187438). Povratak: nacin='shadow' (≤30 s, bez restarta). materijalizacija se NE dira."
+}

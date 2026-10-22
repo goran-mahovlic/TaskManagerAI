@@ -1,0 +1,1 @@
+modeli/consult-potjeh.ts

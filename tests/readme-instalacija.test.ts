@@ -45,12 +45,13 @@ function zastaviceSkripte(rel: string): Set<string> {
 
 describe('README: odjeljak „Instalacija na novi stroj" (K4a)', () => {
   for (const rel of Object.keys(NASLOVI)) {
-    test(`${rel} ima odjeljak s naredbama K8 (git clone → install.sh --cvor … --profil upravitelj-cvora --baze)`, () => {
+    test(`${rel} ima odjeljak s naredbama K8 (git clone → install.sh --cvor … --profil upravitelj-cvora --baze --komplet)`, () => {
       const n = naredbe(rel)
       expect(n.length).toBeGreaterThan(5)
       expect(n).toContain('git clone https://github.com/goran-mahovlic/TaskManagerAI.git ~/TaskManagerAI')
       expect(n).toContain('cd ~/TaskManagerAI')
-      expect(n).toContain('bash scripts/install.sh --cvor <name> --profil upravitelj-cvora --baze')
+      // TASK-5700/5705 (plan v3 K8, D2 = B, D3 = B): korak 2 instalira i komplet sustava iz regoc-system/
+      expect(n).toContain('bash scripts/install.sh --cvor <name> --profil upravitelj-cvora --baze --komplet')
     })
 
     test(`${rel}: svaka naredba scripts/… postoji u paketu`, () => {

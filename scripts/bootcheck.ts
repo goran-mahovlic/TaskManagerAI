@@ -12,6 +12,7 @@
  *   M6 sat                 NTP sinkroniziran / odstupanje ≤ 60 s (inače upozorenje, nikad pad)
  *   M7 memorija i RAG      odabrani izvor (memorija.json: nasa/lokalna/iskljuceno) odgovara; neodabrane lokalne usluge stoje
  *   M8 ovlasti korisnika   `sudo -n -l` bez NOPASSWD: ALL (inače upozorenje: ploča bez autentikacije = put do root-a)
+ *   M9 tajne kompleta      uz --komplet: koje tajne iz regoc-system/TAJNE.json još nisu upisane (samo IMENA) i što bez njih ne radi
  *
  * Sud po mjerenju: PASS · UPOZORENJE (ne obara verdikt; --strogo ga obara) · FAIL.
  * Okolina usluge (TM_PORT, TM_FEATURES_FILE…) čita se iz živog procesa usluge, pa bootcheck
@@ -61,7 +62,7 @@ export interface Kontekst {
 
 const TUDI_HOST = 'evil.example.invalid'
 const VARIJABLE_USLUGE = ['TM_HOME', 'TM_PORT', 'TM_BIND', 'TM_ALLOWED_HOSTS', 'TM_FEATURES_FILE', 'TM_CREDENTIALS',
-  'TM_MODEL_CONFIG', 'TM_SESSION_USAGE_SCRIPT', 'TM_IZVORNI_PODACI', 'TM_HINDSIGHT_URL', 'MEMORIJA_BANKA', 'OLLAMA_HOST']
+  'TM_MODEL_CONFIG', 'TM_SESSION_USAGE_SCRIPT', 'TM_IZVORNI_PODACI', 'TM_HINDSIGHT_URL', 'MEMORIJA_BANKA', 'OLLAMA_HOST', 'TM_SUSTAV_DIR']
 
 const m = (id: string, naslov: string, sud: Sud, detalji: string[]): Mjerenje => ({ id, naslov, sud, detalji })
 const najgori = (...s: Sud[]): Sud => s.includes('FAIL') ? 'FAIL' : s.includes('UPOZORENJE') ? 'UPOZORENJE' : 'PASS'
@@ -325,6 +326,30 @@ export async function m8(k: Kontekst): Promise<Mjerenje> {
   return m('M8', 'ovlasti korisnika usluge', 'PASS', [out === null ? 'sudo -n -l: bez ovlasti bez lozinke' : 'sudo -n -l: bez NOPASSWD: ALL'])
 }
 
+// ─── M9: tajne kompleta (TASK-5705, uputa #441) ──────────────────────────────
+
+/**
+ * Komplet (TM_SUSTAV_DIR iz instalacija.env) nosi TAJNE.json: imena tajni koje njegov kod čita.
+ * Ovdje se broji koja još nisu upisana u spremište čvora (ili okolinu usluge) — samo IMENA i što
+ * bez njih ne radi. Nijedna nije uvjet da čvor radi, pa je nedostatak UPOZORENJE, ne pad.
+ */
+export async function m9(k: Kontekst): Promise<Mjerenje> {
+  const N = 'tajne kompleta'
+  const dir = (k.env.TM_SUSTAV_DIR || '').trim()
+  if (!dir) return m('M9', N, 'PASS', ['komplet nije instaliran (install.sh bez --komplet)'])
+  const reg = jsonIz(k, join(dir, 'TAJNE.json'))
+  if (!Array.isArray(reg?.tajne)) return m('M9', N, 'UPOZORENJE', [`${join(dir, 'TAJNE.json')} nije čitljiv — popis tajni kompleta nepoznat`])
+  const tekst = k.citaj(spremiste(k)) ?? ''
+  const fale = (reg.tajne as any[]).filter(t => typeof t?.ime === 'string' && !k.env[t.ime] && procitajIzTeksta(tekst, t.ime) === null)
+  const ukupno = reg.tajne.length
+  if (!fale.length) return m('M9', N, 'PASS', [`upisano ${ukupno}/${ukupno}`])
+  return m('M9', N, 'UPOZORENJE', [
+    `upisano ${ukupno - fale.length}/${ukupno}; nedostaju (samo imena):`,
+    ...fale.map(t => `${t.ime}${t.obavezno ? ' (obavezna)' : ''} — bez nje: ${t.bez_nje?.hr ?? '?'}`),
+    'upis: ploča → Config → Tajne (regoc-system/README.md, „Tajne nakon instalacije")',
+  ])
+}
+
 export function verdikt(mj: Mjerenje[], strogo = false): Sud {
   const s = najgori(...mj.map(x => x.sud))
   return s === 'FAIL' || (strogo && s === 'UPOZORENJE') ? 'FAIL' : 'PASS'
@@ -332,7 +357,7 @@ export function verdikt(mj: Mjerenje[], strogo = false): Sud {
 
 export async function pokreni(k: Kontekst, strogo = false): Promise<Omit<Izvjestaj, 'host' | 'vrijeme' | 'vrsta'> & { verdikt: Sud }> {
   const mjerenja: Mjerenje[] = []
-  for (const f of [m1, m2, m3, m4, m5, m6, m7, m8]) {
+  for (const f of [m1, m2, m3, m4, m5, m6, m7, m8, m9]) {
     try { mjerenja.push(await f(k)) } catch (e: any) { mjerenja.push(m(`M${mjerenja.length + 1}`, 'greška mjerenja', 'FAIL', [String(e?.message ?? e)])) }
   }
   return { os: k.os, paket: k.paket, usluga: k.usluga, mjerenja, verdikt: verdikt(mjerenja, strogo) }

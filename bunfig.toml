@@ -1,0 +1,4 @@
+# TASK-5705: testovi paketa su u tests/; regoc-system/ (komplet) ima vlastite testove i ovisnosti
+# i vrti ih `cd regoc-system && bun install --frozen-lockfile && bun test` (regoc-system/README.md).
+[test]
+root = "tests"

@@ -1,0 +1,39 @@
+{
+  "_note": "R2/TASK-2560 stale-task watchdog. Čita StaleWatchdog.ts (daemon + tools/stale-watchdog-report.ts). Nedostajuća/neispravna datoteka → defaulti iz DEFAULT_STALE_WATCHDOG_CONFIG. Mijenja se bez restarta (čita se pri svakoj provjeri). Uključivanje/isključivanje ide preko features.json (staleWatchdog / staleWatchdogLive).",
+  "thresholdHours": 4,
+  "intervalMinutes": 30,
+  "excludeTags": [
+    "no-watchdog",
+    "waiting-for-human",
+    "interactive"
+  ],
+  "excludeAssignees": [
+    "user",
+    "goran"
+  ],
+  "excludeTaskIds": [],
+  "onlyTaskIds": [],
+  "maxResetsPerRun": 5,
+  "blocked": {
+    "_note": "TASK-5204 naknadna revizija blokiranih (docs/DIZAJN-revizija-blokiranih.md §8.2). Čita StaleWatchdog.loadBlockedReviewConfig (daemon, ploča, tools/stale-watchdog-report.ts --blocked). Mijenja se bez restarta. klaseUzivo je fail-closed (neispravno = []), a klase odluka/covjek/sustav/sigurnost/novac/vanjsko se iz nje uvijek izbacuju. rizikPretezeUvijek=false: rizik je brana pri puštanju (izmjereno 04.10.: kao klasa šalje Goranu 59/104).",
+    "intervalMinutes": 60,
+    "klaseUzivo": [
+      "lanac",
+      "deploy"
+    ],
+    "maxRedrive": 3,
+    "maxPustanjaPoProlazu": 3,
+    "maxUsdPoPustanju": 5,
+    "maxUsdPoZadatku": 10,
+    "maxUsdDnevno": 15,
+    "maxUdioSpawnova": 0.2,
+    "najstarijiZaAutomatskiDana": 14,
+    "minSlobodnogDiskaPosto": 10,
+    "bez429Minuta": 30,
+    "projektiUvijekGoranu": [],
+    "podsjetnikCovjekSati": 24,
+    "podsjetnikRizikDana": 7,
+    "maxKrugovaKriticara": 2,
+    "rizikPretezeUvijek": false
+  }
+}

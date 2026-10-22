@@ -197,6 +197,8 @@ export async function obradiTajne(z: ZahtjevTajni, ctx: KontekstTajni): Promise<
       const zd = zadnje.get(d.ime)
       return {
         ime: d.ime, izvor: d.izvor, postoji,
+        // TASK-5705: opis iz registra kompleta (TAJNE.json) — samo tekst, nikad vrijednost
+        ...(d.opis ? { opis: d.opis, bezNje: d.bezNje ?? null, obavezno: !!d.obavezno, komponente: d.komponente || [] } : {}),
         otisak: postoji ? otisak(vrijednost!, kljucPut) : null,
         oblik: o.oblik, opasan: o.opasan,
         zasjenjena: !!env[d.ime],

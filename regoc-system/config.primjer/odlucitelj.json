@@ -1,0 +1,10 @@
+{
+  "ukljucen": true,
+  "provider": "openrouter",
+  "model": "qwen/qwen3.8-27b",
+  "baseUrl": "http://127.0.0.1:11434",
+  "najvise_po_prolazu": 3,
+  "smije_kreni": true,
+  "cekanje_sati": 1,
+  "rizicno_covjeku": []
+}

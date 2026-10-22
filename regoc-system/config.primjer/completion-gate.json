@@ -1,0 +1,24 @@
+{
+  "_note": "D2/TASK-2954 completion gate. Čita CompletionGuard.ts (loadGateConfig) — TaskWebUI PUT /api/tasks/:id i RegocDaemon spawn putevi. Nedostajuća/neispravna datoteka → DEFAULT_GATE_CONFIG (enabled=true, live=false ⇒ SHADOW). Mijenja se BEZ restarta (čita se pri svakoj provjeri, TTL 30 s).",
+  "_rollout": "Arhitektonska dorada (Kosjenka, TASK-2959): prvih 24 h SHADOW — gate samo logira 'BIH blokirala TASK-X (reason=Y)', status se piše po starom. Live tek kad log nad stvarnim prometom pokaže NULA lažnih blokada. Razlog: heuristički sloj je fail-closed nad slobodnim tekstom; ako promaši, staje cijela ploča, a to je gore od kvara koji liječi.",
+  "_live_checklist": [
+    "1. grep 'BIH blokirala' ~/.tmp/regoc_daemon.log i ~/.tmp/taskwebui.log — pregledaj SVAKI pogodak",
+    "2. nula slučajeva gdje je posao stvarno bio napravljen (lažna blokada)",
+    "3. spawn-promptovi s obveznim REGOC-STATUS retkom su u optjecaju ≥24 h (inače uredan rad pada u no-evidence)",
+    "4. tek tada: live=true (hot-reload, bez restarta). Rollback = live=false."
+  ],
+  "_deterministic_note": "deterministicLive: podskup sudova koji NISU heuristika (prazan result_summary + agentov vlastiti REGOC-STATUS: BLOCKED/NEEDS_CONTEXT). Oni smiju blokirati i prije isteka shadow perioda jer ne mogu dati lažni pozitiv nad slobodnim tekstom.",
+  "enabled": true,
+  "live": false,
+  "deterministicLive": true,
+  "_E1_izvrsitelj": "E1/TASK-4787 (sloj IZVRŠITELJA). Rezultat koji je napisao NEPOVJERLJIV izvršitelj (svaki provider izvan trustedProviders) ne smije zatvoriti zadatak na temelju vlastitog izvještaja — treba bar jedna provjera koju je POKRENUO kritičar i koja je prošla. Povod: node-A, 09.09.2026., TASK-152 (potjeh @ ollama:qwen3:8b) — datoteka ~/.tmp/regresija_node_a.txt sadrži literal `$(uname -a)`, izvještaj tvrdi da sadrži izlaz naredbe; completion-guard ACCEPT conf=heuristic evidence=2, critic-gate UNVERIFIABLE checks=0 → COMPLETED. Kontrola TASK-153 (bez ljuskine zamjene) je bila točna ⇒ kvar je SADRŽAJNI, ne infrastrukturni.",
+  "_E1_izlaz_iz_blokade": "Izlaz nije bolji tekst nego ključ `[PROVJERA] cmd: <naredba>` u OPISU zadatka — tada kritičar ima što pokrenuti (checks>0) i sud prestaje počivati na prozi. Vidi docs/CRITIC_DECLARED_CHECKS.md.",
+  "_E1_rollout": "localExecutorStrict=true (sudi i loga) + localExecutorStrictLive=false (SHADOW). PRIJE prelaska na live: (1) grep 'unverified_local' u dnevniku čvora >=24 h, (2) udio zadataka lokalnog izvršitelja koji IMAJU pokrenutu provjeru — ako je 0 %, live gasi cijeli čvor dok se opisi ne dopune ključem [PROVJERA], (3) nula slučajeva gdje je posao stvarno bio napravljen i provjeren. Rollback = localExecutorStrictLive:false (hot-reload, TTL 30 s).",
+  "_E1_strogost": "localExecutorRequiresDeclared=false → priznaje se bilo koja pokrenuta provjera (parse/lint/json/test/task). true → SAMO ona koju je propisao zadatak ključem [PROVJERA] cmd. Dial za Gorana, bez izmjene koda.",
+  "localExecutorStrict": true,
+  "localExecutorStrictLive": false,
+  "localExecutorRequiresDeclared": false,
+  "trustedProviders": [
+    "anthropic"
+  ]
+}

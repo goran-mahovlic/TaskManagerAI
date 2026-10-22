@@ -1,0 +1,12 @@
+{
+  "_opis": "ADR-0022 (TASK-5613/5615): pragovi i opseg trajne sesije agenta. Čita se uživo (keš ≤ 5 s); nevaljan zapis = zadane vrijednosti. Prekidač je features.json trajnaSesija {enabled, mode: shadow|on}. dopusteniProjekti/dopustenaStabla: prazno ili bez polja = svi; inače trajna sesija SAMO za navedene (ostalo običan spawn).",
+  "pragKonteksta": 120000,
+  "maxZadataka": 12,
+  "maxStarostSati": 72,
+  "predajaZadataka": 8,
+  "predajaZnakova": 1200,
+  "prelijevanjeNakonMin": null,
+  "dopusteniProjekti": [],
+  "_dopusteniProjekti": "Goran 22.10.2026. 13:18: „prebaci na on” → trajna sesija za SVE projekte (prije: samo PRJ-051, Goran 20.10. uputa #396). PRJ-051 je bio uživo od 20.10. (67 zapisa 🧷 u daemon.log). Povrat: vrati [\"PRJ-051\"] ili features.json trajnaSesija.enabled=false (≤5 s, bez restarta).",
+  "dopustenaStabla": []
+}

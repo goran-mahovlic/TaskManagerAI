@@ -150,8 +150,16 @@ sudo -v
 ```bash
 git clone https://github.com/goran-mahovlic/TaskManagerAI.git ~/TaskManagerAI
 cd ~/TaskManagerAI
-bash scripts/install.sh --cvor <name> --profil upravitelj-cvora --baze
+bash scripts/install.sh --cvor <name> --profil upravitelj-cvora --baze --komplet
 ```
+
+`--komplet` instalira i komplet sustava REGOČ: orkestrator `RegocDaemon` s alatima i kuku
+`SecurityValidator` za Claude Code. Komplet je mapa [`regoc-system/`](regoc-system/README.hr.md)
+ovog paketa, pa se ništa ne klonira. Mapa mora odgovarati svom `MANIFEST.sha256`. Kopira se u
+mapu koju komplet navodi u `regoc-system/KOMPLET.json` (u kućnoj mapi), a `bun build RegocDaemon.ts` mora proći prije nego se ijedna usluga pokrene.
+Uz `--komplet` se instalira i Claude CLI. Bez `--komplet` dobivaš samo ploču. Što je u kompletu, kako
+se pokreće i zaustavlja, gdje su dnevnici, postavke i kako se nakon instalacije upisuju tajne opisuje
+[regoc-system/README.hr.md](regoc-system/README.hr.md).
 
 `install.sh` sve ostalo dohvaća sam, s javnih adresa (bun, `uv` + Python 3.13, `pg0`,
 `hindsight-api`, modeli bge-m3). Svaki službeni instalator dohvaća u najviše 3 pokušaja
@@ -327,6 +335,7 @@ Pojedinosti, davatelji i postavke: [docs/ODLUCIVANJE.md](docs/ODLUCIVANJE.md).
 | [docs/POGON_I_PAKET.md](docs/POGON_I_PAKET.md) | što je od novosti izvornog sustava ušlo u paket, a što nije — s naredbom za provjeru svake stavke |
 | [docs/adr/](docs/adr/) | arhitekturne odluke paketa |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | git kuke, pravila za commitove, pokretanje testova |
+| [regoc-system/README.hr.md](regoc-system/README.hr.md) | komplet sustava (`--komplet`): RegocDaemon i ovisnosti — komponente, pokretanje i zaustavljanje, dnevnici, postavke, tajne nakon instalacije, nadogradnja, ponovni izvoz |
 | [REGOC/README.md](REGOC/README.md) | kako izgleda stvaran sustav agenata izgrađen oko ovoga — po temama (arhitektura, uloge, životni ciklus zadatka, pravila isporuke, vrata i kočnice, baze, trošak i energija, lekcije, složi svoj) |
 
 Mapa `REGOC` opisuje sustav iz kojega je TaskManagerAI izvučen: tim agenata s vlastitim ulogama i

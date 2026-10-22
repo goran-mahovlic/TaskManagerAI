@@ -1,0 +1,21 @@
+{
+  "_": "A3/TASK-3002 — vrata disjunktnog opsega datoteka. Čita se pri SVAKOJ odluci, pa izmjena djeluje bez restarta daemona. Živost mehanizma je u features.json (fileScopeGate / fileScopeGateLive); ovdje se podešava PONAŠANJE.",
+  "policy": "on",
+  "_policy": "'on' = vrata odlučuju; 'off' = potpuni no-op i kad je zastavica upaljena (rezerva za brzo gašenje bez diranja features.json).",
+  "undeclaredPolicy": "allow",
+  "_undeclaredPolicy": "Stepenica strogosti. IZMJERENO replayem 2729 povijesnih preklopljenih parova (29.07.2026): 'allow' odgađa 6,7% (samo DOKAZAN presjek), 'derived-ok' 64,1%, 'serialize' 100,0% — jer danas NIJEDAN zadatak nema oznaku scope:. Kreće se na 'allow'; penje se tek kad udio zadataka s oznakom naraste, inače bi vrata ugasila paralelizam i bila isključena prvi dan (isto što se dogodilo naivnom E1 gateu u ModeClassifieru).",
+  "_undeclaredPolicy_penjanje": "Kriterij za 'derived-ok': ≥50% otvorenih zadataka ima izjavljen ili izveden opseg (provjeri: bun tools/scope-report.ts --pending). Kriterij za 'serialize': ≥80% otvorenih zadataka ima oznaku scope:.",
+  "deriveFromDescription": true,
+  "_deriveFromDescription": "Izvlači putanje iz naslova/opisa kad nema oznaka. Mjereno: 66% zadataka (306/462) spominje bar jednu putanju. Služi SAMO za otkrivanje sudara — prazan presjek izvedenog opsega NE dokazuje disjunktnost.",
+  "excludeTags": [
+    "no-scope-gate",
+    "integration"
+  ],
+  "_excludeTags": "Zadatak s ovom oznakom prolazi vrata bez čekanja. Sudar se i dalje PRIJAVLJUJE u logu — tiho izuzeće bi lagalo da zaštita radi.",
+  "onlyAgents": [],
+  "_onlyAgents": "Canary. Dok popis nije prazan, vrata vrijede samo za te izvršitelje; ostali prolaze uz upozorenje. Prijedlog za prvi živi dan: [\"jelena\"] (najviše izmjerenih sudara).",
+  "starvationWarnMinutes": 30,
+  "_starvationWarnMinutes": "Nakon toliko minuta neprekidne odgode zadatak dobiva glasno upozorenje u logu — to je razlika između 'čeka 30 s' i 'čeka 3 h jer ga drži zadatak koji je stao'.",
+  "graceMinutes": 5,
+  "_graceMinutes": "Koliko se zahtjev mrtvog vlasnika čuva na disku prije brisanja. Ne poštuje se ni sekunde — grace postoji samo da se svjež zapis ne pomete prije nego mu se pid izmjeri."
+}

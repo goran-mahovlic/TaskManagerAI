@@ -1,0 +1,8 @@
+{
+  "_note": "R2/TASK-4309. Čita ResearchRagGate.ts (loadResearchGateConfig) — TaskWebUI PUT /api/tasks/:id (vratar) i RegocDaemon auto-exec (korak 2 u promptu). Nedostajuća/neispravna datoteka → DEFAULT_RESEARCH_GATE_CONFIG (enabled=true, live=true, promptStep=true). Mijenja se BEZ restarta (TTL 30 s).",
+  "_zasto_odmah_live": "Za razliku od completion-gatea, ovaj sud NIJE heuristika nad prozom: gleda (a) ima li zadatak oznaku `istrazivanje` i (b) postoji li doslovan ID dokumenta u result_summary. Doseg su samo označeni zadaci — neoznačeni PUT-ovi prolaze bajt-identično kao prije.",
+  "_rollback": "live=false → sud samo u log ('research-rag-gate: REJECT … — SHADOW'). enabled=false → vratar potpuno isključen. promptStep=false → korak 2 se ne dodaje u prompt.",
+  "enabled": true,
+  "live": true,
+  "promptStep": true
+}

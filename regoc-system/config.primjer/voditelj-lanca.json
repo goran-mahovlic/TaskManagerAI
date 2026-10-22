@@ -1,0 +1,16 @@
+{
+  "_opis": "ADR-0024 O3 (TASK-5676): proračun voditelja lanca. Čita se uživo (VoditeljLanca.citajPostavke); nevaljano polje = zadana vrijednost. Prekidač je features.json voditeljLanca {enabled, mode: shadow|on}.",
+  "maxBudjenjaDan": 24,
+  "maxUsdDan": 6,
+  "maxTurns": 40,
+  "rokMin": 15,
+  "maxIstodobno": 1,
+  "intervalMin": 20,
+  "odgodaMin": 2,
+  "maxNovihZadatakaBudjenje": 2,
+  "maxReclaim24h": 2,
+  "spajanjeGrana": "sam",
+  "_spajanjeGrana": "D1 — Goran 21.10.2026. 11:21 (uputa #422): A = sam (lokalno, merge i testovi u privremenom worktreeju, main samo --ff-only, nikad push; neuspjeh → zadatak). Moguće: sam | zadatak | javi.",
+  "pustiKriticar": true,
+  "_pustiKriticar": "D2 — Goran 21.10.2026. 11:21 (uputa #422): A = true (povrat nakon zapisane dijagnoze i nove upute, najviše 2× po zadatku u 24 h, opet kroz kritičara)."
+}

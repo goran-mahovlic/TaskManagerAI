@@ -1,0 +1,12 @@
+# <putanja u HOME>	<putanja u kompletu> — instalacija.sh veže samo gdje ničega nema
+.claude/PAISECURITYSYSTEM/patterns.example.yaml	vanjsko/.claude/PAISECURITYSYSTEM/patterns.example.yaml
+.claude/VoiceServer/voice-client.ts	vanjsko/.claude/VoiceServer/voice-client.ts
+.claude/VoiceServer/voice-policy.ts	vanjsko/.claude/VoiceServer/voice-policy.ts
+.claude/hooks/SecurityValidator.hook.ts	vanjsko/.claude/hooks/SecurityValidator.hook.ts
+.claude/hooks/lib/brana_radnik.ts	vanjsko/.claude/hooks/lib/brana_radnik.ts
+.claude/hooks/lib/paths.ts	vanjsko/.claude/hooks/lib/paths.ts
+.claude/hooks/lib/secret-detect.ts	vanjsko/.claude/hooks/lib/secret-detect.ts
+.claude/skills/CORE/Tools/Inference.ts	tools/modeli/Inference.ts
+.claude/skills/CORE/Tools/lib	tools/rag/lib
+.claude/tools/Telegram/lib/SendDoc.ts	vanjsko/.claude/tools/Telegram/lib/SendDoc.ts
+app/regoc_system/tools/session_usage.py	vanjsko/app/regoc_system/tools/session_usage.py

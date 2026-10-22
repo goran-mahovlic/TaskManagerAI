@@ -1,0 +1,522 @@
+{
+  "userFlush": {
+    "enabled": true,
+    "since": "2026-07-13",
+    "note": "R1/TASK-2557: flush to_agent='user' pending→Telegram (HTTP 200 prije completed). Uključiti tek nakon idempotencije + Goranove potvrde za backlog."
+  },
+  "userFlushLive": {
+    "enabled": true,
+    "since": "2026-07-14",
+    "note": "R1/TASK-2557: userFlush=true+ovo=false → SHADOW (samo log). true → LIVE (stvarno šalje, completed tek nakon HTTP 200)."
+  },
+  "userFlushBacklog": {
+    "enabled": false,
+    "since": "2026-07-14",
+    "note": "R1/TASK-2557: true → smije slati STARE (>30min) poruke s [ZAOSTALO od <dat>] prefiksom, throttle 1/tick. Default false = forward-only. Pali SAMO uz Goranovu potvrdu."
+  },
+  "modeClassify": {
+    "enabled": true,
+    "since": "2026-07-14",
+    "note": "P1-lite/TASK-2559: SHADOW — classifyAndRoute logira ModeClassifier tier + trivial=<kind|no>, staro odlučuje. Živog prometa nije bilo (0 poruka za regoc od 07-21), pa je usporedba napravljena replayem 3370 povijesnih poruka — vidi docs/TASK-2559_modeClassify.md."
+  },
+  "modeClassifyLive": {
+    "enabled": false,
+    "since": "2026-07-14",
+    "note": "P1-lite/TASK-2559: true → SAMO trivijalne poruke (TrivialResponder: bok/hvala/ok/ping/status) idu na template + preskaču AI project-detection ⇒ bez claude --print. NIJE dovoljno effort==E1: replay je pokazao da bi naivni E1 gate skrenuo 92% prometa (npr. 'trebam vizual REGOČ-a'); uski gate skreće 0.12% (4/3370, sve stvarno trivijalne). Kod je testiran (195 pass), ali JE INERTAN DOK SE DAEMON NE RESTARTA. Paliti po canary proceduri iz docs/TASK-2559_modeClassify.md §6. Rollback = vrati na false (djeluje ≤30s, bez restarta)."
+  },
+  "tierRouting": {
+    "enabled": false,
+    "since": "2026-07-13",
+    "note": "P1/TASK-2567: ModeClassifier tier → ModelRouter.resolve u delegateToAgent. Shadow → golden-set prag (NT-D) → live."
+  },
+  "ollamaClassifier": {
+    "enabled": false,
+    "since": "2026-09-02",
+    "note": "P2/TASK-2568: SJENA — LocalOffload.ts zove lokalnu Ollamu (componentOverrides.classifier) za 5 mehanickih koraka, usporedjuje s determinističkim putem i pise u data/ollama_offload.jsonl, ali odluku i dalje donosi deterministika. Poziv je fire-and-forget, timeout 2 s, sve iznimke progutane — nije na kriticnom putu dispatcha. false = potpuni no-op (ni promatranja)."
+  },
+  "verificationGate": {
+    "enabled": false,
+    "since": "2026-07-13",
+    "note": "P3/TASK-2569: strojni verifikacijski gate. Primarno regex; Ollama advisory; fail-open na regex."
+  },
+  "staleWatchdog": {
+    "enabled": true,
+    "since": "2026-07-14",
+    "note": "R2/TASK-2560: DRY-RUN — in_progress task >4h bez updatea/checkpointa → alarm + zapis u data/stale_watchdog.jsonl, NE resetira. Izuzeća: config/stale-watchdog.json (tag no-watchdog/waiting-for-human/interactive, assignee-whitelist, excludeTaskIds)."
+  },
+  "staleWatchdogLive": {
+    "enabled": true,
+    "since": "2026-07-14",
+    "note": "R2/TASK-2560 + DUR-1/TASK-3598: LIVE — zaglavljen zadatak (>4h bez updatea i bez svjezeg checkpointa) vraca se u obradu preko POST /api/tasks/:id/reclaim + audit. Izuzeca: config/stale-watchdog.json (tagovi no-watchdog/waiting-for-human/interactive, assignee-whitelist, excludeTaskIds). Canary 28.07.2026. (TASK-2704) i 02.09.2026. (TASK-3614, mode=live u data/stale_watchdog.jsonl). Rollback = enabled:false, djeluje <=30 s bez restarta.",
+    "liveSince": "2026-09-02T15:17:00+02:00",
+    "liveBy": "goran (Telegram 02.09.2026.)"
+  },
+  "deadAgentReaper": {
+    "enabled": true,
+    "since": "2026-07-14",
+    "note": "R3/TASK-2561: DRY-RUN — agent online/busy s heartbeatom >2h → samo alarm. Live tek preko deadAgentReaperLive."
+  },
+  "sendBreaker": {
+    "enabled": true,
+    "since": "2026-07-27",
+    "note": "R5/TASK-2565: SHADOW — SendBreaker mjeri identične poruke po pošiljatelju (SQL, messages.db) i alarmira, ali NE blokira. Prag: >5 identičnih istog agenta/kanala u 10 min. false = potpuni no-op (ni tablice se ne stvaraju)."
+  },
+  "sendBreakerLive": {
+    "enabled": false,
+    "since": "2026-07-27",
+    "note": "R5/TASK-2565: true → breaker STVARNO blokira slanje (HALT + 1 alarm, self-heal nakon 10 min tišine). CANARY: dodaj \"agents\": [\"kosjenka\"] pa enforce vrijedi samo za njih, ostali ostaju shadow. Paliti nakon 3 dana shadowa bez lažnih pozitiva (bun tools/send-breaker-status.ts)."
+  },
+  "deadAgentReaperLive": {
+    "enabled": true,
+    "since": "2026-09-23",
+    "note": "R3/TASK-2561: true → mrtav agent se stvarno označi offline + njegovi in_progress taskovi idu na POST /reclaim (R2 ruta, NE PUT status=pending — to je 409). CANARY DOKAZAN 2026-07-28 10:41 (gita: online+heartbeat 5h+mrtav PID → offline, event_log 2325, JSONL mode=live). AKTIVIRAN 2026-09-23 po Goranovom nalogu — 4 mrtva agenta (kosjenka/jelena/potjeh/manda PID 2698-2721) stajali online 21h+ bez čišćenja."
+  },
+  "teamPilot": {
+    "enabled": true,
+    "since": "2026-07-28",
+    "note": "F3/TASK-2583: CANARY — regoc-services.sh start-team smije dizati durabilne AgentDaemon radnike. Opseg: pilot jelena+potjeh+manda (NE cijeli tim). Rollback = false → start-team odbija start (živi daemoni ostaju; gasi ih stop-team)."
+  },
+  "staleInboxGuard": {
+    "enabled": true,
+    "since": "2026-07-28",
+    "note": "F3/TASK-2583: AgentDaemon NE izvršava pending poruke starije od 24h — parkira ih (status expired + ~/.tmp/regoc_parked_inbox.jsonl). Sprječava da start-team detonira zaostali inbox (jelena: 4 poruke stare 9-14 dana) u žive Opus sesije. false = stari put (izvrši sve)."
+  },
+  "zombieRecovery": {
+    "enabled": true,
+    "since": "2026-07-29",
+    "note": "TASK-3019: DRY-RUN — in_progress task bez živog spawna i stariji od praga (config/zombie-recovery.json, 10 min) → alarm + zapis u data/zombie_recovery.jsonl, NE mijenja status. false = mehanizam potpuno isključen (ni promatranja). Prag je podignut s 90 s jer je hvatao i zdrav rad."
+  },
+  "zombieRecoveryLive": {
+    "enabled": true,
+    "since": "2026-07-29",
+    "note": "TASK-3019 + DUR-1/TASK-3598: LIVE — zadatak in_progress bez zivog spawna I bez zivog procesa, stariji od praga, vraca se u obradu preko POST /api/tasks/:id/reclaim (PUT in_progress→pending je zabranjen prijelaz, 409 — dokazano 02.09.2026. na TASK-3613). 2. epizoda ide PUT-om u blocked (dopusten prijelaz). Zastite: izuzeca su UNIJA s config/stale-watchdog.json, startna milost 10 min nakon restarta, ocitanje zivih procesa iz /proc, brana maxActionsPerRun=5, hlad 60 s po zadatku. Canary 02.09.2026.: TASK-3615 (HTTP 200) uz kontrolni TASK-3616 (waiting-for-human) netaknut. Rollback = enabled:false, djeluje <=30 s bez restarta.",
+    "liveSince": "2026-09-02T15:17:00+02:00",
+    "liveBy": "goran (Telegram 02.09.2026.)"
+  },
+  "staleReaper": {
+    "enabled": false,
+    "since": "2026-07-29",
+    "note": "TRAJNO UGAŠENO odlukom Gorana 02.09.2026. — sudi istim zadacima suprotno od staleWatchdoga (R2). Ne paliti bez nove odluke. (ADR: docs/ADR-staleReaper-ugasen.md, TASK-3594.) Povijest: TASK-3019: DRY-RUN — stari F3 čistač (config/stale-reaper.json: 24h bez updatea i bez progress-note → blocked, 7d → cancelled) samo alarmira i piše u data/stale_reaper.jsonl. false = mehanizam potpuno isključen. Do 2026-07-29 je rezao status bez flaga, izuzeća i traga."
+  },
+  "staleReaperLive": {
+    "enabled": false,
+    "since": "2026-07-29",
+    "note": "TRAJNO UGAŠENO odlukom Gorana 02.09.2026. — sudi istim zadacima suprotno od staleWatchdoga (R2). Ne paliti bez nove odluke. (ADR: docs/ADR-staleReaper-ugasen.md, TASK-3594.) Povijest: TASK-3019: true → reaper STVARNO postavlja blocked/cancelled. Prije paljenja odlučiti treba li uopće postojati uz R2 stale-watchdog (R2 na 4h vraća task u obradu; ovaj ga na 24h/7d gasi) — dva čistača nad istim taskovima su dupli izvor istine."
+  },
+  "autonomyGate": {
+    "enabled": false,
+    "description": "Vrata autonomije u auto-execu: staje na 70% sesije (Goranova odluka 2026-07-28). false=SHADOW (samo logira sto bi zaustavio), true=LIVE.",
+    "since": "2026-07-28",
+    "owner": "regoc",
+    "rollback": "postavi enabled=false — auto-exec se odmah vraca na staro ponasanje bez restarta (flagovi se hot-reloadaju)"
+  },
+  "taskTier": {
+    "enabled": true,
+    "description": "A6/TASK-3005: SHADOW — tier modela se bira po TEZINI ZADATKA (TaskTier.ts), odluka se logira i pise u data/tier_decisions.jsonl, ali se NE primjenjuje. Mjeri se s bun ~/.claude/regoc/tools/tier-report.ts. false = mehanizam potpuno iskljucen (ni promatranja).",
+    "since": "2026-07-29",
+    "owner": "jelena",
+    "rollback": "postavi enabled=false — odluka se prestaje donositi u ≤30 s, bez restarta"
+  },
+  "taskTierLive": {
+    "enabled": true,
+    "description": "A6/TASK-3005: true → odabrani tier se STVARNO salje kao --model. Smjer je samo NADOLJE (nikad skuplje od agentovog modela), eskalacija vraca na agentov model nakon neisporucenog jeftinog pokusaja. Paliti tek kad tier-report na stvarnim podacima pokaze udio promasaja ispod praga (opus→sonnet: 0,40 teorijski / 0,20 s rezervom).",
+    "since": "2026-07-29",
+    "owner": "jelena",
+    "rollback": "postavi enabled=false — sljedeci spawn opet ide na agentov model, bez restarta",
+    "liveSince": "2026-07-30",
+    "liveBy": "goran (Telegram, faza 1/4)"
+  },
+  "quotaWakeup": {
+    "enabled": true,
+    "description": "A7/TASK-3006: okidac na obnovu kvote. U trenutku session_reset_at + 10 min prisili svjeze mjerenje potrosnje da se vrata autonomije otvore odmah. NE pokrece posao sam — odluku i dalje donosi autonomyGate. false = red cekanja se i dalje vodi (data/autonomy_queue.json), ali se ne mjeri.",
+    "since": "2026-07-29",
+    "owner": "jelena",
+    "rollback": "postavi enabled=false — okidac prestaje mjeriti u ≤30 s, bez restarta; ponasanje se vraca na redovni probe od 5 min"
+  },
+  "worktreeIsolation": {
+    "enabled": true,
+    "shadowSince": "2026-07-30",
+    "_provjereno_prije_paljenja_sjene": "V-A1/TASK-3054: u sjeni cwd spawna = resolveProjectWorkDir(cfg, projectId, HOME). projectRepos ima samo _note (nijedno mapiranje) → svaki projectId pada na HOME, tj. tocno kao dosad. ČIM SE projectRepos POCNE PUNITI, ovo treba provjeriti iznova — tada sjena mijenja cwd spawna.",
+    "description": "A1/TASK-3000: PROMATRANJE — spawn odlucuje bi li isao u vlastiti git worktree, odluka se logira i pise u data/worktree_isolation.jsonl, ali se disk NE dira. false = mehanizam potpuno iskljucen (cwd spawna ostaje HOME, kao dosad).",
+    "since": "2026-07-29",
+    "owner": "jelena",
+    "rollback": "postavi enabled=false — odluka se prestaje donositi u <=30 s, bez restarta"
+  },
+  "worktreeIsolationLive": {
+    "enabled": true,
+    "description": "A1/TASK-3000: true → izolirani worktree se STVARNO pravi i spawn radi u njemu (uz njega se pali i ziva zetva napustenih). Prije paljenja: (a) popuniti projectRepos u config/worktree-isolation.json (bez toga svi spawnovi rade u HOME koji NIJE git repo), (b) provjeriti slobodan disk — mjereno 8,4 GB (98%).",
+    "since": "2026-07-29",
+    "owner": "jelena",
+    "rollback": "postavi enabled=false — sljedeci spawn opet radi u zajednickom stablu, bez restarta; vec napravljeni worktreejevi ostaju i cisti ih `bun WorktreeIsolation.ts reap --live`",
+    "liveSince": "2026-07-30",
+    "liveBy": "goran (Telegram, faza 3/4)"
+  },
+  "fileScopeGate": {
+    "enabled": false,
+    "description": "A3/TASK-3002: PROMATRANJE — prije auto-exec spawna se racuna presjek opsega datoteka izmedju zadatka i onoga sto drze aktivni spawnovi; odluka se logira i pise u data/file_scope.jsonl, ali se NISTA ne odgadja. Uz to se vodi registar zauzetih opsega (data/file_scope_claims/). false = mehanizam potpuno iskljucen (ni registra, ni mjerenja). Izmjereno na regoc.db: 244 od 2729 vremenski preklopljenih parova zadataka dijeli datoteku, 117 s razlicitim izvrsiteljem.",
+    "since": "2026-07-29",
+    "owner": "kosjenka",
+    "rollback": "postavi enabled=false — odluka i registar prestaju u <=30 s, bez restarta; zaostale zahtjeve pokazuje `bun FileScopeGate.ts status`"
+  },
+  "fileScopeGateLive": {
+    "enabled": false,
+    "description": "A3/TASK-3002: true → zadatak s presjekom opsega se STVARNO ne pokrece; ostaje pending i vraca se u red u sljedecem prolazu (15 s). Status se NE mijenja (nema `blocked`). Prije paljenja: (a) procitati shadow mjerenje iz data/file_scope.jsonl — koliko bi odgoda palo na `unproven` (zadatci bez oznake scope:), (b) po potrebi postaviti undeclaredPolicy=allow u config/file-scope-gate.json da se prvo serijaliziraju samo DOKAZANI presjeci.",
+    "since": "2026-07-29",
+    "owner": "kosjenka",
+    "rollback": "postavi enabled=false — sljedeci prolaz auto-execa opet pusta sve, bez restarta"
+  },
+  "criticGate": {
+    "enabled": true,
+    "shadowSince": "2026-07-30",
+    "description": "A2/TASK-3001: PROMATRANJE — nakon izlaska spawna nezavisni kritičar sam pokrene provjere nad onim što je ostalo na disku (bun build / bun test / JSON parse nad datotekama izmijenjenima poslije starta spawna), sud se logira i piše u data/critic_gate.jsonl, ali se ploča NE dira. false = mehanizam potpuno isključen (ni promatranja).",
+    "since": "2026-07-29",
+    "owner": "kosjenka",
+    "rollback": "postavi enabled=false — kritika prestaje u <=30 s, bez restarta"
+  },
+  "criticGateLive": {
+    "enabled": true,
+    "description": "A2/TASK-3001: true → pad provjere STVARNO sprječava completed (status blocked, blocked_reason BLOCKED: CRITIC_FAILED / CRITIC_ESCALATED, dokaz u progress_notes). Blokira SAMO determinističan pad (naredba + izlazni kod); 'nema što provjeriti' i 'nisam stigao' nikad ne blokiraju. Paliti tek kad promatranje na stvarnom prometu pokaže NULA lažnih blokada (bun tools/critic-report.ts).",
+    "since": "2026-07-29",
+    "owner": "kosjenka",
+    "rollback": "postavi enabled=false — sljedeći spawn se opet zatvara po starom, bez restarta",
+    "liveSince": "2026-07-30",
+    "liveBy": "goran (Telegram, faza 2/4)"
+  },
+  "reviewCheckpoint": {
+    "enabled": false,
+    "description": "A5/TASK-3004: PROMATRANJE — zadatak s oznakom `stop-after` otvara kontrolnu tocku kad zavrsi; tocka se zapisuje u data/review_checkpoints.json, javlja se na Telegram s prefiksom [SHADOW] i logira sto BI zadrzala, ali se rad NE zaustavlja. false = mehanizam potpuno iskljucen (ni promatranja). Izmjereno 29.07. na zivoj ploci: 0 od 553 dovrsenih zadataka izjavljuje tocku, pa je ucinak paljenja danas tocno nula dok se oznaka ne pocne koristiti.",
+    "since": "2026-07-29",
+    "owner": "jelena",
+    "rollback": "postavi enabled=false — tocke se prestaju otvarati i javljati u <=30 s, bez restarta"
+  },
+  "reviewCheckpointLive": {
+    "enabled": false,
+    "description": "A5/TASK-3004: true → zadatak u opsegu otvorene tocke se STVARNO ne pokrece dok Goran ne odobri (bun tools/checkpoint.ts approve <ID> ili oznaka `nastavi` na zadatku-okidacu). Status se NE mijenja — zadatak ostaje `pending` i vraca se u red <=15 s nakon odobrenja. Ne dira poslove koje Goran naruci izravno, samo auto-exec. Paliti tek kad `bun tools/checkpoint.ts simulate` pokaze da bi zadrzao tocno ono sto se ocekuje.",
+    "since": "2026-07-29",
+    "owner": "jelena",
+    "rollback": "postavi enabled=false — sljedeci prolaz auto-execa opet pusta sve, bez restarta; otvorene tocke ostaju zapisane i nastavljaju javljati"
+  },
+  "mergeGate": {
+    "enabled": true,
+    "since": "2026-07-29",
+    "shadowSince": "2026-07-30",
+    "note": "A4/TASK-3003 vrata prije spajanja — PROMATRANJE: odluka se donese, zapiše u data/merge_gate.jsonl i logira, git se NE dira. V-A4/TASK-3057 dokazao nad pravim repoom: HEAD identičan prije i poslije, exec=false. Ide u sjenu ZAJEDNO s A1 (bez izoliranih stabala nema što suditi)."
+  },
+  "mergeGateLive": {
+    "enabled": true,
+    "since": "2026-07-29",
+    "note": "A4/TASK-3003 — LIVE: rad iz izoliranog stabla se na potpis STVARNO spaja u glavno; bez potpisa ide u pretinac data/merge_holds/. Uključiti tek nakon tjedna sjene i `bun tools/merge-report.ts --days 7`.",
+    "liveSince": "2026-07-30",
+    "liveBy": "goran (Telegram, faza 4/4)"
+  },
+  "teamChain": {
+    "enabled": true,
+    "since": "2026-07-30",
+    "description": "T1/TASK-3080: PROMATRANJE — kad korisnik ne imenuje agente, ModeClassifier predlaze tim i odluka se logira ([teamChain SHADOW]), ali se lanac NE stvara. false = mehanizam potpuno iskljucen.",
+    "owner": "regoc"
+  },
+  "teamChainLive": {
+    "enabled": false,
+    "since": "2026-07-30",
+    "description": "T1/TASK-3080: true → predlozeni tim se STVARNO ulancava (blockedBy, max 3 helpera nakon primarnog, svaki s opisom svoje uloge). Rollback = false, sljedeci zahtjev opet ide na jednog agenta, bez restarta.",
+    "owner": "regoc"
+  },
+  "autoResume": {
+    "enabled": false,
+    "since": "2026-07-30",
+    "description": "T2/TASK-3084: PROMATRANJE — zadatak koji je stao na stropu koraka UZ djelomicnu isporuku se prepozna i logira ([nastavak SHADOW]), ali se NE vraca u red. false = mehanizam iskljucen.",
+    "owner": "regoc",
+    "ugaseno": "2026-10-22 — Goran (TASK-3085): u sjeni 0 okidanja od 28.07.; pokriveno siroče-oporavkom, REGOC-POZADINA povratom, voditeljem lanca i trajnom sesijom. Kod ostaje."
+  },
+  "autoResumeLive": {
+    "enabled": false,
+    "since": "2026-07-30",
+    "description": "T2/TASK-3084: true → zadatak se STVARNO vraca u pending s oznakom resume:<n>, najvise 3 kruga (REGOC_AUTO_RESUME_ROUNDS). Okida SAMO na 'strop koraka + ima isporuke', nikad na kvar. Rollback = false, bez restarta.",
+    "owner": "regoc"
+  },
+  "projectGitInit": {
+    "enabled": false,
+    "since": "2026-07-30",
+    "description": "TASK-3088: kod otvaranja projekta napravi ~/projects/<Ime> + git init + upise projectRepos u config/worktree-isolation.json. Time A1 izolacija postaje moguca (umjesto serijalizacije). false = ponasanje nepromijenjeno.",
+    "owner": "regoc"
+  },
+  "criticUnverifiedAlert": {
+    "enabled": true,
+    "since": "2026-09-01",
+    "owner": "malik",
+    "description": "T10/TASK-3575: sud vratara `unverifiable`/`partial` se PRIJAVLJUJE korisniku (queueUserAlarm → R1 flush → Telegram) uz popis onoga sto je nedostajalo. NE blokira — rad prolazi kao i dosad; blokira i dalje samo `fail`. Prag pojedinacnih dojava i sat dnevnog sazetka su u config/unverified-alert.json.",
+    "rollback": "postavi enabled=false — dojave prestaju u <=30 s, bez restarta; ploca i dalje prikazuje oznaku iz critic_gate.jsonl"
+  },
+  "taskDecompose": {
+    "enabled": true,
+    "since": "2026-09-02",
+    "owner": "kosjenka",
+    "description": "P5c/TASK-2584: PROMATRANJE — auto-exec zapise koji bi E4/E5 zadatak trebao ici u razlaganje (3-7 podzadataka) umjesto jednom generalistu; zapis u data/task_decomposition.jsonl, ploca se NE dira. Uz to pali pumpu razlozenih planova (blocked->in_progress + chain_next), koja je bez ODOBRENOG plana no-op. false = mehanizam potpuno iskljucen.",
+    "rollback": "postavi enabled=false — promatranje i pumpa prestaju u <=30 s, bez restarta"
+  },
+  "taskDecomposeLive": {
+    "enabled": true,
+    "since": "2026-09-02",
+    "owner": "kosjenka",
+    "description": "P5c/TASK-2584: true → odobren plan se STVARNO materijalizira u podzadatke bez izricitog --canary. Paliti tek kad Goran potvrdi dekompozicijski PLAN i kad promatranje pokaze koliko bi zadataka uslo (mjereno 02.09.: 27,2 % uzorka od 1312). Materijalizacija i tada trazi 'approve' — nikad se ne dogadja sama.",
+    "rollback": "postavi enabled=false — approve odbija materijalizaciju (osim jednokratnog --canary), djeluje <=30 s bez restarta",
+    "liveSince": "2026-09-02T21:20:00+02:00",
+    "liveBy": "goran (Telegram 02.09.2026.)",
+    "note": "P5c/TASK-3599: LIVE od 02.09.2026. — odobren plan se materijalizira bez --canary. Mjereno prije paljenja: 27,6 % uzorka od 1349 zadataka (prije: 27,2 % / 1312). OGRANICENJE: 47,6 % prikladnih zadataka (177/372) ima izvrsitelja izvan pilota teamPilot (jelena/potjeh/manda) — za njih razlaganje nema durabilnog radnika, pa plan treba suziti preko `plan --agents jelena,potjeh,manda`. Materijalizacija i dalje trazi izricit `approve` — nikad se ne dogadja sama."
+  },
+  "tierRecipesEnabled": {
+    "enabled": true,
+    "since": "2026-09-02",
+    "owner": "kosjenka",
+    "description": "P3/TASK-2569: SHADOW→CANARY (s7, 2026-09-02): tier-recepti se generiraju za E1–E5 i UBACUJU se u prompt spawna (RegocDaemon.buildAgentPrompt + AgentDaemon.buildPrompt). false = mehanizam potpuno isključen."
+  },
+  "verificationGateShadow": {
+    "enabled": true,
+    "since": "2026-09-02",
+    "owner": "kosjenka",
+    "description": "P3/TASK-2569: SHADOW→CANARY (s7, 2026-09-02): strojni verifikacijski gate čita izlaz naredbe iz odgovora agenta, upisuje 'GATE-SHADOW task=<id> ok=<bool> reason=<...>' u daemon.log, ali status completed se JOŠ NE sprječava (verificationGateLive i dalje false). false = mehanizam potpuno isključen."
+  },
+  "verificationGateLive": {
+    "enabled": false,
+    "since": "2026-09-02",
+    "owner": "kosjenka",
+    "description": "P3/TASK-2569: true → odgovor BEZ 'VERIFIKACIJA' bloka vraća 409 (reject completed, vrati u obuku). CANARY-DOKAZ (s7, 2026-09-02 11:2x): harness nad TRENUTNIM RegocDaemon.ts potvrdio reject bez bloka + accept s blokom (real haiku E2/E3 izlazi) — v. ~/.tmp/lifeos_research/2569_uvodjenje_dokaz.md."
+  },
+  "ollamaClassifierLive": {
+    "enabled": false,
+    "since": "2026-09-02",
+    "note": "P2/TASK-2568: true → Ollamin odgovor se STVARNO koristi (classifyTier/extractRefs/summarize/heartbeatBrief). Posao 'recycledReport' ostaje advisoryOnly i NE mijenja se ovim flagom (blokada dispatcha je sigurnosna odluka → deterministicki DispatchGuard). PALITI TEK kad golden-set (bun tests/ollama_offload_accuracy.ts --gate) prijedje prag 90 % i nakon NT-F reviewa (Malik). Mjereno 2026-09-02: v. docs/TASK-2568_ollama_offload.md."
+  },
+  "ollamaProjectDetect": {
+    "enabled": false,
+    "since": "2026-09-02",
+    "note": "TASK-3601 (F2): REDOSLIJED JE OBRNUT — `ProjectDetect.detectProjectCommand` prvo pusti REGEX (+ negativne uzorke i provjeru posiljatelja), a model se zove SAMO ako regex nista ne nadje. Ovaj flag vise NE bira 'Ollama umjesto Sonneta' nego 'smije li se ikakav model uopce pitati'. false (zadano) = NIJEDAN model-poziv po dolaznoj poruci — ni Ollama ni `claude --print`. true = kad regex suti, pita se LOKALNA Ollama (backend 'local', timeout 8 s); Anthropic se ne dira. MJERENO 02.09.2026. na popisu svih 19 poruka iz messages.db koje spominju projekt: novi put 19/19 uz 0 poziva modelu; goli regex 18/19; Sonnet 17/19 uz 19 spawnova (p50 3194 ms); Ollama sama 16/19 (3 lazne uzbune na vlastitoj potvrdi '✅ Kreiran projekt: X' → duplicirani projekt). Mjerilo: bun tests/project_detect_accuracy.ts --gate. Dokumentacija: docs/TASK-2568_ollama_offload.md §4.",
+    "owner": "jelena",
+    "rollback": "postavi enabled=true samo ako se pokaze da regex propusta stvarne naredbe; djeluje <=30 s bez restarta (FeatureFlags TTL)"
+  },
+  "spawnBreaker": {
+    "enabled": true,
+    "since": "2026-09-02",
+    "owner": "jelena",
+    "description": "DUR-5/TASK-3597: SHADOW — osigurac na vratima SPAWNOVA (`claude --print`). Broji UZASTOPNE odbijenice (429/usage limit/preopterecenje/hook-blokada ulaza) po agentu (prag 3) i globalno (prag 5), mjeri strop brzine kroz TokenBucket ('claude_spawn', 6 + 0,1/s) i sve zapisuje u messages.db (spawn_breaker_state/_log), ali NISTA ne odbija. false = potpuni no-op (ni tablice se ne stvaraju). Uvid: bun tools/spawn-breaker-status.ts",
+    "logRetentionHours": 96,
+    "retentionNote": "M1/TASK-4643: retencija spawn_breaker_log. 96 h jer canary trazi sud nad prozorom od 72 h (ADR-0006), a raniji 24-satni dnevnik taj dokaz nije mogao dati (nalaz TASK-4639). Vrijednost se cita pri svakom rezanju (hot-reload, <=30 s); dopusteno 1 h - 720 h, besmislena vrijednost pada na 96.",
+    "rollback": "postavi enabled=false — mjerenje prestaje u <=30 s, bez restarta"
+  },
+  "spawnBreakerLive": {
+    "enabled": true,
+    "since": "2026-09-04",
+    "owner": "jelena",
+    "shadowSince": "2026-09-02",
+    "description": "M1/TASK-4624 (bio DUR-5/TASK-3597): ENFORCE ZA CIJELU FLOTU od 2026-10-15 (korak 5, TASK-5310: --strict 48 h i 72 h PASS, 0 odbijenica, 0 laznih zatvaranja; canary kosjenka od 2026-09-04, +jelena od 2026-10-07). Polje `agents` je maknuto; vracanjem `agents: [...]` osigurac se opet suzava na canary, ostali u sjenu. Odbija dok su vrata otvorena (3 uzastopne odbijenice po agentu / 5 globalno → 15 min) i dok je kanta 'claude_spawn' prazna (6 + 0,1/s). Fail-CLOSED na dokazanu odbijenicu (429/usage limit/preopterecenje/hook-blokada ulaza), fail-OPEN na nepoznatu gresku i na vlastiti kvar. RAZLOG: incident 02.09.2026. — 683 prazna spawna u 2 h, 77 % svih neuspjeha u zapisu; osigurac bi stao nakon petog. Nadzor: `bun tools/spawn-breaker-status.ts --hours 72 --strict` (event 'refused' smije postojati samo uz stvarnu odbijenicu).",
+    "rollback": "postavi enabled=false — sljedeci spawn opet prolazi, bez restarta (hot-reload <=30 s); uze povlacenje = ostavi enabled=true i vrati `agents: [\"kosjenka\",\"jelena\"]` (canary)",
+    "step4aSince": "2026-10-07",
+    "step5Since": "2026-10-15"
+  },
+  "agentIdentityBlock": {
+    "enabled": true,
+    "since": "2026-09-03",
+    "owner": "regoc",
+    "description": "I2/TASK-3651: SJENA — iz REGOC_AGENTS.json se sastavi blok identiteta agenta (ime, uloga, opis, stil, VLASTITI skillovi sa sazetkom, vlastita RAG kolekcija, postojece putanje znanja, context_file) i samo se izmjeri i zapise u dnevnik; spawn ide nepromijenjen. false = mehanizam potpuno iskljucen (ni mjerenja). Mjereno prije uvodjenja (124 sesije, 25.08.-03.09.2026): vlastito znanje citano u 11,3 %, context_file 0 %, a 'REGOC Meta-Orchestrator' na sistemskom kanalu u 124/124. I6/TASK-3655 vozi iza ISTOG flaga: vlastita RAG kolekcija agenta iz `rag_collections` (dosad mrtva mapa) ulazi u ragHints i u blok identiteta, ali SAMO ako postoji u ChromaDB-u (4 od 12 na dan 03.09.2026.); u sjeni se samo zapise '[RAG memorija SHADOW]'.",
+    "rollback": "postavi enabled=false — mjerenje prestaje u <=30 s, bez restarta"
+  },
+  "agentIdentityBlockLive": {
+    "enabled": true,
+    "since": "2026-09-03",
+    "owner": "regoc",
+    "description": "I2/TASK-3651: true → blok se STVARNO salje. Gdje postoji claude CLI ide kroz --append-system-prompt (sistemski kanal, isti onaj kojim danas stize tudji identitet); gdje CLI-ja nema (ollama/openrouter/kimicli/geminicli) ide na pocetak prompta jer je -p jedini kanal. Blok je po agentu bajt-identican, pa kes prefiksa drzi. Paliti tek kad I8/TASK-3657 (Potjeh) dokaze na zivim spawnovima da blok stize i da regresija testova stoji. ODLUKA 03.09.2026 (Goran prepustio REGOCU): flag OSTAJE upaljen dok Potjeh radi I8/TASK-3657 — njegov zadatak je dokazati na ZIVIM spawnovima da blok stize, pa bi gasenje flaga onemogucilo samu provjeru. Osnova za odluku: promjena je aditivna (dodaje sistemski odsjek, ne mijenja postojeci prompt), regresija je bez novih padova (2572 pass / 16 fail, istih 16 pada i prije izmjene), a prva dva ziva spawna su prosla (manda TASK-3660 completed, 28 koraka; jelena TASK-3655 u radu). I6/TASK-3655: uz blok se tada salje i vlastita kolekcija u ragHints + uputa za UPIS poslije rada (rag-store.ts) — spawn_template.required_in_prompt[4] trazi oba smjera. Popis kolekcija ide iz kesa data/chroma_collections.json (osvjezava se pri startu daemona i u pozadini, TTL 6 h); nedostupna Chroma -> nista se ne dodaje.",
+    "rollback": "postavi enabled=false — sljedeci spawn ide bez bloka, bez restarta",
+    "liveSince": "2026-09-03T10:06:00+02:00",
+    "liveBy": "regoc (canary, TASK-3651)",
+    "okidac_gasenja": "Ugasiti ODMAH (enabled=false, djeluje <=30 s bez restarta) ako se dogodi bilo sto od: (1) spawn padne s greskom koja spominje --append-system-prompt ili system prompt; (2) dva uzastopna spawna zavrse s num_turns=0 uz upaljen flag; (3) Potjeh u I8 nadje da blok sadrzi netocan podatak o agentu."
+  },
+  "spawnVerificationBlock": {
+    "enabled": true,
+    "since": "2026-09-03",
+    "owner": "jelena",
+    "description": "TASK-3669 (ADR-0004, O2 stavke 6 i 9): SJENA — iz REGOC_AGENTS.json → spawn_template sastavi se verifikacijski blok za spawn (anti_rationalization BEZUVJETNO ~450 zn. + zod_verification UVJETNO, samo za zadatke usporedbe iz zod_verification.required_for: file/version/feature) i samo se izmjeri i zapise u dnevnik ('[verifikacijski blok SHADOW]'); prompt ide nepromijenjen. verification_gate i structured_status se NE ubacuju — zivi put ih vec salje uz taskId (ADR-0004 §4.1, redci 7 i 8). Sastavljac je PRENESEN iz napustenog UnifiedSpawnPipeline.buildVerificationBlock() u SpawnVerificationBlock.ts, koji sada vozi oba puta (RegocDaemon.buildAgentPrompt + AgentDaemon.buildPrompt). false = mehanizam potpuno iskljucen (ni mjerenja).",
+    "rollback": "postavi enabled=false — mjerenje prestaje u <=30 s, bez restarta"
+  },
+  "spawnVerificationBlockLive": {
+    "enabled": true,
+    "since": "2026-09-03",
+    "owner": "jelena",
+    "description": "TASK-3669: true → blok se STVARNO ubacuje u prompt spawna (RegocDaemon.buildAgentPrompt iza lean-returna, dakle samo Claude-put; AgentDaemon.buildPrompt iza PRAVILA, prije recepta i projectTaila). Anti-racionalizacija je bezuvjetna jer je protuotrov dokumentiranom kvaru laznog ✅ (TASK-2953 zatvoren kao DONE uz vlastitu napomenu 'nije jos deployan', pa TASK-2974/2983 zatvoreni kao completed s porukom hook-blokade u rezultatu). ZOD je uvjetan jer je ADR-0003 izmjerio da REGOCev vlastiti boilerplate dize udio nepotrebnih odsjeka s 1,5 % na 35,1 % (×23,4) — detekcija trazi I signal usporedbe I predmet (datoteka/verzija/znacajka), inace ne ubacuje nista.",
+    "rollback": "postavi enabled=false — sljedeci spawn ide bez bloka, bez restarta",
+    "okidac_gasenja": "Ugasiti ODMAH (enabled=false, djeluje <=30 s bez restarta) ako se dogodi bilo sto od: (1) dva uzastopna spawna zavrse s num_turns=0 uz upaljen flag; (2) u daemon.log se pojavi '[verifikacijski blok]' s ZOD-om na zadatku koji NIJE usporedba (lazni pozitiv = boilerplate-inflacija iz ADR-0003); (3) udio spawnova sa ZOD-odsjekom prijedje 10 % (mjeri se: grep -c 'verifikacijski blok.*ZOD' daemon.log naspram ukupnog broja spawnova).",
+    "liveSince": "2026-09-03T12:34:00+02:00",
+    "liveBy": "jelena (TASK-3669)"
+  },
+  "earlyWorkGuard": {
+    "enabled": true,
+    "since": "2026-09-04",
+    "note": "M6/TASK-4626: SJENA — sonda broji retke type:\"assistant\" u živom transkriptu spawna (`--session-id`); 0 koraka nakon 30 s se ZAPISUJE u data/early_work.jsonl s final_num_turns, ali se NIŠTA ne prekida. false = potpuni no-op (ni promatranja)."
+  },
+  "earlyWorkGuardLive": {
+    "enabled": false,
+    "since": "2026-09-04",
+    "note": "M6/TASK-4626: true → LIVE — spawn s 0 modelskih koraka nakon 30 s se stvarno prekida (killAgentSpawn pauza=true → zadatak ostaje, NE otkazuje se). Paliti tek kad 7-dnevno mjerenje u sjeni pokaže 0 lažnih prekida: `bun tools/early-work-report.ts`. Rollback = false, djeluje ≤30 s bez restarta."
+  },
+  "shutdownResume": {
+    "enabled": true,
+    "since": "2026-09-04",
+    "owner": "jelena",
+    "description": "M4/TASK-4627: mehanizam urednog gašenja — prije SIGTERM-a se zadaci aktivnih spawnova ocjenjuju za nastavak i odluka se upisuje u data/shutdown_resume.jsonl. false = gašenje se ponaša kao prije (svaki zadatak u letu → cancelled).",
+    "rollback": "postavi enabled=false — sljedeće gašenje ide starim putem, bez restarta (flag se čita u trenutku gašenja)."
+  },
+  "shutdownResumeLive": {
+    "enabled": true,
+    "since": "2026-09-04",
+    "owner": "jelena",
+    "description": "M4/TASK-4627: true → zadatak se STVARNO vraća u pending (POST /reclaim) s oznakom resume:<n>, najviše 3 kruga (REGOC_SHUTDOWN_RESUME_ROUNDS). Uključen ODMAH, ne u sjeni: prihvatni kriterij glasi 'restart ne ostavlja nijedan zadatak bez nastavka', a sjena bi značila da zadaci i dalje odlaze u cancelled. Rizik je omeđen — strop krugova, dira se samo in_progress, a pad bilo kojeg koraka vraća stari put (cancelled).",
+    "rollback": "postavi enabled=false — sljedeće gašenje opet otkazuje zadatke u letu, bez restarta."
+  },
+  "taskCreateBreaker": {
+    "enabled": true,
+    "since": "2026-09-04",
+    "note": "M2/TASK-4628 — strop stvaranja zadataka na POST /api/tasks (30/h po createdBy, 90/h globalno). Mjeri i logira."
+  },
+  "taskCreateBreakerLive": {
+    "enabled": true,
+    "since": "2026-09-04",
+    "note": "LIVE za SVE izvore (bez `sources`) — RegocDaemon ne salje createdBy pa mu zadatci padaju u `user`; allowlist bez `user` promasio bi put koji je proizveo incident 02.09. Mjereno replayem nad cijelom povijescu: 34/2087 odgodjeno (1,6%), sve povratno iz reda. Preko praga: task_create_queue + jedna dojava po epizodi. Povlacenje: enabled=false (hot-reload <=30 s). ADR-0007."
+  },
+  "failRequeue": {
+    "enabled": true,
+    "since": "2026-09-05",
+    "note": "R7/TASK-2563 glavni prekidac: neuspio spawn (exit!=0) vraca zadatak u red umjesto u blocked i javlja korisniku s ID-em zadatka."
+  },
+  "failRequeueLive": {
+    "enabled": true,
+    "since": "2026-09-05",
+    "note": "R7/TASK-2563: LIVE od 2026-09-05 01:29 — neuspio spawn ide reclaim -> pending (oznaka pokusaj:<n>, strop 3) + JEDNA poruka korisniku s ID-em. Rollback = enabled:false (hot-reload, bez restarta)."
+  },
+  "criticRepairLoop": {
+    "enabled": true,
+    "since": "2026-09-05",
+    "owner": "kosjenka",
+    "description": "W4/TASK-4617 (plan §3 W4): PROMATRANJE — odbijeni korak (CriticGate.loop.action='repair') bi se vratio izvođaču s nalazom vratara umjesto da stane u `blocked`. U sjeni se odluka samo zapiše u data/critic_repair.jsonl; status se NE mijenja i poruka se NE šalje. Ovaj flag ujedno pali ubacivanje nalaza u prompt (criticRepairTail) — bez njega nalaza u promptu nema ni kad zapis postoji."
+  },
+  "criticRepairLoopLive": {
+    "enabled": false,
+    "since": "2026-09-05",
+    "owner": "kosjenka",
+    "description": "W4/TASK-4617: true → zadatak se STVARNO vraća u red (nalaz na disk → oznaka kritika:<n> → POST /reclaim) i korisnik dobiva poruku; `escalate` i dalje ostaje blocked, ali s porukom. Paliti tek kad mjerilo `tools/critic-repair-mjera.ts` na živom uzorku pokaže udio ≥ 1/3 (plan §3 W4: ispod trećine se petlja gasi kao neisplativa)."
+  },
+  "spawnCloseGuard": {
+    "enabled": true,
+    "description": "ADR-0012/TASK-4827: dok na zadatku DOKAZIVO radi spawn (najam + živ /proc/<pid>), PUT u TERMINALNO stanje (completed/cancelled) ne dolazi od sustava — daemon najam pušta PRIJE svog zapisa. Faza 1 je SJENA: sud se samo bilježi u data/spawn_close_guard.jsonl. FAIL-OPEN: bez najma, mrtav pid ili ustajao zapis → PUT prolazi.",
+    "since": "2026-09-12",
+    "owner": "jelena",
+    "rollback": "enabled=false — guard nestaje bez restarta (hot-reload)"
+  },
+  "spawnCloseGuardLive": {
+    "enabled": false,
+    "description": "true → guard STVARNO odbija (HTTP 409 SPAWN_ACTIVE) umjesto da samo bilježi. Paliti TEK kad 7 dana sjene pokaže NULA lažnih odbijanja (ADR-0012 §8 korak 6): `wc -l data/spawn_close_guard.jsonl` i provjera da svaki redak pripada agentu koji je sam sebe zatvarao. X-REGOC-Force: 1 preskače guard (ručna poluga za čovjeka s ploče). PRI PALJENJU: u CLAUDE.md pravilo 12(b) dopisati „PUT sa status iz aktivnog spawna API odbija (409 SPAWN_ACTIVE).“ (TASK-4828, odluka B).",
+    "since": "2026-09-12",
+    "owner": "jelena",
+    "rollback": "enabled=false — guard se vraća u sjenu, bez restarta"
+  },
+  "sequentialHelpers": {
+    "enabled": true,
+    "since": "2026-10-02",
+    "description": "TASK-5029: R2 lanac pomocnika 'doradi rad' (createSequentialHelpers). Vec sada: nikad za oznaku 'nalog' i najvise JEDNOM po zadatku (ponovni spawn ne gradi novi lanac). false = lanac se ne gradi nikad (ceka Goranovu potvrdu), bez restarta.",
+    "owner": "regoc"
+  },
+  "siroceOporavak": {
+    "enabled": true,
+    "since": "2026-10-02",
+    "note": "TASK-5140: siroče-oporavak (OrphanRecovery.ts). Zadatak in_progress s agentom, bez živog spawna/procesa/najma: očišćen najam (mrtav pid) → odmah POST /reclaim; inače nakon pragMinuta (10). Strop 3 → blocked „siroče ×3”. Izuzeci: regoc, no-watchdog, pauziran. Zadatke koje preuzme zombie-recovery ne dira. Konfiguracija config/siroce-oporavak.json, brojač data/siroce_brojac.json, zapis data/siroce_oporavak.jsonl. Rollback = enabled:false (≤30 s, bez restarta)."
+  },
+  "r2IzricitaDodjela": {
+    "enabled": true,
+    "since": "2026-10-02",
+    "description": "ADR-0018 F0b (TASK-5135, odluka A): R2 lanac (createSequentialHelpers) samo uz izricitu dodjelu - glagol dodjele + ime ili oznaka lanac:<agent>; spomen imena nije okidac; klaudio/stribor/regoc/kriticar iskljuceni; strop 3 uz izricito, 2 za tim. false = stari okidac (hasHelperCue + spomen imena), bez restarta (keš 30 s). Revizija 13.10. (TASK-5137).",
+    "owner": "regoc"
+  },
+  "zatvaranjeKrozDaemon": {
+    "enabled": true,
+    "since": "2026-10-04",
+    "owner": "jelena",
+    "description": "TASK-5164/nesukladnost B (docs/DIZAJN-nesukladnosti-BCD.md §2): SJENA — PUT completed od bilo koga osim daemona (X-REGOC-Zatvara: daemon + token data/zatvarac.token) i čovjeka s ploče (X-REGOC-Zatvara: covjek) bilježi se u data/zatvaranje_zahtjevi.jsonl; daemon nad svakim zahtjevom pokrene kritičara i upiše što BI učinio u data/zatvaranje_sudovi.jsonl. PUT zatvara po starom.",
+    "rollback": "enabled=false — bez restarta (FeatureFlags keš 30 s)"
+  },
+  "zatvaranjeKrozDaemonLive": {
+    "enabled": false,
+    "since": "2026-10-04",
+    "owner": "jelena",
+    "description": "TASK-5164/B: PROVEDBA — takav PUT vraća 202, zadatak ostaje in_progress s oznakom ceka-kriticara, a daemon ga zatvara kao completed/blocked nakon kritičara. Uključuje se SAMO uz Goranovu potvrdu nakon 7 dana sjene (I6, mjerilo §2.4).",
+    "rollback": "enabled=false — bez restarta"
+  },
+  "ponovnoOtvaranjeRuta": {
+    "enabled": true,
+    "since": "2026-10-04",
+    "owner": "jelena",
+    "description": "TASK-5164/nesukladnost D (§4.3): SJENA — obični PUT completed|cancelled→pending bilježi se u data/ponovno_otvaranje.jsonl (ispravan put: POST /api/tasks/<ID>/ponovno-otvori ili /dorada).",
+    "rollback": "enabled=false"
+  },
+  "ponovnoOtvaranjeRutaLive": {
+    "enabled": false,
+    "since": "2026-10-04",
+    "owner": "jelena",
+    "description": "TASK-5164/D: PROVEDBA — obični PUT completed|cancelled→pending vraća 409 s uputom na /dorada i /ponovno-otvori (force:true s ploče prolazi). Uz Goranovu potvrdu.",
+    "rollback": "enabled=false"
+  },
+  "revizijaBlokiranih": {
+    "enabled": true,
+    "since": "2026-10-04",
+    "note": "TASK-5204: naknadna revizija blokiranih — drugi prolaz stale-watchdoga nad status=blocked (StaleWatchdog.ts). true = barem SJENA: svaka presuda (pusti/Goranu/preskoči) s razlogom u data/revizija_blokiranih.jsonl i daemon.log, nula spawnova, bez promjene statusa/oznaka; ploča upisuje klasu blok:<k> pri blokiranju i upozorava na blocked bez razloga (P0b). Mijenja se na Config stranici ili PUT /api/config/revizija-blokiranih (audit settings_history), bez restarta."
+  },
+  "revizijaBlokiranihLive": {
+    "enabled": true,
+    "since": "2026-10-04",
+    "note": "TASK-5204: UŽIVO — radnje revizije (/reclaim from:blocked, popravak lanca, zatvaranje izvedenog deploya, predaja Goranu). Puštanja samo za klase iz config/stale-watchdog.json blocked.klaseUzivo; odluka/covjek/sustav/sigurnost/novac/vanjsko nikad. Uključuje Goran/REGOČ nakon sjene 48 h (TASK-5205). Rollback = false (≤30 s, bez restarta).",
+    "liveSince": "2026-10-06T01:39:08.107Z",
+    "liveBy": "goran"
+  },
+  "pozadinaPovrat": {
+    "enabled": true,
+    "since": "2026-10-05",
+    "note": "TASK-5259: pozadinski posao drži zadatak (PozadinaPovrat.ts). Agent uz REGOC-STATUS: BLOCKED upiše REGOC-POZADINA: pid=…[ gotovo=<datoteka>:<tekst>][ rok=<sati>] → najam data/pozadina/<taskId>.json + oznaka ceka-pozadinu. Petlja (svakih 120 s, uz siroče-oporavak) vraća zadatak /reclaim from:blocked by pozadina-gotova kad su svi PID-ovi mrtvi (starttime iz /proc), uvjet gotovosti ispunjen ili rok (zadano 48 h, max 168) prošao. Poštuje ručnu kočnicu; strop 5 povrata → ostaje blocked. Konfiguracija config/pozadina-povrat.json, brojač data/pozadina_brojac.json, zapis data/pozadina_povrat.jsonl, daemon.log „🔁 [pozadina]”. Rollback = enabled:false (≤30 s, bez restarta). Dokument: ~/app/regoc_system/docs/POZADINA-povrat-zadatka.md"
+  },
+  "dezurniSpawn": {
+    "enabled": false,
+    "since": "2026-10-08",
+    "note": "TASK-5362: agent čiji spawn padne (429/401/limit/nedostupan) ponavlja se na dežurnom modelu iz paketa TaskManagerAI (src/Dezurni.ts, DezurniSpawn.ts). Na glavnom ugašeno; uključeno na čvorovima."
+  },
+  "mjeriloDojava": {
+    "enabled": true,
+    "since": "2026-10-14",
+    "note": "TASK-5512: true = dojava „mjerilo potrošnje ne radi/ponovno radi” ide u Telegram (REGOČ grupa). false gasi SAMO poruku; dnevnik, ploča (meter_status) i vrata autonomije ostaju."
+  },
+  "chatDojavaUvijek": {
+    "enabled": true,
+    "since": "2026-10-16",
+    "owner": "jelena",
+    "description": "TASK-5548: zadatak s oznakom chat:<id> (Goranov nalog iz razgovora) NE ulazi u prag ni dnevni sazetak 'neprovjereno' — 'neprovjereno' je samo oznaka u njegovoj pojedinacnoj dojavi ✅, a svi [[SEND_DOC: …]] markeri iz agentova odgovora idu u dojavu. User-flush markere salje kao dokumente (sendDocument), ne kao goli tekst. Prag i sazetak ostaju za zadatke bez chat: (autonomija, petlje). Kod: ChatDojava.ts.",
+    "rollback": "postavi enabled=false — stari put (prag 3 + dnevni sazetak, markeri kao tekst) bez restarta"
+  },
+  "trajnaSesija": {
+    "enabled": true,
+    "mode": "on",
+    "since": "2026-10-19",
+    "note": "ADR-0022/TASK-5613: trajni agent (ploča AGENTS, regoc_persistent_config.json) → auto-exec zadaci nastavljaju ISTU Claude sesiju (--resume) po radnom stablu; izvršitelj ostaje spawnAgentOnDemand. enabled:false = off (bajt-identična naredba); mode shadow = samo zapis '👁️ [trajni SHADOW]' u daemon.log; mode on = živo (brava data/trajne_sesije/, '🧷 [trajni]'). Pragovi: config/trajna-sesija.json. ON tek uz Goranovu potvrdu ADR-0022 (TASK-5615) — odstupanje od naloga: umjesto inboxa trajna sesija u spawn putu. Povrat = enabled:false, ≤30 s bez restarta.",
+    "opseg": "PRJ-051 (config/trajna-sesija.json dopusteniProjekti) — Goran 20.10.2026., uputa #396, opcija B"
+  },
+  "tmDvaStabla": {
+    "enabled": true,
+    "since": "2026-10-20T01:30:00+02:00",
+    "note": "TASK-5623 (ADR-0023 §5 B2): kritičar računa kuku 'dirnuto samo jedno stablo TaskManagera' (paket ↔ MD/jezgra, parovi tools/taskmanager/tm_razlike.ts, izuzeća config/tm-razlike.json) i bilježi je u critic_gate.jsonl (polje tmDvaStabla) i daemon.log (tm[...]) — SJENA, ne blokira."
+  },
+  "tmDvaStablaLive": {
+    "enabled": false,
+    "since": null,
+    "note": "TASK-5623: kad je true, jednostrana izmjena para bez [prijenos: TASK-N] / [samo-paket|samo-glavni: razlog] / izuzeća obara DONE (fail, potpis tm-dva-stabla|<par>). Uključiti tek nakon mjerenja sjene (lažne uzbune = 0)."
+  },
+  "voditeljLanca": {
+    "enabled": true,
+    "mode": "shadow",
+    "since": "2026-10-21",
+    "note": "ADR-0024 V2/TASK-5677: voditelj lanca (oznake voditelj-lanca + lanac:<x>). enabled:false = off (tick ne radi ništa). mode shadow = predprolaz i odluka (+ plan) samo u daemon.log kao '👁️ [voditelj SHADOW]', bez spawna i bez potrošnje proračuna. mode on = buđenje kroz spawnAgentOnDemand u traci voditeljSpawns (izvan stropa, maxIstodobno), trajna sesija kosjenka@voditelj__<TASK>, plan modela kroz provjeriPlan i rute ploče. Proračun: config/voditelj-lanca.json. ON tek nakon 24 h sjene (V4/TASK-5679)."
+  }
+}

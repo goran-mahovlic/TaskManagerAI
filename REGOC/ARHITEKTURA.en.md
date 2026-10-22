@@ -157,5 +157,16 @@ message about three tasks is news.
 3. **The producer does not grade itself.** The executor reports the outcome; someone else
    passes judgment.
 
+---
+
+## Where this code lives
+
+The layers from automatic execution to closing (the orchestrator `RegocDaemon`, spawn, critic,
+gates, handbrake, concurrency cap) are not in the package's `src/`. They are in the **system kit**,
+the folder [`regoc-system/`](../regoc-system/README.md) of this repository. `install.sh --komplet`
+installs it into the folder the kit names in its `KOMPLET.json`, and it runs as the service `daemon`. Its README covers the
+components, dependencies, starting and stopping (systemd and launchd), logs, settings, secrets,
+upgrading, uninstalling, exporting it again and verifying it.
+
 See also: [TIM.en.md](TIM.en.md) · [BAZE.en.md](BAZE.en.md) ·
-[VRATA_I_KOCNICE.en.md](VRATA_I_KOCNICE.en.md)
+[VRATA_I_KOCNICE.en.md](VRATA_I_KOCNICE.en.md) · [regoc-system/README.md](../regoc-system/README.md)

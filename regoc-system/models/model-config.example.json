@@ -1,0 +1,130 @@
+{
+  "_comment": "REGOČ v4.4.0 Model Configuration — AI Provider Routing",
+  "_version": "1.0.0",
+  "_docs": "Svaki 'provider:model' entry definira koji AI model se koristi za koji tier/agenta/komponentu. Promijeni ovo da koristiš drugi model ili provider.",
+  "providers": {
+    "anthropic": {
+      "enabled": true,
+      "apiKey": "env:ANTHROPIC_API_KEY",
+      "_note": "Primary provider. Koristi Claude CLI subscription (claude --print)."
+    },
+    "openai": {
+      "enabled": false,
+      "apiKey": "env:OPENAI_API_KEY",
+      "_note": "Opcionalano. Omogući i postavi OPENAI_API_KEY za GPT/o-series modele."
+    },
+    "google": {
+      "enabled": false,
+      "apiKey": "env:GEMINI_API_KEY|GOOGLE_API_KEY",
+      "_note": "Gemini preko HTTP API-ja (GoogleProvider, u procesu). Kanonsko ime ključa je GEMINI_API_KEY (tako ga zovu Google AI Studio i `gemini` CLI); GOOGLE_API_KEY ostaje kao zamjena za starije postavke — uzima se prvo postavljeno. Ključ se traži u okolini pa u credentials.env. Za spawn agenta preko CLI-ja koristi providera 'geminicli', ne ovoga."
+    },
+    "ollama": {
+      "enabled": true,
+      "baseUrl": "http://127.0.0.1:11434",
+      "_note": "Lokalni modeli. Već koristi qwen3-embedding:8b za RAG embeddings. baseUrl = default (LAN).",
+      "nodes": {}
+    },
+    "custom": {
+      "enabled": false,
+      "_note": "Za custom providere — implementiraj CustomProvider.ts"
+    },
+    "openrouter": {
+      "enabled": true,
+      "apiKey": "env:OPENROUTER_API_KEY",
+      "_note": "Ključ u credentials.env; UI unos sprema literal (maskiran)."
+    },
+    "kimi": {
+      "enabled": true,
+      "anthropicCompatible": true,
+      "baseUrl": "https://api.moonshot.ai/anthropic",
+      "apiKey": "env:KIMI_API_KEY",
+      "_note": "Moonshot Kimi (K2.x). Anthropic-kompatibilan drop-in. Model npr. 'kimi-k2.6'. Ključ: platform.kimi.ai → KIMI_API_KEY u credentials.env."
+    },
+    "kimicli": {
+      "enabled": true,
+      "cli": "kimi",
+      "oauth": true,
+      "_note": "Kimi Code CLI preko OAuth pretplate (kimi login, bez ključa). Spawn: 'kimi -p <prompt> -m <model>'. Agent: 'kimicli:kimi-k2.6'. Token u ~/.kimi-code. Različit od 'kimi' (API-ključ, anthropic-endpoint)."
+    },
+    "geminicli": {
+      "enabled": true,
+      "cli": "gemini",
+      "apiKey": "env:GEMINI_API_KEY|GOOGLE_API_KEY",
+      "_note": "Gemini CLI (Google), headless spawn: 'gemini --skip-trust --yolo -m <model> -p <prompt>'. Agent: 'geminicli:gemini-2.5-pro'. RegocDaemon ubacuje GEMINI_API_KEY iz credentials.env u okolinu djeteta (OAuth Code Assist je Google ukinuo). PREDUVJET: `gemini` CLI mora biti instaliran na tom stroju (na node-A 09.09.2026. NIJE) i instalacija traži internet.",
+      "_deploy": "TASK-4786"
+    },
+    "glm": {
+      "enabled": true,
+      "anthropicCompatible": true,
+      "baseUrl": "https://api.z.ai/api/anthropic",
+      "apiKey": "env:GLM_API_KEY",
+      "_note": "Zhipu/Z.ai GLM. Coding Plan pretplata (18/72/160$). Model npr. 'glm-4.6'. Ključ: z.ai → GLM_API_KEY."
+    },
+    "minimax": {
+      "enabled": true,
+      "anthropicCompatible": true,
+      "baseUrl": "https://api.minimax.io/anthropic",
+      "apiKey": "env:MINIMAX_API_KEY",
+      "_note": "MiniMax M2. Coding Plan (10/20/50$). Model npr. 'MiniMax-M2'. Ključ: platform.minimax.io → MINIMAX_API_KEY."
+    },
+    "qwen": {
+      "enabled": true,
+      "anthropicCompatible": true,
+      "baseUrl": "https://coding-intl.dashscope.aliyuncs.com/apps/anthropic",
+      "apiKey": "env:QWEN_API_KEY",
+      "_note": "Alibaba Qwen Coding Plan (~50$). Model npr. 'qwen3-coder-plus'. NAPOMENA: licenca 'samo interaktivno' — provjeriti prije daemon/autonomne uporabe. Ključ: DashScope → QWEN_API_KEY."
+    },
+    "deepseek": {
+      "enabled": true,
+      "anthropicCompatible": true,
+      "baseUrl": "https://api.deepseek.com/anthropic",
+      "apiKey": "env:DEEPSEEK_API_KEY",
+      "_note": "DeepSeek (najjeftiniji po tokenu, bez pretplate). Model npr. 'deepseek-chat'. Ključ: api.deepseek.com → DEEPSEEK_API_KEY."
+    },
+    "claude": {
+      "enabled": true
+    }
+  },
+  "defaults": {
+    "frontier": "anthropic:claude-opus-4-6[1m]",
+    "strong": "anthropic:claude-sonnet-4-6[1m]",
+    "good": "anthropic:claude-sonnet-4-6[1m]",
+    "basic": "anthropic:claude-haiku-4-5",
+    "classifier": "anthropic:claude-haiku-4-5",
+    "_pin_4_6_note": "Goran, 12.09.2026: privremeni pin na 4.6 generaciju za test (umjesto pratećih aliasa opus/sonnet/haiku koji su se pomaknuli na Claude 5 obitelj). Haiku nema 4.6 izdanje, ostaje 4.5. Backup prije ovoga: model-config.json.bak-pre-4.6-pin-20260912. Rollback: vrati 'anthropic:opus'/'anthropic:sonnet'/'anthropic:haiku'."
+  },
+  "agentOverrides": {
+    "_comment": "Override model za specifičnog agenta. Format: 'provider:model' ili 'provider@node:model' (npr. 'ollama@node-a:qwen3:0.6b' rutira na mesh čvor iz providers.ollama.nodes).",
+    "_pin_4_6_note": "Goran, 12.09.2026: SVE agente piniramo na 4.6 generaciju. Bez eksplicitnog overridea, agent pada na registarski alias ('opus'/'sonnet') koji CLI razrješava na najnoviji (Claude 5) — `defaults` iz ovog fajla se NE koriste za spawn agenata (resolveAgentTarget čita SAMO agentOverrides). Zato je pin po agentu obavezan. Rollback: obriši sve pinirane ključeve (agenti se vraćaju na najnoviji preko aliasa). Backup: model-config.json.bak-pre-4.6-pin-20260912.",
+    "_example_klaudio": "ollama:qwen3:8b",
+    "regoc": "anthropic:opus",
+    "klaudio": "anthropic:opus",
+    "stribor": "anthropic:opus",
+    "kosjenka": "anthropic:opus",
+    "jelena": "anthropic:opus",
+    "malik": "anthropic:opus",
+    "manda": "anthropic:opus",
+    "dora": "anthropic:opus",
+    "grga": "anthropic:opus",
+    "gita": "anthropic:opus",
+    "emard": "anthropic:opus",
+    "potjeh": "anthropic:opus",
+    "kriticar": "anthropic:sonnet",
+    "_potjeh_kriticar_zasto": "Potjeh (QA/intern) i kritičar (vratar, Sudac.ts) ostaju na Sonnet 4.6 jer im je to registarski tier. Kriticar specifično: TASK-4839 kalibracija — razlučivost sonnet=1,00 vs opus=0,80.",
+    "_example_kimi": "kimi:kimi-k2.6",
+    "_example_glm": "glm:glm-4.6",
+    "_example_kimicli": "kimicli:kimi-k2.6",
+    "_example_openrouter_qwen": "openrouter:qwen/qwen3-235b-a22b",
+    "_example_openrouter_deepseek": "openrouter:deepseek/deepseek-chat-v3-0324",
+    "_example_openrouter_llama": "openrouter:meta-llama/llama-4-maverick",
+    "_example_openrouter_mistral": "openrouter:mistralai/mistral-large-2411"
+  },
+  "componentOverrides": {
+    "_comment": "Override model za specifičnu komponentu sustava",
+    "embeddings": "ollama:qwen3-embedding:8b",
+    "_example_classifier": "ollama:qwen3:8b",
+    "classifier": "ollama:qwen3:8b",
+    "_note_classifier": "P2/TASK-2568: komponentni klasifikator ide na lokalnu Ollamu (besplatno, 0 Anthropic poziva). Prije ovoga je bio anthropic:haiku = `claude --print` spawn po klasifikaciji. Rollback: vrati na \"anthropic:haiku\".",
+    "hindsight": "anthropic:opus"
+  }
+}

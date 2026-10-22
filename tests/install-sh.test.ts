@@ -30,6 +30,7 @@ function okruzje(ime: string, uredi?: (paket: string) => void): Okruzje {
   mkdirSync(home, { recursive: true })
   const popis = Bun.spawnSync(['git', 'ls-files', '-co', '--exclude-standard', '-z'], { cwd: KORIJEN }).stdout.toString().split('\0').filter(Boolean)
   for (const rel of popis) {
+    if (rel.startsWith('regoc-system/')) continue // komplet: testovi --komplet stavljaju lažni (TASK-5705)
     const izvor = join(KORIJEN, rel)
     if (!existsSync(izvor)) continue
     mkdirSync(dirname(join(paket, rel)), { recursive: true })
@@ -286,60 +287,116 @@ describe('install.sh — pad koraka', () => {
   }, 60_000)
 })
 
-describe('install.sh --komplet', () => {
-  /** Lažni javni modul kompleta (lokalni git) + lock koji ga pina. */
-  function komplet(o: Okruzje, pokvari = false) {
-    const repo = join(o.korijen, 'regoc-komplet')
-    mkdirSync(repo)
-    writeFileSync(join(repo, 'README.md'), 'komplet\n')
-    writeFileSync(join(repo, 'instalacija.sh'), '#!/bin/bash\n# ugovor P11: PROMIJENJENO ili ISTO\nm="$4/komplet-pripremljen"; if [ -f "$m" ]; then echo ISTO; else [ "${5:-}" = --suho ] || touch "$m"; echo PROMIJENJENO; fi\n')
-    const sha = (f: string) => new Bun.CryptoHasher('sha256').update(readFileSync(join(repo, f))).digest('hex')
-    writeFileSync(join(repo, 'MANIFEST.sha256'), `${sha('README.md')}  README.md\n${sha('instalacija.sh')}  instalacija.sh\n`)
-    const g = (...a: string[]) => Bun.spawnSync(['git', '-c', 'user.name=p', '-c', 'user.email=p@example.invalid', ...a], { cwd: repo })
-    g('init', '-q'); g('add', '-A'); g('commit', '-q', '-m', 'k')
-    const commit = g('rev-parse', 'HEAD').stdout.toString().trim()
-    const lock = { repo, commit, manifest_sha256: pokvari ? '0'.repeat(64) : sha('MANIFEST.sha256'), odrediste: 'komplet-odrediste' }
-    writeFileSync(join(o.paket, 'config/komplet.lock'), JSON.stringify(lock))
-    Bun.spawnSync(['git', 'add', 'config/komplet.lock'], { cwd: o.paket })
-    Bun.spawnSync(['git', '-c', 'user.name=p', '-c', 'user.email=p@example.invalid', 'commit', '-qm', 'lock', '--no-verify'], { cwd: o.paket })
-    return { repo, commit }
+describe('install.sh --komplet (regoc-system/ u paketu, TASK-5705)', () => {
+  /** Lažni komplet u mapi regoc-system/ paketa (kao što ga piše gradi_komplet.sh --javno). */
+  function komplet(p: string) {
+    const k = join(p, 'regoc-system')
+    rmSync(k, { recursive: true, force: true }); mkdirSync(join(k, 'lib'), { recursive: true })
+    writeFileSync(join(k, 'README.md'), 'komplet\n')
+    writeFileSync(join(k, 'RegocDaemon.ts'), "import { x } from './lib/x'\nconsole.log(x)\n")
+    writeFileSync(join(k, 'lib', 'x.ts'), "export const x = 1\n")
+    // odredište kaže komplet, ne paket (ADR-0001 O1.4)
+    writeFileSync(join(k, 'KOMPLET.json'), JSON.stringify({ odrediste: 'komplet-odrediste', ulaz: 'RegocDaemon.ts' }))
+    // ugovor P11: zadnji redak PROMIJENJENO ili ISTO; što stvori IZVAN kompleta javlja u $TM_KOMPLET_STVORENO (put|vrsta)
+    writeFileSync(join(k, 'instalacija.sh'), '#!/bin/bash\n# ugovor P11: PROMIJENJENO ili ISTO\nm="$4/komplet-pripremljen"; if [ -f "$m" ]; then echo ISTO; else [ "${5:-}" = --suho ] || { touch "$m"; ln -s "$m" "$HOME/komplet-veza"; printf "%s|veza\\n" "$HOME/komplet-veza" >> "$TM_KOMPLET_STVORENO"; }; echo PROMIJENJENO; fi\n')
+    manifest(k)
+  }
+  function manifest(k: string) {
+    const f = ['KOMPLET.json', 'README.md', 'RegocDaemon.ts', 'instalacija.sh', 'lib/x.ts'].filter(x => existsSync(join(k, x)))
+    const sha = (x: string) => new Bun.CryptoHasher('sha256').update(readFileSync(join(k, x))).digest('hex')
+    writeFileSync(join(k, 'MANIFEST.sha256'), f.map(x => `${sha(x)}  ${x}\n`).join(''))
   }
   const ARG = [...OSNOVNO, '--komplet', '--preskoci', 'claude']
 
-  test('bez config/komplet.lock → izlaz 5 s jasnom porukom', () => {
-    const o = okruzje('bezlock')
+  test('paket bez regoc-system/ → izlaz 5 s jasnom porukom', () => {
+    const o = okruzje('bezkompleta', p => rmSync(join(p, 'regoc-system'), { recursive: true, force: true }))
     try {
       const r = pokreni(o, ARG)
       expect(r.kod).toBe(5)
-      expect(r.izlaz).toContain('komplet.lock ne postoji')
+      expect(r.izlaz).toContain('nema komplet (MANIFEST.sha256 i RegocDaemon.ts)')
       expect(rezultat(o.tm)).toMatchObject({ ishod: 'pad', korak: 'K2.14-komplet', izlaz: 5 })
     } finally { rmSync(o.korijen, { recursive: true, force: true }) }
   }, 60_000)
 
-  test('klon na commitu iz locka, manifest provjeren, drugo pokretanje bez promjene', () => {
-    const o = okruzje('komplet')
+  test('kopija iz ./regoc-system u ~/<odrediste iz KOMPLET.json>, bez kloniranja; manifest provjeren; drugo pokretanje bez promjene', () => {
+    const o = okruzje('komplet', komplet)
     try {
-      const { commit } = komplet(o)
       const TM_PORT = String(20000 + Math.floor(Math.random() * 20000))
       const r1 = pokreni(o, ARG, { TM_PORT })
       expect(r1.kod).toBe(0)
+      expect(r1.izlaz).toContain('bun build RegocDaemon.ts ✓')
+      expect(r1.izlaz).not.toContain('git clone')
       const dir = join(o.home, 'komplet-odrediste')
-      expect(Bun.spawnSync(['git', 'rev-parse', 'HEAD'], { cwd: dir }).stdout.toString().trim()).toBe(commit)
+      expect(readFileSync(join(dir, 'MANIFEST.sha256'), 'utf-8')).toBe(readFileSync(join(o.paket, 'regoc-system', 'MANIFEST.sha256'), 'utf-8'))
+      expect(existsSync(join(dir, '.git'))).toBe(false)
       expect(existsSync(join(o.tm, 'komplet-pripremljen'))).toBe(true)
+      // poveznica koju je komplet stvorio izvan svoje mape ide u manifest (inače je --do-nule ostavi)
+      const inst = readFileSync(join(o.tm, 'instalirano.json'), 'utf-8')
+      expect(inst).toContain(join(o.home, 'komplet-veza'))
+      expect(inst).toContain(dir)
       expect(readFileSync(join(o.tm, 'config/instalacija.env'), 'utf-8')).toContain(`TM_SUSTAV_DIR=${dir}`)
       const r2 = pokreni(o, ARG, { TM_PORT })
       expect(r2.kod).toBe(0)
       expect(koraci(o.tm).find(k => k.korak === 'K2.14-komplet')).toMatchObject({ izlaz: 0, promijenjeno: false })
     } finally { rmSync(o.korijen, { recursive: true, force: true }) }
-  }, 60_000)
+  }, 90_000)
 
-  test('manifest ne odgovara locku → izlaz 5', () => {
-    const o = okruzje('kvar')
+  test('nova inačica regoc-system/ → nadogradnja na mjestu: nove datoteke, uklonjene van, postavke kompleta ostaju', () => {
+    const o = okruzje('nadogradnja', komplet)
     try {
-      komplet(o, true)
+      const TM_PORT = String(20000 + Math.floor(Math.random() * 20000))
+      expect(pokreni(o, ARG, { TM_PORT }).kod).toBe(0)
+      const dir = join(o.home, 'komplet-odrediste')
+      mkdirSync(join(dir, 'config'), { recursive: true }); writeFileSync(join(dir, 'config', 'moja.json'), '{}')
+      const k = join(o.paket, 'regoc-system')
+      rmSync(join(k, 'README.md')); writeFileSync(join(k, 'lib', 'x.ts'), 'export const x = 2\n'); manifest(k)
+      const r = pokreni(o, ARG, { TM_PORT })
+      expect(r.kod).toBe(0)
+      expect(r.izlaz).toContain('komplet nadograđen')
+      expect(readFileSync(join(dir, 'lib', 'x.ts'), 'utf-8')).toBe('export const x = 2\n')
+      expect(existsSync(join(dir, 'README.md'))).toBe(false)
+      expect(existsSync(join(dir, 'config', 'moja.json'))).toBe(true)
+    } finally { rmSync(o.korijen, { recursive: true, force: true }) }
+  }, 90_000)
+
+  test('regoc-system/ ne odgovara manifestu (izmijenjena datoteka ili višak) → izlaz 5, ništa se ne kopira', () => {
+    for (const [ime, pokvari] of [
+      ['izmjena', (p: string) => { komplet(p); writeFileSync(join(p, 'regoc-system', 'lib', 'x.ts'), 'export const x = 666\n') }],
+      ['visak', (p: string) => { komplet(p); writeFileSync(join(p, 'regoc-system', 'ubaceno.ts'), 'x\n') }],
+    ] as const) {
+      const o = okruzje(`kvar-${ime}`, pokvari)
+      try {
+        const r = pokreni(o, ARG)
+        expect(r.kod).toBe(5)
+        expect(r.izlaz).toContain('regoc-system/ —')
+        expect(existsSync(join(o.home, 'komplet-odrediste'))).toBe(false)
+      } finally { rmSync(o.korijen, { recursive: true, force: true }) }
+    }
+  }, 90_000)
+
+  test('komplet bez odredišta (KOMPLET.json bez polja odrediste) → izlaz 5; TM_KOMPLET_DIR ga zadaje', () => {
+    const o = okruzje('bezodredista', p => {
+      komplet(p); writeFileSync(join(p, 'regoc-system', 'KOMPLET.json'), '{}'); manifest(join(p, 'regoc-system'))
+    })
+    try {
       const r = pokreni(o, ARG)
       expect(r.kod).toBe(5)
-      expect(r.izlaz).toContain('MANIFEST.sha256 ≠ manifest_sha256')
+      expect(r.izlaz).toContain('komplet ne kaže kamo se instalira')
+      const r2 = pokreni(o, ARG, { TM_KOMPLET_DIR: join(o.home, 'drugdje') })
+      expect(r2.kod).toBe(0)
+      expect(existsSync(join(o.home, 'drugdje', 'RegocDaemon.ts'))).toBe(true)
+    } finally { rmSync(o.korijen, { recursive: true, force: true }) }
+  }, 90_000)
+
+  test('odredište postoji, a nije komplet → izlaz 5, ne prepisuje se', () => {
+    const o = okruzje('tudje', komplet)
+    try {
+      mkdirSync(join(o.home, 'komplet-odrediste'), { recursive: true })
+      writeFileSync(join(o.home, 'komplet-odrediste', 'moje.txt'), 'x')
+      const r = pokreni(o, ARG)
+      expect(r.kod).toBe(5)
+      expect(r.izlaz).toContain('a nije komplet')
+      expect(readFileSync(join(o.home, 'komplet-odrediste', 'moje.txt'), 'utf-8')).toBe('x')
     } finally { rmSync(o.korijen, { recursive: true, force: true }) }
   }, 60_000)
 })

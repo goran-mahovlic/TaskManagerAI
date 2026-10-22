@@ -1,0 +1,5 @@
+{
+  "_note": "Read by TaskManagerAI scripts/install.sh --komplet: the kit is copied to ~/<odrediste> (TM_KOMPLET_DIR overrides).",
+  "odrediste": ".claude/regoc",
+  "ulaz": "RegocDaemon.ts"
+}

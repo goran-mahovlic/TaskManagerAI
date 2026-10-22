@@ -1,0 +1,29 @@
+{
+  "_note": "W5/TASK-4618 — adversarijalna provjera nalaza na skupim odlukama. Čita AdversarialVerify.ts (loadAdversarialConfig). Nedostajuća/neispravna datoteka ili nepoznata vrijednost → 'off' (nikad tiho 'shadow' ni 'on'). Mijenja se BEZ ponovnog pokretanja: keš pada čim se promijeni vrijeme izmjene ili veličina datoteke (gornja granica 30 s).",
+  "_nacini": {
+    "off": "ništa se ne računa i u prompt ne ide ni redak — put koraka je bajt-identičan onome prije W5 (ADR-0003: naš boilerplate je već jednom digao udio nepotrebnih odsjeka ×23,4)",
+    "shadow": "blok ide u prompt SAMO kvalificiranim koracima (težina ≥ pragTezine I okidač nalaza), provjera se izvodi i zapisuje u data/adversarial_verify.jsonl, ali se nalaz NE obara i status zadatka se NE dira",
+    "on": "oboreni nalazi ostavljaju trag na zadatku (bilješka + oznaka nalaz-oboren:<n>); vraćanje koraka u red je i dalje posao W4 (CriticRepairLoop), ovaj modul ne mijenja status"
+  },
+  "_zasto_off_a_ne_shadow": "W1/W3/W4 su zadano 'shadow' jer njihova sjena ne košta ništa (čista funkcija + jedan append). W5-ova sjena TROŠI: tri poziva modela po nalazu. Vrata koja se sama upale i počnu trošiti nisu prekidač nego trošak. Uključivanje je izričita odluka, ne zadana vrijednost.",
+  "_rollback": "nacin='off' → gasi se u sekundi, bez ponovnog pokretanja daemona.",
+  "nacin": "off",
+  "aktiviranoU": null,
+  "pragTezine": 61,
+  "_pragTezine": "Plan §3 W5: 'ograničeno na težinu ≥ 61 da ne poskupi sitnice'. Isti prag kao granica E4 u WeightScore.",
+  "maksNalaza": 8,
+  "_maksNalaza": "Strop na broj nalaza po koraku. Svaki nalaz = 3 poziva; ovo je proračun, ne stil. Rez se ZAPISUJE (polje `odbaceno`) — 'nema tihih rezova'.",
+  "potrebnoZaPad": 2,
+  "_potrebnoZaPad": "Tri leće, prag 2 = 'nalaz preživljava ako ga barem dva ne obore'. Manje od 2 VALJANA glasa nije preživljavanje nego 'neprovjeren' i ispada iz nazivnika mjerila.",
+  "rokPoLeciMs": 120000,
+  "ukupniProracunMs": 600000,
+  "modeli": {
+    "dokaz": "ollama:qwen3:8b",
+    "protuobjasnjenje": "ollama:ministral-3:8b",
+    "doseg": "ollama:mistral:instruct"
+  },
+  "_modeli": "TRI RAZLIČITE OBITELJI namjerno. Tri poziva istog modela s istim pitanjem daju savršeno korelirane glasove — većina tada ne donosi ništa, samo tri puta plati isti odgovor. Različita leća + različita obitelj = dva neovisna izvora raznolikosti.",
+  "_mjerilo": "bun ~/.claude/regoc/tools/adversarial-verify-mjera.ts — kriterij iz plana §3 W5: udio nalaza koji padnu na provjeri očekivano 20–40 %; ispod 5 % provjera je preblaga i treba joj oštriji prompt (alat vraća izlazni kod 1).",
+  "_uvjet_za_shadow": "W5/TASK-4618, mjereno 05.09.2026.: prelazak na 'shadow' ili 'on' ima BRANU koja nije formalnost — kalibracija (bun tools/adversarial-kalibracija.ts) mora pokazati osjetljivost (udio oborenih NEZDRAVIH nalaza) mjerljivo VEĆU od lažne uzbune (udio oborenih ZDRAVIH). Izmjereno s lokalnim 8B panelom: v1 66,7 % vs 100,0 %, v2 (uz teret dokazivanja) 50,0 % vs 83,3 % — panel obara SVE, pa udio pada mjeri provjeravatelja, a ne nalaze. Dok je tako, uključivanje bi trošilo tri poziva po nalazu za sud koji ne razlikuje ništa.",
+  "_kalibracija": "data/adversarial_kalibracija_set.json (6 zdravih + 6 nezdravih nalaza iz stvarnog stanja sustava); rezultati: data/adversarial_kalibracija*.jsonl"
+}

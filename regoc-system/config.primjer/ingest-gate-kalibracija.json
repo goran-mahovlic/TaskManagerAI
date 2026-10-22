@@ -1,0 +1,14 @@
+{
+  "_opis": "Ocjena ulaznih vrata (TASK-5161). inacica 1 = stara (ModeClassifier), 2 = nalog x broj struka. Mjerenje: ~/app/regoc_system/docs/UMJERAVANJE-ulazna-vrata-20261003.md. Cita se pri svakoj poruci, bez restarta.",
+  "inacica": 2,
+  "razredPoStrukama": [
+    "E2",
+    "E2",
+    "E3",
+    "E4",
+    "E5"
+  ],
+  "razredBezNaloga": "E1",
+  "nastavakMinuta": 30,
+  "nastavakDuljina": 120
+}

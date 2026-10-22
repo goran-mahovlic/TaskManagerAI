@@ -12,8 +12,8 @@
 #   --profil IME        kopira profili/IME/instanca.primjer.env u $TM_HOME/config/profil.instanca.env
 #   --baze              lokalni pgvector (RAG, 127.0.0.1:15433) + Hindsight (127.0.0.1:17796),
 #                       instalirani i ZAUSTAVLJENI dok ih prekidač ne uključi (plan P5)
-#   --komplet           komplet izvornog sustava (RegocDaemon…) iz config/komplet.lock (plan P11)
-#   --komplet-commit SHA  drugi commit kompleta od onog u lock datoteci (petlja popravka)
+#   --komplet           komplet izvornog sustava (RegocDaemon…) iz mape regoc-system/ paketa, u mapu
+#                       iz regoc-system/KOMPLET.json (TM_KOMPLET_DIR); v. regoc-system/README.md (P11, TASK-5705)
 #   --claude            instaliraj Claude CLI i bez --komplet
 #   --suho              ništa ne piše ni ne instalira; ispisuje korake i tablicu preduvjeta
 #   --bez-servisa       bez systemd/launchd usluga (provjera ploče ide privremenim procesom)
@@ -45,7 +45,7 @@ PG0_VERZIJA="0.15.2"
 PYTHON_BAZE="3.13"
 
 ARGUMENTI="$*"
-CVOR=""; BIND=""; PROFIL=""; BAZE=0; KOMPLET=0; KOMPLET_COMMIT=""; CLAUDE=0; SUHO=0
+CVOR=""; BIND=""; PROFIL=""; BAZE=0; KOMPLET=0; CLAUDE=0; SUHO=0
 BEZ_SERVISA=0; BEZ_BAZE=0; POSUDI=0; PRESKOCI=","; LOG_DIR_ARG=""; DOPUSTI_PRLJAVO=0
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -54,7 +54,6 @@ while [ $# -gt 0 ]; do
     --profil)          PROFIL="${2:-}"; shift ;;
     --baze)            BAZE=1 ;;
     --komplet)         KOMPLET=1 ;;
-    --komplet-commit)  KOMPLET_COMMIT="${2:-}"; KOMPLET=1; shift ;;
     --claude)          CLAUDE=1 ;;
     --suho)            SUHO=1 ;;
     --bez-servisa)     BEZ_SERVISA=1 ;;
@@ -79,9 +78,6 @@ fi
 if [ -n "$PROFIL" ] && [ ! -d "$PAKET/profili/$PROFIL" ]; then
   echo "--profil: nema profila '$PROFIL' (postoje: $(ls "$PAKET/profili" | tr '\n' ' '))" >&2; exit 2
 fi
-if [ -n "$KOMPLET_COMMIT" ] && ! printf '%s' "$KOMPLET_COMMIT" | grep -Eq '^[0-9a-f]{7,40}$'; then
-  echo "--komplet-commit: očekujem git sha (7–40 heksadecimalnih znakova)" >&2; exit 2
-fi
 
 TM_HOME="${TM_HOME:-$HOME/.taskmanager}"
 export TM_HOME
@@ -91,11 +87,16 @@ if [ -f "$TM_HOME/config/postavke.env" ]; then
   _p="$(sed -n 's/^[[:space:]]*TM_PORT=\([0-9][0-9]*\)[[:space:]]*$/\1/p' "$TM_HOME/config/postavke.env" | tail -1)"
   [ -n "$_p" ] && TM_PORT="$_p"
 fi
-# Odredište kompleta: TM_KOMPLET_DIR ili polje `odrediste` iz config/komplet.lock (relativno
-# prema $HOME) — paket sam ne zna raspored mapa izvornog sustava (ADR-0001 O1.4).
-KOMPLET_DIR="${TM_KOMPLET_DIR:-}"
-if [ "$KOMPLET" = 1 ] && [ -z "$KOMPLET_DIR" ] && [ -f "$PAKET/config/komplet.lock" ] && command -v python3 >/dev/null 2>&1; then
-  KOMPLET_DIR="$(python3 -c 'import json,os,sys; o=json.load(open(sys.argv[1])).get("odrediste") or ""; print(os.path.join(os.environ["HOME"], o) if o and not o.startswith("/") else o)' "$PAKET/config/komplet.lock" 2>/dev/null)"
+# Odredište kompleta: TM_KOMPLET_DIR ili polje `odrediste` iz regoc-system/KOMPLET.json (relativno na
+# HOME) — paket sam ne zna raspored mapa izvornog sustava (ADR-0001 O1.4); kaže ga komplet (TASK-5705,
+# prije komplet.lock). Bez --komplet prazno, kao prije (usluge i instalacija.env ne znaju za komplet).
+KOMPLET_DIR=""
+if [ "$KOMPLET" = 1 ]; then
+  KOMPLET_DIR="${TM_KOMPLET_DIR:-}"
+  if [ -z "$KOMPLET_DIR" ] && [ -f "$PAKET/regoc-system/KOMPLET.json" ]; then
+    _o="$(sed -n 's/.*"odrediste"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$PAKET/regoc-system/KOMPLET.json" | head -1)"
+    case "$_o" in ''|/*|*..*) ;; *) KOMPLET_DIR="$HOME/$_o" ;; esac
+  fi
 fi
 BAZE_VENV="$TM_HOME/baze/venv"
 export PATH="$HOME/.bun/bin:$HOME/.local/bin:$PATH"
@@ -613,50 +614,61 @@ k_claude() {
   echo "    $(claude --version 2>/dev/null | head -1) — prijava je zaseban korak (Config → Prijava)"
 }
 
-# ── komplet izvornog sustava (plan P11) ────────────────────────────────────────
-lock_polje() { python3 -c 'import json,sys; v=json.load(open(sys.argv[1])).get(sys.argv[2]); sys.stdout.write("" if v is None else str(v))' "$1" "$2"; }
+# ── komplet izvornog sustava (plan P11; TASK-5705: mapa regoc-system/ u paketu, D3 = B) ───────
 sha256_dat() { (shasum -a 256 "$1" 2>/dev/null || sha256sum "$1") | cut -c1-64; }
+# Provjera stabla prema njegovom MANIFEST.sha256: svaka navedena datoteka postoji i ima taj sha256,
+# a nijedne obične datoteke nema izvan manifesta (osim node_modules/ i mapa koje gradi instalacija).
+manifest_valja() {  # $1 = stablo, $2 = "strogo" (i višak je greška) → ispis prve greške, izlaz 1
+  local d="$1" visak
+  ( cd "$d" && { shasum -a 256 -c --quiet MANIFEST.sha256 2>/dev/null || sha256sum -c --quiet MANIFEST.sha256 2>/dev/null; } ) \
+    || { echo "datoteke ne odgovaraju MANIFEST.sha256"; return 1; }
+  [ "${2:-}" = strogo ] || return 0
+  visak="$(cd "$d" && find . -path ./node_modules -prune -o -type f ! -name MANIFEST.sha256 -print | sed 's|^\./||' | LC_ALL=C sort \
+    | LC_ALL=C comm -23 - <(awk '{print $2}' MANIFEST.sha256 | LC_ALL=C sort) | head -5)"
+  [ -z "$visak" ] || { echo "datoteke izvan MANIFEST.sha256: $(printf '%s ' $visak)"; return 1; }
+}
+# Kopija stabla bez node_modules/ (simboličke veze ostaju veze; tar je i na Linuxu i na macOS-u).
+kopiraj_komplet() { mkdir -p "$2" && ( cd "$1" && tar cf - --exclude=./node_modules . ) | ( cd "$2" && tar xf - ); }
 
 k_komplet() {
   [ "$KOMPLET" = 1 ] || { razlog "nije traženo (--komplet)"; return 0; }
-  local lock="$PAKET/config/komplet.lock"
-  if [ ! -f "$lock" ]; then
-    echo "    GREŠKA: $lock ne postoji — javni modul regoc-komplet još nije objavljen u ovom paketu."
-    echo "    Instaliraj bez --komplet ili s inačicom paketa koja nosi komplet.lock (plan K3a)."
+  local izvor="$PAKET/regoc-system" greska msha
+  if [ ! -f "$izvor/MANIFEST.sha256" ] || [ ! -f "$izvor/RegocDaemon.ts" ]; then
+    echo "    GREŠKA: $izvor nema komplet (MANIFEST.sha256 i RegocDaemon.ts) — ova inačica paketa ne nosi komplet."
+    echo "    Instaliraj bez --komplet ili s inačicom paketa koja ima mapu regoc-system/ (regoc-system/README.md)."
     return 5
   fi
-  local repo commit msha
-  repo="$(lock_polje "$lock" repo)"; commit="${KOMPLET_COMMIT:-$(lock_polje "$lock" commit)}"; msha="$(lock_polje "$lock" manifest_sha256)"
-  [ -n "$repo" ] && [ -n "$commit" ] || { echo "    GREŠKA: komplet.lock nema repo ili commit"; return 5; }
-  [ -n "$KOMPLET_DIR" ] || { echo "    GREŠKA: odredište kompleta nije zadano (polje odrediste u komplet.lock ili TM_KOMPLET_DIR)"; return 5; }
-  naredba "git clone $repo $KOMPLET_DIR && git checkout $commit"
-  if [ -e "$KOMPLET_DIR" ] && [ ! -d "$KOMPLET_DIR/.git" ]; then
-    echo "    GREŠKA: $KOMPLET_DIR postoji, a nije git klon kompleta — ne prepisujem ga (premjesti ga pa ponovi)"; return 5
+  [ -n "$KOMPLET_DIR" ] || { echo "    GREŠKA: komplet ne kaže kamo se instalira (polje odrediste u regoc-system/KOMPLET.json, relativno na HOME) — ili zadaj TM_KOMPLET_DIR"; return 5; }
+  naredba "provjera regoc-system/MANIFEST.sha256 → kopija u $KOMPLET_DIR"
+  # cjelovitost izvora: mapa u paketu mora biti točno ono što je izvoz zapisao u manifest
+  greska="$(manifest_valja "$izvor" strogo)" || { echo "    GREŠKA: regoc-system/ — $greska (izmijenjena ili oštećena mapa paketa)"; return 5; }
+  msha="$(sha256_dat "$izvor/MANIFEST.sha256")"
+  echo "    regoc-system/ ✓ manifest ($(wc -l < "$izvor/MANIFEST.sha256" | tr -d ' ') datoteka, sha256 ${msha:0:12}…)"
+  if [ -e "$KOMPLET_DIR" ] && [ ! -f "$KOMPLET_DIR/MANIFEST.sha256" ]; then
+    echo "    GREŠKA: $KOMPLET_DIR postoji, a nije komplet (nema MANIFEST.sha256) — ne prepisujem ga (premjesti ga pa ponovi)"; return 5
   fi
-  if [ -d "$KOMPLET_DIR/.git" ]; then
-    local izvor; izvor="$(git -C "$KOMPLET_DIR" remote get-url origin 2>/dev/null)"
-    [ "$izvor" = "$repo" ] || { echo "    GREŠKA: $KOMPLET_DIR je klon $izvor, a lock traži $repo"; return 5; }
-    if [ "$(git -C "$KOMPLET_DIR" rev-parse HEAD 2>/dev/null)" = "$(git -C "$KOMPLET_DIR" rev-parse "$commit^{commit}" 2>/dev/null)" ]; then
-      [ -z "$(git -C "$KOMPLET_DIR" status --porcelain --untracked-files=no)" ] || { echo "    GREŠKA: komplet ima lokalne izmjene (na čvoru se ništa ne krpa, plan P3.3)"; return 5; }
-      echo "    komplet na $commit"
+  if [ -f "$KOMPLET_DIR/MANIFEST.sha256" ]; then
+    # instalirani komplet se ne krpa na čvoru (plan P3.3): datoteke iz njegovog manifesta moraju biti netaknute
+    greska="$(manifest_valja "$KOMPLET_DIR")" || { echo "    GREŠKA: $KOMPLET_DIR — $greska (lokalne izmjene kompleta; na čvoru se ništa ne krpa, plan P3.3)"; return 5; }
+    if [ "$(sha256_dat "$KOMPLET_DIR/MANIFEST.sha256")" = "$msha" ]; then
+      echo "    komplet u $KOMPLET_DIR isti kao regoc-system/"
     else
       promjena
-      radi "git fetch + checkout $commit" -- bash -c "git -C '$KOMPLET_DIR' fetch -q origin && git -C '$KOMPLET_DIR' checkout -q --detach '$commit'" || return 4
+      if suho; then echo "    (suho) nadogradila bih komplet u $KOMPLET_DIR iz regoc-system/"; return 0; fi
+      # nadogradnja: datoteke kojih u novom manifestu nema idu van; postavke, data/ i node_modules/ ostaju
+      awk '{print $2}' "$KOMPLET_DIR/MANIFEST.sha256" | LC_ALL=C sort | LC_ALL=C comm -23 - <(awk '{print $2}' "$izvor/MANIFEST.sha256" | LC_ALL=C sort) \
+        | while IFS= read -r f; do rm -f "$KOMPLET_DIR/$f"; done
+      kopiraj_komplet "$izvor" "$KOMPLET_DIR" || { echo "    GREŠKA: kopija regoc-system/ → $KOMPLET_DIR"; return 5; }
+      echo "    komplet nadograđen u $KOMPLET_DIR"
     fi
   else
     promjena
-    radi "git clone $repo" -- bash -c "mkdir -p '$(dirname "$KOMPLET_DIR")' && git clone -q --no-checkout '$repo' '$KOMPLET_DIR' && git -C '$KOMPLET_DIR' checkout -q --detach '$commit'" || return 4
-    suho || u_manifest "$KOMPLET_DIR" mapa
+    if suho; then echo "    (suho) kopirala bih regoc-system/ u $KOMPLET_DIR, pa ovisnosti, instalacija.sh i bun build RegocDaemon.ts"; return 0; fi
+    kopiraj_komplet "$izvor" "$KOMPLET_DIR" || { echo "    GREŠKA: kopija regoc-system/ → $KOMPLET_DIR"; return 5; }
+    u_manifest "$KOMPLET_DIR" mapa
+    echo "    komplet kopiran u $KOMPLET_DIR"
   fi
-  suho && [ ! -d "$KOMPLET_DIR/.git" ] && { echo "    (suho) provjerila bih MANIFEST.sha256, ovisnosti i bun build RegocDaemon.ts"; return 0; }
-  # cjelovitost: MANIFEST.sha256 mora biti onaj iz locka, a datoteke moraju odgovarati manifestu
-  if [ -n "$msha" ]; then
-    [ -f "$KOMPLET_DIR/MANIFEST.sha256" ] || { echo "    GREŠKA: komplet nema MANIFEST.sha256"; return 5; }
-    [ "$(sha256_dat "$KOMPLET_DIR/MANIFEST.sha256")" = "$msha" ] || { echo "    GREŠKA: MANIFEST.sha256 ≠ manifest_sha256 iz komplet.lock"; return 5; }
-    ( cd "$KOMPLET_DIR" && { shasum -a 256 -c --quiet MANIFEST.sha256 2>/dev/null || sha256sum -c --quiet MANIFEST.sha256; } ) \
-      || { echo "    GREŠKA: datoteke kompleta ne odgovaraju manifestu"; return 5; }
-    echo "    manifest ✓"
-  fi
+  greska="$(manifest_valja "$KOMPLET_DIR")" || { echo "    GREŠKA: $KOMPLET_DIR nakon kopije — $greska"; return 5; }
   if [ -f "$KOMPLET_DIR/package.json" ] && ! bez_buna; then
     local zig zapis="$KOMPLET_DIR/node_modules/.tm-instalacija"
     zig="$(cat "$KOMPLET_DIR/package.json" "$KOMPLET_DIR/bun.lock" 2>/dev/null | (shasum -a 256 2>/dev/null || sha256sum) | cut -c1-64)"
@@ -666,13 +678,19 @@ k_komplet() {
       suho || printf '%s\n' "$zig" > "$zapis"
     fi
   fi
-  # vlastita priprema kompleta (primjeri postavki, kuke, settings.json): ugovor iz plana P11 —
-  # `instalacija.sh --paket P --tm-home H [--suho]` ispisuje PROMIJENJENO ili ISTO
+  # vlastita priprema kompleta (primjeri postavki, kuke, settings.json, poveznica na spremište tajni
+  # paketa): ugovor iz plana P11 — `instalacija.sh --paket P --tm-home H [--suho]` ispisuje PROMIJENJENO
+  # ili ISTO; što stvori IZVAN svoje mape (poveznice u ~/.claude, settings.json) upisuje u
+  # $TM_KOMPLET_STVORENO kao `put|vrsta`, pa to ide u manifest i `--do-nule` ga briše (TASK-5700)
   if [ -f "$KOMPLET_DIR/instalacija.sh" ]; then
-    local izl; izl="$(bash "$KOMPLET_DIR/instalacija.sh" --paket "$PAKET" --tm-home "$TM_HOME" $(suho && echo --suho) 2>&1)" \
-      || { printf '%s\n' "$izl" | sed 's/^/    /'; echo "    GREŠKA: instalacija.sh kompleta nije uspjela"; return 5; }
+    local izl stvoreno="$TM_HOME/tmp/komplet-stvoreno-$$" put vrsta
+    mkdir -p "$TM_HOME/tmp"; : > "$stvoreno"
+    izl="$(TM_KOMPLET_STVORENO="$stvoreno" bash "$KOMPLET_DIR/instalacija.sh" --paket "$PAKET" --tm-home "$TM_HOME" $(suho && echo --suho) 2>&1)" \
+      || { printf '%s\n' "$izl" | sed 's/^/    /'; rm -f "$stvoreno"; echo "    GREŠKA: instalacija.sh kompleta nije uspjela"; return 5; }
     printf '%s\n' "$izl" | sed 's/^/    /'
     printf '%s\n' "$izl" | grep -q '^PROMIJENJENO' && promjena
+    while IFS='|' read -r put vrsta; do [ -n "$put" ] && u_manifest "$put" "$vrsta"; done < "$stvoreno"
+    rm -f "$stvoreno"
   fi
   if [ -f "$KOMPLET_DIR/RegocDaemon.ts" ] && ! suho; then
     # dokaz da se graf modula razrješava (bez toga daemon ulazi u petlju restarta, TASK-5328)
@@ -680,7 +698,7 @@ k_komplet() {
       || { echo "    GREŠKA: bun build RegocDaemon.ts ne prolazi"; return 5; }
     rm -rf "$TM_HOME/tmp/komplet-build"; echo "    bun build RegocDaemon.ts ✓"
   fi
-  [ "$KORAK_PROMJENA" = 1 ] || razlog "komplet na $commit, manifest i ovisnosti isti"
+  [ "$KORAK_PROMJENA" = 1 ] || razlog "komplet isti kao regoc-system/ (manifest ${msha:0:12}…), ovisnosti iste"
 }
 
 # ── lokalne baze (plan P5, P8) ─────────────────────────────────────────────────
@@ -1032,7 +1050,7 @@ korak K2.10-rjecnici   "rječnici sučelja"                        k_rjecnici 5
 korak K2.11-git-kuke   "git kuke (core.hooksPath)"               k_git_kuke 5
 korak K2.12-macos-omotaci "macOS: setsid i timeout u ~/.local/bin" k_macos_omotaci 5
 korak K2.13-claude     "Claude CLI"                              k_claude 4
-korak K2.14-komplet    "komplet izvornog sustava (regoc-komplet)" k_komplet 5
+korak K2.14-komplet    "komplet izvornog sustava (regoc-system/)" k_komplet 5
 korak K2.15-baze-uv    "uv (Python za lokalne baze)"             k_baze_uv 4
 korak K2.16-baze-python "Python $PYTHON_BAZE"                    k_baze_python 4
 korak K2.17-baze-venv  "venv: pg0 + hindsight-api"               k_baze_venv 5

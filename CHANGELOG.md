@@ -1,3 +1,55 @@
+## 2026-10-22 — Mac K3b: komplet sustava kao mapa regoc-system/ u paketu (TASK-5705, D3 = B)
+
+- **Odluka D3 = B (vlasnik, 22. 10. 2026.):** komplet izvornog sustava (RegocDaemon i sve što `--komplet`
+  instalira) nije zaseban repozitorij nego mapa [`regoc-system/`](regoc-system/README.hr.md) ovog
+  paketa: isti repozitorij, isti commit. `config/komplet.lock` i `tests/komplet-lock.test.ts` (TASK-5700)
+  su ukinuti, kao i opcija `--komplet-commit`.
+- `install.sh --komplet` (K2.14-komplet) više ništa ne klonira. Provjerava `regoc-system/` prema
+  njegovom `MANIFEST.sha256` (svaka datoteka s tim sha256 i nijedna izvan manifesta), kopira ga u
+  mapu iz `regoc-system/KOMPLET.json` (`odrediste`, relativno na HOME; `TM_KOMPLET_DIR` ima prednost).
+  Paket tako i dalje ne zna raspored mapa izvornog sustava (ADR-0001 O1.4). Zatim kopiju ponovo
+  provjerava, radi `bun install --frozen-lockfile` i `instalacija.sh`, a `bun build RegocDaemon.ts`
+  mora proći prije usluga. Nadogradnja na mjestu: uklanja datoteke kojih u novom manifestu nema,
+  postavke i podaci ostaju. Izlaz 5 samo kad paket nema mapu, mapa ne odgovara manifestu, odredište
+  postoji a nije komplet, ili instalirani komplet ima lokalne izmjene. Bez `--komplet` instalacija je
+  ista kao prije (`KOMPLET_DIR` prazan). Ono što `instalacija.sh` kompleta stvori izvan svoje mape
+  ide kroz `TM_KOMPLET_STVORENO` u manifest, pa ga `--do-nule` briše (TASK-5700).
+  Testovi: `tests/install-sh.test.ts` (6 slučajeva `--komplet`), `tests/regoc-system.test.ts`.
+- **Tajne kompleta kroz ploču (uputa #441):** `regoc-system/TAJNE.json` navodi imena svih tajni koje
+  kod kompleta čita. Imena izvoz izvlači strojno iz koda (12 imena), a ime bez opisa ruši izvoz. Ploča ih
+  uz `--komplet` (`TM_SUSTAV_DIR`) pokazuje na Config → Tajne s opisom, kao neupisane dok ih vlasnik ne
+  upiše (`src/TajneKompleta.ts`, `GET /api/tajne` nosi `opis`, `bezNje`, `obavezno`, `komponente`).
+  Komplet ih čita iz spremišta paketa kroz poveznicu koju stvara njegov `instalacija.sh`.
+  Bootcheck dobiva **M9 tajne kompleta**: navodi imena koja fale i što bez njih ne radi
+  (UPOZORENJE, nikad vrijednost). Testovi: `tests/tajne-komplet.test.ts`, `tests/bootcheck.test.ts`.
+- Dokumentacija: `regoc-system/README.md` i `README.hr.md` opisuju komponente, ovisnosti,
+  instalaciju, pokretanje i zaustavljanje (systemd `regoc-daemon`, launchd `hr.regoc.daemon`),
+  dnevnike, postavke (vrata autonomije, strop usporednih, ručna kočnica, `PREKIDACI.md`), tajne i
+  „Tajne nakon instalacije”, nadogradnju, deinstalaciju, ponovni izvoz i provjeru. Na nju upućuju
+  README paketa, `REGOC/ARHITEKTURA` i `docs/INSTALL.md`.
+- `bunfig.toml`: `bun test` u korijenu paketa vrti samo `tests/`. Komplet ima vlastite ovisnosti i
+  testove pa se testira u svojoj mapi (`cd regoc-system && bun install --frozen-lockfile && bun test`).
+- `.gitignore`: `!/regoc-system/**`, pa pravila paketa (`*secret*`, `data/` …) ne ispuštaju nijednu
+  datoteku kompleta. Ono što komplet sam ne prati određuje njegov `regoc-system/.gitignore`.
+- Brana `tests/bez-nasih-vrijednosti.test.ts`: pravila o identitetu sustava (raspored mapa, imena
+  uloga i ljudi, nazivi projekata, popis tima) ne gledaju `regoc-system/`, isto kao `REGOC/`. Pravila o
+  adresama, ID-ovima, e-pošti, tokenima i prezimenu vrijede i za komplet. Uzorak „naš repozitorij
+  sustava” i dalje hvata naziv naše privatne mape (s podvlakom) i slug Claude projekta, ali više ne ime
+  mape kompleta `regoc-system/` (s crticom).
+
+## 2026-10-22 — Mac K3a: javni modul regoc-komplet i config/komplet.lock (TASK-5700)
+
+- `config/komplet.lock` pina javni modul `regoc-komplet` (repo, commit, `manifest_sha256`,
+  `odrediste` relativno na HOME). Lock piše `gradi_komplet.sh --javno` u glavnom sustavu. Izvoz prolazi
+  brane (privatne adrese, tailnet, `/home/<ime>`, e-pošta, Telegram ID-ovi, imena strojeva i banaka,
+  oblik tajne, binarne datoteke) s 0 pogodaka, a `bun test` (25) i `bun build RegocDaemon.ts` prolaze
+  na svježem klonu bez našeg sustava. Repozitorij na GitHubu stvara i gura vlasnik (K7), nakon sigurnosnog
+  pregleda brana. Do tada `--komplet` pada u koraku kloniranja (izlaz 4). Test: `tests/komplet-lock.test.ts`. *(Zamijenjeno 22. 10. 2026. odlukom D3 = B, v. TASK-5705 iznad.)*
+- `install.sh` (K2.14-komplet): ono što `instalacija.sh` kompleta stvori izvan svoje mape
+  (poveznice u HOME, `settings.json`) dolazi kroz `TM_KOMPLET_STVORENO` (`put|vrsta`) i ulazi u
+  manifest, pa ga `--do-nule` briše. Test: `tests/install-sh.test.ts` (lažni komplet stvara vezu).
+- README (EN/HR) korak 2: `--komplet` u naredbi i opis što donosi.
+
 ## 2026-10-21 — Mac K8 krug 1: PostgreSQL iz pg0 bez Homebrewova OpenSSL-a, pdf venv na macOS-u (TASK-5662)
 
 - Prva instalacija s GitHuba na Macu (`894bddd`) pala je na `K2.18-baze-pgvector` (izlaz 6): pg0 0.15.2

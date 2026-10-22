@@ -1,0 +1,19 @@
+{
+  "_": "A5/TASK-3004 — kontrolne točke za ručni pregled (stop_after). Čita se pri SVAKOJ odluci, pa izmjena djeluje bez restarta daemona. Živost mehanizma je u features.json (reviewCheckpoint / reviewCheckpointLive); ovdje se podešava PONAŠANJE.",
+  "policy": "on",
+  "_policy": "'on' = točke djeluju; 'off' = potpuni no-op i kad je zastavica upaljena (rezerva za brzo gašenje bez diranja features.json).",
+  "defaultScope": "project",
+  "_defaultScope": "Što zadržava gola oznaka `stop-after` bez dvotočke. 'project' = ostatak istog projekta; 'task' = ništa osim samog sebe (u praksi no-op). Kad zadatak nema projekt, točka se otvara kao 'none' — javi se čovjeku, ali NE zadržava ništa. Namjerno: tiho proširenje na 'sve' je najgori mogući default, a tiho suženje bi bilo bezvrijedno. Opseg se izjavljuje: `stop-after:tag:albert-ideja`, `stop-after:project:REGOC_SYSTEM`, `stop-after:all`.",
+  "excludeTags": [
+    "no-checkpoint"
+  ],
+  "_excludeTags": "Zadatak s ovom oznakom prolazi i kroz otvorenu točku. Postoji zbog jednog slučaja: popravak same brane. Izuzeće se UVIJEK zapisuje u log — tiho izuzeće bi lagalo da zaštita radi.",
+  "triggerLookbackHours": 24,
+  "_triggerLookbackHours": "Koliko unatrag se traže zadatci koji su okinuli točku. Prozor postoji da restart daemona ne uskrsne kontrolne točke iz povijesti — isti kvar koji je AgentResume morao popraviti (TASK-2583: 1 → 6 runova na već isporučen posao).",
+  "reminderHours": 24,
+  "_reminderHours": "Razmak podsjetnika na otvorenu točku. 0 = bez podsjetnika (NE preporučuje se: izmjereno je da 67 od 87 blokiranih zadataka stoji bez razloga, medijan 8,3 dana — zapis koji ne zvoni postaje grob). Prva obavijest se ponavlja sve dok stvarno ne uđe u red poruka, jer userFlushBacklog=false znači da poruka starija od 30 min nikad ne ode.",
+  "escalateAfterHours": 48,
+  "_escalateAfterHours": "Nakon toliko sati podsjetnik postaje glasan (‼️ + broj sati čekanja). NIKAD ne odobrava sam — kontrolna točka koja se sama otvori nije kontrolna točka.",
+  "maxOpenCheckpoints": 10,
+  "_maxOpenCheckpoints": "Iznad ovog broja istovremeno otvorenih točaka diže se alarm o kvaru pravila (netko masovno lijepi oznaku), a ne o poslu. Ne zaustavlja ništa dodatno."
+}

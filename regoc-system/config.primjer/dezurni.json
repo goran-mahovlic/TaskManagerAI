@@ -1,0 +1,22 @@
+{
+  "ukljucen": true,
+  "provider": "openrouter",
+  "model": "mistralai/mistral-large-4-0",
+  "baseUrl": "http://127.0.0.1:11434",
+  "okidac_uzastopnih_gresaka": 2,
+  "smije_podici": true,
+  "razmak_straze_min": 30,
+  "kontekst": "auto",
+  "povijest_poruka": 10,
+  "_kontekst": "TASK-5626: auto = po modelu (ollama / <=30b / mini,nano,small,tiny,lite -> kratki; ostali -> puni); kratki | puni nadjacava. Ploca ovo polje jos ne uredjuje (samo datoteka).",
+  "reasoning": "off",
+  "banke_dodatne": [
+    "regoc_tehnika"
+  ],
+  "rag": true,
+  "rag_kolekcije": [
+    "regoc_popis",
+    "pai_learning_system"
+  ],
+  "_reasoning": "TASK-5631: OpenRouter reasoning — off (zadano; Mistral Large 4 inače troši sav max_tokens na razmišljanje) | low | medium | high | model. banke_dodatne = Hindsight banke uz glavnu (ADR-0021); rag/rag_kolekcije = RAG (pgvector+Ollama) za puni kontekst. Ploča ova polja još ne uređuje (samo datoteka)."
+}

@@ -25,6 +25,7 @@ import { loadGitHubConfig } from './GitHubConfig'
 import { loadGitLabConfig } from './GitLabConfig'
 import { loadTelegramConfig, telegramBotToken, telegramApiBaza } from './TelegramConfig'
 import { ENV_LOZINKE } from './rag/rag-backend-config'
+import { tajneKompleta } from './TajneKompleta'
 
 export const tajnePostavkePutanja = (): string => konfigPutanja('tajne.json', 'TM_TAJNE_POSTAVKE')
 
@@ -60,6 +61,8 @@ export function imenaTajniPloce(davatelji: { id: string; envKey?: string }[]): D
   uzmi(() => [{ ime: loadGitLabConfig().tokenEnv, izvor: 'gitlab' }])
   uzmi(() => [{ ime: loadTelegramConfig().botTokenEnv, izvor: 'telegram' }])
   uzmi(() => [{ ime: ENV_LOZINKE, izvor: 'rag.pgvector' }])
+  // TASK-5705 (uputa #441): tajne kompleta regoc-system/ iz njegovog TAJNE.json (samo uz --komplet)
+  try { moduli.push(...tajneKompleta()) } catch { /* bez kompleta */ }
   return dopustenaImena({
     davatelji: davatelji.filter(d => d.envKey).map(d => ({ envKey: d.envKey, izvor: `davatelj.${d.id}` })),
     moduli,

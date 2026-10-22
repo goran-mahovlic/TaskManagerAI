@@ -148,4 +148,16 @@ bez zadane vrijednosti.
 2. **Na vrućem putu nema modela.** Model se troši na posao, ne na odluku kome posao pripada.
 3. **Proizvođač ne ocjenjuje sam sebe.** Izvršitelj javlja ishod, sud donosi netko drugi.
 
-Vidi i: [TIM.md](TIM.md) · [BAZE.md](BAZE.md) · [VRATA_I_KOCNICE.md](VRATA_I_KOCNICE.md)
+---
+
+## Gdje je ovaj kod
+
+Slojevi od automatskog izvršavanja do zatvaranja (orkestrator `RegocDaemon`, spawn, kritičar, vrata,
+ručna kočnica, strop usporednih) nisu u `src/` paketa. Oni su u **kompletu sustava**, mapi
+[`regoc-system/`](../regoc-system/README.hr.md) ovog repozitorija. Instalira ga
+`install.sh --komplet` u mapu koju komplet navodi u svom `KOMPLET.json`, a pokreće se kao usluga `daemon`. Ondje su opisani
+komponente, ovisnosti, pokretanje i zaustavljanje (systemd i launchd), dnevnici, postavke, tajne,
+nadogradnja, deinstalacija, ponovni izvoz i provjera.
+
+Vidi i: [TIM.md](TIM.md) · [BAZE.md](BAZE.md) · [VRATA_I_KOCNICE.md](VRATA_I_KOCNICE.md) ·
+[regoc-system/README.hr.md](../regoc-system/README.hr.md)

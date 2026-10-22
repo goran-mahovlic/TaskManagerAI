@@ -62,7 +62,7 @@ bash scripts/install.sh --cvor <ime-cvora> --profil upravitelj-cvora --baze
 | `--bind POPIS` | izričit `TM_BIND` (zarezom) |
 | `--profil IME` | kopira `profili/IME/instanca.primjer.env` u `$TM_HOME/config/profil.instanca.env` |
 | `--baze` | lokalni pgvector (RAG, `127.0.0.1:15433`) i Hindsight (`127.0.0.1:17796`): uv + Python 3.13, venv s `pg0-embedded` i `hindsight-api`, inicijalizirana baza s ekstenzijom `vector`, modeli bge-m3 i reranker. Usluge su **učitane, ali zaustavljene** dok ih prekidač u `$TM_HOME/config/memorija.json` ne uključi |
-| `--komplet` | komplet izvornog sustava (RegocDaemon…) iz `config/komplet.lock` (`repo`, `commit`, `manifest_sha256`, `odrediste`): klon na točnom commitu, provjera `MANIFEST.sha256`, `bun install --frozen-lockfile`, kompletov `instalacija.sh`, `bun build RegocDaemon.ts`, usluge `daemon` i `znanje`. Bez lock datoteke instalacija staje s izlazom 5 |
+| `--komplet` | komplet izvornog sustava (RegocDaemon…) iz mape `regoc-system/` paketa (TASK-5705, D3 = B): provjera prema `regoc-system/MANIFEST.sha256` (i nijedna datoteka izvan njega), kopija u mapu iz `regoc-system/KOMPLET.json` (`odrediste`, relativno na HOME; `TM_KOMPLET_DIR` ima prednost), `bun install --frozen-lockfile`, kompletov `instalacija.sh`, `bun build RegocDaemon.ts`, usluge `daemon` i `znanje`. Paket bez mape ili mapa koja ne odgovara manifestu: izlaz 5. Opis: [regoc-system/README.hr.md](../regoc-system/README.hr.md) |
 | `--suho` | ništa ne piše ni ne instalira; ispisuje svaki korak (redak `KORAK {…}`) i na macOS-u tablicu 35 Linux → macOS zamjena (plan P10) |
 | `--bez-servisa` | bez systemd/launchd usluga; provjera ploče ide privremenim procesom |
 | `--preskoci K[,K]` | preskoči korak po imenu (npr. `pdf`, `baze-modeli`); i to se bilježi u logu |
@@ -109,8 +109,8 @@ Vrijednosti tajni ne ulaze u log (`zatamni()`: `*_TOKEN`, `*_KEY`, `*PASSWORD*`,
 **Manifest** `$TM_HOME/instalirano.json` popisuje sve što je instalacija stvorila izvan git
 stabla (bun, venvovi, baze, usluge…), da deinstalacija briše po popisu, a ne po pogađanju.
 
-**Ugovor kompleta** (`--komplet`): u korijenu kompleta smiju biti `MANIFEST.sha256` (sha256 svake
-datoteke; sha256 samog manifesta je u `komplet.lock`), `package.json` + `bun.lock` i
+**Ugovor kompleta** (`--komplet`): u korijenu kompleta (`regoc-system/`) smiju biti `MANIFEST.sha256`
+(sha256 svake datoteke; ništa izvan njega osim `node_modules/`), `TAJNE.json` (imena tajni), `package.json` + `bun.lock` i
 `instalacija.sh --paket P --tm-home H [--suho]`, koja priprema vlastite postavke i ispiše
 `PROMIJENJENO` ili `ISTO`.
 
@@ -178,6 +178,7 @@ podignut prije manje od 10 min, zapis je `POST-BOOT`, inače `RUCNO`; prije mjer
 | M6 | sat | `timedatectl` NTPSynchronized | `sntp` | odstupanje > 60 s ili NTP isključen: UPOZORENJE |
 | M7 | izvori iz `$TM_HOME/config/memorija.json` odgovaraju | | | vidi niže |
 | M8 | korisnik usluge nema neograničen sudo (`sudo -n -l` bez `NOPASSWD: ALL`) | `sudo -n -l` | `sudo -n -l` | `NOPASSWD: ALL`: UPOZORENJE (§2.4) |
+| M9 | uz `--komplet`: tajne iz `regoc-system/TAJNE.json` koje još nisu upisane (samo imena i što bez njih ne radi) | spremište tajni | spremište tajni | nedostaje tajna: UPOZORENJE; bez kompleta PASS |
 
 M7: `nasa` → posrednik memorije `/health` i tunel RAG-a (i ugrađivanje); nedostupan je UPOZORENJE jer čvor
 radi i bez dijeljenog sustava. `lokalna` → usluga `regoc-hindsight` radi i banka čvora ima memorija > 0, odnosno
@@ -547,7 +548,7 @@ Redoslijed (ADR-0004 §13.5) — **5 koraka + tajne**:
 1. **Kod.** Ažuriraj paket na čvoru na commit koji sadrži sve značajke iz `paket.paketSadrzi`
    (`scripts/nadogradi.sh`, §10; sa stroja koji postavlja čvorove omotač `tm-cvor-azuriraj.sh <čvor>`). Kod bez značajke alat javlja izlazom `3` (preduvjet) i ništa
    ne piše. Kod izvornog sustava (`paket.izvorniSustavSadrzi`) dolazi kroz `install.sh --komplet`
-   iz `config/komplet.lock`; zastavica `--s-kompletom` koju je ovaj odlomak ranije navodio nije
+   iz mape `regoc-system/` paketa; zastavica `--s-kompletom` koju je ovaj odlomak ranije navodio nije
    postojala (TASK-5309 B2). Prekidač bez koda ne radi ništa (§13.1).
 2. **Instanca.** Kopiraj primjer i upiši vrijednosti čvora (ID grupe, dopušteni korisnici, banka
    memorije, …):

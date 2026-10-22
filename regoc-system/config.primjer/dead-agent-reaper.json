@@ -1,0 +1,12 @@
+{
+  "_note": "R3/TASK-2561 dead-agent reaper. Čita DeadAgentReaper.ts (daemon + tools/dead-agent-report.ts). Nedostajuća/neispravna datoteka → defaulti iz DEFAULT_DEAD_AGENT_REAPER_CONFIG. Mijenja se bez restarta (čita se pri svakoj provjeri). Uključivanje/isključivanje ide preko features.json (deadAgentReaper / deadAgentReaperLive). onlyAgents = canary allowlist: dok nije prazna, dira se SAMO te agente.",
+  "thresholdHours": 2,
+  "intervalMinutes": 30,
+  "excludeAgents": [
+    "user",
+    "goran"
+  ],
+  "onlyAgents": [],
+  "maxReapsPerRun": 3,
+  "reclaimTasks": true
+}

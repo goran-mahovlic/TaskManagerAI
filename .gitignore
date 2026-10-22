@@ -109,3 +109,10 @@ tools/razvrstaj_prijave.py
 # hr_regoc je privatan: dolazi uz scripts/instaliraj-glas.sh --model-izvor, ne kroz git.
 *.onnx
 *.onnx.json
+
+# ── Komplet izvornog sustava (TASK-5705, D3 = B) ───────────────────────────
+# regoc-system/ je izvoz koji je prošao brane (gradi_komplet.sh --javno) i ima MANIFEST.sha256 —
+# pravila gore (npr. *secret*, *token*, data/) ne smiju iz njega ispustiti nijednu datoteku, inače
+# klon paketa nema cijeli komplet i `install.sh --komplet` pada na manifestu. Što komplet sam ne
+# prati (node_modules/, config/, data/ …) kaže njegov regoc-system/.gitignore.
+!/regoc-system/**

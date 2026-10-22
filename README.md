@@ -157,8 +157,16 @@ sudo -v
 ```bash
 git clone https://github.com/goran-mahovlic/TaskManagerAI.git ~/TaskManagerAI
 cd ~/TaskManagerAI
-bash scripts/install.sh --cvor <name> --profil upravitelj-cvora --baze
+bash scripts/install.sh --cvor <name> --profil upravitelj-cvora --baze --komplet
 ```
+
+`--komplet` also installs the REGOČ kit: the orchestrator daemon `RegocDaemon` with its tools and
+the `SecurityValidator` hook for Claude Code. The kit is the folder [`regoc-system/`](regoc-system/README.md)
+of this package, so nothing is cloned. The folder must match its own `MANIFEST.sha256`. It is copied
+to the folder the kit names in `regoc-system/KOMPLET.json` (in your home), and `bun build RegocDaemon.ts` must pass before any service starts.
+`--komplet` also installs the Claude CLI. Leave `--komplet` out if you only want the board. What is in
+the kit, how to start and stop it, where the logs are, its settings and how to enter its secrets after
+installation: [regoc-system/README.md](regoc-system/README.md).
 
 `install.sh` fetches everything else itself from public addresses (bun, `uv` + Python 3.13,
 `pg0`, `hindsight-api`, the bge-m3 models). Each official installer is fetched with up to 3 tries (5/15/45 s
@@ -336,6 +344,7 @@ Details, providers and settings: [docs/ODLUCIVANJE.md](docs/ODLUCIVANJE.md).
 | [docs/POGON_I_PAKET.md](docs/POGON_I_PAKET.md) | which features of the source system made it into the package and which did not — with a command to check each one (Croatian) |
 | [docs/adr/](docs/adr/) | architecture decisions of the package |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | git hooks, commit rules, running the tests |
+| [regoc-system/README.md](regoc-system/README.md) | the system kit (`--komplet`): RegocDaemon and its dependencies — components, start and stop, logs, settings, secrets after installation, upgrading, exporting again |
 | [REGOC/README.en.md](REGOC/README.en.md) | what a real agent system built around this looks like — split into topics (architecture, roles, task life cycle, delivery rules, gates and brakes, databases, cost and energy, lessons, build your own) |
 
 The `REGOC` folder describes the system TaskManagerAI was extracted from: a team of agents with

@@ -1,0 +1,10 @@
+{
+  "_note": "TASK-5140 siroče-oporavak. Čita OrphanRecovery.ts (RegocDaemon.processP1Tasks), svaki prolaz — mijenja se bez restarta. Uključivanje: features.json siroceOporavak. Izuzeća iz config/stale-watchdog.json su POD; regoc/goran/user i no-watchdog se ne mogu ukinuti.",
+  "pragMinuta": 10,
+  "stropPokusaja": 3,
+  "maxRadnjiPoProlazu": 5,
+  "excludeTags": [],
+  "excludeAssignees": [],
+  "excludeTaskIds": [],
+  "onlyTaskIds": []
+}

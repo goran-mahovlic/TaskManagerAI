@@ -9085,7 +9085,9 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         if (t.postoji && t.opasan) stanje += ' <span style="color:var(--accent-red)">&#9888; ' + _esc(_T('tajne_opasan', 'stari zapis s posebnim znakovima — upiši je ponovo')) + '</span>';
         var zadnje = t.zadnje ? (_esc(t.zadnje.radnja) + ' ' + _esc(_kad(t.zadnje.kada)) + ' &middot; ' + _esc(t.zadnje.ip || '?') + ' (' + _esc(t.zadnje.prijenos || '') + ')') : '';
         h += '<tr style="border-top:1px solid var(--border-color)">' +
-          '<td style="padding:4px 4px 4px 0;vertical-align:top"><code>' + _esc(t.ime) + '</code><div style="color:var(--text-secondary)">' + _esc(t.izvor) + '</div></td>' +
+          '<td style="padding:4px 4px 4px 0;vertical-align:top"><code>' + _esc(t.ime) + '</code><div style="color:var(--text-secondary)">' + _esc(t.izvor) + '</div>' +
+            // TASK-5705: tajne kompleta regoc-system/ nose opis i „što ne radi bez nje" (TAJNE.json)
+            (t.opis ? '<div style="color:var(--text-secondary);max-width:28rem" title="' + _esc((t.bezNje && (JEZIK === 'en' ? t.bezNje.en : t.bezNje.hr)) || '') + '">' + _esc(JEZIK === 'en' ? t.opis.en : t.opis.hr) + '</div>' : '') + '</td>' +
           '<td style="padding:4px;vertical-align:top">' + stanje + (zadnje ? '<div style="color:var(--text-secondary)">' + zadnje + '</div>' : '') + '</td>' +
           '<td style="padding:4px;vertical-align:top;white-space:nowrap">' +
             '<input type="password" class="cfg-polje" data-tajna-ime="' + _esc(t.ime) + '" name="t-' + _tajneNasumicno() + '" autocomplete="new-password" spellcheck="false" ' +

@@ -1,0 +1,16 @@
+{
+  "name": "regoc-komplet",
+  "private": true,
+  "description": "REGOČ system kit — RegocDaemon and its module graph (exported, see README.md)",
+  "license": "MIT",
+  "scripts": {
+    "test": "bun test"
+  },
+  "dependencies": {
+    "chromadb": "3.2.2",
+    "ollama": "0.6.3",
+    "pg": "8.23.0",
+    "yaml": "2.8.2",
+    "zod": "4.3.6"
+  }
+}

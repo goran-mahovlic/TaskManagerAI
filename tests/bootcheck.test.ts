@@ -272,9 +272,9 @@ describe('macOS: cijeli bootcheck kroz prave funkcije platforme (launchctl, ps, 
       'http://127.0.0.1:17792/health|': 200 } as Record<string, number>)[`${url}|${host ?? ''}`] ?? 0,
     json: async () => null, tcp: async () => false,
     citaj: (p) => datoteke[p] ?? null, postoji: (p) => p in datoteke, sada: () => SADA, realpath: (p) => p })
-  test('M1–M8 PASS; Claude pretplata na Macu se priznaje samo kroz token (Keychain usluga ne vidi)', async () => {
+  test('M1–M9 PASS; Claude pretplata na Macu se priznaje samo kroz token (Keychain usluga ne vidi)', async () => {
     const izvj = await B.pokreni(k)
-    expect(izvj.mjerenja.map(m => `${m.id}=${m.sud}`)).toEqual(['M1=PASS', 'M2=PASS', 'M3=PASS', 'M4=PASS', 'M5=PASS', 'M6=PASS', 'M7=PASS', 'M8=PASS'])
+    expect(izvj.mjerenja.map(m => `${m.id}=${m.sud}`)).toEqual(['M1=PASS', 'M2=PASS', 'M3=PASS', 'M4=PASS', 'M5=PASS', 'M6=PASS', 'M7=PASS', 'M8=PASS', 'M9=PASS'])
     expect(izvj.verdikt).toBe('PASS')
   })
   test('PPID=1 na macOS-u NIJE siroče — launchd je roditelj LaunchDaemona', async () => {
@@ -283,6 +283,38 @@ describe('macOS: cijeli bootcheck kroz prave funkcije platforme (launchctl, ps, 
   test('Mac: odstupanje sntp 95 s → M6 UPOZORENJE', async () => {
     const k2 = { ...k, okolina: { ...ok, izvrsi: (a: string[]) => a[0] === 'sntp' ? '+95.1 +/- 0.02 time.apple.com 1.2.3.4\n' : ok.izvrsi!(a) } }
     expect((await B.m6(k2)).sud).toBe('UPOZORENJE')
+  })
+})
+
+describe('M9 tajne kompleta (TASK-5705, uputa #441)', () => {
+  const K = '/home/x/komplet'
+  const REG = JSON.stringify({ tajne: [
+    { ime: 'GEMINI_API_KEY', obavezno: false, komponente: ['RegocDaemon.ts'], opis: { hr: 'o', en: 'd' }, bez_nje: { hr: 'agenti geminicli:* ne rade', en: 'x' } },
+    { ime: 'OPENROUTER_API_KEY', obavezno: false, komponente: ['a.ts'], opis: { hr: 'o', en: 'd' }, bez_nje: { hr: 'agenti openrouter:* ne rade', en: 'x' } },
+  ] })
+  test('bez kompleta (nema TM_SUSTAV_DIR) → PASS „nije instaliran"', async () => {
+    const r = await B.m9(linux())
+    expect(r.sud).toBe('PASS')
+    expect(r.detalji.join(' ')).toContain('nije instaliran')
+  })
+  test('tajne koje fale → UPOZORENJE s IMENIMA i što ne radi; upisane se ne navode; vrijednost nikad', async () => {
+    const r = await B.m9(linux({ env: { TM_SUSTAV_DIR: K } }, {}, {
+      [`${K}/TAJNE.json`]: REG, '/home/x/.taskmanager/config/credentials.env': "OPENROUTER_API_KEY='sk-or-NEVIDLJIVA'\n" }))
+    expect(r.sud).toBe('UPOZORENJE')
+    const d = r.detalji.join('\n')
+    expect(d).toContain('GEMINI_API_KEY — bez nje: agenti geminicli:* ne rade')
+    expect(d).not.toContain('OPENROUTER_API_KEY —')
+    expect(d).toContain('Config → Tajne')
+    expect(d).not.toContain('NEVIDLJIVA')
+  })
+  test('sve upisane → PASS', async () => {
+    const r = await B.m9(linux({ env: { TM_SUSTAV_DIR: K } }, {}, {
+      [`${K}/TAJNE.json`]: REG, '/home/x/.taskmanager/config/credentials.env': "OPENROUTER_API_KEY='a'\nGEMINI_API_KEY='b'\n" }))
+    expect(r.sud).toBe('PASS')
+    expect(r.detalji.join(' ')).toContain('2/2')
+  })
+  test('komplet bez čitljivog TAJNE.json → UPOZORENJE', async () => {
+    expect((await B.m9(linux({ env: { TM_SUSTAV_DIR: K } }))).sud).toBe('UPOZORENJE')
   })
 })
 
@@ -307,7 +339,7 @@ describe('verdikt, izlaz i ljuska scripts/bootcheck.sh', () => {
     expect(izlaz).not.toContain('NEVIDLJIVA')
     expect(existsSync(join(tm, 'log/bootcheck/zadnji.txt'))).toBe(true)
     const j = JSON.parse(readFileSync(join(tm, 'log/bootcheck/zadnji.json'), 'utf-8'))
-    expect(j.mjerenja.length).toBe(8)
+    expect(j.mjerenja.length).toBe(9)
     expect(j.verdikt).toBe('FAIL')
     expect(JSON.stringify(j)).not.toContain('NEVIDLJIVA')
   }, 60_000)

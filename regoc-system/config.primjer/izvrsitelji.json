@@ -1,0 +1,40 @@
+{
+  "izvrsitelji": [
+    {
+      "id": "ollama:qwen3:8b",
+      "opis": "mjereno pokusima sposobnosti-probe.ts (4/5 dokazano)",
+      "sposobnosti": [
+        "alate",
+        "pisanje",
+        "rag",
+        "web"
+      ],
+      "snaga": 40,
+      "predUbacivanje": true,
+      "izvorProfila": "mjereno",
+      "mjerenoU": "2026-09-05T02:29:40.936Z",
+      "mjerenoCime": "tools/sposobnosti-probe.ts"
+    },
+    {
+      "id": "claude:opus",
+      "opis": "mjereno pokusima sposobnosti-probe.ts (5/5 dokazano)",
+      "sposobnosti": [
+        "alate",
+        "pisanje",
+        "rag",
+        "web",
+        "dug-kontekst"
+      ],
+      "snaga": 100,
+      "predUbacivanje": false,
+      "izvorProfila": "mjereno",
+      "mjerenoU": "2026-09-05T02:22:17.264Z",
+      "mjerenoCime": "tools/sposobnosti-probe.ts"
+    }
+  ],
+  "_meta": {
+    "opis": "Registar izvršitelja za IzvrsiteljFit (W0c). Sposobnosti se MJERE, ne pretpostavljaju.",
+    "alat": "bun ~/.claude/regoc/tools/sposobnosti-probe.ts --izvrsitelj <spec> --upisi",
+    "azurirano": "2026-09-05T02:29:40.937Z"
+  }
+}

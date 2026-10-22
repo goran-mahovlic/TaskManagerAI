@@ -1,0 +1,8 @@
+{
+  "mode": "shadow",
+  "agenti": {
+    "jelena": "on"
+  },
+  "sakrijOstaleVjestine": false,
+  "_promjena": "13.10.2026. jelena shadow→on (revizija ADR-0018, TASK-5137, Kosjenka): 188 zapisa, 0 grešaka, uzorak 10/12 s pogotkom, blok 3152→2542 zn. Povratak: agenti={} . Ranije: 02.10.2026. off→shadow (Goran)"
+}

@@ -1,0 +1,28 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Edit|MultiEdit|Write|Read",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "__BUN__ run __HOME__/.claude/hooks/SecurityValidator.hook.ts",
+            "timeout": 15,
+            "statusMessage": "Security check (secrets, destructive commands)..."
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "__BUN__ run __HOME__/.claude/hooks/SecurityValidator.hook.ts",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
+  }
+}

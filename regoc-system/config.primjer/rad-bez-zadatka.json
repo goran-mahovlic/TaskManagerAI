@@ -1,0 +1,12 @@
+{
+  "_opis": "TASK-5164 / nesukladnost C (docs/DIZAJN-nesukladnosti-BCD.md §3). Kuka ~/.claude/hooks/RadBezZadatka.hook.ts: Telegram sesija (REGOC_SESIJA=telegram) ne piše isporuku bez otvorenog zadatka. nacin = nema zadatka; lanacNacin = višestručan nalog (ulazna vrata) na regoc. off|shadow|on, čita se pri svakom pozivu, bez restarta. Zapis: data/rad_bez_zadatka.jsonl. Prelazak u on SAMO uz Goranovu potvrdu (I6).",
+  "nacin": "shadow",
+  "lanacNacin": "shadow",
+  "dopustenePutanje": [
+    "/tmp",
+    "~/.tmp",
+    "~/.claude/tmp",
+    "~/.claude/tools/Telegram/conversations",
+    "~/.claude/projects/-home-klaudio-app-regoc-system/memory"
+  ]
+}

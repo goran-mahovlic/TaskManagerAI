@@ -173,7 +173,11 @@ export const imeZabranjeno = (ime: string): boolean => !IZNIMKE_ZABRANE.has(ime)
 
 const SUFIKS_DODATNIH = /^[A-Z][A-Z0-9_]{1,63}_(PASSWORD|PASS|TOKEN|SECRET|KEY|API_KEY)$/
 
-export interface DopustenoIme { ime: string; izvor: string }
+export interface DopustenoIme {
+  ime: string; izvor: string
+  /** Iz registra kompleta (TAJNE.json, TASK-5705) — samo opis, nikad vrijednost. */
+  opis?: { hr: string; en: string }; bezNje?: { hr: string; en: string }; obavezno?: boolean; komponente?: string[]
+}
 
 /** §6.1 — popis iz davatelja, modula, profila čvora i `tajne.dodatnaImena`, bez zabranjenih. */
 export function dopustenaImena(izvori: {
@@ -191,7 +195,12 @@ export function dopustenaImena(izvori: {
   for (const p of izvori.profil || []) dodaj(p, 'profil')
   // TM_* tajna dolazi samo iz modula (pgvector), nikad kao slobodno dodano ime.
   for (const d of izvori.dodatna || []) if (SUFIKS_DODATNIH.test(d) && !d.startsWith('TM_')) dodaj(d, 'dodatno')
-  return [...out].map(([ime, izvor]) => ({ ime, izvor }))
+  // Opis iz registra kompleta (TASK-5705) prati ime i kad je izvor prvi dao netko drugi (davatelj).
+  const opisi = new Map((izvori.moduli || []).filter(m => m.opis).map(m => [m.ime, m]))
+  return [...out].map(([ime, izvor]) => {
+    const m = opisi.get(ime)
+    return m ? { ime, izvor, opis: m.opis, bezNje: m.bezNje, obavezno: m.obavezno, komponente: m.komponente } : { ime, izvor }
+  })
 }
 
 // ─── Otisak (§7.1) ───────────────────────────────────────────────────────────

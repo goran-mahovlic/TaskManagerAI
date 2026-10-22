@@ -1,0 +1,16 @@
+{
+  "_note": "U4/TASK-4264. Čita GitCommitGate.ts (loadGitCommitGateConfig) — TaskWebUI PUT /api/tasks/:id. Nedostajuća/neispravna datoteka → DEFAULT_GIT_COMMIT_GATE_CONFIG. Mijenja se BEZ restarta (TTL 30 s).",
+  "_doseg": "scopeTags nabraja oznake koje zadatak stavljaju u doseg. Zadano SAMO `lanac` (zadaci otvoreni po predlošku U4) — njima git obveza piše u opisu. `[\"*\"]` = svi zadaci; NE uključuj to dok mjerenje ne pokaže da većina zadataka uopće nastaje u repozitoriju (A4/MergeGate: danas 1,4 %).",
+  "_izuzece": "Oznaka `samo-tekst` (i inačice `samo tekst`, `text-only`, `razgovor`) — zadatak koji po prirodi ne ostavlja commit. Dodjeljuje se u koraku 4.",
+  "_rollback": "live=false → sud samo u log ('git-commit-gate: REJECT … — SHADOW'). enabled=false → vratar isključen.",
+  "enabled": true,
+  "live": true,
+  "scopeTags": [
+    "lanac"
+  ],
+  "verifyWithGit": true,
+  "repos": [
+    "~/app/*"
+  ],
+  "_repos": "Unos koji zavrsava na /* siri se u sve podmape koje stvarno imaju .git (GitCommitGate.expandRepos). Tvrd popis je ostario prije nego je zapisan: ~/app/regoc_system NIJE git repozitorij."
+}

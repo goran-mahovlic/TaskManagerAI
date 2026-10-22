@@ -53,13 +53,22 @@ interface Pravilo {
   osnovicaDatoteka: string[]
   /** Pretražuje i `docs/` (TASK-5686). Samo uz osnovicu bez ijedne datoteke iz docs/. */
   iDocs?: boolean
+  /**
+   * NE pretražuje `regoc-system/` (TASK-5705, odluka D3 = B). Komplet je kod IZVORNOG sustava: njegov
+   * raspored mapa, imena uloga i ljudi u navodima odluka i nazivi projekata su mu sadržaj, kao što su
+   * opisu sustava u `REGOC/`. Za komplet vrijede brane izvoza (`gradi_komplet.sh --javno`,
+   * `brane_izvoza.py`) i ova pravila BEZ ove oznake: adrese, putanje `/home/…`, e-pošta, ID-ovi
+   * chatova i korisnika, tokeni, imena strojeva i banaka, prezime.
+   */
+  bezKompleta?: boolean
 }
 
 /**
  * Izmišljeni ID-ovi koje primjeri i testovi SMIJU nositi: -100123456789x (supergrupa),
- * -1000000000000 (prazan profil) i -5112345678 (obična grupa u testovima znanja).
+ * -1000000000000 (prazan profil), -5112345678 (obična grupa u testovima znanja) i -1234567890
+ * (primjer u komentaru kompleta regoc-system/, TASK-5705).
  */
-const PRIMJERI_CHATA = '-?100123456789\\d|-?1000000000000|-5112345678'
+const PRIMJERI_CHATA = '-?100123456789\\d|-?1000000000000|-5112345678|-1234567890'
 
 const PRAVILA: Pravilo[] = [
   {
@@ -117,6 +126,7 @@ const PRAVILA: Pravilo[] = [
   },
   {
     ime: 'ime vlasnika kao podatak (pošiljatelj, korisnik)',
+    bezKompleta: true,
     iDocs: true,
     // Slaže se iz dijelova iz istog razloga kao tailnet gore.
     uzorak: ['[\'"]', 'Gor', 'an', '[\'"]'].join(''),
@@ -129,6 +139,7 @@ const PRAVILA: Pravilo[] = [
   },
   {
     ime: 'ime vlasnika kao autor upisa (`by`)',
+    bezKompleta: true,
     iDocs: true,
     // TASK-5233 (nalaz QA TASK-5219): ploča je slala doslovno `by: '<ime>'`, pa se to ime
     // upisivalo u audit postavki na TUĐEM nodu. Pravilo iznad ga nije vidjelo (malo slovo).
@@ -142,6 +153,7 @@ const PRAVILA: Pravilo[] = [
   },
   {
     ime: 'nazivi naših internih projekata i RAG kolekcija',
+    bezKompleta: true,
     // `ULX5M` samo kao literal u navodnicima (ID projekta): kao ključna riječ teme uz
     // ULX3S/ECP5 u tools/rag_izdvoji.py to je javni naziv pločice, ne naš podatak.
     uzorak: ['REGOC_', 'SYSTEM|Sport', 'AI|intergalaktik_', 'sportai|agent_', 'emard|[\'"]ULX', '5M[\'"]'].join(''),
@@ -153,6 +165,7 @@ const PRAVILA: Pravilo[] = [
   },
   {
     ime: 'imena naših ljudi (navodi u komentarima, primjeri)',
+    bezKompleta: true,
     iDocs: true,
     // TASK-5109. Slaže se iz dijelova iz istog razloga kao tailnet gore.
     // TASK-5686: i drugi korisnik s node-A (docs/adr/ADR-0002, ADR-0003).
@@ -167,6 +180,7 @@ const PRAVILA: Pravilo[] = [
   },
   {
     ime: 'naš raspored mapa (~/.claude/regoc)',
+    bezKompleta: true,
     // TASK-5108: uzorak hvata i rastavljeni oblik — `join(HOME, '.claude', 'regoc', …)` i
     // `Path.home() / ".claude" / "regoc"` su isti raspored, a stari ga uzorak nije vidio
     // (11 pojava u src/, 3 u tools/ — sve očišćene u istom koraku).
@@ -179,10 +193,13 @@ const PRAVILA: Pravilo[] = [
   },
   {
     ime: 'naš repozitorij sustava (~/app/…_system)',
+    bezKompleta: true,
     // TASK-5109: hvata i slug Claude projekta (`-app-…-system`) i rastavljeni
     // `join(HOME, 'app', '…_system')` — sve su to imena NAŠE mape. Slaže se iz dijelova
     // iz istog razloga kao tailnet gore.
-    uzorak: ['reg', 'oc[_-]system'].join(''),
+    // TASK-5705: `regoc-system/` (crtica) je ime mape kompleta u paketu (odluka D3) — hvata se samo
+    // naša mapa s podvlakom i slug Claude projekta (`-app-…-system`).
+    uzorak: ['reg', 'oc_system|app-reg', 'oc-system'].join(''),
     objasnjenje: 'repozitorij sustava domaćina dolazi samo iz `TM_SUSTAV_DIR` kroz `sustavPutanja()` '
       + '(src/core/paths.ts); bez varijable alat se traži uz paket (`PAKET_DIR/tools`)',
     // TASK-5109: 24/14 → 0 u istom koraku (izmjereno prije popravka na `2268db7`).
@@ -295,7 +312,7 @@ function prebroji(uzorak: string, popis: string[]): Nalaz {
 
 const POPIS = pratiGit(false)
 const POPIS_S_DOCS = pratiGit(true)
-const popisZa = (p: Pravilo) => p.iDocs ? POPIS_S_DOCS : POPIS
+const popisZa = (p: Pravilo) => (p.iDocs ? POPIS_S_DOCS : POPIS).filter(f => !(p.bezKompleta && f.startsWith('regoc-system/')))
 
 describe('paket ne smije nositi naše vrijednosti (ADR-0001 §8)', () => {
   test('skener vidi paket (inače bi svako pravilo prolazilo prazno)', () => {
@@ -411,8 +428,11 @@ const OSNOVICA_POPISI: string[] = [
  * `znanje/sustav/` (TASK-5331, ADR-0006 §4–§5, mjerilo Z3) je isto: generirani OPĆI korpus o sustavu
  * — agenti, tijekovi, alati — koji ide u banku memorije svakog čvora. Imena uloga su mu sadržaj;
  * tekstualna pravila (adrese, putanje, chat id, naš raspored mapa) vrijede i za njega.
+ *
+ * `regoc-system/` (TASK-5705, D3 = B) je kod izvornog sustava — komplet koji `install.sh --komplet`
+ * instalira. Uloge tima su mu sadržaj (RegocDaemon raspoređuje upravo njih); v. `bezKompleta` gore.
  */
-const IZUZETO_OD_POPISA_TIMA = ['REGOC/', 'znanje/sustav/']
+const IZUZETO_OD_POPISA_TIMA = ['REGOC/', 'znanje/sustav/', 'regoc-system/']
 
 function popisiTima(): string[] {
   const pogodjene: string[] = []

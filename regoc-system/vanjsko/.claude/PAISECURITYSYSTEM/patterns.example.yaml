@@ -1,0 +1,103 @@
+# PAI Security Patterns
+# This file defines security rules for the SecurityValidator hook
+#
+# Copy to USER/PAISECURITYSYSTEM/patterns.yaml to customize
+# USER patterns take precedence over SYSTEM patterns
+
+version: "1.0"
+
+philosophy:
+  mode: "balanced"
+  principle: "Protect critical paths while allowing productive work"
+
+# Bash command patterns
+bash:
+  # Blocked commands - NEVER allowed, causes hard exit
+  blocked:
+    - pattern: "rm\\s+-rf\\s+/"
+      reason: "Recursive delete from root - catastrophic"
+    - pattern: "rm\\s+-rf\\s+~"
+      reason: "Recursive delete from home - catastrophic"
+    - pattern: "rm\\s+-rf\\s+\\*"
+      reason: "Recursive delete with wildcard - dangerous"
+    - pattern: "mkfs\\."
+      reason: "Filesystem format - destructive"
+    - pattern: "dd\\s+if=.*of=/dev/"
+      reason: "Direct disk write - destructive"
+    - pattern: ":(){:\\|:&};:"
+      reason: "Fork bomb detected"
+    - pattern: "chmod\\s+-R\\s+777\\s+/"
+      reason: "Recursive chmod 777 from root"
+    - pattern: "curl.*\\|\\s*(ba)?sh"
+      reason: "Piping URL to shell - security risk"
+    - pattern: "wget.*\\|\\s*(ba)?sh"
+      reason: "Piping URL to shell - security risk"
+
+  # Confirm commands - prompt user before execution
+  confirm:
+    - pattern: "git\\s+push\\s+.*--force"
+      reason: "Force push can destroy remote history"
+    - pattern: "git\\s+push\\s+-f"
+      reason: "Force push can destroy remote history"
+    - pattern: "git\\s+reset\\s+--hard"
+      reason: "Hard reset discards uncommitted changes"
+    - pattern: "git\\s+clean\\s+-fd"
+      reason: "Clean removes untracked files permanently"
+    - pattern: "rm\\s+-rf"
+      reason: "Recursive force delete - verify target"
+    - pattern: "drop\\s+database"
+      reason: "Database drop - verify intent"
+    - pattern: "drop\\s+table"
+      reason: "Table drop - verify intent"
+    - pattern: "truncate\\s+table"
+      reason: "Table truncate - verify intent"
+
+  # Alert commands - log but allow
+  alert:
+    - pattern: "sudo\\s+"
+      reason: "Elevated privileges requested"
+    - pattern: "chmod\\s+777"
+      reason: "Permissive file permissions"
+    - pattern: "npm\\s+publish"
+      reason: "Publishing package to registry"
+    - pattern: "docker\\s+system\\s+prune"
+      reason: "Docker cleanup removes cached data"
+
+# Path access patterns
+paths:
+  # Zero access - cannot read or write
+  zeroAccess:
+    - "~/.ssh/id_*"
+    - "~/.ssh/config"
+    - "~/.gnupg/**"
+    - "~/.aws/credentials"
+    - "~/.config/gcloud/credentials.db"
+    - "~/.netrc"
+    - "**/.env"
+    - "**/.env.local"
+    - "**/credentials.json"
+    - "**/service-account*.json"
+
+  # Read only - can read, cannot write
+  readOnly:
+    - "/etc/**"
+    - "/usr/**"
+    - "/bin/**"
+    - "/sbin/**"
+
+  # Confirm write - can read, writing requires confirmation
+  confirmWrite:
+    - "~/.bashrc"
+    - "~/.zshrc"
+    - "~/.profile"
+    - "~/.gitconfig"
+    - "~/.claude/settings.json"
+    - "~/.claude/hooks/**"
+
+  # No delete - can read/write, cannot delete
+  noDelete:
+    - "~/.claude/MEMORY/**"
+    - "~/.claude/skills/CORE/**"
+
+# Project-specific rules (optional)
+projects: {}

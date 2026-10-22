@@ -1,0 +1,12 @@
+# node state — created by installation or at run time, never committed (plan P11 #1)
+node_modules/
+data/
+config/
+features.json
+models/model-config.json
+credentials.env
+daemon.env
+*.bak*
+*.log
+messages.db*
+tmp/

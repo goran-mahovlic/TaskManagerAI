@@ -1,0 +1,10 @@
+RegocDaemon.ts
+AgentDaemon.ts
+AgentWorker.ts
+StaleCodeCheck.ts
+tools/modeli/ollama-agent.ts
+tools/modeli/openrouter-agent.ts
+tools/orkestracija/adversarial-provjeri.ts
+tools/zadaci/checkpoint.ts
+tools/modeli/consult-potjeh.ts
+tools/servisi/brana_brisanja.ts

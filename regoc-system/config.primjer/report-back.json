@@ -1,0 +1,10 @@
+{
+  "_note": "U4/TASK-4264. Čita ReportBackTask.ts (loadReportBackConfig) — pometnja u TaskWebUI (poslije svakog zatvaranja zadatka) i tools/lanac-otvori.ts --provjeri. Nedostajuća/neispravna datoteka → DEFAULT_REPORT_BACK_CONFIG (enabled=true, live=true). Mijenja se BEZ restarta (TTL 30 s).",
+  "_zasto_odmah_live": "Doseg su ISKLJUČIVO zadaci s oznakom `report-back`, kojih bez ovog mehanizma na ploči nema — nijedan postojeći zadatak ne mijenja ponašanje. Slanje je idempotentno preko dnevnika data/report_back_sent.jsonl.",
+  "_rollback": "live=false → poruka se samo zapiše u log ('report-back: SHADOW …'), ništa ne ide korisniku. enabled=false → pometnja stoji.",
+  "enabled": true,
+  "live": true,
+  "maxLen": 3900,
+  "tijekPosla": true,
+  "_tijekPosla": "TASK-5159 (dizajn TASK-5158 §5): dojava o završetku (niz i pojedinačni zadatak) nosi odjeljak „🧭 Tijek posla” — tijek, koraci, tko je radio, vještine i alati IZMJERENI iz transkripta (data/tijek_posla.jsonl). false = poruka kao prije."
+}

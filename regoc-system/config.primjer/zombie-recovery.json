@@ -1,0 +1,21 @@
+{
+  "_note": "TASK-3019 zombie-recovery. Čita ZombieRecovery.ts (RegocDaemon.processP1Tasks + tools/task-cleaners-report.ts). Nedostajuća/neispravna datoteka → defaulti iz DEFAULT_ZOMBIE_RECOVERY_CONFIG. Mijenja se bez restarta (čita se pri svakoj provjeri). Uključivanje/isključivanje ide preko features.json (zombieRecovery / zombieRecoveryLive). onlyTaskIds = canary allowlist: dok nije prazna, dira se SAMO te taskove.",
+  "_prag": "thresholdMinutes je 2026-07-29 podignut s 1.5 (90 s) na 10 min — 90 s je hvatalo i zdrav rad, a interaktivne sesije nikad nisu u activeAgentSpawns.",
+  "thresholdMinutes": 10,
+  "blockAfterRecoveries": 2,
+  "maxActionsPerRun": 5,
+  "excludeTags": [
+    "no-watchdog",
+    "waiting-for-human",
+    "interactive"
+  ],
+  "excludeAssignees": [
+    "user",
+    "goran"
+  ],
+  "excludeTaskIds": [],
+  "onlyTaskIds": [],
+  "_izuzeca": "TASK-3598: excludeTags/excludeAssignees/excludeTaskIds su UNIJA s config/stale-watchdog.json (jedan izvor istine; ovdje se moze samo DODATI zastita, ne ukinuti). onlyTaskIds se NE dijeli — canary opseg je po mehanizmu.",
+  "_startna_milost": "TASK-3598: startupGraceMinutes — nakon restarta je activeAgentSpawns prazan pa svaki zivi agent nakratko izgleda kao zombi (kvar 27.07.2026.). U tom prozoru se presude biljeze, ali se NISTA ne dira.",
+  "startupGraceMinutes": 10
+}
