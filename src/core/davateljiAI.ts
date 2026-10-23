@@ -3,12 +3,15 @@
  *
  * Odluka 6 (20. 10. 2026.): korisnik čvora sam bira servis i model; instalacija ne smije
  * pretpostaviti jedan. Zato ovdje stoji SVIH 14 davatelja koje vozi model-config kompleta
+ * (uz njih `antigravity`, TASK-5738)
  * (isti kao na node-A), s tokom prijave po OS-u. Katalog ne nosi nijednu vrijednost — samo
  * IMENA tajni; vrijednosti žive u spremištu čvora (0600).
  *
  * Davatelj iz model-configa kojeg katalog ne zna (npr. vlastiti `custom`) i dalje se
  * prikazuje: ime tajne se čita iz `apiKey: "env:IME"`.
  */
+import { AGY_INSTALACIJA, AGY_MAPA } from './Antigravity'
+
 export type NacinPrijave = 'pretplata' | 'kljuc' | 'oauth-cli' | 'lokalno'
 
 export interface DavateljAI {
@@ -46,6 +49,10 @@ export const DAVATELJI_AI: DavateljAI[] = [
   { id: 'geminicli', ime: 'Gemini CLI (Google)', nacin: 'oauth-cli', tajne: ['GEMINI_API_KEY'], cli: 'gemini',
     prijavaDatoteka: '~/.gemini/oauth_creds.json', instalacija: 'bash scripts/install.sh --gemini-cli (Node u ~/.local/node + npm i -g @google/gemini-cli)',
     napomena: 'OAuth „Login with Google" ili ključ' },
+  // TASK-5738: Google prijava bez ključa; token u datoteci u ~/.gemini/antigravity-cli (src/core/Antigravity.ts).
+  { id: 'antigravity', ime: 'Antigravity CLI (Google prijava)', nacin: 'oauth-cli', tajne: [], cli: 'agy',
+    prijavaDatoteka: `~/${AGY_MAPA}`, instalacija: AGY_INSTALACIJA,
+    napomena: 'Google: agy iz vanjske aplikacije na osobnom planu može dovesti do blokade računa — preporuka zaseban Google račun; pričuva GEMINI_API_KEY' },
   { id: 'google', ime: 'Google Gemini — API ključ', nacin: 'kljuc', tajne: ['GEMINI_API_KEY', 'GOOGLE_API_KEY'], adresa: 'https://aistudio.google.com' },
   { id: 'openai', ime: 'OpenAI', nacin: 'kljuc', tajne: ['OPENAI_API_KEY'], adresa: 'https://platform.openai.com' },
   { id: 'ollama', ime: 'Ollama (lokalno)', nacin: 'lokalno', tajne: [], adresa: 'https://ollama.com/download',

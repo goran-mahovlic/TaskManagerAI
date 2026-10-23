@@ -118,6 +118,7 @@
   "cfg_komp_wikilinkparser": "[[link]] resolution — 0 uvoznika; setup/regoc-setup.ts:83 ga samo spominje u komentaru",
   "cfg_legenda_obavezno": "obavezno polje — bez njega integracija ne može raditi. Sve ostalo je neobavezno i ima zadanu vrijednost.",
   "cfg_login_cekam_link": "Čekam link…",
+  "cfg_login_agy_upozorenje": "Login = prijava Google računom (link + kod). Google navodi da korištenje agy iz vanjske aplikacije na osobnom planu može dovesti do blokade računa — preporuka: zaseban Google račun. Bez prijave: Gemini <b>API ključ</b> (isti GEMINI_API_KEY).",
   "cfg_login_gemini_oauth": "Google je ukinuo besplatni OAuth (Code Assist) za CLI — koristi <b>API ključ</b> s aistudio.google.com/apikey (besplatan tier).",
   "cfg_login_instaliraj": "Nije instaliran. Instaliraj (Sigurnost→internet ON):",
   "cfg_login_kod_poslan": "Kod poslan, čekam potvrdu…",

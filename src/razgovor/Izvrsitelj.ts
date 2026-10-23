@@ -13,6 +13,7 @@ import { CliExecutor } from '../core/orchestrator/Executors'
 import type { ExecutorConfigCli } from '../core/orchestrator/OrchestratorConfig'
 import type { ExecRequest, ExecResult } from '../core/orchestrator/Ports'
 import type { Ovlasti } from './Ovlasti'
+import { AGY_MODEL_ZADANO, okolinaAgyja } from '../core/Antigravity'
 
 /**
  * Putanja do `claude`: `TM_CLAUDE_BIN` → PATH → `~/.local/bin/claude` (zadano mjesto
@@ -92,6 +93,30 @@ function okolinaGeminija(env: Record<string, string>, bin: string): Record<strin
   return o
 }
 
+/** TASK-5738: `agy` — PATH (i ~/.local/bin, gdje ga stavlja službena instalacija), inače ime. */
+export function nadjiAgy(env: Record<string, string | undefined> = process.env): string {
+  if (env.TM_AGY_BIN) return env.TM_AGY_BIN
+  const mape = [...(env.PATH || '').split(':'), env.HOME ? join(env.HOME, '.local', 'bin') : ''].filter(Boolean)
+  for (const m of mape) if (existsSync(join(m, 'agy'))) return join(m, 'agy')
+  return 'agy'
+}
+
+function agyCfg(bin: string): ExecutorConfigCli {
+  return {
+    kind: 'cli',
+    command: bin,
+    args: ['--output-format', 'text'],
+    promptChannel: 'arg',
+    promptFlag: '-p',
+    modelFlag: '--model',
+    // agy nema „dodaj sistemski prompt" — identitet ide ispred prompta (Razgovor.ts).
+    systemPromptFlag: null,
+    sessionIdFlag: null,
+    resumeFlag: null,
+    projectCwdArgs: [],
+  }
+}
+
 type IzvrsiteljRazgovora = { ime: string; cfg: ExecutorConfigCli; run(req: ExecRequest): Promise<ExecResult> }
 
 /**
@@ -99,13 +124,21 @@ type IzvrsiteljRazgovora = { ime: string; cfg: ExecutorConfigCli; run(req: ExecR
  * (model `geminicli:*` / `google:*`, TASK-5733) ide `gemini` CLI-jem. Gemini se traži pri
  * svakom pozivu — instalacija nakon pokretanja usluge vrijedi bez restarta.
  */
-export function izvrsiteljRazgovora(o: { bin?: string; geminiBin?: string } = {}): IzvrsiteljRazgovora {
+export function izvrsiteljRazgovora(o: { bin?: string; geminiBin?: string; agyBin?: string } = {}): IzvrsiteljRazgovora {
   const claude = claudeIzvrsitelj(o)
   return {
     ime: 'razgovor',
     cfg: claude.cfg,
     run(req: ExecRequest): Promise<ExecResult> {
       const extra = req.extra || {}
+      if (extra.izvrsitelj === 'agy') {
+        const env = (extra.env && typeof extra.env === 'object' ? extra.env : process.env) as Record<string, string>
+        const bin = o.agyBin || nadjiAgy({ ...process.env, PATH: env.PATH, HOME: env.HOME || process.env.HOME })
+        const model = req.model && req.model !== AGY_MODEL_ZADANO ? req.model : undefined
+        return new CliExecutor('razgovor-agy', agyCfg(bin)).run({
+          ...req, model, systemPrompt: undefined, extra: { ...extra, resume: undefined, env: okolinaAgyja(env) },
+        })
+      }
       if (extra.izvrsitelj !== 'gemini') return claude.run(req)
       // Projektne postavke Geminija u radnoj mapi (MCP poslužitelji, alati) se ne učitavaju:
       // mapa je zajednička s claude potezima koji na `rad` smiju pisati u nju.

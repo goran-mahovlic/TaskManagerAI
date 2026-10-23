@@ -122,6 +122,8 @@ import { kljucPrisutan, kljucPrisutanUDatoteci, postaviTajnu, ukloniKljucIzDatot
 import { obradiTajneZahtjev, osvjeziImeBota, ucitajPostavkeTajni, uputaTajniZaPoruku } from './TajnePloca'
 import { odlukaNaredbe, vrataKonzole, vrataIzvrsavanja } from './KonzolaVrata'
 import { ocistiLoginKod, izvuciLoginUrl, maskirajLoginTail, loginOauthGreska, LOGIN_POTVRDA } from './LoginUnos'
+import { AGY_INSTALACIJA, AGY_NAREDBA_PRIJAVE, modeliAgyja, okolinaAgyja } from './core/Antigravity'
+import { odjaviAgy, stanjeAgyjaNaDisku, zapisiNacinAgyja } from './core/AntigravityPrijava'
 import { capguardPostavke, stanjeCapguarda, zatraziSposobnost } from './Capguard'
 import { tecajOdgovor } from './Tecaj'
 import { rijesiPreuzimanje, corsOdluka } from './core/PristupDatotekama'
@@ -10389,9 +10391,10 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       if (p.loggedIn) h += '<button class="cfg-btn" onclick="doLogout(\\''+p.id+'\\','+(p.apikey?1:0)+')">' + _T('cfg_login_odjava', 'Odjava') + '</button>';
       else if (p.kind==='oauth-cli' && p.installed) h += '<button class="cfg-btn" onclick="doLoginStart(\\''+p.id+'\\')">Login</button>';
       h += '</span></div><div id="login-body-'+p.id+'" style="margin-top:.4rem"></div>';
+      if (p.id==='antigravity') h += '<div style="font-size:.66rem;color:#f59e0b;margin-top:.3rem">' + _T('cfg_login_agy_upozorenje', 'Login = prijava Google računom (link + kod). Google navodi da korištenje agy iz vanjske aplikacije na osobnom planu može dovesti do blokade računa — preporuka: zaseban Google račun. Bez prijave: Gemini <b>API ključ</b> (isti GEMINI_API_KEY).') + (p.kako ? ' · ' + p.kako : '') + '</div>';
       if (p.id==='geminicli') h += '<div style="font-size:.66rem;color:#f59e0b;margin-top:.3rem">' + _T('cfg_login_gemini_oauth', 'Google je ukinuo besplatni OAuth (Code Assist) za CLI — koristi <b>API ključ</b> s aistudio.google.com/apikey (besplatan tier).') + '</div>';
       if (p.apikey && !p.loggedIn) {
-        var _ph = p.id==='geminicli' ? 'GEMINI_API_KEY (AIza...)' : _T('cfg_api_kljuc', 'API ključ') + ' (sk-or-...)';
+        var _ph = (p.id==='geminicli' || p.id==='antigravity') ? 'GEMINI_API_KEY (AIza...)' : _T('cfg_api_kljuc', 'API ključ') + ' (sk-or-...)';
         h += '<div style="display:flex;gap:6px;margin-top:.4rem"><input id="login-key-'+p.id+'" type="password" autocomplete="new-password" data-form-type="other" data-lpignore="true" data-1p-ignore placeholder="'+_ph+'" class="cfg-polje" style="flex:1"><button class="cfg-btn" onclick="doApikey(\\''+p.id+'\\')">' + _T('cfg_login_spremi_kljuc', 'Spremi ključ') + '</button></div>';
       }
       if (!p.installed && p.installCmd) h += '<div style="font-size:.66rem;color:var(--text-secondary);margin-top:.3rem">' + _T('cfg_login_instaliraj', 'Nije instaliran. Instaliraj (Sigurnost→internet ON):') + ' <code>'+p.installCmd+'</code></div>';
@@ -11436,6 +11439,8 @@ function getEffectiveModels(): typeof AVAILABLE_MODELS {
     const _geminiKey = kljucPrisutanUDatoteci(_cf, 'GEMINI_API_KEY')
     // TASK-5733: uz geminicli i google:<model> (izravni API) kad postoji GEMINI_API_KEY.
     extra.push(...modeliGeminija({ kljuc: _geminiKey, oauth: existsSync(join(H, '.gemini/oauth_creds.json')) }))
+    // TASK-5738: Antigravity (agy) — Google prijava ili ključ u načinu ključa.
+    extra.push(...modeliAgyja(stanjeAgyjaNaDisku(H, _geminiKey).prijavljen))
     const kd = join(H, '.kimi-code/oauth')
     if (existsSync(kd)) { try { if (readdirSync(kd).length > 0) extra.push({ spec: 'kimicli:kimi-k2', provider: 'kimicli', model: 'kimi-k2', tier: 'strong', label: 'Kimi K2 (login)', spawnable: true }) } catch {} }
   } catch {}
@@ -11576,7 +11581,7 @@ async function buildModelsAvailable(): Promise<{ providers: any[]; models: any[]
   // TASK-5733: izbornik „Model sustava" čita samo ovaj popis — bez ovoga geminicli/google/kimicli
   // (prijava ili ključ) nikad nisu bili ponuđeni za cijeli sustav.
   for (const m of getEffectiveModels()) {
-    if (['geminicli', 'google', 'kimicli'].includes(m.provider) && !models.some((x: any) => x.spec === m.spec)) models.push(m)
+    if (['geminicli', 'google', 'kimicli', 'antigravity'].includes(m.provider) && !models.some((x: any) => x.spec === m.spec)) models.push(m)
   }
   return { providers, models }
 }
@@ -12714,7 +12719,7 @@ function buildInfoPayload(): Record<string, unknown> {
         const effProvider = ovSpec ? String(ovSpec).split(':')[0] : 'anthropic'
         // Agentski CLI-jevi/tool-loop imaju PUNE alate: Claude (claude --print), Gemini (gemini --yolo),
         // Kimi (kimi CLI), OpenRouter (openrouter-agent tool-loop). Samo Ollama je tekstualno (bez alata).
-        const hasTools = ['anthropic', 'geminicli', 'kimicli', 'openrouter'].includes(effProvider)
+        const hasTools = ['anthropic', 'geminicli', 'kimicli', 'openrouter', 'antigravity'].includes(effProvider)
         return {
           id,
           name: a.name || id,
@@ -13672,6 +13677,8 @@ interface LoginProviderDef { id: string; name: string; kind: 'oauth-cli' | 'apik
 const LOGIN_PROVIDERS: LoginProviderDef[] = [
   { id: 'kimicli',    name: 'Kimi',                kind: 'oauth-cli', cmd: 'kimi login',        bin: 'kimi',   creds: '~/.kimi-code/oauth' },
   { id: 'geminicli',  name: 'Gemini (Google)',     kind: 'oauth-cli', cmd: 'gemini',            bin: 'gemini', creds: '~/.gemini/oauth_creds.json', envKey: 'GEMINI_API_KEY' },
+  // TASK-5738: Google prijava (token u datoteci — SSH oznaka) ili isti GEMINI_API_KEY; stanje i odjava kroz AntigravityPrijava.
+  { id: 'antigravity', name: 'Antigravity (Google)', kind: 'oauth-cli', cmd: AGY_NAREDBA_PRIJAVE, bin: 'agy',  creds: '~/.gemini/antigravity-cli', envKey: 'GEMINI_API_KEY', install: AGY_INSTALACIJA },
   // `claude auth login` (NE `setup-token`): setup-token samo ISPIŠE dugotrajni token u terminal
   // — ne piše creds pa ploča nikad ne vidi prijavu, a token bi otišao u `tail` (TASK-5269).
   { id: 'claude',     name: 'Claude (Anthropic)',  kind: 'oauth-cli', cmd: 'claude auth login --claudeai', bin: 'claude', creds: '~/.claude/.credentials.json', install: 'curl -fsSL https://claude.ai/install.sh | bash' },
@@ -13696,6 +13703,7 @@ function loginStorePath(): string { return datotekaTajni() }
 function loginCredsPresent(def: LoginProviderDef): boolean {
   try {
     if (def.kind === 'apikey') return kljucPrisutanUDatoteci(loginStorePath(), def.envKey || '')
+    if (def.id === 'antigravity') return stanjeAgyjaNaDisku(process.env.HOME || '', kljucPrisutanUDatoteci(loginStorePath(), 'GEMINI_API_KEY')).prijavljen
     // oauth-cli s envKey (npr. Gemini): smatra se konfiguriranim i ako je API ključ u spremištu
     if (def.envKey && kljucPrisutanUDatoteci(loginStorePath(), def.envKey)) return true
     const p = loginHomeExpand(def.creds)
@@ -14014,6 +14022,7 @@ function handleLoginStatus(): Response {
       installed: def.kind === 'apikey' ? true : !!loginBinPath(def.bin),
       loggedIn: loginCredsPresent(def),
       apikey: !!def.envKey,
+      ...(def.id === 'antigravity' ? { kako: stanjeAgyjaNaDisku(process.env.HOME || '', kljucPrisutanUDatoteci(loginStorePath(), 'GEMINI_API_KEY')).kako } : {}),
       active: !!s && !s.done,
       url: s?.url || '',
       installCmd: def.install || '',
@@ -14040,9 +14049,11 @@ async function handleLoginStart(req: Request): Promise<Response> {
         writeFileSync(gset, JSON.stringify(cfg, null, 2))
       } catch {}
     }
+    // Antigravity: Login = Google prijava → način google; token u datoteku (SSH oznaka, TASK-5738).
+    if (id === 'antigravity') { try { zapisiNacinAgyja(process.env.HOME || '', 'google') } catch {} }
     // `script` alocira PTY; oblik naredbe (GNU -qfec ili BSD -q) bira platformni sloj.
     const proc = Bun.spawn(ptyNaredba(def.cmd!), {
-      stdin: 'pipe', stdout: 'pipe', stderr: 'pipe', env: loginSpawnEnv(), cwd: process.env.HOME,
+      stdin: 'pipe', stdout: 'pipe', stderr: 'pipe', env: (id === 'antigravity' ? okolinaAgyja(loginSpawnEnv()) : loginSpawnEnv()) as Record<string, string>, cwd: process.env.HOME,
     })
     const sess: LoginSess = { proc, url: '', buf: '', ok: false, done: false, err: '', started: Date.now() }
     loginSessions.set(id, sess)
@@ -14099,6 +14110,8 @@ async function handleLoginApikey(req: Request): Promise<Response> {
     // Goli `IME=ključ` u spremištu koje petlja maila učita s `. spremište` bio je naredba ljuske.
     const upis = postaviTajnu(osigurajMapu(datotekaTajniZaPisanje()), def.envKey, key.trim())
     if (!upis.ok) return json({ error: 'Ključ nije spremljen', greska: upis.greska }, 400)
+    // Antigravity s ključem: modelProvider gemini u settings.json agy-ja (TASK-5738, uputa #458).
+    if (id === 'antigravity') { try { zapisiNacinAgyja(process.env.HOME || '', 'kljuc') } catch {} }
     // Gemini: prebaci auth na API-key (OAuth Code Assist je Google ukinuo) + trust workspace.
     if (id === 'geminicli') {
       try {
@@ -14120,6 +14133,12 @@ async function handleLoginLogout(req: Request): Promise<Response> {
     const def = LOGIN_PROVIDERS.find(d => d.id === id)
     if (!def) return json({ error: 'unknown' }, 404)
     const s = loginSessions.get(id); if (s && !s.done) { try { s.proc.kill() } catch {} ; s.done = true }
+    // Antigravity: briše samo token (ne cijelu mapu agy-ja) i NE dira GEMINI_API_KEY koji dijele geminicli/google.
+    if (id === 'antigravity') {
+      try { odjaviAgy(process.env.HOME || '') } catch {}
+      loginSetProviderEnabled(id, false)
+      return json({ ok: !loginCredsPresent(def), kljucUklonjen: false, loggedIn: loginCredsPresent(def) })
+    }
     if (def.kind === 'oauth-cli' && def.creds) { try { rmSync(loginHomeExpand(def.creds), { recursive: true, force: true }) } catch {} }
     // Odjava mora maknuti ONO ŠTO MJERILO GLEDA. Za davatelje s `envKey` (Gemini, OpenRouter)
     // to je ključ u spremištu: bez ovoga je odjava kozmetička — gumb ostane „prijavljen" i

@@ -20,8 +20,8 @@ const MODEL_CONFIG = { providers: {
 } }
 
 describe('katalog davatelja', () => {
-  test('svih 14 iz model-configa kompleta, nijedan nije pretpostavljen', () => {
-    expect(DAVATELJI_AI.map(d => d.id).sort()).toEqual(['anthropic', 'claude', 'custom', 'deepseek', 'geminicli', 'glm', 'google',
+  test('svih 14 iz model-configa kompleta + antigravity (TASK-5738), nijedan nije pretpostavljen', () => {
+    expect(DAVATELJI_AI.map(d => d.id).sort()).toEqual(['anthropic', 'antigravity', 'claude', 'custom', 'deepseek', 'geminicli', 'glm', 'google',
       'kimi', 'kimicli', 'minimax', 'ollama', 'openai', 'openrouter', 'qwen'])
   })
   test('spoj s model-configom: sve *_API_KEY tajne i davatelj kojeg katalog ne zna', () => {
@@ -62,7 +62,7 @@ describe('čarobnjak scripts/prijava-ai.ts', () => {
       expect(r.exitCode).toBe(0)
       expect(izlaz).not.toContain('NEVIDLJIVA')
       const j = JSON.parse(izlaz)
-      expect(j.davatelji.length).toBe(15)
+      expect(j.davatelji.length).toBe(16)  // 14 + antigravity (TASK-5738) + mojdavatelj
       expect(j.davatelji.find((d: any) => d.id === 'openrouter')).toMatchObject({ prijavljen: true, kako: 'OPENROUTER_API_KEY u spremištu' })
       expect(j.davatelji.find((d: any) => d.id === 'claude').prijavljen).toBe(false)
       const kratko = Bun.spawnSync(['bun', 'scripts/prijava-ai.ts', 'popis', '--kratko'], { cwd: KORIJEN, env: { PATH: process.env.PATH!, HOME: tm, TM_HOME: tm } }).stdout.toString()

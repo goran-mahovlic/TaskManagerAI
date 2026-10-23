@@ -479,9 +479,9 @@ export function stvoriRazgovor(d: RazgovorOvisnosti): RazgovorJezgra {
     let ovlasti: RazgovorPostavke['ovlasti'] = s.ovlasti !== 'citanje' && stavke.every(smije) && procitano.every(smije) ? s.ovlasti : 'citanje'
     if (botOvlasti && ovlasti !== 'citanje') ovlasti = botOvlasti
     const cilj = ciljPoteza(s)
-    // TASK-5733: gemini potez je samo čitanje (Izvrsitelj.ts, argumentiGeminija) — i identitet to kaže.
-    if (cilj.izvrsitelj === 'gemini' && ovlasti !== 'citanje') {
-      log(`[razgovor] ${c.kljuc}: model ${specPoteza(s)} (gemini CLI) — ovlasti ${ovlasti} → citanje`)
+    // TASK-5733/5738: gemini i agy potez su samo čitanje (Izvrsitelj.ts) — i identitet to kaže.
+    if (cilj.izvrsitelj && ovlasti !== 'citanje') {
+      log(`[razgovor] ${c.kljuc}: model ${specPoteza(s)} (${cilj.izvrsitelj} CLI) — ovlasti ${ovlasti} → citanje`)
       ovlasti = 'citanje'
     }
     // TASK-5509: nalog čovjeka za slanje pošte preko ploče — samo ljudski potez na `puno` (svi
@@ -522,7 +522,7 @@ export function stvoriRazgovor(d: RazgovorOvisnosti): RazgovorJezgra {
           rag: d.ragUkljucen?.() ?? null, autoMemorija: autoMemorijaCC(d.home, radniDir),
         },
       })
-    // TASK-5733: Gemini (`geminicli:*`/`google:*`) vozi `gemini` CLI — bez claude zastavica i
+    // TASK-5733: Gemini (`geminicli:*`/`google:*`) vozi `gemini` CLI, a `antigravity:*` `agy` (TASK-5738) — bez claude zastavica i
     // nastavka claude sesije; identitet ide ispred prompta jer gemini nema dodatni sistemski prompt.
     const zahtjevGeminija = (): ExecRequest => ({
       agentId: 'razgovor',
@@ -531,13 +531,14 @@ export function stvoriRazgovor(d: RazgovorOvisnosti): RazgovorJezgra {
       cwd: radniDir,
       timeoutMs: s.rokSek * 1000,
       extra: {
-        izvrsitelj: 'gemini',
-        args: argumentiGeminija(ovlasti),
+        izvrsitelj: cilj.izvrsitelj,
+        // agy: način plan, bez preskakanja dozvola (TASK-5738, argumentiAgyja 'razgovor').
+        args: cilj.izvrsitelj === 'agy' ? ['--mode', 'plan'] : argumentiGeminija(ovlasti),
         env: okolinaPoteza,
         ...(kontrola ? { signal: kontrola.signal } : {}),
       },
     })
-    const zahtjev = (resume?: string, rez?: { model?: string; env: Record<string, string> }): ExecRequest => !rez && cilj.izvrsitelj === 'gemini' ? zahtjevGeminija() : ({
+    const zahtjev = (resume?: string, rez?: { model?: string; env: Record<string, string> }): ExecRequest => !rez && cilj.izvrsitelj ? zahtjevGeminija() : ({
       agentId: 'razgovor',
       model: rez ? rez.model : cilj.model,
       prompt,

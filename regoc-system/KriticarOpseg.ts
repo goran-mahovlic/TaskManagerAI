@@ -28,7 +28,7 @@ import { homedir } from 'os'
 const HOME = process.env.HOME || homedir()
 
 export type OpsegMode = 'off' | 'shadow' | 'on'
-export type RazlogIzvan = 'snimka-koda' | 'nije-dirao'
+export type RazlogIzvan = 'snimka-koda' | 'komplet-kopija' | 'nije-dirao'
 /** Razlozi iz TASK-5670 (replay): pad koji nije dokaz kvara zadatka. */
 export type RazlogNeprovjereno = 'istek-roka' | 'okolina' | 'visestruki'
 
@@ -56,6 +56,35 @@ export function jeSnimkaKoda(path: string): boolean {
   // izvještaj (TASK-5259 pozadina_povrat_5259, TASK-5414 radna_mapa_5414) — „Could not
   // resolve ../TaskManagerSQL". Provjera po importima to nije hvatala kad je snimka obrisana.
   return ispod[0] === 'kod' || ispod[0] === 'prijedlozi' || ispod[0] === 'architecture'
+}
+
+// ─── (c2) Kopije kompleta (TASK-5727) ────────────────────────────────────────
+
+/** Kod koji `bun build`/`bun test` razrješava preko relativnih importa (JSON i Python ne). */
+const KOMPLET_BUILD_EKSTENZIJE = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs'])
+
+/**
+ * Je li put kopija kompleta sustava, a ne izvor: mapa `regoc-system/` s `KOMPLET.json`
+ * (izvoz `gradi_komplet.sh --javno`, uklj. `vanjsko/`) ili predložak kompleta
+ * `deploy/regoc-komplet-javno/predlozak/`. Takav kod se razrješava tek u instaliranom
+ * stablu (`../tools`, `../VoiceServer`, `../skills` → ~/.claude/…), a testovi predloška
+ * traže schema.sql izgrađenog kompleta — pa `bun build`/`bun test` u mapi paketa padaju
+ * neovisno o radu (TASK-5662 krug 5: „Could not resolve ../tools/Telegram/lib/SendDoc").
+ * Izvor (~/.claude/regoc) kritičar i dalje provjerava; komplet provjerava vlastiti
+ * `bun test` pri gradnji ili `[PROVJERA] cmd:` zadatka.
+ *
+ * Ime mape `regoc-system` je uvjet namjerno: instalirano stablo (`.claude/regoc`) na
+ * čvoru može nositi KOMPLET.json, a ondje je to izvor koji se mora provjeravati.
+ */
+export function jeKompletKopija(path: string, exists: (p: string) => boolean = existsSync): boolean {
+  const p = resolve(path).replace(/\\/g, '/')
+  if (p.includes('/deploy/regoc-komplet-javno/predlozak/')) return true
+  const seg = p.split('/')
+  for (let i = seg.length - 2; i > 0; i--) {
+    if (seg[i] !== 'regoc-system') continue
+    if (exists(seg.slice(0, i + 1).join('/') + '/KOMPLET.json')) return true
+  }
+  return false
 }
 
 const RELATIVNI_IMPORT_RE = /(?:\bfrom\s+|\bimport\s*\(?\s*|\brequire\s*\(\s*)['"](\.{1,2}\/[^'"\n]+)['"]/g
@@ -176,6 +205,7 @@ export function pripadaSpawnu(path: string, a: Atribucija): boolean {
 export function razlogIzvanOpsega(path: string, a: Atribucija | null, vlastitiKorijeni: string[]): RazlogIzvan | null {
   if (KOD_EKSTENZIJE.has(extname(path))) {
     if (jeSnimkaKoda(path)) return 'snimka-koda'
+    if (KOMPLET_BUILD_EKSTENZIJE.has(extname(path)) && jeKompletKopija(path)) return 'komplet-kopija'
     // Ostali kod pod docs/: dokument dok mu se importi ne razrješavaju. Izvan docs/ se
     // ovo NE gleda — pravi modul s krivim importom je pravi kvar i mora pasti.
     if (path.replace(/\\/g, '/').includes('/docs/') && !importiSeRazrjesavaju(path)) return 'snimka-koda'

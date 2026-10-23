@@ -12,13 +12,14 @@
  * Ništa se ne ispisuje osim imena tajni i „postoji/ne" — vrijednost nikad.
  * Izlaz: 0 · 1 prijava nije dovršena · 2 pogrešna uporaba.
  */
-import { existsSync, readFileSync } from 'fs'
+import { existsSync, readFileSync, readdirSync } from 'fs'
 import { homedir } from 'os'
 import { join } from 'path'
 import { koraciPrijave, spojiSModelConfigom, type StavkaPopisa } from '../src/core/davateljiAI'
 import { kljucPrisutanUDatoteci } from '../src/LoginCreds'
 import { datotekaTajni } from '../src/core/ConfigModul'
 import { konfigPutanja } from '../src/core/paths'
+import { AGY_POSTAVKE, agyPrijavljen, nacinAgyja, stanjeAgyja } from '../src/core/Antigravity'
 
 const PAKET = join(import.meta.dir, '..')
 const OS = (process.env.TM_INSTALL_OS || process.platform).toLowerCase()
@@ -54,12 +55,27 @@ export interface IzvorStanja {
   /** Je li tajna u spremištu (samo prisutnost, vrijednost se nikad ne vraća). */
   uSpremistu: (ime: string) => boolean
   postoji: (put: string) => boolean
+  /** Imena u mapi (Antigravity: token je jedna od datoteka u mapi agy-ja). */
+  popis?: (mapa: string) => string[]
+  /** JSON datoteka ili null (settings.json agy-ja). */
+  citajJson?: (put: string) => any
+}
+
+function citajJsonDatoteku(put: string): any {
+  try { return JSON.parse(readFileSync(put, 'utf-8')) } catch { return null }
 }
 
 export function stanjePrijave(d: StavkaPopisa, iz: IzvorStanja): Stanje {
   for (const t of d.tajne) {
     if (iz.env[t]) return { prijavljen: true, kako: `${t} u okolini` }
     if (iz.uSpremistu(t)) return { prijavljen: true, kako: `${t} u spremištu` }
+  }
+  if (d.id === 'antigravity') {
+    return stanjeAgyja({
+      nacin: nacinAgyja((iz.citajJson || citajJsonDatoteku)(`${iz.home}/${AGY_POSTAVKE}`)),
+      kljuc: !!iz.env.GEMINI_API_KEY || iz.uSpremistu('GEMINI_API_KEY'),
+      token: agyPrijavljen(iz.home, iz.popis || readdirSync),
+    })
   }
   // Claude na macOS-u: prijava ide u Keychain koji LaunchDaemon ne vidi (P12.2) — vrijedi samo token.
   if (d.prijavaDatoteka && iz.postoji(d.prijavaDatoteka.replace(/^~\//, iz.home + '/')) && !(d.nacin === 'pretplata' && iz.os === 'darwin'))
@@ -151,6 +167,12 @@ function prijavi(d: StavkaPopisa): number {
   if (d.nacin === 'oauth-cli') {
     const cli = naPathu(d.cli!)
     if (!cli) { console.log(`  ${d.cli} nije instaliran (${d.instalacija}); ili ključ kroz Config → Tajne`); return nakonGeminiKljuca(d.id, d.tajne.length ? tajna(d.tajne[0]) : 1) }
+    if (d.id === 'antigravity') {
+      // Bez SSH oznake agy token sprema u Keychain koji usluga ne vidi (src/core/Antigravity.ts).
+      const { okolinaAgyja, AGY_NAREDBA_PRIJAVE } = require('../src/core/Antigravity')
+      console.log('\n  ▶ otvori poveznicu, prijavi se Googleom; ako preglednik ne preusmjeri sam, zalijepi kod ovdje')
+      return Bun.spawnSync(['/bin/sh', '-c', AGY_NAREDBA_PRIJAVE.replace(/^agy/, cli)], { stdio: ['inherit', 'inherit', 'inherit'], env: okolinaAgyja(process.env) as Record<string, string> }).exitCode ?? 1
+    }
     return pokreni(d.id === 'kimicli' ? [cli, 'login'] : [cli])
   }
   if (!d.tajne.length) { console.log('  upiši ime ključa: bun scripts/tajna.ts podesi --dodatno IME_API_KEY, pa tajna.ts postavi IME_API_KEY'); return 1 }

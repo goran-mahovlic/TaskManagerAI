@@ -286,6 +286,7 @@ import { cpuVrijeme as platformaCpuVrijeme, odvojeno, procesi as platformaProces
 import { homedir } from 'os'
 import { okolina, ollamaUrl, chromaUrl } from './lib/okolina-sustava' // TASK-5700 (K3a)
 import { procitajTajnuSpremista } from './lib/spremiste-tajni' // TASK-5705
+import { agyArgumentiSpawna, agyOkolinaSpawna } from './lib/antigravity-spawn' // TASK-5738
 // TASK-5323 (prijenos s node-A, ADR-0004 §13.8): RAG prekidač po čvoru (TASK-5273, memory-config
 // rag.enabled) i izlazni kanal TaskManagerAI paketa (TASK-5285). Na glavnom oboje bez učinka.
 import { ragUkljucen } from '../skills/CORE/Tools/lib/rag-gate'
@@ -3498,10 +3499,11 @@ function spawnAgentOnDemand(
   const isOllama = target.provider === 'ollama'
   const isKimiCli = target.provider === 'kimicli'   // Kimi Code CLI: OAuth pretplata (kimi login), headless `kimi -p` — bez API ključa
   const isGeminiCli = target.provider === 'geminicli' // Gemini CLI (Google): OAuth "Login with Google" preko linka, headless `gemini -p` — bez API ključa
+  const isAgy = target.provider === 'antigravity'     // TASK-5738: Antigravity CLI (Google prijava ili GEMINI_API_KEY), headless `agy -p`
   // Anthropic-kompatibilni provider (kimi-API/GLM/MiniMax/Qwen/DeepSeek) → isti claude CLI put, drugi endpoint+token.
-  const compat = (target.provider !== 'anthropic' && !isOpenRouter && !isOllama && !isKimiCli && !isGeminiCli) ? getAnthropicCompatProvider(target.provider) : null
-  if (target.provider !== 'anthropic' && !isOpenRouter && !isOllama && !isKimiCli && !isGeminiCli && !compat) {
-    log(`⚠️ Provider '${target.provider}' nije podržan za spawn (nije ollama/openrouter/anthropic/kimicli/geminicli ni anthropic-kompatibilan) — preskačem ${agentId}`)
+  const compat = (target.provider !== 'anthropic' && !isOpenRouter && !isOllama && !isKimiCli && !isGeminiCli && !isAgy) ? getAnthropicCompatProvider(target.provider) : null
+  if (target.provider !== 'anthropic' && !isOpenRouter && !isOllama && !isKimiCli && !isGeminiCli && !isAgy && !compat) {
+    log(`⚠️ Provider '${target.provider}' nije podržan za spawn (nije ollama/openrouter/anthropic/kimicli/geminicli/antigravity ni anthropic-kompatibilan) — preskačem ${agentId}`)
     const db = getDb(); sendResponse(db, fromAgent, `⚠️ Provider '${target.provider}' nije konfiguriran kao anthropic-kompatibilan. Provjeri model-config.json (baseUrl + apiKey).`, 5, origin); db.close()
     return { started: false, reason: 'provider' }
   }
@@ -3623,7 +3625,7 @@ function spawnAgentOnDemand(
         const blokZaSlanje = currentMode === 'PLAN'
           ? `${blok}\n\n### PLAN MOD JE AKTIVAN — NADREĐEN SVEMU GORE\nOvo je plan-only sesija. Gornje upute govore ČIME raspolažeš, NE da to sada pokreneš.\nNE izvršavaj, ne mijenjaj datoteke, ne pokreći alate koji mijenjaju stanje — samo planiraj.`
           : blok
-        if (isOpenRouter || isOllama || isKimiCli || isGeminiCli) prompt = `${blokZaSlanje}\n\n${prompt}`
+        if (isOpenRouter || isOllama || isKimiCli || isGeminiCli || isAgy) prompt = `${blokZaSlanje}\n\n${prompt}`
         else identityArgs = ['--append-system-prompt', blokZaSlanje]
         log(`🪪 [identitet] ${agentId}: blok ${blok.length} zn. → ${identityArgs.length ? 'sistemski kanal' : 'prompt'}`)
       } else {
@@ -3652,7 +3654,7 @@ function spawnAgentOnDemand(
           .catch(e => log(`⚠️ [memorija] ${taskId}: bilješka 🧠🚫 nije upisana (${e})`))
       }
       if (mem.blok) {
-        if (isOpenRouter || isOllama || isKimiCli || isGeminiCli) prompt = `${mem.blok}\n\n${prompt}`
+        if (isOpenRouter || isOllama || isKimiCli || isGeminiCli || isAgy) prompt = `${mem.blok}\n\n${prompt}`
         else {
           const i = identityArgs.indexOf('--append-system-prompt')
           if (i >= 0) identityArgs[i + 1] = `${identityArgs[i + 1]}\n\n${mem.blok}`
@@ -3756,6 +3758,8 @@ function spawnAgentOnDemand(
       // Gemini CLI (Google): headless; koristi GEMINI_API_KEY (AI Studio) — OAuth Code Assist je Google ukinuo.
       // --skip-trust: bez interaktivne "trusted directory" potvrde u headless spawnu.
       cmdArgs = model ? ['gemini', '--skip-trust', '--yolo', '-m', model, '-p', prompt] : ['gemini', '--skip-trust', '--yolo', '-p', prompt]
+    } else if (isAgy) {
+      cmdArgs = agyArgumentiSpawna(model, prompt)
     } else {
       // K7/TASK-2986: `--output-format json` uz rezultat vraća i usage/cost/session_id/num_turns,
       // pa se potrošnja po zadatku zna ODMAH (cost_log + run_log.jsonl) umjesto naknadnog
@@ -3804,6 +3808,7 @@ function spawnAgentOnDemand(
     // Gemini API key (AI Studio) iz credentials.env → geminicli radi bez mrtvog OAuth-a.
     // TASK-5705: zajednički čitač — zapis ploče paketa (`IME='…'`) ne smije doći s navodnicima.
     { const _g = procitajTajnuSpremista('GEMINI_API_KEY'); if (_g) spawnEnv.GEMINI_API_KEY = _g }
+    if (isAgy) agyOkolinaSpawna(spawnEnv)
     if (compat) {
       // Preusmjeri claude CLI na anthropic-kompatibilni endpoint (Kimi/GLM/MiniMax/Qwen/DeepSeek).
       spawnEnv.ANTHROPIC_BASE_URL = compat.baseUrl
@@ -4067,7 +4072,7 @@ function spawnAgentOnDemand(
           }
           log(`🏁 [voditelj] ${taskId}: lanac gotov — zatvaranje normalnim putem (vratar + kritičar)`)
         }
-        if (!envelope.parsed && !isOpenRouter && !isOllama && !isKimiCli && !isGeminiCli) {
+        if (!envelope.parsed && !isOpenRouter && !isOllama && !isKimiCli && !isGeminiCli && !isAgy) {
           telemetryNote = `bez JSON omotnice (${envelope.parseNote || 'nepoznato'})`
           log(`⚠️ Agent ${agentId}: izlaz nije JSON omotnica (${envelope.parseNote || 'nepoznato'}) — telemetrija bez tokena, parsiranje po starom.`)
         }

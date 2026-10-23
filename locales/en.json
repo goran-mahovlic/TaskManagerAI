@@ -118,6 +118,7 @@
   "cfg_komp_wikilinkparser": "[[link]] resolution — 0 importers; setup/regoc-setup.ts:83 only mentions it in a comment",
   "cfg_legenda_obavezno": "required field — the integration cannot work without it. Everything else is optional and has a default.",
   "cfg_login_cekam_link": "Waiting for the link…",
+  "cfg_login_agy_upozorenje": "Login = sign in with a Google account (link + code). Google states that using agy from a third-party application on a personal plan can lead to account suspension — we recommend a separate Google account. Without sign-in: a Gemini <b>API key</b> (the same GEMINI_API_KEY).",
   "cfg_login_gemini_oauth": "Google discontinued the free OAuth (Code Assist) for the CLI — use an <b>API key</b> from aistudio.google.com/apikey (free tier).",
   "cfg_login_instaliraj": "Not installed. Install it (Security→internet ON):",
   "cfg_login_kod_poslan": "Code sent, waiting for confirmation…",

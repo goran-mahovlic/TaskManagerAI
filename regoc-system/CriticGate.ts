@@ -2329,7 +2329,8 @@ function prepareScan(input: CritiqueInput, cfg: CriticConfig): ScanPrep {
         plan = planNovi
         if (izbaceno.length) {
           const po = (r: RazlogIzvan) => izbaceno.filter((i) => i.razlog === r).length
-          notes.push(`izvan opsega (${izbaceno.length}; snimka-koda ${po('snimka-koda')}, nije-dirao ${po('nije-dirao')}) — ne pokreće se: ${izbaceno.slice(0, 5).map((i) => basename(i.path)).join(', ')}`)
+          notes.push(`izvan opsega (${izbaceno.length}; snimka-koda ${po('snimka-koda')}, komplet-kopija ${po('komplet-kopija')}, nije-dirao ${po('nije-dirao')}) — ne pokreće se: ${izbaceno.slice(0, 5).map((i) => basename(i.path)).join(', ')}`)
+          if (po('komplet-kopija')) notes.push('komplet-kopija: kod kompleta (regoc-system/ s KOMPLET.json, predložak kompleta) razrješava se tek u instaliranom stablu — ne gradi se u mapi paketa; provjerava ga bun test kompleta pri gradnji ili [PROVJERA] cmd: zadatka (TASK-5727)')
         }
         if (!atrib) notes.push('atribucija nedostupna (nema transkripta spawna) — tuđe izmjene se ne mogu odvojiti, vrijedi pravilo po mtimeu')
       }

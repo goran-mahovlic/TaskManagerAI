@@ -135,8 +135,9 @@ export interface CiljRazgovora {
   env: Record<string, string>
   /** Troši li poziv Anthropic sesiju (vrata kvote razgovora pitaju samo tada). */
   anthropic: boolean
-  /** TASK-5733: tko vozi potez — zadano `claude` CLI; `gemini` = Gemini CLI s GEMINI_API_KEY. */
-  izvrsitelj?: 'gemini'
+  /** TASK-5733: tko vozi potez — zadano `claude` CLI; `gemini` = Gemini CLI s GEMINI_API_KEY;
+   *  `agy` = Antigravity CLI (TASK-5738, Google prijava ili GEMINI_API_KEY). */
+  izvrsitelj?: 'gemini' | 'agy'
   greska?: string
 }
 
@@ -163,6 +164,12 @@ export function ciljRazgovora(
   if (jeAnthropicProvider(c.provider)) return { model: c.model, env: {}, anthropic: true }
 
   const p = providers?.[c.provider] || {}
+  // TASK-5738: agy nosi vlastitu prijavu (token u datoteci); ključ ide samo kad postoji — način
+  // bira settings.json agy-ja (src/core/Antigravity.ts), ne ovaj poziv.
+  if (c.provider === 'antigravity') {
+    const kljuc = citajTajnu('GEMINI_API_KEY')
+    return { model: c.model, env: kljuc ? { GEMINI_API_KEY: kljuc } : {}, anthropic: false, izvrsitelj: 'agy' }
+  }
   if ((GEMINI_PROVIDERI as readonly string[]).includes(c.provider)) {
     const ref = typeof p.apiKey === 'string' && p.apiKey.startsWith('env:') ? p.apiKey.slice(4) : 'GEMINI_API_KEY'
     const imena = ref.split('|').map((x: string) => x.trim()).filter(Boolean)
