@@ -164,6 +164,30 @@ export function procesi(o?: Okolina): Proces[] {
     .map(m => ({ pid: Number(m![1]), ppid: Number(m![2]), cmd: m![3].trim() }))
 }
 
+/** Svi potomci procesa (širinom: djeca, pa unuci…), bez samog korijena. */
+export function potomci(pid: number, tablica: Proces[]): number[] {
+  const van: number[] = []
+  const vidjeno = new Set<number>([pid])
+  let red = [pid]
+  while (red.length) {
+    const djeca = tablica.filter(p => red.includes(p.ppid) && !vidjeno.has(p.pid)).map(p => p.pid)
+    for (const d of djeca) vidjeno.add(d)
+    van.push(...djeca)
+    red = djeca
+  }
+  return van
+}
+
+/**
+ * Ugasi proces i sve njegove potomke (SIGTERM). `script` (PTY) pokreće naredbu u vlastitoj
+ * sesiji, pa kill ljuske ne dođe do nje — Login s ploče je na macOS-u ostavljao siroče `agy`
+ * (TASK-5738). Potomci se skupljaju PRIJE gašenja (poslije bi ih preuzeo init).
+ */
+export function ubijStablo(pid: number, o?: Okolina): void {
+  const svi = [pid, ...potomci(pid, procesi(o))]
+  for (const p of svi.reverse()) { try { process.kill(p, 'SIGTERM') } catch { /* već je gotov */ } }
+}
+
 // ─── vrijeme starta procesa ──────────────────────────────────────────────────
 
 /** Polja iza „pid (comm)” iz procfs stat; comm smije sadržavati razmake i zagrade. */

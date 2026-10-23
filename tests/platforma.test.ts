@@ -395,3 +395,20 @@ describe('platforma — opis usluge i roditelj procesa (TASK-5657, bootcheck M1/
     expect(pozivi.length).toBe(1)
   })
 })
+
+describe('potomci — stablo procesa (TASK-5738: Login sesija ne ostavlja siroče agy)', () => {
+  test('svi potomci, dublji nakon plićih; bez korijena i bez tuđih grana', async () => {
+    const { potomci } = await import('../src/core/platforma')
+    const tablica = [
+      { pid: 10, ppid: 1, cmd: 'sh' }, { pid: 11, ppid: 10, cmd: 'cat' }, { pid: 12, ppid: 10, cmd: 'sh' },
+      { pid: 13, ppid: 12, cmd: 'script' }, { pid: 14, ppid: 13, cmd: 'agy' }, { pid: 20, ppid: 1, cmd: 'ploca' },
+    ]
+    expect(potomci(10, tablica)).toEqual([11, 12, 13, 14])
+    expect(potomci(20, tablica)).toEqual([])
+    expect(potomci(99, tablica)).toEqual([])
+  })
+  test('petlja u tablici (ppid = pid) ne vrti beskonačno', async () => {
+    const { potomci } = await import('../src/core/platforma')
+    expect(potomci(5, [{ pid: 5, ppid: 5, cmd: 'x' }, { pid: 6, ppid: 5, cmd: 'y' }])).toEqual([6])
+  })
+})

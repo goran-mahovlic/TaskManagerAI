@@ -22,7 +22,7 @@ import { hostname as osHostname, networkInterfaces as osNetworkInterfaces, homed
 import { getTaskManagerSQL, INBOX_PROJECT_ID } from './core/TaskManagerSQL'
 import { konfigPutanja, konfigPutanjaZaPisanje, osigurajMapu, PAKET_DIR, stanjePutanja, sustavPutanja, TM_DATA, TM_DB, TM_ROOT } from './core/paths'
 import { datotekaTajni, datotekaTajniZaPisanje, procitajTajnu } from './core/ConfigModul'
-import { cmdline as platformaCmdline, ptyNaredba } from './core/platforma'
+import { cmdline as platformaCmdline, ptyNaredba, ubijStablo } from './core/platforma'
 /**
  * Registar PAI agenata (`REGOC_AGENTS.json`, upisuje ga `scripts/install-agents.sh`).
  * TASK-5108: bio je u rasporedu žive REGOČ instalacije; sada `TM_AGENTS_REGISTRY` ili
@@ -122,7 +122,7 @@ import { kljucPrisutan, kljucPrisutanUDatoteci, postaviTajnu, ukloniKljucIzDatot
 import { obradiTajneZahtjev, osvjeziImeBota, ucitajPostavkeTajni, uputaTajniZaPoruku } from './TajnePloca'
 import { odlukaNaredbe, vrataKonzole, vrataIzvrsavanja } from './KonzolaVrata'
 import { ocistiLoginKod, izvuciLoginUrl, maskirajLoginTail, loginOauthGreska, LOGIN_POTVRDA } from './LoginUnos'
-import { AGY_INSTALACIJA, AGY_NAREDBA_PRIJAVE, AGY_POTVRDA_KODA, modeliAgyja, naredbaPrijaveAgyja, okolinaAgyja, ukljuciAgyZaCilj } from './core/Antigravity'
+import { AGY_INSTALACIJA, AGY_NAREDBA_PRIJAVE, modeliAgyja, odgovorTerminaluAgyja, okolinaAgyja, ukljuciAgyZaCilj } from './core/Antigravity'
 import { odjaviAgy, stanjeAgyjaNaDisku, zapisiNacinAgyja } from './core/AntigravityPrijava'
 import { capguardPostavke, stanjeCapguarda, zatraziSposobnost } from './Capguard'
 import { tecajOdgovor } from './Tecaj'
@@ -14038,7 +14038,7 @@ async function handleLoginStart(req: Request): Promise<Response> {
     const def = LOGIN_PROVIDERS.find(d => d.id === id)
     if (!def || def.kind !== 'oauth-cli') return json({ error: 'Nepoznat OAuth provider' }, 400)
     if (!loginBinPath(def.bin)) return json({ error: 'not-installed', installCmd: def.install || '' }, 409)
-    const prev = loginSessions.get(id); if (prev && !prev.done) { try { prev.proc.kill() } catch {} }
+    const prev = loginSessions.get(id); if (prev && !prev.done) { try { ubijStablo(prev.proc.pid) } catch {} }
     // Gemini: seed OAuth (Login-with-Google) auth-tip da preskoči interaktivni izbornik i ispiše
     // Google URL (redirect na codeassist.google.com/authcode → korisnik dobije KOD za paste).
     if (id === 'geminicli') {
@@ -14054,8 +14054,7 @@ async function handleLoginStart(req: Request): Promise<Response> {
     // Antigravity: Login = Google prijava → način google; token u datoteku (SSH oznaka, TASK-5738).
     if (id === 'antigravity') { try { zapisiNacinAgyja(process.env.HOME || '', 'google') } catch {} }
     // `script` alocira PTY; oblik naredbe (GNU -qfec ili BSD -q) bira platformni sloj.
-    // Antigravity bez PTY-a (pod `script` agy visi bez izlaza) — naredbaPrijaveAgyja.
-    const proc = Bun.spawn(id === 'antigravity' ? naredbaPrijaveAgyja() : ptyNaredba(def.cmd!), {
+    const proc = Bun.spawn(ptyNaredba(def.cmd!), {
       stdin: 'pipe', stdout: 'pipe', stderr: 'pipe', env: (id === 'antigravity' ? okolinaAgyja(loginSpawnEnv()) : loginSpawnEnv()) as Record<string, string>, cwd: process.env.HOME,
     })
     const sess: LoginSess = { proc, url: '', buf: '', ok: false, done: false, err: '', started: Date.now() }
@@ -14065,7 +14064,10 @@ async function handleLoginStart(req: Request): Promise<Response> {
         const reader = proc.stdout.getReader(); const dec = new TextDecoder()
         while (true) {
           const { done, value } = await reader.read(); if (done) break
-          sess.buf = (sess.buf + dec.decode(value, { stream: true })).slice(-65536)
+          const komad = dec.decode(value, { stream: true })
+          sess.buf = (sess.buf + komad).slice(-65536)
+          // agy u PTY-u čeka odgovor na upit terminala (ESC[>c) prije nego ispiše URL (TASK-5738).
+          if (id === 'antigravity') { const odg = odgovorTerminaluAgyja(komad); if (odg) { try { proc.stdin.write(odg); proc.stdin.flush?.() } catch {} } }
           // CLI ispisuje URL kao OSC-8 hipervezu — sirovi regex hvata BEL i dupli URL (TASK-5269).
           if (!sess.url) sess.url = izvuciLoginUrl(sess.buf)
           if (loginCredsPresent(def)) break
@@ -14073,7 +14075,7 @@ async function handleLoginStart(req: Request): Promise<Response> {
       } catch {}
       sess.ok = loginCredsPresent(def); sess.done = true
       if (sess.ok) loginSetProviderEnabled(id, true)
-      try { proc.kill() } catch {}
+      try { ubijStablo(proc.pid) } catch {}
     })()
     // Kratko pričekaj da URL stigne (device/oauth flow ispisuje ga u 1-2s)
     for (let i = 0; i < 30 && !sess.url && !sess.done; i++) await new Promise(r => setTimeout(r, 200))
@@ -14099,7 +14101,7 @@ async function handleLoginPaste(req: Request): Promise<Response> {
     // Zalijepljeno zna nositi ANSI rep i URL; Ink u raw PTY-u potvrđuje '\r', ne '\n' (TASK-5269).
     const kod = ocistiLoginKod(code)
     if (!kod) return json({ error: 'Kod je prazan ili neispravan — zalijepi samo kod s login stranice.' }, 400)
-    s.proc.stdin.write(kod + (id === 'antigravity' ? AGY_POTVRDA_KODA : LOGIN_POTVRDA)); s.proc.stdin.flush?.()
+    s.proc.stdin.write(kod + LOGIN_POTVRDA); s.proc.stdin.flush?.()
     return json({ ok: true })
   } catch (e: any) { return json({ error: String(e?.message || e) }, 500) }
 }
@@ -14135,7 +14137,7 @@ async function handleLoginLogout(req: Request): Promise<Response> {
     const { id } = await req.json() as { id: string }
     const def = LOGIN_PROVIDERS.find(d => d.id === id)
     if (!def) return json({ error: 'unknown' }, 404)
-    const s = loginSessions.get(id); if (s && !s.done) { try { s.proc.kill() } catch {} ; s.done = true }
+    const s = loginSessions.get(id); if (s && !s.done) { try { ubijStablo(s.proc.pid) } catch {} ; s.done = true }
     // Antigravity: briše samo token (ne cijelu mapu agy-ja) i NE dira GEMINI_API_KEY koji dijele geminicli/google.
     if (id === 'antigravity') {
       try { odjaviAgy(process.env.HOME || '') } catch {}

@@ -12,7 +12,7 @@ import { describe, expect, test } from 'bun:test'
 import {
   AGY_MAPA, AGY_MODEL_ZADANO, AGY_NAREDBA_PRIJAVE, agyDatotekePrijave, agyPrijavljen,
   agyPrijavaUspjela, argumentiAgyja, modeliAgyja, nacinAgyja, okolinaAgyja, postaviNacinAgyja, stanjeAgyja,
-  ukljuciAgyZaCilj, naredbaPrijaveAgyja, AGY_POTVRDA_KODA,
+  ukljuciAgyZaCilj, odgovorTerminaluAgyja,
 } from '../src/core/Antigravity'
 
 describe('okolinaAgyja — datotečna pohrana tokena', () => {
@@ -196,16 +196,12 @@ describe('ukljuciAgyZaCilj — Model sustava na antigravity:*', () => {
   })
 })
 
-describe('naredbaPrijaveAgyja — Login s ploče bez PTY-a', () => {
-  // Izmjereno na macOS-u 23.10.2026.: agy -p u PTY-u (script) visi bez izlaza (čeka odgovor
-  // terminala); bez PTY-a ispiše URL i čita kod sa stdina — redak, pa potvrda je '\n'.
-  test('ljuska s exec agy -p i stderr u stdout (URL ide na stderr)', () => {
-    const a = naredbaPrijaveAgyja()
-    expect(a.slice(0, 2)).toEqual(['/bin/sh', '-c'])
-    expect(a[2]).toBe(`exec ${AGY_NAREDBA_PRIJAVE} 2>&1`)
-    expect(a.join(' ')).not.toContain('script')
-  })
-  test('kod se potvrđuje novim retkom', () => {
-    expect(AGY_POTVRDA_KODA).toBe('\n')
+describe('odgovorTerminaluAgyja — Login s ploče u PTY-u', () => {
+  // Izmjereno na macOS-u 23.10.2026.: agy -p u PTY-u pošalje sekundarni DA upit (ESC[>c) i čeka
+  // odgovor terminala — bez njega visi bez izlaza; s odgovorom ispiše URL i traži kod. Bez PTY-a
+  // (cijev na stdinu) odustaje: „authentication required. Run 'agy' to log in".
+  test('ESC[>c → odgovor kakav daje xterm; ostalo → ništa', () => {
+    expect(odgovorTerminaluAgyja('\x1b[>c')).toBe('\x1b[>0;390;0c')
+    expect(odgovorTerminaluAgyja('Authentication required. Please visit the URL')).toBe('')
   })
 })

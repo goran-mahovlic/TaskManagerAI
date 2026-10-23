@@ -131,14 +131,12 @@ export function ukljuciAgyZaCilj(mc: any, spec: string, prijavljen: boolean): bo
   return true
 }
 
-/** Potvrda koda u Login sesiji: agy bez PTY-a čita redak sa stdina. */
-export const AGY_POTVRDA_KODA = '\n'
-
 /**
- * Login s ploče: agy BEZ PTY-a. Izmjereno na macOS-u 23.10.2026.: `agy -p` pod `script` visi
- * bez izlaza (čeka odgovor terminala); bez PTY-a ispiše URL (na stderr) i čeka kod na stdinu.
- * `exec` — kill sesije pogađa sam agy, ne samo ljusku.
+ * Login s ploče ide kroz PTY (platforma.ptyNaredba). Izmjereno na macOS-u 23.10.2026.: `agy -p` u
+ * PTY-u pošalje sekundarni DA upit (ESC[>c) i čeka odgovor terminala — bez njega visi bez izlaza,
+ * s njim ispiše URL i traži kod (potvrda '\r', kao ostali CLI-jevi). Bez PTY-a (cijev na stdinu)
+ * odustaje: „authentication required. Run 'agy' to log in".
  */
-export function naredbaPrijaveAgyja(): string[] {
-  return ['/bin/sh', '-c', `exec ${AGY_NAREDBA_PRIJAVE} 2>&1`]
+export function odgovorTerminaluAgyja(izlaz: string): string {
+  return izlaz.includes('\x1b[>c') ? '\x1b[>0;390;0c' : ''
 }
