@@ -10388,7 +10388,8 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         : (p.installed ? '<span class="info-badge disabled">' + _T('cfg_login_nije_prijavljen', 'nije prijavljen') + '</span>' : '<span class="info-badge disabled">' + _T('cfg_login_nije_instaliran', 'nije instaliran') + '</span>');
       var h = '<div style="border:1px solid var(--border-color);border-radius:6px;padding:0.6rem;margin-bottom:0.5rem">';
       h += '<div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap"><strong>'+p.name+'</strong>'+badge+'<span style="margin-left:auto;display:flex;gap:6px">';
-      if (p.loggedIn) h += '<button class="cfg-btn" onclick="doLogout(\\''+p.id+'\\','+(p.apikey?1:0)+')">' + _T('cfg_login_odjava', 'Odjava') + '</button>';
+      // Antigravity: odjava briše samo token Google prijave, GEMINI_API_KEY ostaje (dijele ga geminicli/google).
+      if (p.loggedIn) h += '<button class="cfg-btn" onclick="doLogout(\\''+p.id+'\\','+((p.apikey && p.id!=='antigravity')?1:0)+')">' + _T('cfg_login_odjava', 'Odjava') + '</button>';
       else if (p.kind==='oauth-cli' && p.installed) h += '<button class="cfg-btn" onclick="doLoginStart(\\''+p.id+'\\')">Login</button>';
       h += '</span></div><div id="login-body-'+p.id+'" style="margin-top:.4rem"></div>';
       if (p.id==='antigravity') h += '<div style="font-size:.66rem;color:#f59e0b;margin-top:.3rem">' + _T('cfg_login_agy_upozorenje', 'Login = prijava Google računom (link + kod). Google navodi da korištenje agy iz vanjske aplikacije na osobnom planu može dovesti do blokade računa — preporuka: zaseban Google račun. Bez prijave: Gemini <b>API ključ</b> (isti GEMINI_API_KEY).') + (p.kako ? ' · ' + p.kako : '') + '</div>';
