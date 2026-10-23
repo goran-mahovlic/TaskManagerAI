@@ -12,7 +12,7 @@ import { describe, expect, test } from 'bun:test'
 import {
   AGY_MAPA, AGY_MODEL_ZADANO, AGY_NAREDBA_PRIJAVE, agyDatotekePrijave, agyPrijavljen,
   agyPrijavaUspjela, argumentiAgyja, modeliAgyja, nacinAgyja, okolinaAgyja, postaviNacinAgyja, stanjeAgyja,
-  ukljuciAgyZaCilj,
+  ukljuciAgyZaCilj, naredbaPrijaveAgyja, AGY_POTVRDA_KODA,
 } from '../src/core/Antigravity'
 
 describe('okolinaAgyja — datotečna pohrana tokena', () => {
@@ -193,5 +193,19 @@ describe('ukljuciAgyZaCilj — Model sustava na antigravity:*', () => {
     expect(mc.providers.antigravity).toBeUndefined()
     const mc3: any = { providers: { antigravity: { enabled: true } } }
     expect(ukljuciAgyZaCilj(mc3, 'antigravity:zadano', true)).toBe(false)
+  })
+})
+
+describe('naredbaPrijaveAgyja — Login s ploče bez PTY-a', () => {
+  // Izmjereno na macOS-u 23.10.2026.: agy -p u PTY-u (script) visi bez izlaza (čeka odgovor
+  // terminala); bez PTY-a ispiše URL i čita kod sa stdina — redak, pa potvrda je '\n'.
+  test('ljuska s exec agy -p i stderr u stdout (URL ide na stderr)', () => {
+    const a = naredbaPrijaveAgyja()
+    expect(a.slice(0, 2)).toEqual(['/bin/sh', '-c'])
+    expect(a[2]).toBe(`exec ${AGY_NAREDBA_PRIJAVE} 2>&1`)
+    expect(a.join(' ')).not.toContain('script')
+  })
+  test('kod se potvrđuje novim retkom', () => {
+    expect(AGY_POTVRDA_KODA).toBe('\n')
   })
 })

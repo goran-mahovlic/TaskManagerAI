@@ -130,3 +130,15 @@ export function ukljuciAgyZaCilj(mc: any, spec: string, prijavljen: boolean): bo
   mc.providers.antigravity = { ...(p || { name: 'Antigravity CLI (agy)' }), enabled: true }
   return true
 }
+
+/** Potvrda koda u Login sesiji: agy bez PTY-a čita redak sa stdina. */
+export const AGY_POTVRDA_KODA = '\n'
+
+/**
+ * Login s ploče: agy BEZ PTY-a. Izmjereno na macOS-u 23.10.2026.: `agy -p` pod `script` visi
+ * bez izlaza (čeka odgovor terminala); bez PTY-a ispiše URL (na stderr) i čeka kod na stdinu.
+ * `exec` — kill sesije pogađa sam agy, ne samo ljusku.
+ */
+export function naredbaPrijaveAgyja(): string[] {
+  return ['/bin/sh', '-c', `exec ${AGY_NAREDBA_PRIJAVE} 2>&1`]
+}

@@ -122,7 +122,7 @@ import { kljucPrisutan, kljucPrisutanUDatoteci, postaviTajnu, ukloniKljucIzDatot
 import { obradiTajneZahtjev, osvjeziImeBota, ucitajPostavkeTajni, uputaTajniZaPoruku } from './TajnePloca'
 import { odlukaNaredbe, vrataKonzole, vrataIzvrsavanja } from './KonzolaVrata'
 import { ocistiLoginKod, izvuciLoginUrl, maskirajLoginTail, loginOauthGreska, LOGIN_POTVRDA } from './LoginUnos'
-import { AGY_INSTALACIJA, AGY_NAREDBA_PRIJAVE, modeliAgyja, okolinaAgyja, ukljuciAgyZaCilj } from './core/Antigravity'
+import { AGY_INSTALACIJA, AGY_NAREDBA_PRIJAVE, AGY_POTVRDA_KODA, modeliAgyja, naredbaPrijaveAgyja, okolinaAgyja, ukljuciAgyZaCilj } from './core/Antigravity'
 import { odjaviAgy, stanjeAgyjaNaDisku, zapisiNacinAgyja } from './core/AntigravityPrijava'
 import { capguardPostavke, stanjeCapguarda, zatraziSposobnost } from './Capguard'
 import { tecajOdgovor } from './Tecaj'
@@ -14054,7 +14054,8 @@ async function handleLoginStart(req: Request): Promise<Response> {
     // Antigravity: Login = Google prijava → način google; token u datoteku (SSH oznaka, TASK-5738).
     if (id === 'antigravity') { try { zapisiNacinAgyja(process.env.HOME || '', 'google') } catch {} }
     // `script` alocira PTY; oblik naredbe (GNU -qfec ili BSD -q) bira platformni sloj.
-    const proc = Bun.spawn(ptyNaredba(def.cmd!), {
+    // Antigravity bez PTY-a (pod `script` agy visi bez izlaza) — naredbaPrijaveAgyja.
+    const proc = Bun.spawn(id === 'antigravity' ? naredbaPrijaveAgyja() : ptyNaredba(def.cmd!), {
       stdin: 'pipe', stdout: 'pipe', stderr: 'pipe', env: (id === 'antigravity' ? okolinaAgyja(loginSpawnEnv()) : loginSpawnEnv()) as Record<string, string>, cwd: process.env.HOME,
     })
     const sess: LoginSess = { proc, url: '', buf: '', ok: false, done: false, err: '', started: Date.now() }
@@ -14098,7 +14099,7 @@ async function handleLoginPaste(req: Request): Promise<Response> {
     // Zalijepljeno zna nositi ANSI rep i URL; Ink u raw PTY-u potvrđuje '\r', ne '\n' (TASK-5269).
     const kod = ocistiLoginKod(code)
     if (!kod) return json({ error: 'Kod je prazan ili neispravan — zalijepi samo kod s login stranice.' }, 400)
-    s.proc.stdin.write(kod + LOGIN_POTVRDA); s.proc.stdin.flush?.()
+    s.proc.stdin.write(kod + (id === 'antigravity' ? AGY_POTVRDA_KODA : LOGIN_POTVRDA)); s.proc.stdin.flush?.()
     return json({ ok: true })
   } catch (e: any) { return json({ error: String(e?.message || e) }, 500) }
 }
