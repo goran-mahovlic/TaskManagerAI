@@ -238,11 +238,17 @@ export const NACIN_POZIVA_MOSTA: Record<NacinPoziva, (z: Zahtjev) => Promise<str
     return dijelovi.join('\n').trim() || null
   },
 
-  google: async ({ p, sustav, pitanje, tokena, o }) => {
-    const kljuc = tajna(o, 'GOOGLE_API_KEY')
+  google: async ({ p, sustav, pitanje, tokena, konf, o }) => {
+    // Ključ AI Studija stoji pod GEMINI_API_KEY (stranica Tajne, Gemini CLI) ili GOOGLE_API_KEY;
+    // `apiKey: "env:A|B"` iz model-config.json ima prednost (TASK-5730).
+    const env = String(konf.apiKey || '')
+    const imena = [...new Set([...(env.startsWith('env:') ? env.slice(4).split('|') : []), 'GEMINI_API_KEY', 'GOOGLE_API_KEY']
+      .map(x => x.trim()).filter(Boolean))]
+    let kljuc = ''
+    for (const ime of imena) { kljuc = tajna(o, ime); if (kljuc) break }
     if (!kljuc) return null
     const url = 'https://generativelanguage.googleapis.com/v1beta/models/' +
-      encodeURIComponent(p.model || 'gemini-2.0-flash') + ':generateContent?key=' + encodeURIComponent(kljuc)
+      encodeURIComponent(p.model || 'gemini-3.8-flash') + ':generateContent?key=' + encodeURIComponent(kljuc)
     const r = await (o.fetchImpl || fetch)(url, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(ROK_MS),
       body: JSON.stringify({

@@ -11435,8 +11435,10 @@ function getEffectiveModels(): typeof AVAILABLE_MODELS {
     const _geminiKey = kljucPrisutanUDatoteci(_cf, 'GEMINI_API_KEY')
     if (existsSync(join(H, '.gemini/oauth_creds.json')) || _geminiKey) {
       extra.push(
+        // TASK-5730: Google je gemini-2.5-flash ugasio za nove korisnike (404 → „use gemini-3.8-flash").
+        { spec: 'geminicli:gemini-3.8-flash', provider: 'geminicli', model: 'gemini-3.8-flash', tier: 'good',     label: 'Gemini 3.8 Flash (Google API key)', spawnable: true },
         { spec: 'geminicli:gemini-2.5-pro',   provider: 'geminicli', model: 'gemini-2.5-pro',   tier: 'frontier', label: 'Gemini 2.5 Pro (Google API key)',   spawnable: true },
-        { spec: 'geminicli:gemini-2.5-flash', provider: 'geminicli', model: 'gemini-2.5-flash', tier: 'good',     label: 'Gemini 2.5 Flash (Google API key)', spawnable: true },
+        { spec: 'geminicli:gemini-2.5-flash', provider: 'geminicli', model: 'gemini-2.5-flash', tier: 'good',     label: 'Gemini 2.5 Flash (Google API key, samo stari računi)', spawnable: true },
       )
     }
     const kd = join(H, '.kimi-code/oauth')
@@ -12755,6 +12757,7 @@ function buildInfoPayload(): Record<string, unknown> {
           { id: 'o4-mini', tier: 'strong' },
         ],
         google: [
+          { id: 'gemini-3.8-flash', tier: 'good' },
           { id: 'gemini-2.5-pro', tier: 'frontier' },
           { id: 'gemini-2.5-flash', tier: 'good' },
         ],
@@ -15000,7 +15003,7 @@ function putanjaOdlucitelja(): string | null {
  *  i vlastito ime modela. */
 const POZNATI_MODELI: Record<string, string[]> = {
   anthropic: ['claude-haiku-4-5-20251001', 'claude-sonnet-5', 'claude-opus-5'],
-  google: ['gemini-2.0-flash', 'gemini-2.5-flash', 'gemini-2.5-pro'],
+  google: ['gemini-3.8-flash', 'gemini-2.5-flash', 'gemini-2.5-pro'],
   glm: ['glm-4.6', 'glm-4.7-flash'],
   kimi: ['kimi-k2-0905-preview'],
   minimax: ['MiniMax-M2'],

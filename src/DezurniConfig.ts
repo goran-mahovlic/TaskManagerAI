@@ -95,7 +95,8 @@ export const POZNATI_MODELI_DEZURNI: Record<string, string[]> = {
   anthropic: ['claude-haiku-4-5-20251001', 'claude-sonnet-5', 'claude-opus-5'],
   openrouter: ['z-ai/glm-4.6', 'google/gemini-2.5-flash', 'deepseek/deepseek-chat', MISTRAL_LARGE_4],
   openai: ['gpt-4o-mini', 'gpt-4o'],
-  google: ['gemini-2.0-flash', 'gemini-2.5-flash', 'gemini-2.5-pro'],
+  // TASK-5730: Google je gemini-2.5-flash ugasio za nove korisnike (404 ModelNotFound).
+  google: ['gemini-3.8-flash', 'gemini-2.5-flash', 'gemini-2.5-pro'],
   glm: ['glm-4.6', 'glm-4.7-flash'],
   kimi: ['kimi-k2-0905-preview', 'kimi-k2.6'],
   minimax: ['MiniMax-M2'],
@@ -125,9 +126,12 @@ export interface DavateljDezurnog {
  *  dalje, ne vraća i ne zapisuje: ploča nikad ne smije postati mjesto curenja tajne. */
 function imaKljuc(ime: string, credPath: string): boolean {
   if (!ime) return true
-  if (process.env[ime]) return true
+  // `A|B` (npr. GEMINI_API_KEY|GOOGLE_API_KEY): dovoljno je bilo koje ime (TASK-5730).
+  const imena = ime.split('|').map(x => x.trim()).filter(Boolean)
+  if (imena.some(i => process.env[i])) return true
   try {
-    return kljucPrisutan(readFileSync(credPath, 'utf-8'), ime)
+    const tekst = readFileSync(credPath, 'utf-8')
+    return imena.some(i => kljucPrisutan(tekst, i))
   } catch {
     return false
   }

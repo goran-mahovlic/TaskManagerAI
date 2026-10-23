@@ -1,6 +1,6 @@
 /**
  * TASK-5728 — kanal bot↔bot s VIŠE drugih botova: zasebne tajne po botu i vezanje bota uz njegove
- * chatove. Prije toga je kraj s dva druga bota (Klaudio: Šaban + Mac) imao jedan par tajni, pa se
+ * chatove. Prije toga je kraj s dva druga bota (glavni bot: dva druga bota) imao jedan par tajni, pa se
  * svaki od njih mogao predstaviti kao onaj drugi, a zapisi iz grupe jednog išli su i drugome.
  *
  * Autorica: Jelena (Engineer), TASK-5728.
@@ -33,7 +33,7 @@ function pz(raw: unknown, tajna: string, put = '', ip = '172.24.0.1'): Zahtjev {
   return { ip, tijelo: t, potpis: potpisi(tajna, 'POST', `${PUT_RUTE}${put}`, t, Math.floor(sada / 1000)) }
 }
 const poruka = (o: Record<string, unknown> = {}) => ({
-  izvor: 'mac', chatId: CHAT_M, tekst: 'Klaudio, stanje?', telegramPorukaId: 11,
+  izvor: 'mac', chatId: CHAT_M, tekst: 'Glavni, stanje?', telegramPorukaId: 11,
   lanacId: `L-${Math.random().toString(36).slice(2)}`, skok: 1, izvornik: null, ts: '2026-10-23T08:00:00Z', ...o,
 })
 
@@ -51,7 +51,7 @@ function okolina(o: { prim?: Record<string, string>; slan?: Record<string, strin
   let stanje: BotKanalStanje = praznoStanje()
   const pozivi: { url: string; tijelo: any; potpis: string; body: string }[] = []
   const bk = stvoriBotKanal({
-    ja: 'klaudio',
+    ja: 'glavni',
     postavke: () => postavke,
     tajnaPrimanja: ime => prim[ime],
     tajnaSlanja: ime => slan[ime],
@@ -154,17 +154,17 @@ describe('TASK-5728 imena tajni po botu', () => {
     expect(tajnaZaBota(c, TAJNA_SLANJA, 'mac', true)).toBe('zajednicka')
   })
   test('imenaTajniKanala: zajednički par + par po svakom drugom botu', () => {
-    expect(imenaTajniKanala(['klaudio']).map(x => x.ime)).toEqual([
+    expect(imenaTajniKanala(['glavni']).map(x => x.ime)).toEqual([
       'TM_BOT_KANAL_TAJNA_SLANJE', 'TM_BOT_KANAL_TAJNA_PRIMANJE',
-      'TM_BOT_KANAL_TAJNA_SLANJE_KLAUDIO', 'TM_BOT_KANAL_TAJNA_PRIMANJE_KLAUDIO',
+      'TM_BOT_KANAL_TAJNA_SLANJE_GLAVNI', 'TM_BOT_KANAL_TAJNA_PRIMANJE_GLAVNI',
     ])
   })
   test('imena kanala nisu zabranjena (TM_* iznimka samo za njih) i prolaze dopustenaImena', () => {
-    for (const x of imenaTajniKanala(['klaudio'])) expect(imeZabranjeno(x.ime)).toBe(false)
+    for (const x of imenaTajniKanala(['glavni'])) expect(imeZabranjeno(x.ime)).toBe(false)
     expect(imeZabranjeno('TM_CREDENTIALS')).toBe(true)
     expect(imeZabranjeno('TM_BOT_KANAL_DRUGI')).toBe(true)
-    const d = dopustenaImena({ moduli: imenaTajniKanala(['klaudio']) }).map(x => x.ime)
-    expect(d).toContain('TM_BOT_KANAL_TAJNA_PRIMANJE_KLAUDIO')
+    const d = dopustenaImena({ moduli: imenaTajniKanala(['glavni']) }).map(x => x.ime)
+    expect(d).toContain('TM_BOT_KANAL_TAJNA_PRIMANJE_GLAVNI')
   })
 })
 
@@ -175,7 +175,7 @@ describe('TASK-5728 paket: Tajne čvora i kartica kanala', () => {
     mapa = mkdtempSync(join(tmpdir(), 'bk5728-'))
     db = join(mapa, 'tasks.db')
     const d = new Database(db)
-    setBotKanalPostavke(d, { drugi: [{ ime: 'klaudio', korisnickoIme: 'klaudioAI_bot', url: 'http://100.64.0.1:17781' }] }, 'test')
+    setBotKanalPostavke(d, { drugi: [{ ime: 'glavni', korisnickoIme: 'glavniAI_bot', url: 'http://100.64.0.1:17781' }] }, 'test')
     d.close()
   })
   afterEach(() => { rmSync(mapa, { recursive: true, force: true }) })
@@ -185,15 +185,15 @@ describe('TASK-5728 paket: Tajne čvora i kartica kanala', () => {
     const k = imena.filter(x => x.ime.startsWith('TM_BOT_KANAL_TAJNA_'))
     expect(k.map(x => x.ime)).toEqual([
       'TM_BOT_KANAL_TAJNA_SLANJE', 'TM_BOT_KANAL_TAJNA_PRIMANJE',
-      'TM_BOT_KANAL_TAJNA_SLANJE_KLAUDIO', 'TM_BOT_KANAL_TAJNA_PRIMANJE_KLAUDIO',
+      'TM_BOT_KANAL_TAJNA_SLANJE_GLAVNI', 'TM_BOT_KANAL_TAJNA_PRIMANJE_GLAVNI',
     ])
     expect(k.every(x => x.izvor.startsWith('botKanal'))).toBe(true)
   })
   test('kartica kanala: stanje tajni po botu (bez vrijednosti)', () => {
     const v = 'x'.repeat(48)
-    const r = botKanalGet(db, null, { TM_BOT_KANAL_TAJNA_PRIMANJE_KLAUDIO: v, TM_BOT_KANAL_TAJNA_SLANJE: 'y'.repeat(48) })
+    const r = botKanalGet(db, null, { TM_BOT_KANAL_TAJNA_PRIMANJE_GLAVNI: v, TM_BOT_KANAL_TAJNA_SLANJE: 'y'.repeat(48) })
     const pb = (r.tijelo as any).tajna.poBotu
-    expect(pb).toEqual([{ ime: 'klaudio', slanje: 'postavljena', primanje: 'postavljena', imeSlanja: 'TM_BOT_KANAL_TAJNA_SLANJE_KLAUDIO', imePrimanja: 'TM_BOT_KANAL_TAJNA_PRIMANJE_KLAUDIO' }])
+    expect(pb).toEqual([{ ime: 'glavni', slanje: 'postavljena', primanje: 'postavljena', imeSlanja: 'TM_BOT_KANAL_TAJNA_SLANJE_GLAVNI', imePrimanja: 'TM_BOT_KANAL_TAJNA_PRIMANJE_GLAVNI' }])
     expect(JSON.stringify(r.tijelo)).not.toContain(v)
   })
 })
@@ -203,21 +203,21 @@ describe('TASK-5728 Malik: tajne kanala ne idu modelu; paket veže bota uz chato
   test('okolinaRazgovora ne propušta TM_BOT_KANAL_TAJNA_* (ni zajednički par ni par po botu)', async () => {
     const { okolinaRazgovora } = await import('../src/razgovor/Ovlasti')
     const env = okolinaRazgovora({
-      TM_BOT_KANAL_TAJNA_SLANJE: 'a'.repeat(48), TM_BOT_KANAL_TAJNA_PRIMANJE_KLAUDIO: 'b'.repeat(48),
+      TM_BOT_KANAL_TAJNA_SLANJE: 'a'.repeat(48), TM_BOT_KANAL_TAJNA_PRIMANJE_GLAVNI: 'b'.repeat(48),
       TM_NEKA_LOZINKA: 'c', TM_PORT: '17781',
     }, 'test')
     expect(Object.keys(env).filter(k => k.startsWith('TM_')).sort()).toEqual(['TM_PORT', 'TM_RAZGOVOR'])
   })
   test('postavke paketa: drugi[].chatovi se čuva; dva druga bota bez chatova se odbijaju', async () => {
     const { parseBotKanalPatch } = await import('../src/razgovor/BotKanalPostavke')
-    const jedan = parseBotKanalPatch({ drugi: [{ ime: 'klaudio', korisnickoIme: 'klaudioAI_bot', url: 'http://10.0.0.1:17781', chatovi: [CHAT_M] }] })
+    const jedan = parseBotKanalPatch({ drugi: [{ ime: 'glavni', korisnickoIme: 'glavniAI_bot', url: 'http://10.0.0.1:17781', chatovi: [CHAT_M] }] })
     expect(jedan.ok && jedan.value.drugi![0]!.chatovi).toEqual([CHAT_M])
     const dva = parseBotKanalPatch({ drugi: [
-      { ime: 'klaudio', korisnickoIme: 'klaudioAI_bot', url: 'http://10.0.0.1:17781' },
+      { ime: 'glavni', korisnickoIme: 'glavniAI_bot', url: 'http://10.0.0.1:17781' },
       { ime: 'saban', korisnickoIme: 'sabanAI_bot', url: 'http://10.0.0.2:17781', chatovi: [CHAT_S] },
     ] })
     expect(dva.ok).toBe(false)
-    expect(parseBotKanalPatch({ drugi: [{ ime: 'klaudio', korisnickoIme: 'klaudioAI_bot', url: 'http://10.0.0.1:17781', chatovi: ['x'] }] }).ok).toBe(false)
+    expect(parseBotKanalPatch({ drugi: [{ ime: 'glavni', korisnickoIme: 'glavniAI_bot', url: 'http://10.0.0.1:17781', chatovi: ['x'] }] }).ok).toBe(false)
   })
   test('postavke paketa iz baze: chatovi bota vrijede u vratima kanala', () => {
     const mapa = mkdtempSync(join(tmpdir(), 'bk5728b-'))
@@ -225,16 +225,16 @@ describe('TASK-5728 Malik: tajne kanala ne idu modelu; paket veže bota uz chato
       const put = join(mapa, 'tasks.db')
       const d = new Database(put)
       setBotKanalPostavke(d, { ukljucen: true, chatovi: [CHAT_S, CHAT_M], adrese: ['10.0.0.1', '10.0.0.2'], drugi: [
-        { ime: 'klaudio', korisnickoIme: 'klaudioAI_bot', url: 'http://10.0.0.1:17781', chatovi: [CHAT_M] },
+        { ime: 'glavni', korisnickoIme: 'glavniAI_bot', url: 'http://10.0.0.1:17781', chatovi: [CHAT_M] },
         { ime: 'saban', korisnickoIme: 'sabanAI_bot', url: 'http://10.0.0.2:17781', chatovi: [CHAT_S] },
       ] }, 'test')
       const { getBotKanalPostavke } = require('../src/razgovor/BotKanalPostavke')
       const p = getBotKanalPostavke(d).postavke as BotKanalPostavke
       d.close()
-      const bk = stvoriBotKanal({ ja: 'mac', postavke: () => ({ ...p, provjeraAdrese: false }), tajnaPrimanja: ime => PRIM[ime === 'klaudio' ? 'mac' : 'saban'], tajnaSlanja: ime => SLAN[ime === 'klaudio' ? 'mac' : 'saban'],
+      const bk = stvoriBotKanal({ ja: 'mac', postavke: () => ({ ...p, provjeraAdrese: false }), tajnaPrimanja: ime => PRIM[ime === 'glavni' ? 'mac' : 'saban'], tajnaSlanja: ime => SLAN[ime === 'glavni' ? 'mac' : 'saban'],
         spremiste: { citaj: praznoStanje, pisi: () => {} }, sat: () => sada })
-      expect(bk.primi(pz(poruka({ izvor: 'klaudio', chatId: CHAT_S }), PRIM.mac!)).status).toBe(403)
-      expect(bk.primi(pz(poruka({ izvor: 'klaudio' }), PRIM.mac!)).status).toBe(202)
+      expect(bk.primi(pz(poruka({ izvor: 'glavni', chatId: CHAT_S }), PRIM.mac!)).status).toBe(403)
+      expect(bk.primi(pz(poruka({ izvor: 'glavni' }), PRIM.mac!)).status).toBe(202)
     } finally { rmSync(mapa, { recursive: true, force: true }) }
   })
 })
