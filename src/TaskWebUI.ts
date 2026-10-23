@@ -122,7 +122,7 @@ import { kljucPrisutan, kljucPrisutanUDatoteci, postaviTajnu, ukloniKljucIzDatot
 import { obradiTajneZahtjev, osvjeziImeBota, ucitajPostavkeTajni, uputaTajniZaPoruku } from './TajnePloca'
 import { odlukaNaredbe, vrataKonzole, vrataIzvrsavanja } from './KonzolaVrata'
 import { ocistiLoginKod, izvuciLoginUrl, maskirajLoginTail, loginOauthGreska, LOGIN_POTVRDA } from './LoginUnos'
-import { AGY_INSTALACIJA, AGY_NAREDBA_PRIJAVE, modeliAgyja, okolinaAgyja } from './core/Antigravity'
+import { AGY_INSTALACIJA, AGY_NAREDBA_PRIJAVE, modeliAgyja, okolinaAgyja, ukljuciAgyZaCilj } from './core/Antigravity'
 import { odjaviAgy, stanjeAgyjaNaDisku, zapisiNacinAgyja } from './core/AntigravityPrijava'
 import { capguardPostavke, stanjeCapguarda, zatraziSposobnost } from './Capguard'
 import { tecajOdgovor } from './Tecaj'
@@ -13069,6 +13069,7 @@ async function handleSetModelSvi(req: Request): Promise<Response> {
     try {
       saveModelConfig(MODEL_CONFIG_PATH, mc => {
         if (ukljuciGoogleZaCilj(mc, raw, kljucPrisutanUDatoteci(datotekaTajni(), 'GEMINI_API_KEY'))) console.log('[MODEL-SVI] davatelj google uključen (cilj google:*, GEMINI_API_KEY postoji)')
+        if (ukljuciAgyZaCilj(mc, raw, stanjeAgyjaNaDisku(process.env.HOME || '', kljucPrisutanUDatoteci(datotekaTajni(), 'GEMINI_API_KEY')).prijavljen)) console.log('[MODEL-SVI] davatelj antigravity uključen (cilj antigravity:*, agy prijavljen)')
         const n = prebaciSve(mc, raw, { tko, kada, agenti })
         promijenjeno = n.promijenjeno
         for (const k of Object.keys(mc)) delete mc[k]

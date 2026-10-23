@@ -116,3 +116,17 @@ export function modeliAgyja(prijavljen: boolean): AgyModel[] {
   if (!prijavljen) return []
   return MODELI.map(([model, tier, label]) => ({ spec: `antigravity:${model}`, provider: 'antigravity', model, tier, label, spawnable: true }))
 }
+
+/**
+ * „Model sustava" na `antigravity:*`: provjeriCilj traži davatelja u `providers`. Kad je agy
+ * prijavljen (token ili ključ u načinu ključa), odabir ga dodaje/uključuje — isto kao
+ * ukljuciGoogleZaCilj (GeminiModeli.ts). Vraća je li mijenjao.
+ */
+export function ukljuciAgyZaCilj(mc: any, spec: string, prijavljen: boolean): boolean {
+  if (!prijavljen || !String(spec).startsWith('antigravity:') || !mc || typeof mc !== 'object') return false
+  if (!mc.providers || typeof mc.providers !== 'object') mc.providers = {}
+  const p = mc.providers.antigravity
+  if (p && p.enabled !== false) return false
+  mc.providers.antigravity = { ...(p || { name: 'Antigravity CLI (agy)' }), enabled: true }
+  return true
+}

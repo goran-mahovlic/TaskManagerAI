@@ -12,6 +12,7 @@ import { describe, expect, test } from 'bun:test'
 import {
   AGY_MAPA, AGY_MODEL_ZADANO, AGY_NAREDBA_PRIJAVE, agyDatotekePrijave, agyPrijavljen,
   agyPrijavaUspjela, argumentiAgyja, modeliAgyja, nacinAgyja, okolinaAgyja, postaviNacinAgyja, stanjeAgyja,
+  ukljuciAgyZaCilj,
 } from '../src/core/Antigravity'
 
 describe('okolinaAgyja — datotečna pohrana tokena', () => {
@@ -173,5 +174,24 @@ describe('AntigravityPrijava — disk (Config → Prijava na ploči)', () => {
       expect(JSON.parse(readFileSync(f, 'utf-8')).modelProvider).toBe('gemini')
       expect(statSync(f).mode & 0o777).toBe(0o600)
     } finally { rmSync(h, { recursive: true, force: true }) }
+  })
+})
+
+describe('ukljuciAgyZaCilj — Model sustava na antigravity:*', () => {
+  test('prijavljen, a davatelja nema ili je isključen → dodan/uključen', () => {
+    const mc: any = { providers: {} }
+    expect(ukljuciAgyZaCilj(mc, 'antigravity:gemini-3.6-flash', true)).toBe(true)
+    expect(mc.providers.antigravity.enabled).toBe(true)
+    const mc2: any = { providers: { antigravity: { enabled: false } } }
+    expect(ukljuciAgyZaCilj(mc2, 'antigravity:zadano', true)).toBe(true)
+    expect(mc2.providers.antigravity.enabled).toBe(true)
+  })
+  test('nije prijavljen, drugi davatelj ili već uključen → ništa', () => {
+    const mc: any = { providers: {} }
+    expect(ukljuciAgyZaCilj(mc, 'antigravity:zadano', false)).toBe(false)
+    expect(ukljuciAgyZaCilj(mc, 'google:gemini-3.8-flash', true)).toBe(false)
+    expect(mc.providers.antigravity).toBeUndefined()
+    const mc3: any = { providers: { antigravity: { enabled: true } } }
+    expect(ukljuciAgyZaCilj(mc3, 'antigravity:zadano', true)).toBe(false)
   })
 })
