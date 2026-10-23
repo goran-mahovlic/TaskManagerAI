@@ -44,7 +44,7 @@ export const DAVATELJI_AI: DavateljAI[] = [
   { id: 'qwen', ime: 'Qwen (Alibaba DashScope)', nacin: 'kljuc', tajne: ['QWEN_API_KEY'], adresa: 'https://dashscope.console.aliyun.com' },
   { id: 'deepseek', ime: 'DeepSeek', nacin: 'kljuc', tajne: ['DEEPSEEK_API_KEY'], adresa: 'https://platform.deepseek.com' },
   { id: 'geminicli', ime: 'Gemini CLI (Google)', nacin: 'oauth-cli', tajne: ['GEMINI_API_KEY'], cli: 'gemini',
-    prijavaDatoteka: '~/.gemini/oauth_creds.json', instalacija: 'npm i -g @google/gemini-cli (u ~/.local/node)',
+    prijavaDatoteka: '~/.gemini/oauth_creds.json', instalacija: 'bash scripts/install.sh --gemini-cli (Node u ~/.local/node + npm i -g @google/gemini-cli)',
     napomena: 'OAuth „Login with Google" ili ključ' },
   { id: 'google', ime: 'Google Gemini — API ključ', nacin: 'kljuc', tajne: ['GEMINI_API_KEY', 'GOOGLE_API_KEY'], adresa: 'https://aistudio.google.com' },
   { id: 'openai', ime: 'OpenAI', nacin: 'kljuc', tajne: ['OPENAI_API_KEY'], adresa: 'https://platform.openai.com' },

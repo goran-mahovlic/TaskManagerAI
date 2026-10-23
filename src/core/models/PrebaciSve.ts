@@ -135,15 +135,21 @@ export interface CiljRazgovora {
   env: Record<string, string>
   /** Troši li poziv Anthropic sesiju (vrata kvote razgovora pitaju samo tada). */
   anthropic: boolean
+  /** TASK-5733: tko vozi potez — zadano `claude` CLI; `gemini` = Gemini CLI s GEMINI_API_KEY. */
+  izvrsitelj?: 'gemini'
   greska?: string
 }
+
+/** TASK-5733: provideri koje razgovor vozi `gemini` CLI-jem (nemaju Anthropic-kompatibilan endpoint). */
+export const GEMINI_PROVIDERI = ['geminicli', 'google'] as const
 
 /**
  * Model razgovora (`razgovor.model` / `agentOverrides.razgovor`) → poziv `claude -p`.
  * Anthropic ili goli alias: `--model <alias>`. Drugi provider ide ISTIM CLI-jem preko
  * `ANTHROPIC_BASE_URL` (isti put kojim daemon vozi kimi/glm): njegov `baseUrl` ako je
  * `anthropicCompatible`, za OpenRouter njegov Anthropic-kompatibilni endpoint. Bez tog puta
- * (npr. Ollama) → greška; nema tihog pada natrag na Claude.
+ * (npr. Ollama) → greška; nema tihog pada natrag na Claude. Gemini (`geminicli`, `google`) ide
+ * `gemini` CLI-jem uz GEMINI_API_KEY (TASK-5733) — alati ostaju, bez prijave u Claude.
  */
 export function ciljRazgovora(
   spec: string | null | undefined,
@@ -157,6 +163,13 @@ export function ciljRazgovora(
   if (jeAnthropicProvider(c.provider)) return { model: c.model, env: {}, anthropic: true }
 
   const p = providers?.[c.provider] || {}
+  if ((GEMINI_PROVIDERI as readonly string[]).includes(c.provider)) {
+    const ref = typeof p.apiKey === 'string' && p.apiKey.startsWith('env:') ? p.apiKey.slice(4) : 'GEMINI_API_KEY'
+    const imena = ref.split('|').map((x: string) => x.trim()).filter(Boolean)
+    const kljuc = imena.map((ime: string) => citajTajnu(ime)).find(Boolean) || null
+    if (!kljuc) return { model: c.model, env: {}, anthropic: false, izvrsitelj: 'gemini', greska: `nema ključa ${ref} za provider '${c.provider}' (gemini CLI)` }
+    return { model: c.model, env: { GEMINI_API_KEY: kljuc }, anthropic: false, izvrsitelj: 'gemini' }
+  }
   const baseUrl = p.anthropicCompatible && p.baseUrl
     ? String(p.baseUrl)
     : c.provider === 'openrouter' ? OPENROUTER_ANTHROPIC_URL : ''

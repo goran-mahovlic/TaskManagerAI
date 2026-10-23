@@ -36,6 +36,7 @@ import { odlukaGuarda } from './core/SpawnFinalizer'
 // TASK-4894: model-config.json se mijenja SAMO atomno i uz revizijski trag (GAP F14).
 import { saveModelConfig } from './core/models/ModelConfigWriter'
 import { prebaciSve, vratiPrebacivanje, stanjePrebacivanja, IZUZETE_KOMPONENTE } from './core/models/PrebaciSve'
+import { modeliGeminija, ukljuciGoogleZaCilj } from './core/models/GeminiModeli'
 import { ISTAKNUTI_OPENROUTER, istaknutiNaVrh } from './core/models/IstaknutiModeli'
 // TASK-4967/4972: RAG s dva pozadinska sustava (ChromaDB / pgvector / dual), GAP F13.
 import { getRAGBackendService } from './RAGBackendService'
@@ -10482,7 +10483,7 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       h += '<div style="display:flex;gap:0.6rem;flex-wrap:wrap;align-items:center;font-size:0.72rem">';
       var grupe = {};
       ((md && md.models) || []).forEach(function(m) {
-        if (!m || !m.spec || m.spawnable === false) return;
+        if (!m || !m.spec || (m.spawnable === false && !m.sustav)) return;
         var p = m.provider || String(m.spec).split(':')[0];
         (grupe[p] = grupe[p] || []).push(m);
       });
@@ -11433,14 +11434,8 @@ function getEffectiveModels(): typeof AVAILABLE_MODELS {
     const H = process.env.HOME || ''
     const _cf = datotekaTajni()
     const _geminiKey = kljucPrisutanUDatoteci(_cf, 'GEMINI_API_KEY')
-    if (existsSync(join(H, '.gemini/oauth_creds.json')) || _geminiKey) {
-      extra.push(
-        // TASK-5730: Google je gemini-2.5-flash ugasio za nove korisnike (404 → „use gemini-3.8-flash").
-        { spec: 'geminicli:gemini-3.8-flash', provider: 'geminicli', model: 'gemini-3.8-flash', tier: 'good',     label: 'Gemini 3.8 Flash (Google API key)', spawnable: true },
-        { spec: 'geminicli:gemini-2.5-pro',   provider: 'geminicli', model: 'gemini-2.5-pro',   tier: 'frontier', label: 'Gemini 2.5 Pro (Google API key)',   spawnable: true },
-        { spec: 'geminicli:gemini-2.5-flash', provider: 'geminicli', model: 'gemini-2.5-flash', tier: 'good',     label: 'Gemini 2.5 Flash (Google API key, samo stari računi)', spawnable: true },
-      )
-    }
+    // TASK-5733: uz geminicli i google:<model> (izravni API) kad postoji GEMINI_API_KEY.
+    extra.push(...modeliGeminija({ kljuc: _geminiKey, oauth: existsSync(join(H, '.gemini/oauth_creds.json')) }))
     const kd = join(H, '.kimi-code/oauth')
     if (existsSync(kd)) { try { if (readdirSync(kd).length > 0) extra.push({ spec: 'kimicli:kimi-k2', provider: 'kimicli', model: 'kimi-k2', tier: 'strong', label: 'Kimi K2 (login)', spawnable: true }) } catch {} }
   } catch {}
@@ -11578,6 +11573,11 @@ async function buildModelsAvailable(): Promise<{ providers: any[]; models: any[]
   })
   if (orEnabled) models.push(...OR_CURATED)
 
+  // TASK-5733: izbornik „Model sustava" čita samo ovaj popis — bez ovoga geminicli/google/kimicli
+  // (prijava ili ključ) nikad nisu bili ponuđeni za cijeli sustav.
+  for (const m of getEffectiveModels()) {
+    if (['geminicli', 'google', 'kimicli'].includes(m.provider) && !models.some((x: any) => x.spec === m.spec)) models.push(m)
+  }
   return { providers, models }
 }
 
@@ -13063,6 +13063,7 @@ async function handleSetModelSvi(req: Request): Promise<Response> {
     const kada = new Date().toISOString()
     try {
       saveModelConfig(MODEL_CONFIG_PATH, mc => {
+        if (ukljuciGoogleZaCilj(mc, raw, kljucPrisutanUDatoteci(datotekaTajni(), 'GEMINI_API_KEY'))) console.log('[MODEL-SVI] davatelj google uključen (cilj google:*, GEMINI_API_KEY postoji)')
         const n = prebaciSve(mc, raw, { tko, kada, agenti })
         promijenjeno = n.promijenjeno
         for (const k of Object.keys(mc)) delete mc[k]

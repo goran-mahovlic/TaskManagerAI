@@ -15,6 +15,9 @@
 #   --komplet           komplet izvornog sustava (RegocDaemon…) iz mape regoc-system/ paketa, u mapu
 #                       iz regoc-system/KOMPLET.json (TM_KOMPLET_DIR); v. regoc-system/README.md (P11, TASK-5705)
 #   --claude            instaliraj Claude CLI i bez --komplet
+#   --gemini-cli        Gemini CLI bez Homebrewa: Node LTS u ~/.local/node (SHA256), npm -g
+#                       @google/gemini-cli, poveznice u ~/.local/bin, ~/.gemini/settings.json
+#                       (auth API ključem); v. scripts/instalacija/gemini-cli.sh (TASK-5733)
 #   --suho              ništa ne piše ni ne instalira; ispisuje korake i tablicu preduvjeta
 #   --bez-servisa       bez systemd/launchd usluga (provjera ploče ide privremenim procesom)
 #   --bez-baze          ne diraj bazu zadataka
@@ -45,7 +48,7 @@ PG0_VERZIJA="0.15.2"
 PYTHON_BAZE="3.13"
 
 ARGUMENTI="$*"
-CVOR=""; BIND=""; PROFIL=""; BAZE=0; KOMPLET=0; CLAUDE=0; SUHO=0
+CVOR=""; BIND=""; PROFIL=""; BAZE=0; KOMPLET=0; CLAUDE=0; GEMINI_CLI=0; SUHO=0
 BEZ_SERVISA=0; BEZ_BAZE=0; POSUDI=0; PRESKOCI=","; LOG_DIR_ARG=""; DOPUSTI_PRLJAVO=0
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -55,6 +58,7 @@ while [ $# -gt 0 ]; do
     --baze)            BAZE=1 ;;
     --komplet)         KOMPLET=1 ;;
     --claude)          CLAUDE=1 ;;
+    --gemini-cli)      GEMINI_CLI=1 ;;
     --suho)            SUHO=1 ;;
     --bez-servisa)     BEZ_SERVISA=1 ;;
     --bez-baze)        BEZ_BAZE=1 ;;
@@ -62,7 +66,7 @@ while [ $# -gt 0 ]; do
     --preskoci)        PRESKOCI="$PRESKOCI${2:-},"; shift ;;
     --log-dir)         LOG_DIR_ARG="${2:-}"; shift ;;
     --dopusti-prljavo) DOPUSTI_PRLJAVO=1 ;;
-    -h|--help)         sed -n '2,31p' "$0"; exit 0 ;;
+    -h|--help)         sed -n '2,34p' "$0"; exit 0 ;;
     *) echo "nepoznat argument: $1 (pomoć: bash scripts/install.sh --help)" >&2; exit 2 ;;
   esac
   shift
@@ -614,6 +618,26 @@ k_claude() {
   echo "    $(claude --version 2>/dev/null | head -1) — prijava je zaseban korak (Config → Prijava)"
 }
 
+# TASK-5733: Gemini CLI za čvor koji koristi samo GEMINI_API_KEY (bez Claudea). Posao radi
+# scripts/instalacija/gemini-cli.sh (mjeri prije pisanja); ovdje se čitaju njegove oznake.
+k_gemini_cli() {
+  if [ "$GEMINI_CLI" = 0 ]; then razlog "nije traženo (--gemini-cli)"; return 0; fi
+  naredba "bash scripts/instalacija/gemini-cli.sh$(suho && echo ' --suho')"
+  local izlaz kod r a b
+  izlaz="$(bash "$PAKET/scripts/instalacija/gemini-cli.sh" $(suho && echo --suho) 2>&1)"; kod=$?
+  while IFS= read -r r; do
+    case "$r" in
+      PROMJENA) promjena ;;
+      MANIFEST\ *) r="${r#MANIFEST }"; a="${r% *}"; b="${r##* }"; u_manifest "$a" "$b" ;;
+      UPOZORENJE\ *) upozori "${r#UPOZORENJE }"; echo "    ⚠ ${r#UPOZORENJE }" ;;
+      *) echo "$r" ;;
+    esac
+  done <<< "$izlaz"
+  [ "$kod" = 0 ] || return "$kod"
+  [ "$KORAK_PROMJENA" = 1 ] || razlog "Gemini CLI na mjestu ($HOME/.local/node/bin/gemini)"
+  echo "    ključ: GEMINI_API_KEY kroz Config → Tajne (ili bun scripts/tajna.ts postavi GEMINI_API_KEY)"
+}
+
 # ── komplet izvornog sustava (plan P11; TASK-5705: mapa regoc-system/ u paketu, D3 = B) ───────
 sha256_dat() { (shasum -a 256 "$1" 2>/dev/null || sha256sum "$1") | cut -c1-64; }
 # Provjera stabla prema njegovom MANIFEST.sha256: svaka navedena datoteka postoji i ima taj sha256,
@@ -1054,6 +1078,7 @@ korak K2.10-rjecnici   "rječnici sučelja"                        k_rjecnici 5
 korak K2.11-git-kuke   "git kuke (core.hooksPath)"               k_git_kuke 5
 korak K2.12-macos-omotaci "macOS: setsid i timeout u ~/.local/bin" k_macos_omotaci 5
 korak K2.13-claude     "Claude CLI"                              k_claude 4
+korak K2.13b-gemini-cli "Gemini CLI (~/.local/node, bez Homebrewa)" k_gemini_cli 5
 korak K2.14-komplet    "komplet izvornog sustava (regoc-system/)" k_komplet 5
 korak K2.15-baze-uv    "uv (Python za lokalne baze)"             k_baze_uv 4
 korak K2.16-baze-python "Python $PYTHON_BAZE"                    k_baze_python 4

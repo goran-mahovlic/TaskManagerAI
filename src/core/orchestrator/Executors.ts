@@ -161,7 +161,8 @@ export class CliExecutor implements Executor {
     try {
       const j = JSON.parse(izlaz)
       if (j && typeof j === 'object') {
-        resultText = String(j.result ?? j.text ?? resultText)
+        // `response` + `stats.models.<m>.tokens` = `gemini --output-format json` (TASK-5733).
+        resultText = String(j.result ?? j.text ?? j.response ?? resultText)
         sessionId = j.session_id || j.sessionId
         numTurns = typeof j.num_turns === 'number' ? j.num_turns : undefined
         if (j.usage) {
@@ -170,7 +171,14 @@ export class CliExecutor implements Executor {
             outputTokens: j.usage.output_tokens,
             costUsd: j.total_cost_usd ?? j.cost_usd,
           }
+        } else if (j.stats?.models && typeof j.stats.models === 'object') {
+          const t = Object.values(j.stats.models as Record<string, any>).map(m => m?.tokens || {})
+          usage = {
+            inputTokens: t.reduce((a, x) => a + (Number(x.prompt) || 0), 0),
+            outputTokens: t.reduce((a, x) => a + (Number(x.candidates) || 0), 0),
+          }
         }
+        if (j.error?.message && exitCode !== 0 && !greska.trim()) greska = String(j.error.message)
       }
     } catch { /* nije JSON — vrijedi sirovi tekst */ }
 

@@ -20,6 +20,7 @@ import type { Kanal, Razgovor, UlaznaPoruka } from './Kanal'
 import type { RazgovorPostavke } from './RazgovorPostavke'
 import { jeDopusten, razlogZaDrugog, trebaOdgovoriti } from './Filtar'
 import { argumentiOvlasti, okolinaRazgovora, radniDirRazgovora } from './Ovlasti'
+import { argumentiGeminija } from './Izvrsitelj'
 import { neutralizirajIme, neutralizirajTekst, zatamniTajne } from './Ciscenje'
 import { autoMemorijaCC, sastaviIdentitet, type OpisAgenta } from './Identitet'
 import { dohvatiMemoriju, oznakaMemorije, type MemorijaRezultat } from './Memorija'
@@ -516,7 +517,22 @@ export function stvoriRazgovor(d: RazgovorOvisnosti): RazgovorJezgra {
           rag: d.ragUkljucen?.() ?? null, autoMemorija: autoMemorijaCC(d.home, radniDir),
         },
       })
-    const zahtjev = (resume?: string, rez?: { model?: string; env: Record<string, string> }): ExecRequest => ({
+    // TASK-5733: Gemini (`geminicli:*`/`google:*`) vozi `gemini` CLI — bez claude zastavica i
+    // nastavka claude sesije; identitet ide ispred prompta jer gemini nema dodatni sistemski prompt.
+    const zahtjevGeminija = (): ExecRequest => ({
+      agentId: 'razgovor',
+      model: cilj.model,
+      prompt: `${identitet()}\n\n---\n\n${prompt}`,
+      cwd: radniDir,
+      timeoutMs: s.rokSek * 1000,
+      extra: {
+        izvrsitelj: 'gemini',
+        args: argumentiGeminija(ovlasti),
+        env: okolinaPoteza,
+        ...(kontrola ? { signal: kontrola.signal } : {}),
+      },
+    })
+    const zahtjev = (resume?: string, rez?: { model?: string; env: Record<string, string> }): ExecRequest => !rez && cilj.izvrsitelj === 'gemini' ? zahtjevGeminija() : ({
       agentId: 'razgovor',
       model: rez ? rez.model : cilj.model,
       prompt,

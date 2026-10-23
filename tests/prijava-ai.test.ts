@@ -76,3 +76,13 @@ describe('čarobnjak scripts/prijava-ai.ts', () => {
     expect(r.stderr.toString()).toContain('openrouter')
   })
 })
+
+describe('TASK-5733: čarobnjak nakon Gemini ključa nudi install.sh --gemini-cli', () => {
+  test('geminicli/google bez CLI-ja → uputa; s CLI-jem ili drugi servis → ništa', async () => {
+    const { ponudaGeminiCli } = await import('../scripts/prijava-ai')
+    expect(ponudaGeminiCli('google', false, '/paket')).toContain('bash /paket/scripts/install.sh --gemini-cli')
+    expect(ponudaGeminiCli('geminicli', false, '/paket')).toContain('--gemini-cli')
+    expect(ponudaGeminiCli('geminicli', true, '/paket')).toBeNull()
+    expect(ponudaGeminiCli('openrouter', false, '/paket')).toBeNull()
+  })
+})

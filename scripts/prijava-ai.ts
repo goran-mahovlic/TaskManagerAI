@@ -108,6 +108,27 @@ function upute(d: StavkaPopisa): void {
   if (d.napomena) console.log(`  napomena: ${d.napomena}`)
 }
 
+/**
+ * TASK-5733: Gemini ključ bez `gemini` CLI-ja daje samo dežurnog (tekst, bez alata) — razgovor
+ * bota i agenti trebaju CLI. Vraća uputu ili null kad nije potrebna.
+ */
+export function ponudaGeminiCli(id: string, imaCli: boolean, paket = PAKET): string | null {
+  if (imaCli || (id !== 'geminicli' && id !== 'google')) return null
+  return `  Razgovor bota i agenti s Gemini ključem trebaju gemini CLI: bash ${paket}/scripts/install.sh --gemini-cli` +
+    ' (Node u ~/.local/node, bez Homebrewa)'
+}
+
+/** Nakon upisa Gemini ključa: uputa za gemini CLI i, u terminalu, ponuda da se odmah instalira. */
+function nakonGeminiKljuca(id: string, kod: number): number {
+  const uputa = kod === 0 ? ponudaGeminiCli(id, !!naPathu('gemini')) : null
+  if (!uputa) return kod
+  console.log(`\n${uputa}`)
+  if (!process.stdin.isTTY) return kod
+  const odg = (prompt('  Instalirati gemini CLI sada? [d/N]') || '').trim().toLowerCase()
+  if (odg !== 'd' && odg !== 'da') return kod
+  return pokreni(['bash', join(PAKET, 'scripts', 'instalacija', 'gemini-cli.sh')]) === 0 ? kod : 1
+}
+
 function pokreni(argv: string[]): number {
   return Bun.spawnSync(argv, { stdio: ['inherit', 'inherit', 'inherit'], env: process.env }).exitCode ?? 1
 }
@@ -129,12 +150,12 @@ function prijavi(d: StavkaPopisa): number {
   }
   if (d.nacin === 'oauth-cli') {
     const cli = naPathu(d.cli!)
-    if (!cli) { console.log(`  ${d.cli} nije instaliran (${d.instalacija}); ili ključ kroz Config → Tajne`); return d.tajne.length ? tajna(d.tajne[0]) : 1 }
+    if (!cli) { console.log(`  ${d.cli} nije instaliran (${d.instalacija}); ili ključ kroz Config → Tajne`); return nakonGeminiKljuca(d.id, d.tajne.length ? tajna(d.tajne[0]) : 1) }
     return pokreni(d.id === 'kimicli' ? [cli, 'login'] : [cli])
   }
   if (!d.tajne.length) { console.log('  upiši ime ključa: bun scripts/tajna.ts podesi --dodatno IME_API_KEY, pa tajna.ts postavi IME_API_KEY'); return 1 }
   console.log(`\n  ▶ ${d.tajne[0]} (vrijednost se ne ispisuje):`)
-  return tajna(d.tajne[0])
+  return nakonGeminiKljuca(d.id, tajna(d.tajne[0]))
 }
 
 async function izbornik(): Promise<number> {
