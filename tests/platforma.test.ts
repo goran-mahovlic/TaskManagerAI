@@ -191,8 +191,11 @@ describe('platforma — lažni darwin (BSD alati)', () => {
   test('libc = libSystem (flock(2) postoji na darwinu)', () => {
     expect(P.libc({ os: 'darwin' })).toBe('/usr/lib/libSystem.B.dylib')
   })
-  test('PTY: BSD script bez -f/-e/-c, naredba kao popis', () => {
-    expect(P.ptyNaredba('claude setup-token', { os: 'darwin' })).toEqual(['script', '-q', '/dev/null', '/bin/sh', '-c', 'claude setup-token'])
+  test('PTY: BSD script bez -f/-e/-c; stdin kroz pravu cijev (cat |), naredba kao $0 bez navodnika', () => {
+    // TASK-5738: Bun na macOS-u daje stdin kao socket → BSD script „tcgetattr/ioctl: Operation not
+    // supported on socket" i izađe prije naredbe (Config → Prijava na Macu nije radila ni za jedan CLI).
+    expect(P.ptyNaredba('claude setup-token', { os: 'darwin' })).toEqual(
+      ['/bin/sh', '-c', 'cat | { script -q /dev/null /bin/sh -c "$0"; r=$?; pkill -P $$ -x cat; exit $r; }', 'claude setup-token'])
   })
   test('usluga kroz launchctl print system/hr.regoc.<ime>', () => {
     const { o, pozivi } = lazniDarwin({ 'launchctl print system/hr.regoc.voice': 'hr.regoc.voice = {\n\tstate = running\n\tpid = 77\n}' })

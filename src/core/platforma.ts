@@ -18,7 +18,7 @@
  *   pidovi()            readdir procfs        | ps -A -o pid=
  *   pidNaVratima(v)     ss -ltnp (lsof rezerva) | lsof -nP -iTCP:<v> -sTCP:LISTEN -t
  *   libc()              libc.so.6             | /usr/lib/libSystem.B.dylib
- *   ptyNaredba(cmd)     script -qfec cmd /dev/null | script -q /dev/null /bin/sh -c cmd
+ *   ptyNaredba(cmd)     script -qfec cmd /dev/null | cat | script -q /dev/null /bin/sh -c cmd (stdin-cijev)
  *   odvojeno(argv)      spawn detached (setsid(2) na oba OS-a), bez naredbe `setsid`
  *   rokNaredba(s, argv) timeout | gtimeout | perl alarm (izlaz 124 kao GNU)
  *   usluga(ime)         systemctl --user show ActiveState | launchctl print system/hr.regoc.<ime>
@@ -338,8 +338,12 @@ export function libc(o?: Okolina): string {
 /** argv koji pokreće `cmd` (niz za ljusku) unutar PTY-ja, bez node-pty. */
 export function ptyNaredba(cmd: string, o?: Okolina): string[] {
   if (jeLinux(o)) return ['script', '-qfec', cmd, '/dev/null']
-  // BSD script: script [-q] [datoteka [naredba …]] — nema -f/-e/-c
-  return ['script', '-q', '/dev/null', '/bin/sh', '-c', cmd]
+  // BSD script: script [-q] [datoteka [naredba …]] — nema -f/-e/-c. Bun na macOS-u daje stdin
+  // kao socket, a BSD script tada pada („tcgetattr/ioctl: Operation not supported on socket") prije
+  // naredbe — `cat |` mu daje pravu cijev (TASK-5738). Nakon kraja naredbe `cat` se gasi, inače
+  // ljuska čeka cijeli cjevovod dok se stdin ne zatvori. Naredba ide kao $0, bez novog navođenja.
+  // Mjereno na macOS-u 23.10.2026.: unos stiže, izlaz 0, bez zaostalog `cat`.
+  return ['/bin/sh', '-c', 'cat | { script -q /dev/null /bin/sh -c "$0"; r=$?; pkill -P $$ -x cat; exit $r; }', cmd]
 }
 
 export interface OdvojenoOpcije {
