@@ -1,7 +1,7 @@
 /**
  * TASK-5730 — dežurni preko Google Gemini API-ja s ključem `GEMINI_API_KEY`.
  *
- * Kvar (macmini-pv, 23.10.2026.): Martina je na stranici Tajne upisala GEMINI_API_KEY. Model
+ * Kvar (čvor na macOS-u, 23.10.2026.): vlasnik je na stranici Tajne upisao GEMINI_API_KEY. Model
  * davatelja `google` nosi `apiKey: "env:GEMINI_API_KEY|GOOGLE_API_KEY"`, ali:
  *   1. `davateljiDezurnog` je cijeli niz s `|` tražio kao JEDNO ime → google nikad „spreman";
  *   2. most `google` je ključ čitao samo pod imenom GOOGLE_API_KEY.

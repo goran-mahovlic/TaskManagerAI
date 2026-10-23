@@ -1,7 +1,7 @@
 /**
  * TASK-5730 — ploča nudi Gemini CLI model koji Google još poslužuje.
  *
- * macmini-pv, 23.10.2026.: s ključem GEMINI_API_KEY ploča je nudila samo geminicli:gemini-2.5-*,
+ * Čvor na macOS-u, 23.10.2026.: s ključem GEMINI_API_KEY ploča je nudila samo geminicli:gemini-2.5-*,
  * a Google za nove korisnike na gemini-2.5-flash vraća 404 („no longer available to new users …
  * use models/gemini-3.8-flash"). Model sustava zato mora moći biti geminicli:gemini-3.8-flash.
  */
