@@ -50,13 +50,14 @@ export function nadjiGemini(env: Record<string, string | undefined> = process.en
 }
 
 /**
- * Ovlasti razgovora → način odobravanja Gemini CLI-ja. Bez terminala `default` odbija alate
- * koji traže potvrdu (ljuska, pisanje), pa `citanje` ostaje čitanje radne mape (gemini čita
- * samo unutar radne mape). `rad` smije uređivati, `puno` sve (`yolo`).
+ * Ovlasti razgovora → način odobravanja Gemini CLI-ja: UVIJEK `default` (bez terminala gemini
+ * tada izostavlja alate koji traže potvrdu — ljusku i pisanje — a čita samo unutar radne mape).
+ * Claude put na `rad`/`puno` ima popis zabrana (tajne) i stražu ljuske (Ovlasti.ts); gemini to
+ * nema, a pisanje u radnu mapu (`.gemini/settings.json` s MCP naredbom) bi idući potez pretvorilo
+ * u izvršavanje (sigurnosni pregled TASK-5733). Dok gemini nema istu izolaciju, ostaje na čitanju.
  */
-export function argumentiGeminija(razina: Ovlasti): string[] {
-  const nacin = razina === 'puno' ? 'yolo' : razina === 'rad' ? 'auto_edit' : 'default'
-  return ['--approval-mode', nacin]
+export function argumentiGeminija(_razina: Ovlasti): string[] {
+  return ['--approval-mode', 'default']
 }
 
 function geminiCfg(bin: string): ExecutorConfigCli {
@@ -106,6 +107,11 @@ export function izvrsiteljRazgovora(o: { bin?: string; geminiBin?: string } = {}
     run(req: ExecRequest): Promise<ExecResult> {
       const extra = req.extra || {}
       if (extra.izvrsitelj !== 'gemini') return claude.run(req)
+      // Projektne postavke Geminija u radnoj mapi (MCP poslužitelji, alati) se ne učitavaju:
+      // mapa je zajednička s claude potezima koji na `rad` smiju pisati u nju.
+      if (req.cwd && existsSync(join(req.cwd, '.gemini'))) {
+        return Promise.resolve({ exitCode: 1, resultText: '', greska: `radna mapa ${req.cwd} sadrži .gemini/ (projektne postavke Geminija) — gemini se ne pokreće dok se ne makne` })
+      }
       const env = (extra.env && typeof extra.env === 'object' ? extra.env : process.env) as Record<string, string>
       const bin = o.geminiBin || nadjiGemini({ ...process.env, PATH: env.PATH, HOME: env.HOME || process.env.HOME })
       const ex = new CliExecutor('razgovor-gemini', geminiCfg(bin))

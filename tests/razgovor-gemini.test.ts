@@ -9,7 +9,7 @@
  * Autorica: Jelena (Engineer), TASK-5733.
  */
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 
@@ -18,6 +18,7 @@ import { argumentiGeminija, izvrsiteljRazgovora, nadjiGemini } from '../src/razg
 import { stvoriRazgovor } from '../src/razgovor/Razgovor'
 import { RAZGOVOR_ZADANO, type RazgovorPostavke } from '../src/razgovor/RazgovorPostavke'
 import type { Kanal, UlaznaPoruka } from '../src/razgovor/Kanal'
+import { OPIS_OVLASTI } from '../src/razgovor/Ovlasti'
 
 let mapa: string
 let bin: string
@@ -64,10 +65,10 @@ describe('ciljRazgovora — geminicli/google idu kroz gemini CLI', () => {
 })
 
 describe('argumentiGeminija — ovlasti razgovora', () => {
-  test('citanje → default (bez ljuske i pisanja), rad → auto_edit, puno → yolo', () => {
-    expect(argumentiGeminija('citanje')).toEqual(['--approval-mode', 'default'])
-    expect(argumentiGeminija('rad')).toEqual(['--approval-mode', 'auto_edit'])
-    expect(argumentiGeminija('puno')).toEqual(['--approval-mode', 'yolo'])
+  // Sigurnosni pregled TASK-5733: gemini nema popis zabrana (tajne) ni stražu ljuske kao claude
+  // put, a pisanje u radnu mapu (.gemini/settings.json) bi idući potez pretvorilo u izvršavanje.
+  test('svaka razina → default (bez ljuske i pisanja); rad/puno se NE prevode u auto_edit/yolo', () => {
+    for (const r of ['citanje', 'rad', 'puno'] as const) expect(argumentiGeminija(r)).toEqual(['--approval-mode', 'default'])
   })
 })
 
@@ -108,6 +109,18 @@ describe('izvrsiteljRazgovora — extra.izvrsitelj=gemini', () => {
     expect(okolinaPoziva('TRUST')).toBe('true')
   })
 
+  test('radna mapa s .gemini/ (projektne postavke, MCP) → odbijeno, gemini se ne pokreće', async () => {
+    const radni = join(mapa, 'radni')
+    mkdirSync(join(radni, '.gemini'), { recursive: true })
+    const r = await izvrsiteljRazgovora({ bin: '/nema/claude' }).run({
+      agentId: 'razgovor', model: 'gemini-3.8-flash', prompt: 'x', cwd: radni,
+      extra: { izvrsitelj: 'gemini', env: { PATH: `${bin}:/usr/bin:/bin`, HOME: mapa } },
+    })
+    expect(r.exitCode).not.toBe(0)
+    expect(r.greska).toMatch(/\.gemini/)
+    expect(existsSync(zapis)).toBe(false)
+  })
+
   test('bez extra.izvrsitelj ostaje claude (nepostojeći bin → 127, gemini se ne zove)', async () => {
     const r = await izvrsiteljRazgovora({ bin: join(mapa, 'nema-claude') }).run({ agentId: 'razgovor', prompt: 'x' })
     expect(r.exitCode).toBe(127)
@@ -132,7 +145,7 @@ const por = (): UlaznaPoruka => ({
 
 describe('razgovor s modelom geminicli — od poruke do odgovora', () => {
   test('odgovor stiže iz geminija (ne preko dežurnog), identitet je ispred prompta, bez claude zastavica i OAuth tokena', async () => {
-    const postavke: RazgovorPostavke = { ...RAZGOVOR_ZADANO, dopusteniKorisnici: [], ukljucen: true, burstMs: 0, radniDir: join(mapa, 'radni'), model: 'geminicli:gemini-3.8-flash' }
+    const postavke: RazgovorPostavke = { ...RAZGOVOR_ZADANO, dopusteniKorisnici: ['42'], ukljucen: true, burstMs: 0, radniDir: join(mapa, 'radni'), model: 'geminicli:gemini-3.8-flash', ovlasti: 'puno' }
     const kanal = new Kanalcic()
     let kvotaPitana = false
     const r = stvoriRazgovor({
@@ -159,6 +172,9 @@ describe('razgovor s modelom geminicli — od poruke do odgovora', () => {
     const prompt = a[a.indexOf('-p') + 1]!
     expect(prompt).toContain('koliko je sati?')
     expect(prompt).toContain('proba') // identitet (instalacija) ide ispred prompta
+    // Postavka je `puno`, ali gemini potez ide na `citanje` — i model to zna iz identiteta.
+    expect(prompt).toContain(OPIS_OVLASTI.citanje.slice(0, 40))
+    expect(prompt).not.toContain(OPIS_OVLASTI.puno.slice(0, 40))
     expect(a).not.toContain('--allowedTools')
     expect(a).not.toContain('--resume')
     expect(a.slice(a.indexOf('--approval-mode'), a.indexOf('--approval-mode') + 2)).toEqual(['--approval-mode', 'default'])

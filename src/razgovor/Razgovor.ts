@@ -478,6 +478,12 @@ export function stvoriRazgovor(d: RazgovorOvisnosti): RazgovorJezgra {
     const smije = (x: { p: UlaznaPoruka }) => x.p.izvor === 'bot' ? botOvlasti === 'rad' && izvornikDopusten(x.p) : jeDopusten(x.p, s.dopusteniKorisnici)
     let ovlasti: RazgovorPostavke['ovlasti'] = s.ovlasti !== 'citanje' && stavke.every(smije) && procitano.every(smije) ? s.ovlasti : 'citanje'
     if (botOvlasti && ovlasti !== 'citanje') ovlasti = botOvlasti
+    const cilj = ciljPoteza(s)
+    // TASK-5733: gemini potez je samo čitanje (Izvrsitelj.ts, argumentiGeminija) — i identitet to kaže.
+    if (cilj.izvrsitelj === 'gemini' && ovlasti !== 'citanje') {
+      log(`[razgovor] ${c.kljuc}: model ${specPoteza(s)} (gemini CLI) — ovlasti ${ovlasti} → citanje`)
+      ovlasti = 'citanje'
+    }
     // TASK-5509: nalog čovjeka za slanje pošte preko ploče — samo ljudski potez na `puno` (svi
     // pošiljatelji dopušteni, nijedna bot-poruka); vezan uz chat i pošiljatelja, rok = rok poteza.
     const nalog = ovlasti === 'puno' && !botPotez && d.nalozi
@@ -493,7 +499,6 @@ export function stvoriRazgovor(d: RazgovorOvisnosti): RazgovorJezgra {
     const kontrola = botPotez ? new AbortController() : null
     c.botKontrola = kontrola
     const oznaka = `${p.kanal}:${p.chatId}`
-    const cilj = ciljPoteza(s)
     if (cilj.greska) log(`[razgovor] ${c.kljuc}: model ${specPoteza(s)} — ${cilj.greska}`)
     const okolinaPoteza: Record<string, string | undefined> = { ...okolinaRazgovora(d.env, oznaka), ...cilj.env, ...(nalog ? { [NALOG_ENV]: nalog } : {}) }
     // Preusmjereni poziv (ANTHROPIC_BASE_URL) ne smije nositi prijavu pretplate.
