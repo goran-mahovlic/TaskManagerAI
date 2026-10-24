@@ -169,6 +169,12 @@ function naredba(argv: string[]): string | null {
   } catch { return null }
 }
 
+/** Sati od zadnjeg dokaza dotoka znanja: upis ILI prolaz u kojem je banka usklađena bez izmjene (TASK-5663). */
+export function starostUpisaSati(j: { zadnjiUpis?: string; zadnjeUskladjeno?: string }, sad: number): number | null {
+  const t = [j.zadnjiUpis, j.zadnjeUskladjeno].map(v => (v ? Date.parse(v) : NaN)).filter(n => !Number.isNaN(n))
+  return t.length ? Math.round((sad - Math.max(...t)) / 36e5 * 10) / 10 : null
+}
+
 /**
  * Stanje usluge — ZRCALO `platforma.usluga` iz src/core/platforma.ts (ova datoteka ne smije
  * uvoziti paket, vidi zaglavlje). Linux: sirovi izlaz `is-active` (active/inactive/failed…),
@@ -419,7 +425,7 @@ export async function prikupiStanje(spec: SpecStanja, home = process.env.HOME ||
         upis.banka = String(j.banka || '')
         upis.sustav = ids.filter(i => i.startsWith('sustav/')).length
         upis.cvor = ids.filter(i => i.startsWith('cvor/')).length
-        upis.starostSati = j.zadnjiUpis ? Math.round((sad - Date.parse(j.zadnjiUpis)) / 36e5 * 10) / 10 : null
+        upis.starostSati = starostUpisaSati(j, sad)
       } catch { /* nema */ }
     }
     let korpusPaketa = 0

@@ -253,7 +253,7 @@ async function sastavi(o: Okolina, mem: { banka: string }, mog: Record<string, b
 
 // ─── upis u banku (§5.3) ─────────────────────────────────────────────────────
 
-interface StanjeUpisa { banka: string; dokumenti: Record<string, string>; zadnjiUpis?: string }
+interface StanjeUpisa { banka: string; dokumenti: Record<string, string>; zadnjiUpis?: string; zadnjeUskladjeno?: string }
 
 function citajStanje(o: Okolina, banka: string): StanjeUpisa {
   try {
@@ -325,6 +325,14 @@ async function upisi(o: Okolina, mem: { url: string; banka: string }, korpus: Ko
       st.zadnjiUpis = new Date().toISOString()
       spremiStanje(o, st)
       ispis(`  OK  ${id} ${s}s`)
+    }
+    // Prolaz bez greške = banka usklađena i kad nije bilo što upisati; bez upisa banka se pita
+    // je li dostupna, inače mirni čvor nakon maxStarostSati izgleda kao da mu dotok ne radi.
+    if (!neuspjelo && zaUpis.length === plan.novi.length + plan.promijenjeni.length) {
+      const dostupna = zaUpis.length || plan.nestali.length
+        || await fetch(`${api}/documents?limit=1`, { signal: AbortSignal.timeout(15_000) }).then(r => r.ok, () => false)
+      if (dostupna) { st.zadnjeUskladjeno = new Date().toISOString(); spremiStanje(o, st) }
+      else ispis('  banka ne odgovara — usklađenost nije potvrđena')
     }
   } finally { pusti() }
   return neuspjelo ? 1 : 0
