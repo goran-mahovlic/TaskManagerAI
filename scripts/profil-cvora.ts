@@ -24,7 +24,7 @@ import { basename, dirname, isAbsolute, join, resolve } from 'path'
 import { z } from 'zod'
 import { RAZGOVOR_KLJUCEVI, RAZGOVOR_ZADANO } from '../src/razgovor/RazgovorPostavke'
 import { launchdOznaka, launchdPlist, naredbeUkljuciTimer, uputaRestarta, type KorakNaredbe, type Okolina } from '../src/core/platforma'
-import { citajEnv, prikupiStanje, putanja, type SpecStanja, type StanjeCvora } from './profil-cvora-stanje'
+import { citajEnv, okolinaCvora, prikupiStanje, putanja, type SpecStanja, type StanjeCvora } from './profil-cvora-stanje'
 
 export const KORIJEN = join(import.meta.dir, '..')
 export const KOD = { OK: 0, RAZLIKA: 1, LJUDI: 2, PREDUVJET: 3, ODBIJENO: 4 } as const
@@ -514,7 +514,7 @@ export function usporedi(k: Kontekst): Stavka[] {
       else dodaj({ modul: 'claude', kljuc: `kuka ${basename(kuka.datoteka)}`, vrsta: 'OK' })
     }
     dodaj({ modul: 'claude', kljuc: 'claude-prijava', vrsta: stanje.claudePrijava ? 'TAJNA' : 'ČOVJEK',
-      poruka: stanje.claudePrijava ? 'postoji' : 'nema — `claude auth login` (PROFIL_CVORA_TAJNE.md #4)' })
+      poruka: stanje.claudePrijava ? 'postoji' : 'nema — ploča: Config → Prijava → Claude (PROFIL_CVORA_TAJNE.md #4)' })
   }
 
   // upravitelj — ~/CLAUDE.md iz predloška; postojeću datoteku alat ne prepisuje.
@@ -990,7 +990,7 @@ export async function primijeni(stavke: Stavka[], k: Kontekst, ploca: Ploca, sat
 
   const env = po('env') as Extract<Primjena, { vrsta: 'env' }>[]
   if (env.length) {
-    const dat = join(k.stanje.paket, 'config', 'postavke.env')
+    const dat = k.stanje.postavkeDatoteka || join(k.stanje.paket, 'config', 'postavke.env')
     kopija(dat, mapaKopija, kopirano)
     const redovi = existsSync(dat) ? readFileSync(dat, 'utf-8').split('\n') : []
     for (const e of env) {
@@ -1310,7 +1310,7 @@ export async function glavna(argv: string[], d: Partial<Ovisnosti> = {}): Promis
     // Instanca: --instanca ili $TM_HOME/config/profil.instanca.env (TM_HOME iz postavke.env čvora).
     let instPut = o.instanca
     if (!instPut && !o.ssh) {
-      const env = citajEnv(join(paket!, 'config', 'postavke.env'))
+      const env = okolinaCvora(paket!, ovis.home).env
       instPut = join(env.TM_HOME || join(ovis.home, '.taskmanager'), 'config', 'profil.instanca.env')
     }
     let inst: Record<string, string> | null = null

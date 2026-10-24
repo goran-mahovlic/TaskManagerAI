@@ -72,6 +72,8 @@ export interface StanjeCvora {
   home: string
   paket: string
   tmHome: string
+  /** Kamo `primijeni` dopisuje postavke (okolinaCvora); stariji sakupljač je nema → uz paket. */
+  postavkeDatoteka?: string
   env: Record<string, string>
   envTajne: Record<string, boolean>
   envNesmije: Record<string, boolean>
@@ -182,11 +184,29 @@ export function datotekaTimera(unit: string, home: string, os = process.platform
   return os === 'darwin' ? `/Library/LaunchDaemons/${launchdOznakaZrcalo(unit)}.plist` : join(home, '.config', 'systemd', 'user', `${unit}.timer`)
 }
 
+/**
+ * Okolina čvora ISTIM redom kao usluga (scripts/s-okolinom.sh, TASK-5663): instalacija po README-u
+ * drži postavke u $TM_HOME/config (instalacija.env, pa postavke.env s prednošću); stari raspored
+ * (node-A) ih drži uz paket. `datoteka` = kamo `primijeni` dopisuje postavke.
+ */
+export function okolinaCvora(paket: string, home: string): { env: Record<string, string>; datoteka: string } {
+  const cfg = join(home, '.taskmanager', 'config')
+  const inst = join(cfg, 'instalacija.env'), post = join(cfg, 'postavke.env')
+  if (existsSync(inst) || existsSync(post)) return { env: { ...citajEnv(inst), ...citajEnv(post) }, datoteka: post }
+  const uzPaket = join(paket, 'config', 'postavke.env')
+  return { env: citajEnv(uzPaket), datoteka: uzPaket }
+}
+
+/** Claude prijava: datoteka CLI-ja (Linux) ili token pretplate u spremištu (macOS, TASK-5754). */
+export function claudePrijavljen(home: string, cred: Record<string, string>): boolean {
+  return neprazno(join(home, '.claude', '.credentials.json')) || !!cred.CLAUDE_CODE_OAUTH_TOKEN
+}
+
 export async function prikupiStanje(spec: SpecStanja, home = process.env.HOME || homedir()): Promise<StanjeCvora> {
   const v: Record<string, string> = { ...(spec.varijable || {}), HOME: home }
   const paket = putanja(spec.paket || '${HOME}/TaskManagerAI', v)
   v.TM_PAKET = paket
-  const sveEnv = citajEnv(join(paket, 'config', 'postavke.env'))
+  const { env: sveEnv, datoteka: postavkeDatoteka } = okolinaCvora(paket, home)
   const tmHome = sveEnv.TM_HOME || join(home, '.taskmanager')
 
   const env: Record<string, string> = {}
@@ -400,7 +420,8 @@ export async function prikupiStanje(spec: SpecStanja, home = process.env.HOME ||
     home, paket, tmHome, env, envTajne, envNesmije,
     punoDopusteno: sveEnv.TM_RAZGOVOR_PUNO === '1',
     telegram, telegramTajne, eposta, baza, settings, capguard, settingsJson, kuke,
-    claudePrijava: neprazno(join(home, '.claude', '.credentials.json')),
+    claudePrijava: claudePrijavljen(home, cred),
+    postavkeDatoteka,
     upravitelj, grepNema, znacajke, apiKljucevi,
     git: naredba(['git', '-C', paket, 'rev-parse', '--short', 'HEAD']),
     sustav, znacajkeCvor, izvorni, konzola,
