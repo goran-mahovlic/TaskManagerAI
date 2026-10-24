@@ -14,8 +14,8 @@
     "note": "paket"
   },
   "autoResume": {
-    "enabled": true,
-    "note": "paket"
+    "enabled": false,
+    "note": "van: off na glavnom od 22.10.2026. (TASK-3085)"
   },
   "autoResumeLive": {
     "enabled": false,

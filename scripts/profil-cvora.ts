@@ -18,7 +18,7 @@
  * Izlazni kodovi: 0 sve OK · 1 razlike koje alat zna primijeniti · 2 nedostaju tajne ili ljudske
  * stavke · 3 preduvjet pao (kod bez značajke, profil/instanca neispravni) · 4 alat odbio.
  */
-import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'fs'
+import { chmodSync, copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'fs'
 import { hostname, userInfo } from 'os'
 import { basename, dirname, isAbsolute, join, resolve } from 'path'
 import { z } from 'zod'
@@ -237,6 +237,8 @@ export type Primjena =
   | { vrsta: 'dropin'; unit: string; datoteka: string; sadrzaj: string }
   | { vrsta: 'naredba'; argv: string[] }
   | { vrsta: 'timer'; unit: string; service: string; timer: string; plist?: string }
+  /** macOS (TASK-5755): mjesto koje ploča čita → StandardOutPath plista (kao daemon za regoc_daemon.log). */
+  | { vrsta: 'poveznica'; datoteka: string; cilj: string }
 
 export interface Stavka {
   modul: string
@@ -375,6 +377,16 @@ export function usporedi(k: Kontekst): Stavka[] {
       const ocek = zamijeni(tpl, inst)
       if (ocek === PRESKOCI) { dodaj({ modul: 'okolina', kljuc, vrsta: 'PRESKOČENO', poruka: 'ovisi o praznoj varijabli instance' }); continue }
       const cvor = stanje.env[kljuc]
+      // TASK-5755: na README čvoru raspored kompleta vodi install.sh (instalacija.env), a ploča datoteku
+      // traži sama (konfigPutanja). Putanja kompleta iz profila (node-A) bi ploči promijenila bazu.
+      if (stanje.raspored === 'readme' && tpl.includes('${SUSTAV_DIR}') && !jednako(ocek, cvor)) {
+        dodaj(cvor === undefined
+          ? { modul: 'okolina', kljuc, vrsta: 'PRESKOČENO', poruka: kljuc === 'TM_DB'
+              ? `README instalacija: baza ploče je ${join(stanje.tmHome, 'data', 'tasks.db')} — profil je ne mijenja`
+              : 'README instalacija: putanju kompleta postavlja install.sh (instalacija.env), ploča je traži sama ($TM_HOME/config → paket)' }
+          : { modul: 'okolina', kljuc, vrsta: 'UPOZORENJE', profil: ocek, cvor, poruka: 'README instalacija: vrijednost čvora ostaje (install.sh / vlasnik)' })
+        continue
+      }
       dodaj(jednako(ocek, cvor)
         ? { modul: 'okolina', kljuc, vrsta: 'OK' }
         : { modul: 'okolina', kljuc, vrsta: 'RAZLIKA', profil: ocek, cvor: cvor ?? null, primjena: { vrsta: 'env', kljuc, vrijednost: ocek as string } })
@@ -478,7 +490,9 @@ export function usporedi(k: Kontekst): Stavka[] {
 
   // capguard — samo namjera (pending), nikad odobrenje.
   if (M.capguard) {
-    if (!stanje.capguard.postoji) {
+    if (stanje.os === 'darwin') {
+      dodaj({ modul: 'capguard', kljuc: '(stanje)', vrsta: 'PRESKOČENO', poruka: 'macOS: capguard je Linux (systemd + /etc/regoc, root) — nije dio ovog čvora' })
+    } else if (!stanje.capguard.postoji) {
       dodaj({ modul: 'capguard', kljuc: '(stanje)', vrsta: 'NEDOSTAJE', poruka: 'capguard nije instaliran na stroju (vlasnik stroj-root)' })
     } else {
       for (const [ime, zelj] of Object.entries(M.capguard.zeljeno)) {
@@ -553,7 +567,32 @@ export function usporedi(k: Kontekst): Stavka[] {
   usporediKuke(k, inst, dodaj)
   usporediKonzolu(k, inst, dodaj)
   usporediOporavak(k, inst, dodaj)
-  return out
+  return iskljuciPoInstanci(k.profil, inst, out)
+}
+
+/**
+ * PROFIL_ISKLJUCI (TASK-5755): moduli ili ključevi koje ovaj čvor svjesno ne vodi (npr. Mac bez
+ * servisa glasa). Stavka postaje PRESKOČENO bez primjene; uz modul ide i izvor konzole njegova
+ * servisa. `paket` se ne isključuje — to je preduvjet.
+ */
+function iskljuciPoInstanci(p: Profil, inst: Record<string, string>, out: Stavka[]): Stavka[] {
+  const popis = popisInstance('${PROFIL_ISKLJUCI:json}', inst)
+  if (!popis.length) return out
+  const M = p.moduli
+  const imena = new Set(popis.filter(x => x !== 'paket'))
+  const upoz: Stavka[] = []
+  if (popis.includes('paket')) upoz.push({ modul: 'profil', kljuc: '(instanca)', vrsta: 'UPOZORENJE', poruka: 'PROFIL_ISKLJUCI: paket se ne isključuje (preduvjet)' })
+  for (const x of imena) {
+    if (!(x in M) && !out.some(s0 => s0.kljuc === x)) upoz.push({ modul: 'profil', kljuc: '(instanca)', vrsta: 'UPOZORENJE', poruka: `PROFIL_ISKLJUCI: nepoznat modul ili ključ ${x}` })
+  }
+  const uniti = new Set<string>()
+  for (const ime of imena) { const sv = (M as any)[ime]?.servis?.unit; if (sv) uniti.add(sv) }
+  const izvorUnita = new Map((M.konzola?.izvori || []).map(iz => [iz.ime, iz.unit]))
+  const iskljucena = (s0: Stavka) => imena.has(s0.modul) || imena.has(s0.kljuc)
+    || (s0.modul === 'konzola' && uniti.has(izvorUnita.get(s0.kljuc.split('.')[0]) || ''))
+  return [...out.map(s0 => (s0.modul !== 'paket' && iskljucena(s0)
+    ? { modul: s0.modul, kljuc: s0.kljuc, vrsta: 'PRESKOČENO' as const, poruka: 'isključeno u instanci (PROFIL_ISKLJUCI)' }
+    : s0)), ...upoz]
 }
 
 // ─── Znanje čvora (ADR-0006 §9, TASK-5331) ────────────────────────────────────
@@ -764,7 +803,8 @@ function usporediKonzolu(k: Kontekst, inst: Record<string, string>, dodaj: Dodaj
   for (const iz of mod.izvori) {
     if (iz.preskoci) { dodaj({ modul: 'konzola', kljuc: iz.ime, vrsta: 'PRESKOČENO', poruka: iz.preskoci }); continue }
     const log = zamijeni(iz.datoteka, inst) as string
-    if (iz.unit) {
+    if (iz.unit && stanje.os === 'darwin') usporediKonzoluPlist(k, iz.ime, iz.unit, iz.datoteka, log, dodaj)
+    else if (iz.unit) {
       const tpl = dropInPut(iz.unit)
       const sadrzaj = konzolaDropIn(log)
       dodaj(stanje.konzola.dropIni[tpl] === sadrzaj
@@ -781,8 +821,40 @@ function usporediKonzolu(k: Kontekst, inst: Record<string, string>, dodaj: Dodaj
       continue
     }
     dodaj({ modul: 'konzola', kljuc: iz.ime, vrsta: 'NEDOSTAJE', cvor: min === null || min === undefined ? '(nema datoteke)' : `${min} min`,
-      poruka: `izvor konzole nije svjež (> ${mod.maxSati} h) — puni ga ${iz.puni || iz.unit || '?'}${iz.unit ? '; drop-in vrijedi tek nakon daemon-reload + restart servisa' : ''}` })
+      poruka: `izvor konzole nije svjež (> ${mod.maxSati} h) — puni ga ${iz.puni || iz.unit || '?'}${!iz.unit ? '' : stanje.os === 'darwin' ? ' (poveznica na StandardOutPath plista)' : '; drop-in vrijedi tek nakon daemon-reload + restart servisa'}` })
   }
+}
+
+/**
+ * macOS (TASK-5755): launchd nema drop-ina; izlaz usluge ide u StandardOutPath plista (piše ga
+ * install.sh, root). Ploča konzolu čita s fiksnog mjesta, pa ondje ide poveznica na taj izlaz —
+ * isto kao daemon za ~/.tmp/regoc_daemon.log. Obična datoteka na tom mjestu se ne dira.
+ */
+function usporediKonzoluPlist(k: Kontekst, ime: string, unit: string, tpl: string, log: string, dodaj: Dodaj): void {
+  const pl = k.stanje.plist?.[unit]
+  const kljuc = `${ime}.launchd`
+  if (!pl?.standardOut) {
+    dodaj({ modul: 'konzola', kljuc, vrsta: 'NEDOSTAJE', poruka: `nema plista ${unit} sa StandardOutPath — usluge postavlja scripts/install.sh` })
+    return
+  }
+  const pov = k.stanje.konzola.poveznice?.[tpl] ?? null
+  if (pl.standardOut === log || pov === pl.standardOut) { dodaj({ modul: 'konzola', kljuc, vrsta: 'OK' }); return }
+  const ima = k.stanje.konzola.starostMin[tpl] !== null && k.stanje.konzola.starostMin[tpl] !== undefined
+  dodaj(ima && pov === null
+    ? { modul: 'konzola', kljuc, vrsta: 'NEDOSTAJE', cvor: '(obična datoteka)', poruka: `${log} je obična datoteka — alat je ne prepisuje; izlaz usluge je ${pl.standardOut}` }
+    : { modul: 'konzola', kljuc, vrsta: 'RAZLIKA', profil: `${log} → ${pl.standardOut}`, cvor: pov ? `→ ${pov}` : '(nema)',
+        primjena: { vrsta: 'poveznica', datoteka: log, cilj: pl.standardOut } })
+}
+
+/** macOS: PATH usluge = postavke.env (s-okolinom.sh) ili EnvironmentVariables plista. */
+function usporediPutPlist(k: Kontekst, unit: string, vrijednost: string, dodaj: Dodaj): void {
+  const eff = k.stanje.env.PATH ?? k.stanje.plist?.[unit]?.env.PATH
+  const treba = vrijednost.replace(/%h/g, k.stanje.home).split(':')
+  const ima = (eff || '').split(':')
+  dodaj(eff && treba.every(x => ima.includes(x))
+    ? { modul: 'oporavak', kljuc: `${unit}.PATH`, vrsta: 'OK' }
+    : { modul: 'oporavak', kljuc: `${unit}.PATH`, vrsta: 'NEDOSTAJE', profil: treba.join(':'), cvor: eff ?? '(nema plista)',
+        poruka: 'PATH usluge piše scripts/install.sh u plist (root) — ponovi instalaciju' })
 }
 
 function usporediOporavak(k: Kontekst, inst: Record<string, string>, dodaj: Dodaj): void {
@@ -790,7 +862,9 @@ function usporediOporavak(k: Kontekst, inst: Record<string, string>, dodaj: Doda
   const cv = k.stanje.znacajkeCvor
   if (!mod) return
   // PATH ne ovisi o izvornom sustavu — vrijedi i na čvoru bez njega (node-B), zato prije ranog izlaza.
+  const darwin = k.stanje.os === 'darwin'
   for (const unit of mod.put?.unitovi || []) {
+    if (darwin) { usporediPutPlist(k, unit, mod.put!.vrijednost, dodaj); continue }
     const tpl = putDropInPut(unit)
     const sadrzaj = putDropIn(mod.put!.vrijednost)
     const cvor = k.stanje.konzola.dropIni[tpl]
@@ -818,6 +892,16 @@ function usporediOporavak(k: Kontekst, inst: Record<string, string>, dodaj: Doda
       : { modul: 'oporavak', kljuc: `${kljuc}=off`, vrsta: 'OK' })
   }
   for (const unit of mod.tz?.unitovi || []) {
+    if (darwin) {
+      // s-okolinom.sh učitava postavke.env za obje usluge — jedan redak TZ vrijedi i za daemon i za ploču.
+      const eff = k.stanje.env.TZ ?? k.stanje.plist?.[unit]?.env.TZ
+      dodaj(eff === mod.tz!.vrijednost
+        ? { modul: 'oporavak', kljuc: `${unit}.TZ`, vrsta: 'OK' }
+        : { modul: 'oporavak', kljuc: `${unit}.TZ`, vrsta: 'RAZLIKA', profil: `TZ=${mod.tz!.vrijednost}`, cvor: eff ?? '(zona stroja)',
+            poruka: 'naivna vremena ploče su UTC — redak TZ u postavke.env (s-okolinom.sh), vrijedi nakon restarta usluga',
+            primjena: { vrsta: 'env', kljuc: 'TZ', vrijednost: mod.tz!.vrijednost } })
+      continue
+    }
     const tpl = vrijemeDropInPut(unit)
     const sadrzaj = vrijemeDropIn(mod.tz!.vrijednost)
     const cvor = k.stanje.konzola.dropIni[tpl]
@@ -977,6 +1061,8 @@ function upisi(datoteka: string, sadrzaj: string): void {
 
 export interface IshodPrimjene {
   promjena: number; greske: string[]; restart: boolean; kopije: string | null
+  /** TZ u postavke.env (macOS): vrijedi i za daemon, ne samo za ploču. */
+  restartDaemon?: boolean
   /** User-unitovi kojima je promijenjen drop-in: daemon-reload + restart (alat ga ne radi). */
   unitovi: string[]
 }
@@ -988,7 +1074,8 @@ export async function primijeni(stavke: Stavka[], k: Kontekst, ploca: Ploca, sat
   const kopirano = new Set<string>()
   const po = (v: Primjena['vrsta']) => stavke.filter(s0 => s0.primjena?.vrsta === v).map(s0 => s0.primjena as any)
 
-  const env = po('env') as Extract<Primjena, { vrsta: 'env' }>[]
+  // Isti ključ iz više stavki (npr. TZ za daemon i ploču na macOS-u) upisuje se jednom.
+  const env = [...new Map((po('env') as Extract<Primjena, { vrsta: 'env' }>[]).map(e => [e.kljuc, e])).values()]
   if (env.length) {
     const dat = k.stanje.postavkeDatoteka || join(k.stanje.paket, 'config', 'postavke.env')
     kopija(dat, mapaKopija, kopirano)
@@ -1005,6 +1092,7 @@ export async function primijeni(stavke: Stavka[], k: Kontekst, ploca: Ploca, sat
     }
     upisi(dat, redovi.join('\n'))
     ishod.restart = true
+    if (env.some(e => e.kljuc === 'TZ')) ishod.restartDaemon = true
   }
 
   const tg = po('telegram') as Extract<Primjena, { vrsta: 'telegram' }>[]
@@ -1103,6 +1191,20 @@ export async function primijeni(stavke: Stavka[], k: Kontekst, ploca: Ploca, sat
     upisi(c.datoteka, c.sadrzaj)
     ishod.unitovi.push(c.unit)
     ishod.promjena++
+  }
+
+  for (const c of po('poveznica') as Extract<Primjena, { vrsta: 'poveznica' }>[]) {
+    let st: ReturnType<typeof lstatSync> | null = null
+    try { st = lstatSync(c.datoteka) } catch { /* nema je */ }
+    // Samo poveznica se smije zamijeniti; obična datoteka ostaje (usporedba je javlja kao NEDOSTAJE).
+    if (st && !st.isSymbolicLink()) { ishod.greske.push(`${c.datoteka}: obična datoteka — ne prepisujem`); continue }
+    if (st && readlinkSync(c.datoteka) === c.cilj) continue
+    try {
+      if (st) unlinkSync(c.datoteka)
+      mkdirSync(dirname(c.datoteka), { recursive: true })
+      symlinkSync(c.cilj, c.datoteka)
+      ishod.promjena++
+    } catch (e: any) { ishod.greske.push(`poveznica ${c.datoteka}: ${e?.message || e}`) }
   }
 
   for (const c of po('dropin') as Extract<Primjena, { vrsta: 'dropin' }>[]) {
@@ -1237,6 +1339,9 @@ export function specZaProfil(p: Profil, inst: Record<string, string>, paket: str
   const kljucevi = ['razgovor', 'glas', 'memorija', 'bot-kanal'].flatMap(m => Object.keys((M as any)[m]?.settings || {}))
   const nikad = [...(M['bot-kanal']?.nikadNeIzvozi || []), ...(M.telegram?.nikadNeIzvozi || [])]
   const envKljucevi = [...Object.keys(M.okolina?.postavkeEnv || {})]
+  // macOS (TASK-5755): TZ i PATH usluge dolaze i iz postavke.env (s-okolinom.sh).
+  if (M.oporavak?.tz) envKljucevi.push('TZ')
+  if (M.oporavak?.put) envKljucevi.push('PATH')
   if (M.telegram && !envKljucevi.includes('TM_TELEGRAM_CONFIG')) envKljucevi.push('TM_TELEGRAM_CONFIG')
   return {
     paket,
@@ -1273,6 +1378,8 @@ export function specZaProfil(p: Profil, inst: Record<string, string>, paket: str
         ...(M.oporavak?.tz?.unitovi || []).map(vrijemeDropInPut),
         ...(M.oporavak?.put?.unitovi || []).map(putDropInPut)],
     },
+    plistovi: [...new Set([...(M.konzola?.izvori || []).filter(x => x.unit && !x.preskoci).map(x => x.unit!),
+      ...(M.oporavak?.tz?.unitovi || []), ...(M.oporavak?.put?.unitovi || [])])],
     sustav: sustav ? {
       unitovi: [...new Set([M.paket?.unit?.ime, M.glas?.servis?.unit, ...(M.konzola?.izvori || []).map(x => x.unit)].filter(Boolean))] as string[],
       vrata: [M.glas?.servis?.vrata, M['tunel-memorije']?.provjeraNaCvoru.vrata].filter(x => typeof x === 'number') as number[],
@@ -1365,7 +1472,7 @@ export async function glavna(argv: string[], d: Partial<Ovisnosti> = {}): Promis
     else {
       pisi(`PRIMIJENJENO: ${ishod.promjena} promjena${ishod.kopije ? ` · kopije u ${ishod.kopije}` : ''}`)
       ishod.greske.forEach(g => pisi(`GREŠKA ${g}`))
-      pisi(`potreban restart regoc-taskmanager: ${ishod.restart ? 'da (alat ga ne radi — kad je 0 zadataka in_progress)' : 'ne'}`)
+      pisi(`potreban restart regoc-taskmanager${ishod.restartDaemon ? ' i regoc-daemon' : ''}: ${ishod.restart ? 'da (alat ga ne radi — kad je 0 zadataka in_progress)' : 'ne'}`)
       if (ishod.unitovi.length) pisi(`drop-in (konzola, vrijeme, PATH): ${uputaRestarta(ishod.unitovi)} (alat ga ne radi — kad je 0 zadataka in_progress)`)
       ispisStavki(poslije).forEach(pisi)
     }

@@ -30,7 +30,8 @@
       "VLASNIK_ULOGA_IME",
       "MEMORIJA_MISIJA",
       "ZNANJE_RAZGOVOR",
-      "EPOSTA_OBAVIJEST"
+      "EPOSTA_OBAVIJEST",
+      "PROFIL_ISKLJUCI"
     ]
   },
   "moduli": {
@@ -542,8 +543,9 @@
           "odluka": "paket"
         },
         "autoResume": {
-          "on": true,
-          "odluka": "paket"
+          "on": false,
+          "odluka": "van",
+          "razlog": "off na glavnom od 22.10.2026. (Goran, TASK-3085: pokriveno siroče-oporavkom, REGOC-POZADINA povratom, voditeljem lanca i trajnom sesijom)"
         },
         "autoResumeLive": {
           "on": false,

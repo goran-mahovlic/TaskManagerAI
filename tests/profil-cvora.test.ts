@@ -508,13 +508,13 @@ const features = () => JSON.parse(readFileSync(join(d.sustav, 'features.json'), 
 const settingsJson = () => JSON.parse(readFileSync(join(d.home, '.claude', 'settings.json'), 'utf-8'))
 
 describe('J13 — modul znacajke: samo `enabled` imenovanih ključeva, idempotentno, bez restarta', () => {
-  test('profil = glavni: 54 ON (TASK-5512: +mjeriloDojava); note/since i tuđi ključ ostaju; drugi --pisi → 0 promjena', async () => {
+  test('profil = glavni: 53 ON (TASK-5512: +mjeriloDojava; TASK-5755: autoResume off kao glavni); note/since i tuđi ključ ostaju; drugi --pisi → 0 promjena', async () => {
     const r = await d.pokreni(['primijeni', '--pisi', '--modul', 'znacajke'])
     expect(r.izlaz).toContain('potreban restart regoc-taskmanager: ne')
     const f = features()
     const p = ucitajProfil(PROFIL).moduli.znacajke!
     for (const [k, z] of Object.entries(p.kljucevi)) expect(f[k]?.enabled === true).toBe(z.on)
-    expect(Object.values(p.kljucevi).filter(z => z.on).length).toBe(54)
+    expect(Object.values(p.kljucevi).filter(z => z.on).length).toBe(53)
     expect(f.staleReaper).toEqual({ enabled: false, since: '2026-08-01', note: 'čvor: agresivnije od glavnog' })
     expect(f.tudjiPrekidac).toEqual({ enabled: true, note: 'nije u profilu — ostaje' })
     expect(f.userFlush.note).toContain('profil-cvora')

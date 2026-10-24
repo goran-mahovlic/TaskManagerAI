@@ -13,7 +13,7 @@
  */
 import { Database } from 'bun:sqlite'
 import { createHash } from 'crypto'
-import { existsSync, readdirSync, readFileSync, statSync } from 'fs'
+import { existsSync, lstatSync, readdirSync, readFileSync, readlinkSync, statSync } from 'fs'
 import { connect } from 'net'
 import { homedir } from 'os'
 import { join } from 'path'
@@ -53,6 +53,8 @@ export interface SpecStanja {
   izvorni?: { mapa: string; datoteke: string[]; grep: Array<{ datoteka: string; sadrzi: string }> }
   /** Starost datoteka konzole (min) i sadržaj drop-ina user-unita. */
   konzola?: { datoteke: string[]; dropIni: string[] }
+  /** macOS (TASK-5755): usluge čiji se LaunchDaemon plist čita umjesto systemd drop-ina. */
+  plistovi?: string[]
   /** TASK-5331: mogućnosti, stanje upisa znanja, timer, banke i dokumenti kroz memorija.url. */
   znanje?: { mogucnosti?: string; stanje?: string; korpus?: string; timer?: string; memorijaUrl: string; banka: string; zabranjeniDokumenti: string[] }
 }
@@ -97,9 +99,18 @@ export interface StanjeCvora {
   /** `null` = profil nema modul; vrijednost `null` = ključa (ili datoteke) nema → isEnabled = false. */
   znacajkeCvor: null | { vrijednosti: Record<string, boolean | null>; kodZna: Record<string, boolean> }
   izvorni: Record<string, boolean>
-  konzola: { starostMin: Record<string, number | null>; dropIni: Record<string, string | null> }
+  /** `poveznice`: kamo pokazuje datoteka konzole ako je simbolička poveznica (null = nije ili je nema). */
+  konzola: { starostMin: Record<string, number | null>; dropIni: Record<string, string | null>; poveznice?: Record<string, string | null> }
   znanje?: StanjeZnanja | null
+  /** OS čvora (process.platform sakupljača); stariji sakupljač ga nema → Linux. */
+  os?: string
+  /** `readme` = instalacija po README-u ($TM_HOME/config/instalacija.env, install.sh); `paket` = postavke uz paket (node-A). */
+  raspored?: 'readme' | 'paket'
+  /** macOS: plist usluge (null = nema plista) — samo izlaz i PATH/TZ okoline, ništa drugo. */
+  plist?: Record<string, PlistUsluge | null>
 }
+
+export interface PlistUsluge { standardOut: string | null; env: { PATH?: string; TZ?: string } }
 
 /** `${HOME}` i ostale varijable u putanji; nepoznata ostaje doslovno (pa se ne nađe). */
 export function putanja(p: string, v: Record<string, string>): string {
@@ -189,12 +200,29 @@ export function datotekaTimera(unit: string, home: string, os = process.platform
  * drži postavke u $TM_HOME/config (instalacija.env, pa postavke.env s prednošću); stari raspored
  * (node-A) ih drži uz paket. `datoteka` = kamo `primijeni` dopisuje postavke.
  */
-export function okolinaCvora(paket: string, home: string): { env: Record<string, string>; datoteka: string } {
+export function okolinaCvora(paket: string, home: string): { env: Record<string, string>; datoteka: string; raspored: 'readme' | 'paket' } {
   const cfg = join(home, '.taskmanager', 'config')
   const inst = join(cfg, 'instalacija.env'), post = join(cfg, 'postavke.env')
-  if (existsSync(inst) || existsSync(post)) return { env: { ...citajEnv(inst), ...citajEnv(post) }, datoteka: post }
+  const raspored = existsSync(inst) ? 'readme' : 'paket'
+  if (existsSync(inst) || existsSync(post)) return { env: { ...citajEnv(inst), ...citajEnv(post) }, datoteka: post, raspored }
   const uzPaket = join(paket, 'config', 'postavke.env')
-  return { env: citajEnv(uzPaket), datoteka: uzPaket }
+  return { env: citajEnv(uzPaket), datoteka: uzPaket, raspored }
+}
+
+/**
+ * LaunchDaemon plist usluge (macOS, TASK-5755) — ekvivalent systemd drop-ina: kamo ide izlaz
+ * (StandardOutPath) i PATH/TZ iz EnvironmentVariables. Bijela lista: ostale varijable ne izlaze.
+ */
+export function plistUsluge(unit: string, nar: (argv: string[]) => string | null = naredba): PlistUsluge | null {
+  const out = nar(['plutil', '-convert', 'json', '-o', '-', `/Library/LaunchDaemons/${launchdOznakaZrcalo(unit)}.plist`])
+  if (!out) return null
+  try {
+    const j = JSON.parse(out)
+    const ev = j.EnvironmentVariables || {}
+    const env: PlistUsluge['env'] = {}
+    for (const k of ['PATH', 'TZ'] as const) if (typeof ev[k] === 'string') env[k] = ev[k]
+    return { standardOut: typeof j.StandardOutPath === 'string' ? j.StandardOutPath : null, env }
+  } catch { return null }
 }
 
 /** Claude prijava: datoteka CLI-ja (Linux) ili token pretplate u spremištu (macOS, TASK-5754). */
@@ -206,7 +234,7 @@ export async function prikupiStanje(spec: SpecStanja, home = process.env.HOME ||
   const v: Record<string, string> = { ...(spec.varijable || {}), HOME: home }
   const paket = putanja(spec.paket || '${HOME}/TaskManagerAI', v)
   v.TM_PAKET = paket
-  const { env: sveEnv, datoteka: postavkeDatoteka } = okolinaCvora(paket, home)
+  const { env: sveEnv, datoteka: postavkeDatoteka, raspored } = okolinaCvora(paket, home)
   const tmHome = sveEnv.TM_HOME || join(home, '.taskmanager')
 
   const env: Record<string, string> = {}
@@ -352,10 +380,16 @@ export async function prikupiStanje(spec: SpecStanja, home = process.env.HOME ||
     }
   }
 
-  const konzola: StanjeCvora['konzola'] = { starostMin: {}, dropIni: {} }
+  const konzola: StanjeCvora['konzola'] = { starostMin: {}, dropIni: {}, poveznice: {} }
   const sad = Date.now()
   for (const f of spec.konzola?.datoteke || []) {
     try { konzola.starostMin[f] = Math.floor((sad - statSync(putanja(f, v)).mtimeMs) / 60_000) } catch { konzola.starostMin[f] = null }
+    try { konzola.poveznice![f] = lstatSync(putanja(f, v)).isSymbolicLink() ? readlinkSync(putanja(f, v)) : null } catch { konzola.poveznice![f] = null }
+  }
+  let plist: StanjeCvora['plist']
+  if (process.platform === 'darwin' && spec.plistovi?.length) {
+    plist = {}
+    for (const u of spec.plistovi) plist[u] = plistUsluge(u)
   }
   for (const f of spec.konzola?.dropIni || []) {
     try { konzola.dropIni[f] = readFileSync(putanja(f, v), 'utf-8') } catch { konzola.dropIni[f] = null }
@@ -425,6 +459,7 @@ export async function prikupiStanje(spec: SpecStanja, home = process.env.HOME ||
     upravitelj, grepNema, znacajke, apiKljucevi,
     git: naredba(['git', '-C', paket, 'rev-parse', '--short', 'HEAD']),
     sustav, znacajkeCvor, izvorni, konzola,
+    os: process.platform, raspored, plist,
   }
 }
 
