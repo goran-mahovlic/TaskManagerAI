@@ -124,6 +124,7 @@ import { odlukaNaredbe, vrataKonzole, vrataIzvrsavanja } from './KonzolaVrata'
 import { ocistiLoginKod, izvuciLoginUrl, maskirajLoginTail, loginOauthGreska, LOGIN_POTVRDA } from './LoginUnos'
 import { AGY_INSTALACIJA, AGY_NAREDBA_PRIJAVE, modeliAgyja, odgovorTerminaluAgyja, okolinaAgyja, ukljuciAgyZaCilj } from './core/Antigravity'
 import { odjaviAgy, stanjeAgyjaNaDisku, zapisiNacinAgyja } from './core/AntigravityPrijava'
+import { CitacSetupTokena, prijavaClaudea } from './core/ClaudePrijava'
 import { capguardPostavke, stanjeCapguarda, zatraziSposobnost } from './Capguard'
 import { tecajOdgovor } from './Tecaj'
 import { rijesiPreuzimanje, corsOdluka } from './core/PristupDatotekama'
@@ -13675,15 +13676,16 @@ function json(o: unknown, s = 200): Response {
 // CLI-jevi (kimi/gemini/claude) traže PTY → koristimo `script` kroz platforma.ptyNaredba (bez node-pty).
 // Uspjeh = pojava creds-datoteke → providers.<id>.enabled=true (ulazi u listu modela).
 // ============================================================================
-interface LoginProviderDef { id: string; name: string; kind: 'oauth-cli' | 'apikey'; cmd?: string; bin?: string; creds: string; envKey?: string; install?: string }
+// tokenKey: CLI ISPIŠE token (claude setup-token na macOS-u) → ploča ga sprema u tu tajnu (TASK-5754).
+interface LoginProviderDef { id: string; name: string; kind: 'oauth-cli' | 'apikey'; cmd?: string; bin?: string; creds: string; envKey?: string; install?: string; tokenKey?: string }
 const LOGIN_PROVIDERS: LoginProviderDef[] = [
   { id: 'kimicli',    name: 'Kimi',                kind: 'oauth-cli', cmd: 'kimi login',        bin: 'kimi',   creds: '~/.kimi-code/oauth' },
   { id: 'geminicli',  name: 'Gemini (Google)',     kind: 'oauth-cli', cmd: 'gemini',            bin: 'gemini', creds: '~/.gemini/oauth_creds.json', envKey: 'GEMINI_API_KEY' },
   // TASK-5738: Google prijava (token u datoteci — SSH oznaka) ili isti GEMINI_API_KEY; stanje i odjava kroz AntigravityPrijava.
   { id: 'antigravity', name: 'Antigravity (Google)', kind: 'oauth-cli', cmd: AGY_NAREDBA_PRIJAVE, bin: 'agy',  creds: '~/.gemini/antigravity-cli', envKey: 'GEMINI_API_KEY', install: AGY_INSTALACIJA },
-  // `claude auth login` (NE `setup-token`): setup-token samo ISPIŠE dugotrajni token u terminal
-  // — ne piše creds pa ploča nikad ne vidi prijavu, a token bi otišao u `tail` (TASK-5269).
-  { id: 'claude',     name: 'Claude (Anthropic)',  kind: 'oauth-cli', cmd: 'claude auth login --claudeai', bin: 'claude', creds: '~/.claude/.credentials.json', install: 'curl -fsSL https://claude.ai/install.sh | bash' },
+  // Linux: `claude auth login` (creds u ~/.claude, TASK-5269). macOS: prijava CLI-ja ide u Keychain koji
+  // usluga ne vidi → `setup-token` u PTY-u, token iz izlaza ravno u spremište, skriven u buf/tail (TASK-5754).
+  { id: 'claude',     name: 'Claude (Anthropic)',  kind: 'oauth-cli', ...prijavaClaudea(), bin: 'claude', creds: '~/.claude/.credentials.json', install: 'curl -fsSL https://claude.ai/install.sh | bash' },
   { id: 'openrouter', name: 'OpenRouter (cloud)',  kind: 'apikey',    creds: '', envKey: 'OPENROUTER_API_KEY' },
 ]
 interface LoginSess { proc: any; url: string; buf: string; ok: boolean; done: boolean; err: string; started: number }
@@ -13706,6 +13708,7 @@ function loginCredsPresent(def: LoginProviderDef): boolean {
   try {
     if (def.kind === 'apikey') return kljucPrisutanUDatoteci(loginStorePath(), def.envKey || '')
     if (def.id === 'antigravity') return stanjeAgyjaNaDisku(process.env.HOME || '', kljucPrisutanUDatoteci(loginStorePath(), 'GEMINI_API_KEY')).prijavljen
+    if (def.tokenKey && kljucPrisutanUDatoteci(loginStorePath(), def.tokenKey)) return true
     // oauth-cli s envKey (npr. Gemini): smatra se konfiguriranim i ako je API ključ u spremištu
     if (def.envKey && kljucPrisutanUDatoteci(loginStorePath(), def.envKey)) return true
     const p = loginHomeExpand(def.creds)
@@ -14059,18 +14062,27 @@ async function handleLoginStart(req: Request): Promise<Response> {
     })
     const sess: LoginSess = { proc, url: '', buf: '', ok: false, done: false, err: '', started: Date.now() }
     loginSessions.set(id, sess)
+    // Token iz izlaza: u spremište i u okolinu ploče (razgovor bota), nikad u buf/tail/dnevnik.
+    // Daemon ga čita iz spremišta pri svakom spawnu, pa restart usluge ne treba (TASK-5754).
+    const tokenKey = def.tokenKey
+    const citac = tokenKey ? new CitacSetupTokena(t => {
+      const r = postaviTajnu(osigurajMapu(datotekaTajniZaPisanje()), tokenKey, t)
+      if (r.ok) process.env[tokenKey] = t
+      return r
+    }) : null
     ;(async () => {
       try {
         const reader = proc.stdout.getReader(); const dec = new TextDecoder()
         while (true) {
           const { done, value } = await reader.read(); if (done) break
           const komad = dec.decode(value, { stream: true })
-          sess.buf = (sess.buf + komad).slice(-65536)
+          sess.buf = citac ? citac.dodaj(komad) : (sess.buf + komad).slice(-65536)
+          if (citac?.greska) sess.err = citac.greska
           // agy u PTY-u čeka odgovor na upit terminala (ESC[>c) prije nego ispiše URL (TASK-5738).
           if (id === 'antigravity') { const odg = odgovorTerminaluAgyja(komad); if (odg) { try { proc.stdin.write(odg); proc.stdin.flush?.() } catch {} } }
           // CLI ispisuje URL kao OSC-8 hipervezu — sirovi regex hvata BEL i dupli URL (TASK-5269).
           if (!sess.url) sess.url = izvuciLoginUrl(sess.buf)
-          if (loginCredsPresent(def)) break
+          if (citac ? citac.spremljen : loginCredsPresent(def)) break
         }
       } catch {}
       sess.ok = loginCredsPresent(def); sess.done = true
@@ -14091,7 +14103,7 @@ function handleLoginPoll(url: URL): Response {
   if (loggedIn && s && !s.done) { s.done = true; s.ok = true; loginSetProviderEnabled(id, true) }
   // `tail` ide u preglednik: bez ANSI/OSC-8 i bez ičega što liči na tajnu (TASK-5269).
   const buf = s?.buf || ''
-  return json({ id, url: s?.url || '', loggedIn, done: s?.done ?? !s, active: !!s && !s.done, tail: maskirajLoginTail(buf), greska: loggedIn ? null : loginOauthGreska(buf) })
+  return json({ id, url: s?.url || '', loggedIn, done: s?.done ?? !s, active: !!s && !s.done, tail: maskirajLoginTail(buf), greska: loggedIn ? null : (s?.err || loginOauthGreska(buf)) })
 }
 async function handleLoginPaste(req: Request): Promise<Response> {
   try {
@@ -14145,6 +14157,8 @@ async function handleLoginLogout(req: Request): Promise<Response> {
       return json({ ok: !loginCredsPresent(def), kljucUklonjen: false, loggedIn: loginCredsPresent(def) })
     }
     if (def.kind === 'oauth-cli' && def.creds) { try { rmSync(loginHomeExpand(def.creds), { recursive: true, force: true }) } catch {} }
+    // Claude na macOS-u: prijava = token u spremištu (TASK-5754) — odjava ga miče i iz okoline ploče.
+    if (def.tokenKey) { try { ukloniKljucIzDatoteke(loginStorePath(), def.tokenKey) } catch {} ; delete process.env[def.tokenKey] }
     // Odjava mora maknuti ONO ŠTO MJERILO GLEDA. Za davatelje s `envKey` (Gemini, OpenRouter)
     // to je ključ u spremištu: bez ovoga je odjava kozmetička — gumb ostane „prijavljen" i
     // tajna ostaje na disku iako korisnik misli da je odjavljen (TASK-4796).

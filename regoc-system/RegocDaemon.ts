@@ -3808,6 +3808,9 @@ function spawnAgentOnDemand(
     // Gemini API key (AI Studio) iz credentials.env → geminicli radi bez mrtvog OAuth-a.
     // TASK-5705: zajednički čitač — zapis ploče paketa (`IME='…'`) ne smije doći s navodnicima.
     { const _g = procitajTajnuSpremista('GEMINI_API_KEY'); if (_g) spawnEnv.GEMINI_API_KEY = _g }
+    // TASK-5754: Claude pretplata na macOS-u — Keychain usluzi nije vidljiv, pa ploča (Config → Prijava →
+    // Claude) token sprema u spremište; čita se pri svakom spawnu (bez restarta), samo za claude bez preusmjerenja.
+    if (cmdArgs[0] === 'claude' && !compat) { const _c = procitajTajnuSpremista('CLAUDE_CODE_OAUTH_TOKEN'); if (_c) spawnEnv.CLAUDE_CODE_OAUTH_TOKEN = _c }
     if (isAgy) agyOkolinaSpawna(spawnEnv)
     if (compat) {
       // Preusmjeri claude CLI na anthropic-kompatibilni endpoint (Kimi/GLM/MiniMax/Qwen/DeepSeek).
