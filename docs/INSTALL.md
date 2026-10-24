@@ -617,6 +617,20 @@ samo za prekidače s odlukom „uvjetno", `KUKE_PAKETI=jezgra,pai-ucenje`. Preki
 profilu, a nepoznat kodu čvora, alat javlja izlazom `3` s imenom (P5 ili odgoda u instanci).
 Usporedba s glavnim strojem: `python3 docs/qa/TASK-5307/paritet.py <korisnik@čvor>`.
 
+**Čvor instaliran po README-u i macOS** (TASK-5755). Profil je snimljen na Linux čvoru sa
+starim rasporedom; alat sam prepoznaje drugačiji čvor i ne primjenjuje ono što tamo ne vrijedi:
+
+- README instalacija (`$TM_HOME/config/instalacija.env`): putanje kompleta (`${SUSTAV_DIR}/…`) koje
+  čvor nema su `PRESKOČENO` i nikad se ne upisuju. Baza ploče ostaje `$TM_HOME/data/tasks.db`, a
+  ostale datoteke ploča traži sama (`$TM_HOME/config` → paket).
+- macOS: capguard je `PRESKOČENO` (Linux, root). Umjesto drop-ina konzole alat stavlja poveznicu
+  s mjesta koje ploča čita na `StandardOutPath` plista. PATH se čita iz plista (piše ga install.sh).
+  `TZ=UTC` ide jednim retkom u `postavke.env`, a `s-okolinom.sh` ga daje i ploči i daemonu, pa alat
+  javlja `potreban restart regoc-taskmanager i regoc-daemon`.
+- `PROFIL_ISKLJUCI=["glas","memorija.globalno",…]` u instanci: moduli ili ključevi koje čvor svjesno
+  ne vodi. Takve stavke su `PRESKOČENO` i alat ih ne primjenjuje. Uz modul se preskače i izvor
+  konzole njegova servisa. `paket` se ne isključuje.
+
 Izlazni kodovi: `0` sve OK · `1` razlike koje alat zna primijeniti · `2` nedostaju tajne ili
 ljudske stavke · `3` preduvjet (kod bez značajke, nema baze, profil/instanca neispravni) ·
 `4` alat odbio (npr. `--suho` i `--pisi` zajedno, `--pisi` preko `--ssh`).
