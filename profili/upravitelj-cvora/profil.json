@@ -545,7 +545,7 @@
         "autoResume": {
           "on": false,
           "odluka": "van",
-          "razlog": "off na glavnom od 22.10.2026. (Goran, TASK-3085: pokriveno siroče-oporavkom, REGOC-POZADINA povratom, voditeljem lanca i trajnom sesijom)"
+          "razlog": "off na glavnom — vlasnik, 22.10.2026.: pokriveno siroče-oporavkom, REGOC-POZADINA povratom, voditeljem lanca i trajnom sesijom (TASK-3085)"
         },
         "autoResumeLive": {
           "on": false,

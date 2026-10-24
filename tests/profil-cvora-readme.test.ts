@@ -1,5 +1,5 @@
 /**
- * TASK-5755 (Mac K9): profil „upravitelj-cvora" je snimljen na node-A (Linux, sustav u ~/.claude/regoc,
+ * TASK-5755 (Mac K9): profil „upravitelj-cvora" je snimljen na Linux čvoru (komplet sustava u ${SUSTAV_DIR},
  * postavke uz paket). Na čvoru instaliranom po README-u (macOS) dio stavki ne vrijedi ili se
  * provjerava drugačije — slijepa primjena bi ploči promijenila bazu (TM_DB) ili pisala systemd drop-ine.
  *
@@ -16,11 +16,11 @@ import { KORIJEN, izlazniKod, kartaApija, primijeni, ucitajProfil, usporedi, typ
 import { okolinaCvora, plistUsluge, type StanjeCvora } from '../scripts/profil-cvora-stanje'
 
 const profil = ucitajProfil(join(KORIJEN, 'profili', 'upravitelj-cvora', 'profil.json'))
-const H = '/Users/regoc'
-const SUSTAV = `${H}/.claude/regoc`
+const H = '/Users/cvor'
+const SUSTAV = `${H}/komplet`
 
 const inst: Record<string, string> = {
-  CVOR_IME: 'macmini-pv', CVOR_DOPUSTENI_HOSTOVI: 'localhost,127.0.0.1', TG_CHAT_ID: '-1', TG_DOPUSTENI_CHATOVI: '["-1"]',
+  CVOR_IME: 'cvor-b', CVOR_DOPUSTENI_HOSTOVI: 'localhost,127.0.0.1', TG_CHAT_ID: '-1', TG_DOPUSTENI_CHATOVI: '["-1"]',
   RAZGOVOR_IME: 'Upravitelj', RAZGOVOR_DOPUSTENI_KORISNICI: '["1"]', MEMORIJA_BANKA: 'cvor_mac', ZADANI_IZVRSITELJ: 'inzenjer',
   SUSTAV_DIR: SUSTAV, KUKE_PAKETI: 'jezgra', ZNACAJKE_ISKLJUCI: '[]', ZNACAJKE_UKLJUCI: '[]',
 }
@@ -211,7 +211,7 @@ describe('sakupljač: README raspored i plist', () => {
 })
 
 describe('profil = glavni sustav', () => {
-  test('autoResume je ugašen (Goran, TASK-3085, 22.10.2026.) — profil ga ne pali', () => {
+  test('autoResume je ugašen na glavnom (TASK-3085, 22.10.2026.) — profil ga ne pali', () => {
     expect(profil.moduli.znacajke!.kljucevi.autoResume.on).toBe(false)
   })
   test('PROFIL_ISKLJUCI je neobavezna varijabla instance', () => {
