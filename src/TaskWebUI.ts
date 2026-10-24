@@ -14068,6 +14068,7 @@ async function handleLoginStart(req: Request): Promise<Response> {
     const citac = tokenKey ? new CitacSetupTokena(t => {
       const r = postaviTajnu(osigurajMapu(datotekaTajniZaPisanje()), tokenKey, t)
       if (r.ok) process.env[tokenKey] = t
+      console.log(`[prijava] ${id}: token iz izlaza CLI-ja ${r.ok ? 'spremljen u' : 'NIJE spremljen u'} ${tokenKey}${r.ok ? '' : ` (${r.greska})`}`)
       return r
     }) : null
     ;(async () => {
