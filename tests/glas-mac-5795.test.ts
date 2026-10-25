@@ -8,7 +8,7 @@ import { afterAll, describe, expect, test } from 'bun:test'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import { datotekeUsluge, sudoersPrimjer, ucitajOpise, vrijednosti } from '../scripts/instalacija/servis'
+import { datotekeUsluge, primijeni, sudoersPrimjer, ucitajOpise, vrijednosti } from '../scripts/instalacija/servis'
 
 const PAKET = join(import.meta.dir, '..')
 const MAPE: string[] = []
@@ -84,6 +84,25 @@ describe('usluga voice (templates/servis/usluge.json)', () => {
     expect(ploca.sadrzaj).toContain('<string>Background</string>') // ostale usluge kao prije
     expect(datotekeUsluge(opis, 'linux', { ...v, HOME: '/home/regoc' })[0].sadrzaj).not.toContain('Nice=10')
   })
+  test('primijeni nad učitanom uslugom: bootstrap tek kad je bootout stvarno gotov (inače launchd „Bootstrap failed: 5")', () => {
+    const tm = privremena('tm-voice-')
+    const pozivi: string[] = []
+    let poBootoutu = -1
+    const ex = (argv: string[]) => {
+      const c = argv.join(' '); pozivi.push(c)
+      if (c.includes('launchctl bootout')) { poBootoutu = 0; return { kod: 0, izlaz: '' } }
+      if (c.startsWith('launchctl print')) {
+        if (poBootoutu < 0) return { kod: 0, izlaz: 'state = running' }        // učitana prije
+        return poBootoutu++ < 2 ? { kod: 0, izlaz: '' } : { kod: 113, izlaz: '' } // launchd još gasi
+      }
+      return { kod: 0, izlaz: '' }
+    }
+    primijeni(opis, 'darwin', { ...v, TM_HOME: tm }, { ex, vrijeme: 't' })
+    const zadnjiPrint = pozivi.map((c, i) => [c, i] as const).filter(([c]) => c.startsWith('launchctl print')).pop()![1]
+    const bootstrap = pozivi.findIndex(c => c.includes('launchctl bootstrap'))
+    expect(pozivi.filter(c => c.startsWith('launchctl print')).length).toBe(4) // 1 prije + 3 čekanja
+    expect(bootstrap).toBeGreaterThan(zadnjiPrint)
+  })
   test('Linux: regoc-voice.service (isto ime kao na node-A)', () => {
     const d = datotekeUsluge(opis, 'linux', { ...v, HOME: '/home/regoc' })
     expect(d[0].put).toBe('/home/regoc/.config/systemd/user/regoc-voice.service')
@@ -120,6 +139,8 @@ describe('servis glasa u paketu i okolina usluge', () => {
     const s = readFileSync(join(PAKET, 'scripts', 'instaliraj-glas.sh'), 'utf-8')
     expect(s).toContain('MLX_VERZIJA="0.4.3"')
     expect(s).toContain('"mlx-whisper==$MLX_VERZIJA"')
+    // Homebrew u PATH PRIJE provjere ffmpeg-a — inače svaki ponovni prolaz zove brew install
+    expect(s.indexOf('PATH="$PATH:$(dirname "${BREW_BIN')).toBeLessThan(s.indexOf('FALE_BREW=()'))
   })
   test('python3 -m py_compile prolazi', () => {
     expect(Bun.spawnSync(['python3', '-m', 'py_compile', join(PAKET, 'tools', 'glas', 'regoc-voice-server.py')]).exitCode).toBe(0)

@@ -229,7 +229,12 @@ export function primijeni(u: OpisUsluge, os: string, v: Record<string, string>, 
     if (razlicite.length) {
       if (existsSync(d.put)) { mkdirSync(backup, { recursive: true }); ex(['cp', d.put, join(backup, `${oznaka}.plist`)]) }
       pazi(ex(['sudo', '-n', 'install', '-m', '644', '-o', 'root', '-g', 'wheel', priprema, d.put]), `sudo install ${d.put} (treba administratorsko pravo: sudo -v pa ponovi; suženi sudoers iz templates/servis/sudoers.primjer ne dopušta upis plista)`)
-      if (ucitana) ex(['sudo', '-n', 'launchctl', 'bootout', `system/${oznaka}`])
+      if (ucitana) {
+        ex(['sudo', '-n', 'launchctl', 'bootout', `system/${oznaka}`])
+        // bootout je asinkron: bootstrap dok launchd još gasi staru uslugu pada s „Bootstrap failed: 5:
+        // Input/output error" (izmjereno na Mac čvoru, TASK-5795) — čeka se da oznaka nestane (do ~10 s).
+        for (let i = 0; i < 20 && ex(['launchctl', 'print', `system/${oznaka}`]).kod === 0; i++) ex(['sleep', '0.5'])
+      }
     }
     pazi(ex(['sudo', '-n', 'launchctl', 'bootstrap', 'system', d.put]), `launchctl bootstrap system ${d.put}`)
     return { promijenjeno: true, poruke }

@@ -85,10 +85,12 @@ fi
 # (vlasnik /opt/homebrew) — tada se instalira kao on, preko sudo -n -u (korisnik usluge ga ima).
 if [ "$OS_IME" = Darwin ]; then
   UPUTA_FFMPEG="brew install ffmpeg (Homebrew) ili statična binarka u ~/.local/bin (https://ffmpeg.org/download.html#build-mac)"
+  BREW_BIN="$(command -v brew || { [ -x /opt/homebrew/bin/brew ] && echo /opt/homebrew/bin/brew; })"
+  # Homebrew u PATH prije provjere: ljuska korisnika usluge ga nema, pa bi svaki prolaz zvao brew install.
+  PATH="$PATH:$(dirname "${BREW_BIN:-/opt/homebrew/bin/brew}")"
   FALE_BREW=()
   command -v "${TM_GLAS_FFMPEG:-ffmpeg}" >/dev/null || FALE_BREW+=(ffmpeg)
   command -v espeak-ng >/dev/null || FALE_BREW+=(espeak-ng)
-  BREW_BIN="$(command -v brew || { [ -x /opt/homebrew/bin/brew ] && echo /opt/homebrew/bin/brew; })"
   if [ "${#FALE_BREW[@]}" -gt 0 ] && [ "$BREW" = 1 ] && [ -n "$BREW_BIN" ]; then
     VLASNIK_BREW="$(stat -f %Su "$(dirname "$(dirname "$BREW_BIN")")" 2>/dev/null || echo "$USER")"
     radi "brew install ${FALE_BREW[*]} (Homebrew korisnika $VLASNIK_BREW)"
@@ -103,7 +105,6 @@ if [ "$OS_IME" = Darwin ]; then
       fi
     fi
   fi
-  PATH="$PATH:$(dirname "${BREW_BIN:-/opt/homebrew/bin/brew}")"
 else
   UPUTA_FFMPEG="apt install ffmpeg"
 fi
