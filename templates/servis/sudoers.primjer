@@ -28,6 +28,10 @@ Cmnd_Alias REGOC_USLUGE = \
     /bin/launchctl kickstart system/hr.regoc.znanje, \
     /bin/launchctl bootout system/hr.regoc.znanje, \
     /bin/launchctl bootstrap system /Library/LaunchDaemons/hr.regoc.znanje.plist, \
+    /bin/launchctl kickstart -k system/hr.regoc.voice, \
+    /bin/launchctl kickstart system/hr.regoc.voice, \
+    /bin/launchctl bootout system/hr.regoc.voice, \
+    /bin/launchctl bootstrap system /Library/LaunchDaemons/hr.regoc.voice.plist, \
     /bin/launchctl kickstart -k system/hr.regoc.pgvector, \
     /bin/launchctl kickstart system/hr.regoc.pgvector, \
     /bin/launchctl bootout system/hr.regoc.pgvector, \

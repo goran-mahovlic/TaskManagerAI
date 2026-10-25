@@ -119,3 +119,53 @@ def test_md_u_mp3_jednom_naredbom(tmp_path):
     assert info["streams"][0]["codec_name"] == "mp3"
     assert float(info["format"]["duration"]) > 1.5
     assert not list(tmp_path.glob("*.wav")), "privremeni WAV ostao"
+
+
+# ── TASK-5795: izbor jezika i glasa ──────────────────────────────────────────
+
+from glas import odaberi_model  # noqa: E402
+
+
+def test_hr_zadano_hr_regoc_s_receptom(tmp_path):
+    m = odaberi_model("hr", None, str(tmp_path / "hr_regoc.onnx"))
+    assert m["model"].endswith("hr_regoc.onnx") and m["recept_hr"] is True
+
+
+def test_en_zadano_alan_bez_hr_pripreme(tmp_path):
+    m = odaberi_model("en", None, str(tmp_path / "hr_regoc.onnx"))
+    assert m["model"] == str(tmp_path / "en_GB-alan-medium.onnx")
+    assert m["recept_hr"] is False
+
+
+def test_glas_po_imenu_iz_iste_mape_putanja_odbijena(tmp_path):
+    m = odaberi_model("en", "en_US-ryan-high", str(tmp_path / "hr_regoc.onnx"))
+    assert m["model"] == str(tmp_path / "en_US-ryan-high.onnx")
+    with pytest.raises(ValueError):
+        odaberi_model("en", "../tajna", str(tmp_path / "hr_regoc.onnx"))
+
+
+def test_glasovi_popis_iz_mape(tmp_path):
+    for ime in ("hr_regoc", "en_GB-alan-medium"):
+        (tmp_path / f"{ime}.onnx").write_bytes(b"x")
+        (tmp_path / f"{ime}.onnx.json").write_text("{}")
+    (tmp_path / "bez_json.onnx").write_bytes(b"x")
+    r = pokreni("--glasovi", "--model", str(tmp_path / "hr_regoc.onnx"))
+    assert r.returncode == 0, r.stderr
+    assert json.loads(r.stdout)["glasovi"] == ["en_GB-alan-medium", "hr_regoc"]
+
+
+def test_nepoznat_jezik_odbijen():
+    r = pokreni("-", "-o", "/tmp/x.mp3", "--jezik", "de", ulaz="Hallo.")
+    assert r.returncode == 2
+
+
+EN_MODEL = os.path.join(os.path.dirname(MODEL), "en_GB-alan-medium.onnx")
+
+
+@pytest.mark.skipif(not os.path.exists(EN_MODEL) or not shutil.which("ffmpeg"), reason="nema en_GB-alan-medium ili ffmpeg")
+def test_engleski_mp3(tmp_path):
+    izlaz = tmp_path / "en.mp3"
+    r = pokreni("-", "-o", str(izlaz), "--jezik", "en", ulaz="Good afternoon.")
+    assert r.returncode == 0, r.stderr
+    j = json.loads(r.stdout)
+    assert j["jezik"] == "en" and j["normalizacija"] is False and izlaz.stat().st_size > 1000

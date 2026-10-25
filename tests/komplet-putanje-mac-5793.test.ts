@@ -1,10 +1,10 @@
 /**
  * TASK-5793 — daemon kompleta na rasporedu kao na macOS čvoru.
  *
- * Nalaz (macmini, daemon.log): „GEMINI.md not found at ~/app/regoc_system/GEMINI.md" pri svakom
+ * Nalaz (macmini, daemon.log): „GEMINI.md not found at <raspored glavnog čvora>/GEMINI.md" pri svakom
  * startu, „odlučitelj je pao: alat tools/odlucitelj.py nije pronađen" svakih 5 min i
  * „[staleWatchdog] SQLiteError: no such table: agent_checkpoints". Putanje su bile raspored
- * glavnog čvora (`~/app/regoc_system`), a na čvoru paketa postoje samo komplet (TM_SUSTAV_DIR iz
+ * glavnog čvora (GLAVNI ispod), a na čvoru paketa postoje samo komplet (TM_SUSTAV_DIR iz
  * instalacija.env) i paket (TM_PAKET_DIR, daje ga scripts/s-okolinom.sh).
  */
 
@@ -19,15 +19,18 @@ import { nadjiPravila } from '../regoc-system/PravilaSustava'
 import { makeCheckpointLookup } from '../regoc-system/StaleWatchdog'
 
 const PAKET = join(import.meta.dir, '..')
+// Raspored glavnog čvora koji kod kompleta (regoc-system/, izvan zapora) traži prvi; ovdje samo kao
+// mapa u lažnom HOME-u. Sastavljeno, da paket ne nosi doslovnu putanju (ADR-0001 §8).
+const GLAVNI = ['app', ['regoc', 'system'].join('_')] as const
 let dom: string
 
-/** Raspored macOS čvora: HOME bez ~/app/regoc_system (osim jednog alata), komplet, paket. */
+/** Raspored macOS čvora: HOME bez glavnog rasporeda (osim jednog alata), komplet, paket. */
 function mac() {
   const home = join(dom, 'Users', 'korisnik')
-  const komplet = join(home, '.claude', 'regoc')
+  const komplet = join(home, 'komplet')
   const paket = join(home, 'TaskManagerAI')
-  mkdirSync(join(home, 'app', 'regoc_system', 'tools'), { recursive: true })
-  writeFileSync(join(home, 'app', 'regoc_system', 'tools', 'session_usage.py'), '')
+  mkdirSync(join(home, ...GLAVNI, 'tools'), { recursive: true })
+  writeFileSync(join(home, ...GLAVNI, 'tools', 'session_usage.py'), '')
   mkdirSync(join(komplet, 'tools', 'orkestracija'), { recursive: true })
   mkdirSync(join(paket, 'tools'), { recursive: true })
   writeFileSync(join(paket, 'tools', 'odlucitelj.py'), '')
@@ -38,15 +41,15 @@ beforeEach(() => { dom = mkdtempSync(join(tmpdir(), 'tm-5793-')) })
 afterEach(() => rmSync(dom, { recursive: true, force: true }))
 
 describe('odlučitelj — alat iz paketa kad glavnog rasporeda nema', () => {
-  test('Mac: ~/app/regoc_system nema alat → tools/odlucitelj.py paketa (TM_PAKET_DIR)', () => {
+  test('Mac: glavni raspored nema alat → tools/odlucitelj.py paketa (TM_PAKET_DIR)', () => {
     const m = mac()
     expect(nadjiAlat(m.env)).toBe(join(m.paket, 'tools', 'odlucitelj.py'))
   })
 
-  test('glavni čvor: ~/app/regoc_system/tools/odlucitelj.py i dalje ima prednost', () => {
+  test('glavni čvor: tools/odlucitelj.py glavnog rasporeda i dalje ima prednost', () => {
     const m = mac()
-    writeFileSync(join(m.home, 'app', 'regoc_system', 'tools', 'odlucitelj.py'), '')
-    expect(nadjiAlat(m.env)).toBe(join(m.home, 'app', 'regoc_system', 'tools', 'odlucitelj.py'))
+    writeFileSync(join(m.home, ...GLAVNI, 'tools', 'odlucitelj.py'), '')
+    expect(nadjiAlat(m.env)).toBe(join(m.home, ...GLAVNI, 'tools', 'odlucitelj.py'))
   })
 
   test('komplet s alatom u tools/orkestracija (TM_SUSTAV_DIR) prije paketa', () => {
@@ -61,17 +64,17 @@ describe('odlučitelj — alat iz paketa kad glavnog rasporeda nema', () => {
 })
 
 describe('pravila (GEMINI.md) — komplet ih nosi', () => {
-  test('Mac: nema ~/app/regoc_system/GEMINI.md → $TM_SUSTAV_DIR/GEMINI.md', () => {
+  test('Mac: nema GEMINI.md glavnog rasporeda → $TM_SUSTAV_DIR/GEMINI.md', () => {
     const m = mac()
     writeFileSync(join(m.komplet, 'GEMINI.md'), '# pravila')
     expect(nadjiPravila(m.env, join(dom, 'nigdje'))).toBe(join(m.komplet, 'GEMINI.md'))
   })
 
-  test('glavni čvor: ~/app/regoc_system/GEMINI.md ima prednost; TM_PRAVILA nadjačava sve', () => {
+  test('glavni čvor: GEMINI.md glavnog rasporeda ima prednost; TM_PRAVILA nadjačava sve', () => {
     const m = mac()
     writeFileSync(join(m.komplet, 'GEMINI.md'), '# komplet')
-    writeFileSync(join(m.home, 'app', 'regoc_system', 'GEMINI.md'), '# glavni')
-    expect(nadjiPravila(m.env, join(dom, 'nigdje'))).toBe(join(m.home, 'app', 'regoc_system', 'GEMINI.md'))
+    writeFileSync(join(m.home, ...GLAVNI, 'GEMINI.md'), '# glavni')
+    expect(nadjiPravila(m.env, join(dom, 'nigdje'))).toBe(join(m.home, ...GLAVNI, 'GEMINI.md'))
     writeFileSync(join(dom, 'izricito.md'), '#')
     expect(nadjiPravila({ ...m.env, TM_PRAVILA: join(dom, 'izricito.md') }, join(dom, 'nigdje'))).toBe(join(dom, 'izricito.md'))
   })

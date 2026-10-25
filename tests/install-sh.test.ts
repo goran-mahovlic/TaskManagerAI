@@ -145,7 +145,8 @@ describe('install.sh --suho', () => {
       expect(snimka(o.home)).toEqual(prije)
       const tablica = r.izlaz.split('\n').filter(l => /^\s{4}\d{1,2}\s{2,}/.test(l))
       expect(tablica.map(l => Number(l.trim().split(/\s+/)[0]))).toEqual(Array.from({ length: 35 }, (_, i) => i + 1))
-      expect(tablica.filter(l => l.includes('nije podržano')).length).toBe(3)
+      // TASK-5795: glas (red 34) više nije „nije podržano” — scripts/instaliraj-glas.sh ga postavlja na macOS-u.
+      expect(tablica.filter(l => l.includes('nije podržano')).length).toBe(2)
       expect(r.izlaz).toContain('Homebrew: nema — nije potreban')
       // omotač se postavlja samo kad naredbe nema (ovdje je PATH s /usr/bin, pa ovisi o stroju)
       expect(r.izlaz).toMatch(/\(suho\).*\.local\/bin\/setsid|setsid: postoji/)

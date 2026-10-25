@@ -238,7 +238,7 @@ export const CINJENICA_BEZ: Readonly<Record<Mogucnost, string>> = {
   docuseal: 'Na ovom čvoru nema DocuSeala: potpisivanje dokumenata ovdje nije dostupno.',
   glas: 'Na ovom čvoru nema glasovnog servisa (STT/TTS): glasovne poruke se ne prepisuju i odgovor je samo tekst.',
   ollama: 'Na ovom čvoru nema lokalnih modela (Ollama): sav rad ide preko vanjskog modela.',
-  internet: 'Ovaj čvor nema dopuštenje za objavu na internet (GitHub, javni linkovi) — to traži odobrenje vlasnika čvora.',
+  internet: 'Ovaj čvor nema dopuštenje za objavu na internet (GitHub, javni linkovi) — to traži odobrenje vlasnika čvora. To se odnosi samo na objavu, ne na čitanje weba (zasebna mogućnost u stanju čvora).',
   root: 'Ovaj čvor nema root ovlasti: instalacija sustavskih paketa traži vlasnika čvora.',
 }
 

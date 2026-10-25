@@ -937,12 +937,42 @@ function agentiIzRegistra(k: Kontekst): string {
   return '(v. registar agenata, `TM_AGENTS_REGISTRY`)'
 }
 
+/**
+ * TASK-5795: odjeljak vodiča o internetu. Capguard (RegocMobile Linux) ima sklopke; čvor bez njega
+ * (macOS) ima postavku TM_INTERNET — tekst o capguardu tamo je model čitao kao zabranu i čitanja weba.
+ */
+export const CAPGUARD = '/usr/local/sbin/regoc-capguard'
+export function odjeljakInterneta(imaCapguard: boolean): string {
+  if (imaCapguard) return [
+    '## Sklopke (capguard) — sudo, paketi, internet',
+    `Stanje (bez lozinke): \`cat /etc/regoc/capabilities.state\` ili \`${CAPGUARD} status\`.`,
+    `Istina o stvarnom stanju: \`sudo ${CAPGUARD} verify\` (exit 3 = deklarirano ≠ stvarno).`,
+    '- Tier-1 (`plan_mode`, `allow_spawn`, `allow_messaging`, `allow_fs_write`) — primjenjuje se samo.',
+    '- Tier-2 (`allow_lan`, `allow_internet`, `allow_root`, `allow_mesh`) — SAMO uz odobrenje vlasnika',
+    `  (\`sudo ${CAPGUARD} approve <ime> on|off\`). Ovdje se smije samo zatražiti`,
+    '  (kartica Sigurnost na ploči). Ne zaobilazi sklopke; ako treba internet/root, reci vlasniku što',
+    '  uključiti. Nakon reboota internet je blokiran dok se ponovo ne odobri (fail-closed).',
+    '- `sudo`/`apt install` rade samo dok je `allow_root` uključen.',
+  ].join('\n')
+  return [
+    '## Internet — čitanje i objava (postavka `TM_INTERNET`)',
+    'Ovaj čvor nema capguard (`/etc/regoc/capabilities.state` ne postoji i ne treba ga tražiti). Internet',
+    'određuje postavka `TM_INTERNET` u `config/postavke.env` čvora (upisuje je vlasnik):',
+    '- `citanje` — smiješ pretraživati web (WebSearch) i dohvaćati stranice (WebFetch); navedi izvor.',
+    '- `objava` — uz čitanje i objava (push na GitHub, javni linkovi), uz pravila vlasnika.',
+    '- `off` ili bez postavke — ni jedno ni drugo; reci vlasniku što uključiti.',
+    'Trenutačno stanje piše u dokumentu memorije `cvor/stanje` (mogućnosti čvora). Objava uvijek traži',
+    'odobrenje vlasnika ako postavka nije `objava`; čitanje weba nije objava.',
+  ].join('\n')
+}
+
 export function popuniPredlozak(put: string, k: Kontekst, najvise: number): string {
   let tekst: string
   try { tekst = readFileSync(put, 'utf-8') } catch { throw new GreskaPreduvjeta(`predložak ${put} ne postoji`) }
   const v: Record<string, string> = {
     ...k.inst, HOME: k.stanje.home, KORISNIK: basename(k.stanje.home), HOST: k.hostname,
     TM_PORT: envPoProfilu(k, 'TM_PORT') || '17781', AGENTI: agentiIzRegistra(k),
+    ODJELJAK_INTERNET: odjeljakInterneta(existsSync(CAPGUARD)),
   }
   const nepoznata: string[] = []
   const out = tekst.replace(/\{\{(\w+)\}\}/g, (_m, ime) => {

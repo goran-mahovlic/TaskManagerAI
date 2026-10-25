@@ -87,7 +87,12 @@ const OPIS_MOG: Record<string, [string, string]> = {
   docuseal: ['DocuSeal (potpisivanje) je spojen', 'DocuSeal NIJE spojen — potpisivanja nema'],
   glas: ['glasovni servis (STT/TTS) radi', 'glasovnog servisa nema'],
   ollama: ['lokalni modeli (Ollama) su dostupni', 'lokalnih modela (Ollama) nema'],
-  internet: ['dopuštena je objava na internet (uz pravila vlasnika)', 'objava na internet nije dopuštena'],
+  // TASK-5795: čitanje weba (web) i objava (internet) su dvije mogućnosti — „objava nije dopuštena"
+  // model je čitao kao zabranu i pretraživanja.
+  web: ['čitanje weba je dopušteno: smiješ pretraživati internet (WebSearch) i dohvaćati stranice (WebFetch) za odgovor, uz navođenje izvora',
+    'čitanje weba nije uključeno (vlasnik ga uključuje postavkom TM_INTERNET=citanje)'],
+  internet: ['dopuštena je objava na internet (uz pravila vlasnika)',
+    'objava na internet (GitHub, javni linkovi) traži odobrenje vlasnika — to se odnosi samo na objavu, ne na čitanje weba'],
   root: ['čvor ima root ovlasti', 'čvor nema root ovlasti'],
 }
 

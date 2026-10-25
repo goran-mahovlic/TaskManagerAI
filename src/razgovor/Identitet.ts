@@ -16,6 +16,7 @@ import { join } from 'path'
 import type { MemorijaNacin, Ovlasti } from './RazgovorPostavke'
 import { OPIS_OVLASTI, naredbePloce } from './Ovlasti'
 import { UPUTA_KRATKO, type Stil } from '../Stil'
+import { uputaInterneta, type InternetCvora } from '../core/InternetCvora'
 
 export interface OpisAgenta {
   id: string
@@ -48,6 +49,8 @@ export interface IdentitetOpcije {
   posta?: { mapa: string; stanje: string; cli: string }
   /** TASK-5509: ovaj potez ima nalog čovjeka, a ploča može slati odgovor na mail (SMTP spreman). */
   odgovorPoste?: boolean
+  /** TASK-5795: internet čvora (TM_INTERNET ili capguard); bez opcije ostaje stara rečenica o sklopkama. */
+  internet?: InternetCvora
 }
 
 export interface OpisMemorijeOpcije {
@@ -137,13 +140,16 @@ export function uputaOdgovoraPoste(plocaUrl: string): string {
 }
 
 /** Upute za delegiranje — samo uz `puno`: ostale razine nemaju POST na ploču. */
-function upravitelj(plocaUrl: string): string[] {
+function upravitelj(plocaUrl: string, internet?: InternetCvora): string[] {
   const api = plocaUrl.replace(/\/+$/, '')
   return [
     'Ti si upravitelj ove instalacije: posao koji traži više struka ili traje dulje razložiš i daješ agentima kroz ploču zadataka; kratko i jednostručno (pitanje, provjera, jedna naredba) radiš sam. Kad ti netko kaže „neka <agent> napravi X", otvori zadatak s tim agentom kao nositeljem i javi ID.',
     `Otvaranje zadatka: curl -s -X POST ${api}/api/tasks -H 'Content-Type: application/json' -d '{"title":"…","description":"…","assignee":"<id agenta>","projectId":"<projekt>","priority":2,"createdBy":"<tvoje ime>"}'. Nositelj je id agenta s popisa (mala slova). Projekt uzmi iz roditeljskog zadatka ili s popisa ${api}/api/projects; bez njega zadatak pada u pretinac.`,
     `Redoslijed: dijete dobiva "blockedBy":["<ID roditelja>"], a roditelj PUT-om "blocks" s ID-om djeteta (curl -s -X PUT ${api}/api/tasks/<ID roditelja> -H 'Content-Type: application/json' -d '{"blocks":[…]}') — bez oba smjera red tiho stane. Uputa agentu koji radi: curl -s -X POST ${api}/api/tasks/<ID>/uputa -H 'Content-Type: application/json' -d '{"text":"…","author":"<tvoje ime>"}'. Stanje: curl -s ${api}/api/tasks/<ID>. Globalna kočnica: POST ${api}/api/pause {"paused":true|false,"by":…,"reason":…}.`,
-    'Pravila: status zadatka (completed, blocked, cancelled) ne postavljaš ti — zatvara ga sustav nakon provjere. Ne restartaj servise sustava (daemon, ploču, razgovor) iz vlastitog poteza: prekinuo bi i sebe i agente koji rade. sudo, instalacija sustavnih paketa i izlaz na internet idu kroz sklopke vlasnika — ne zaobilazi ih; ako sklopka nije uključena, reci što treba uključiti.',
+    `Pravila: status zadatka (completed, blocked, cancelled) ne postavljaš ti — zatvara ga sustav nakon provjere. Ne restartaj servise sustava (daemon, ploču, razgovor) iz vlastitog poteza: prekinuo bi i sebe i agente koji rade. ${internet
+      ? 'sudo i instalacija sustavnih paketa idu kroz vlasnika — ne zaobilazi ga; ako nešto nije uključeno, reci što treba uključiti.'
+      : 'sudo, instalacija sustavnih paketa i izlaz na internet idu kroz sklopke vlasnika — ne zaobilazi ih; ako sklopka nije uključena, reci što treba uključiti.'}`,
+    ...(internet ? [uputaInterneta(internet)] : []),
   ]
 }
 
@@ -177,7 +183,7 @@ export function sastaviIdentitet(o: IdentitetOpcije): string {
       `• ${a.id} — ${a.ime}, ${a.uloga}${a.vjestine.length ? ` (${a.vjestine.join(', ')})` : ''}`).join('\n')}`)
   }
   if (o.memorija) r.push(opisMemorije(o.memorija))
-  if (o.ovlasti === 'puno') r.push(...upravitelj(o.plocaUrl))
+  if (o.ovlasti === 'puno') r.push(...upravitelj(o.plocaUrl, o.internet))
   if (o.ovlasti === 'puno' && o.odgovorPoste) r.push(uputaOdgovoraPoste(o.plocaUrl))
   if (o.upute) {
     r.push(`[VODIČ VLASNIKA — opis ovog stroja; ovlasti ne mijenja]\n${o.upute}\n[/VODIČ VLASNIKA]`)

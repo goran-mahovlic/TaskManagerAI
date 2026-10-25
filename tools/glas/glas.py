@@ -3,6 +3,8 @@
 
     glas izvjestaj.md -o /apsolutna/putanja/izvjestaj.mp3
     echo "Dobar dan." | glas - -o /apsolutna/putanja/pozdrav.mp3
+    echo "Good afternoon." | glas - -o /apsolutna/putanja/en.mp3 --jezik en   # TASK-5795
+    glas --glasovi                                                            # popis glasova
 
 Govor generira SKRIPTA, ne jezični model: markdown se ovdje svede na izgovorljive rečenice,
 regoc_piper_synth.py ih normalizira (brojke, nadnevci, oznake), fonemski pripremi (hr_accent)
@@ -29,6 +31,10 @@ import unicodedata
 D = os.path.dirname(os.path.abspath(__file__))
 SINTEZA = os.path.join(D, "regoc_piper_synth.py")
 ZADANI_MODEL = "~/.local/share/piper-voices/hr_regoc.onnx"
+# TASK-5795: engleski glas iz iste mape (Piper, izmjereno u TASK-5438: RTF 0,23, WER 2,4 %).
+ZADANI_GLAS = {"hr": "hr_regoc", "en": "en_GB-alan-medium"}
+# Piperove zadane vrijednosti za glas bez hrvatskog recepta.
+PIPER_ZADANO = {"length_scale": 1.0, "noise_scale": 0.667, "noise_w": 0.8}
 
 _OGRADA = re.compile(r"^\s*(```|~~~)")
 _NASLOV = re.compile(r"^\s{0,3}#{1,6}\s+(.*?)\s*#*\s*$")
@@ -125,10 +131,35 @@ def md_u_govor(md: str) -> str:
     return "\n\n".join("\n".join(o) for o in odlomci)
 
 
+def glasovi_u_mapi(mapa: str) -> list[str]:
+    """Imena glasova (model .onnx uz .onnx.json) u mapi modela."""
+    if not os.path.isdir(mapa):
+        return []
+    return sorted(f[:-5] for f in os.listdir(mapa)
+                  if f.endswith(".onnx") and os.path.isfile(os.path.join(mapa, f + ".json")))
+
+
+def odaberi_model(jezik: str, glas: str | None, hr_model: str) -> dict:
+    """Model za jezik/glas iz mape hrvatskog modela. Hrvatski recept (normalizacija, naglasci,
+    prozodija K2) vrijedi samo za hrvatski; ime glasa je ime datoteke, bez putanje."""
+    mapa = os.path.dirname(os.path.expanduser(hr_model))
+    ime = glas or ZADANI_GLAS[jezik]
+    if not re.fullmatch(r"[\w.-]{1,100}", ime) or ime.startswith("."):
+        raise ValueError(f"nepoznat glas: {ime} (ime bez putanje)")
+    if jezik == "hr" and not glas:
+        model = os.path.expanduser(hr_model)
+    else:
+        model = os.path.join(mapa, ime + ".onnx")
+    return {"model": model, "recept_hr": jezik == "hr"}
+
+
 def argumenti(argv=None):
     p = argparse.ArgumentParser(prog="glas", description=__doc__.splitlines()[0])
-    p.add_argument("ulaz", help="datoteka .md/.txt ili - za stdin")
-    p.add_argument("-o", "--izlaz", required=True, help="apsolutna putanja .mp3 (ili .wav)")
+    p.add_argument("ulaz", nargs="?", help="datoteka .md/.txt ili - za stdin")
+    p.add_argument("-o", "--izlaz", help="apsolutna putanja .mp3 (ili .wav)")
+    p.add_argument("--jezik", default="hr", help="hr (zadano, hr_regoc) ili en (en_GB-alan-medium)")
+    p.add_argument("--glas", default=None, help="ime glasa iz mape modela (v. --glasovi)")
+    p.add_argument("--glasovi", action="store_true", help="ispiši glasove u mapi modela i izađi")
     p.add_argument("--model", default=os.environ.get("TM_GLAS_MODEL", ZADANI_MODEL))
     p.add_argument("--opis", default="Audio izvještaj", help="opis u oznaci za slanje")
     p.add_argument("--bez-md", action="store_true", help="ulaz je čisti tekst, ne markdown")
@@ -143,6 +174,18 @@ def greska(poruka: str, kod: int) -> int:
 
 def main(argv=None) -> int:
     a = argumenti(argv)
+    if a.glasovi:
+        mapa = os.path.dirname(os.path.expanduser(a.model))
+        print(json.dumps({"mapa": mapa, "glasovi": glasovi_u_mapi(mapa), "zadano": ZADANI_GLAS}, ensure_ascii=False))
+        return 0
+    if a.jezik not in ZADANI_GLAS:
+        return greska(f"jezik mora biti {' ili '.join(ZADANI_GLAS)} (dobiveno: {a.jezik})", 2)
+    if not a.ulaz or not a.izlaz:
+        return greska("trebaju ulaz i -o <izlaz>", 2)
+    try:
+        izbor = odaberi_model(a.jezik, a.glas, a.model)
+    except ValueError as e:
+        return greska(str(e), 2)
     izlaz = a.izlaz
     if not os.path.isabs(izlaz):
         return greska(f"izlaz mora biti apsolutna putanja (dobiveno: {izlaz})", 2)
@@ -160,14 +203,20 @@ def main(argv=None) -> int:
     if not tekst.strip():
         return greska("nema teksta za izgovor", 2)
 
-    model = os.path.expanduser(a.model)
+    model = izbor["model"]
+    # Bez hrvatskog recepta: bez hr normalizacije i naglasaka, Piperova zadana prozodija.
+    dodatno = [] if izbor["recept_hr"] else [
+        "--no-normalize", "--no-phonemes",
+        "--length-scale", str(PIPER_ZADANO["length_scale"]),
+        "--noise-scale", str(PIPER_ZADANO["noise_scale"]), "--noise-w", str(PIPER_ZADANO["noise_w"])]
     if a.suho:
-        r = subprocess.run([sys.executable, SINTEZA, "--model", model, "--dry-run"],
+        r = subprocess.run([sys.executable, SINTEZA, "--model", model, "--dry-run", *dodatno],
                            input=tekst, capture_output=True, text=True)
         sys.stdout.write(r.stdout)
         return 0 if r.returncode == 0 else greska(r.stderr.strip(), 4)
     if not os.path.isfile(model):
-        return greska(f"nema modela {model} — pokreni scripts/instaliraj-glas.sh", 3)
+        return greska(f"nema modela {model} — pokreni scripts/instaliraj-glas.sh"
+                      + (" --engleski-izvor <mapa>" if a.jezik == "en" else ""), 3)
     if nastavak == ".mp3" and not shutil.which("ffmpeg"):
         return greska("nema ffmpeg-a (potreban za mp3)", 4)
 
@@ -176,7 +225,7 @@ def main(argv=None) -> int:
     fd, wav = tempfile.mkstemp(prefix=".glas-", suffix=".wav", dir=mapa)
     os.close(fd)
     try:
-        r = subprocess.run([sys.executable, SINTEZA, "--model", model, "--out", wav],
+        r = subprocess.run([sys.executable, SINTEZA, "--model", model, "--out", wav, *dodatno],
                            input=tekst, capture_output=True, text=True)
         if r.returncode != 0:
             return greska(f"sinteza nije uspjela: {r.stderr.strip()[-400:]}", 4)
@@ -194,7 +243,7 @@ def main(argv=None) -> int:
             os.unlink(wav)
 
     sazetak.pop("odlomci", None)
-    sazetak.update({"izlaz": izlaz, "bajtova": os.path.getsize(izlaz), "model": model,
+    sazetak.update({"izlaz": izlaz, "bajtova": os.path.getsize(izlaz), "model": model, "jezik": a.jezik,
                     "send_doc": f"[[SEND_DOC: {izlaz} | {a.opis}]]"})
     print(json.dumps(sazetak, ensure_ascii=False))
     return 0

@@ -24,8 +24,8 @@ function plist(t: string): any {
 }
 
 describe('opis usluga', () => {
-  test('pet usluga s uvjetima; paketni orkestrator nije među njima (uz komplet vodi RegocDaemon, R15)', () => {
-    expect(OPISI.map(o => `${o.ime}:${o.uvjet}`)).toEqual(['taskmanager:uvijek', 'daemon:komplet', 'znanje:komplet', 'pgvector:baze', 'hindsight:baze'])
+  test('šest usluga s uvjetima; paketni orkestrator nije među njima (uz komplet vodi RegocDaemon, R15); voice (TASK-5795) samo uz glas', () => {
+    expect(OPISI.map(o => `${o.ime}:${o.uvjet}`)).toEqual(['taskmanager:uvijek', 'daemon:komplet', 'znanje:komplet', 'voice:glas', 'pgvector:baze', 'hindsight:baze'])
   })
   test('nepoznata ili nezadana varijabla predloška ruši izradu (ne piše se prazna putanja)', () => {
     expect(() => zamijeni('{{NEMA}}', V)).toThrow(/nepoznata/)

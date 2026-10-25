@@ -34,5 +34,5 @@
 31	~/.claude/node_modules	bun install --frozen-lockfile (komplet)	M	-	uz --komplet
 32	settings.json kuka (apsolutni bun)	predložak kompleta s $HOME	K	-	uz --komplet
 33	script -qfec (PTY)	BSD script -q /dev/null cmd	U	command -v script	platforma.ptyNaredba()
-34	glas (espeak-ng, ffmpeg, piper)	ne instalira se u prvoj fazi	N	-	--glas kasnije
+34	glas (espeak-ng, ffmpeg, piper)	scripts/instaliraj-glas.sh [--stt]: brew ffmpeg espeak-ng, venv piper-tts (+faster-whisper), usluga hr.regoc.voice	B	-	TASK-5795, ne ide u install.sh
 35	Setup GUI (regoc-setup)	install.sh + Config stranica	N	-	ne instalira se

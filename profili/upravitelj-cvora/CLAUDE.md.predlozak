@@ -44,15 +44,7 @@ curl -s -X POST 127.0.0.1:{{TM_PORT}}/api/pause -H 'Content-Type: application/js
 - Status (`completed`/`blocked`/`cancelled`) ne postavlja agent ni upravitelj — zatvara ga sustav
   nakon provjere; agent javlja ishod retkom `REGOC-STATUS:`.
 
-## Sklopke (capguard) — sudo, paketi, internet
-Stanje (bez lozinke): `cat /etc/regoc/capabilities.state` ili `/usr/local/sbin/regoc-capguard status`.
-Istina o stvarnom stanju: `sudo /usr/local/sbin/regoc-capguard verify` (exit 3 = deklarirano ≠ stvarno).
-- Tier-1 (`plan_mode`, `allow_spawn`, `allow_messaging`, `allow_fs_write`) — primjenjuje se samo.
-- Tier-2 (`allow_lan`, `allow_internet`, `allow_root`, `allow_mesh`) — SAMO uz odobrenje vlasnika
-  (`sudo /usr/local/sbin/regoc-capguard approve <ime> on|off`). Ovdje se smije samo zatražiti
-  (kartica Sigurnost na ploči). Ne zaobilazi sklopke; ako treba internet/root, reci vlasniku što
-  uključiti. Nakon reboota internet je blokiran dok se ponovo ne odobri (fail-closed).
-- `sudo`/`apt install` rade samo dok je `allow_root` uključen.
+{{ODJELJAK_INTERNET}}
 
 ## Govor — audio izvještaj (naredba `glas`)
 Govor generira SKRIPTA, ne ti riječ po riječ: napiši tekst (md), pa jednom naredbom napravi mp3
@@ -62,6 +54,7 @@ hrvatskim glasom hr_regoc (normalizacija brojki/nadnevaka, naglasci, odobreni re
 ```
 - Puna putanja jer ploča (i tvoja sesija) nema `~/.local/bin` u PATH-u; u ljusci vlasnika radi i kratko `glas`.
   Tekst može i kroz stdin: `… | ~/TaskManagerAI/scripts/glas - -o /apsolutna/putanja.mp3`.
+- Engleski: `--jezik en` (zadani glas en_GB-alan-medium; drugi s `--glas <ime>`, popis `--glasovi`).
 - Izlaz je JSON; polje `send_doc` je gotova oznaka za slanje — stavi je kao zaseban redak odgovora.
 - Za Telegram spremi md i mp3 u mapu iz koje se smije slati (privitci ovog chata, v. upute kanala).
 - Ne radi? `bash ~/TaskManagerAI/scripts/instaliraj-glas.sh --suho` kaže što fali (venv, model, ffmpeg).

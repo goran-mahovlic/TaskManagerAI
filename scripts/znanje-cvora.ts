@@ -27,6 +27,7 @@ import { homedir } from 'os'
 import { dirname, join } from 'path'
 import { branaKorpusa, renderZaCvor, type Mogucnost } from '../src/znanje/Korpus'
 import { usluga, uslugeRegoc } from '../src/core/platforma'
+import { internetCvora } from '../src/core/InternetCvora'
 import {
   dokumentAgenti, dokumentProjekti, dokumentRazgovor, dokumentStanje, dokumentZadatak, imaTajnu,
   planUpisa, sha, vaznost, type PotezRazgovora,
@@ -125,11 +126,16 @@ async function izmjeriMogucnosti(o: Okolina, mem: { url: string }): Promise<Reco
     } catch { /* nema */ }
   }
   try { m.ollama = !!ollama && (await fetch(`${ollama.replace(/\/+$/, '')}/api/tags`, { signal: AbortSignal.timeout(5000) })).ok } catch { m.ollama = false }
+  let capguard: boolean | null = null
   try {
-    const { j } = await dohvatiJson(`${o.ploca}/api/capabilities`)
-    m.internet = !!j?.effective?.allow_internet
+    const { status, j } = await dohvatiJson(`${o.ploca}/api/capabilities`)
+    if (status === 200 && j?.effective) capguard = !!j.effective.allow_internet
     m.root = !!j?.effective?.allow_root
-  } catch { m.internet = false; m.root = false }
+  } catch { m.root = false }
+  // TASK-5795: postavka čvora TM_INTERNET (macOS nema capguard) — čitanje weba ≠ objava.
+  const net = internetCvora({ ...citajEnv(join(o.tmHome, 'config', 'postavke.env')), ...o.postavke }, capguard)
+  m.web = net.citanje
+  m.internet = net.objava
   return m
 }
 

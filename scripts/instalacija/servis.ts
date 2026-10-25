@@ -18,7 +18,7 @@
  * $TM_HOME/backup/servis-<vrijeme>/, nova se zapiše i usluga se (ponovno) učita → `PROMIJENJENO`.
  * Izlaz: 0 uspjeh · 7 usluga se nije dala postaviti (kod iz P3.1) · 2 pogrešna uporaba (i korisnik root/prazan).
  *
- * Varijable predloška dolaze iz okoline: PAKET, TM_HOME, TM_PORT, BUN, KOMPLET, BAZE_VENV, PG_BIN.
+ * Varijable predloška dolaze iz okoline: PAKET, TM_HOME, TM_PORT, BUN, KOMPLET, BAZE_VENV, PG_BIN, TM_GLAS_VENV.
  */
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { homedir, userInfo } from 'os'
@@ -50,6 +50,7 @@ export function vrijednosti(env: Record<string, string | undefined> = process.en
     KOMPLET: env.KOMPLET || '',   // odredište kompleta zadaje install.sh (komplet.lock / TM_KOMPLET_DIR)
     BAZE_VENV: env.BAZE_VENV || join(tmHome, 'baze', 'venv'),
     PG_BIN: env.PG_BIN || join(tmHome, 'rag', 'pg0', 'bin'),
+    GLAS_VENV: env.TM_GLAS_VENV || join(home, '.local', 'share', 'regoc-piper', 'venv'),   // isti kao scripts/glas
     HOME: home,
     KORISNIK: env.KORISNIK ?? (env.USER || userInfo().username),
   }

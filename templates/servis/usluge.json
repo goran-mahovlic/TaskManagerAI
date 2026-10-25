@@ -28,6 +28,14 @@
       "argv": ["{{PAKET}}/scripts/s-okolinom.sh", "--", "{{BUN}}", "scripts/znanje-cvora.ts", "osvjezi", "--pisi"]
     },
     {
+      "ime": "voice",
+      "opis": "Glas čvora — STT (faster-whisper) + TTS (piper) na 127.0.0.1:8899, lokalno (TASK-5795)",
+      "uvjet": "glas",
+      "vrsta": "stalna",
+      "cwd": "{{PAKET}}",
+      "argv": ["{{PAKET}}/scripts/s-okolinom.sh", "--", "{{GLAS_VENV}}/bin/python", "{{PAKET}}/tools/glas/regoc-voice-server.py"]
+    },
+    {
       "ime": "pgvector",
       "opis": "Lokalni pgvector (RAG) — radi samo kad je rag.izvor=lokalna",
       "uvjet": "baze",

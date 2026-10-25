@@ -76,7 +76,8 @@ describe('instaliraj-glas.sh — uputa za ffmpeg ovisi o OS-u', () => {
   test('Darwin: bez apt-a; Linux: apt install ffmpeg', () => {
     const home = privremena('glas-')
     const mac = pokreni('instaliraj-glas.sh', ['--suho'], { HOME: home, TM_OS: 'Darwin', TM_GLAS_FFMPEG: 'nema-ffmpeg-5668' }).izlaz
-    expect(mac).toMatch(/ffmpeg \(statična binarka u ~\/\.local\/bin/)
+    // TASK-5795: nalog vlasnika — na macOS-u ffmpeg i espeak-ng iz Homebrewa (i kad je tuđi, sudo -u vlasnika).
+    expect(mac).toMatch(/ffmpeg \(brew install ffmpeg \(Homebrew\) ili statična binarka u ~\/\.local\/bin/)
     expect(mac).not.toMatch(/apt/)
     const lin = pokreni('instaliraj-glas.sh', ['--suho'], { HOME: home, TM_OS: 'Linux', TM_GLAS_FFMPEG: 'nema-ffmpeg-5668' }).izlaz
     expect(lin).toMatch(/ffmpeg \(apt install ffmpeg\)/)

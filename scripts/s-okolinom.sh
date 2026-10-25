@@ -44,6 +44,13 @@ for d in "${DATOTEKE[@]+"${DATOTEKE[@]}"}"; do ucitaj "$d"; done
 # TASK-5793: korijen paketa — daemon kompleta po njemu nalazi alate paketa (tools/odlucitelj.py).
 TM_PAKET_DIR="${TM_PAKET_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
 export TM_PAKET_DIR
+# TASK-5795: macOS — alati iz Homebrewa (ffmpeg, espeak-ng za glas) nisu u PATH-u plista; dodaju se
+# NA KRAJ, da ne zasjene sustavne naredbe.
+for d in /opt/homebrew/bin /usr/local/bin; do
+  [ -d "$d" ] || continue
+  case ":$PATH:" in *":$d:"*) ;; *) PATH="$PATH:$d" ;; esac
+done
+export PATH
 
 if [ -n "$CEKAJ" ]; then
   kraj=$(( $(date +%s) + ROK ))

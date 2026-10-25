@@ -21,6 +21,7 @@ import type { RazgovorPostavke } from './RazgovorPostavke'
 import { jeDopusten, razlogZaDrugog, trebaOdgovoriti } from './Filtar'
 import { argumentiOvlasti, okolinaRazgovora, radniDirRazgovora } from './Ovlasti'
 import { sTokenomPretplate } from '../core/ClaudePrijava'
+import { internetCvora } from '../core/InternetCvora'
 import { argumentiGeminija } from './Izvrsitelj'
 import { neutralizirajIme, neutralizirajTekst, zatamniTajne } from './Ciscenje'
 import { autoMemorijaCC, sastaviIdentitet, type OpisAgenta } from './Identitet'
@@ -525,6 +526,8 @@ export function stvoriRazgovor(d: RazgovorOvisnosti): RazgovorJezgra {
         agenti: d.agenti?.() || [], upute: d.upute?.() || null,
         ...(d.posta?.() ? { posta: d.posta!()! } : {}),
         ...(odgovorPoste ? { odgovorPoste: true } : {}),
+        // TASK-5795: samo uz postavku čvora — bez nje (node-A s capguardom) ostaje rečenica o sklopkama.
+        ...(internetCvora(d.env).izvor === 'TM_INTERNET' ? { internet: internetCvora(d.env) } : {}),
         memorija: {
           nacin: s.memorijaRazgovor, banka: s.memorijaBanka, url: s.memorijaUrl || d.env.TM_HINDSIGHT_URL || '',
           rag: d.ragUkljucen?.() ?? null, autoMemorija: autoMemorijaCC(d.home, radniDir),
