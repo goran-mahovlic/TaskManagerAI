@@ -1,5 +1,5 @@
 // TASK-5795: internet čvora bez capguarda — čitanje weba odvojeno od objave.
-// Mac (macmini-pv) nema capguard, pa je korpus pisao „objava na internet nije dopuštena" i
+// Mac (Mac čvor) nema capguard, pa je korpus pisao „objava na internet nije dopuštena" i
 // razgovor (razina puno, ima WebSearch/WebFetch) odbio je pregled sportskih događanja.
 import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'fs'
@@ -32,7 +32,7 @@ describe('internetCvora: TM_INTERNET ima prednost pred capguardom', () => {
 
 describe('korpus cvor/stanje: čitanje i objava su dvije rečenice', () => {
   test('čitanje uključeno, objava ne → model zna da smije pretraživati', () => {
-    const d = dokumentStanje({ cvor: 'macmini-pv', mogucnosti: { web: true, internet: false }, banka: 'b' })
+    const d = dokumentStanje({ cvor: 'mac-cvor', mogucnosti: { web: true, internet: false }, banka: 'b' })
     expect(d).toContain('čitanje weba je dopušteno')
     expect(d).toContain('WebSearch')
     expect(d).not.toContain('objava na internet nije dopuštena.')
@@ -48,7 +48,7 @@ describe('korpus cvor/stanje: čitanje i objava su dvije rečenice', () => {
 })
 
 describe('identitet razgovora (puno) kaže stanje interneta', () => {
-  const osnova = { ime: 'Bot', instalacija: 'macmini-pv', plocaUrl: 'http://127.0.0.1:17781', port: 17781, dokumenti: false, radniDir: '/r' }
+  const osnova = { ime: 'Bot', instalacija: 'mac-cvor', plocaUrl: 'http://127.0.0.1:17781', port: 17781, dokumenti: false, radniDir: '/r' }
   test('puno + čitanje: WebSearch/WebFetch, objava uz odobrenje', () => {
     const t = sastaviIdentitet({ ...osnova, ovlasti: 'puno', internet: internetCvora({ TM_INTERNET: 'citanje' }) })
     expect(t).toContain('Čitanje weba je na ovom čvoru UKLJUČENO')
