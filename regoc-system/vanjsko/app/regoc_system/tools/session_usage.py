@@ -8,8 +8,9 @@ optimizacije potrošnje.
 
 Kako radi:
   Pošalje minimalan probe (1 token) na SLUŽBENI Anthropic endpoint
-  https://api.anthropic.com/v1/messages s OAuth tokenom iz
-  ~/.claude/.credentials.json. Anthropic u response HEADERIMA vrati stanje
+  https://api.anthropic.com/v1/messages s OAuth tokenom pretplate (izvori
+  redom v. `load_token`: okolina, spremište čvora, ~/.claude/.credentials.json,
+  macOS Keychain). Anthropic u response HEADERIMA vrati stanje
   limita:
     anthropic-ratelimit-unified-5h-utilization  = % sesije (5h prozor)
     anthropic-ratelimit-unified-7d-utilization  = % tjedna (7d prozor)
@@ -43,6 +44,8 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
+import subprocess
 import sys
 import time
 import urllib.error
@@ -67,19 +70,75 @@ EXIT_METER_REJECTED = 2  # mjerilo odbijeno (HTTP greška bez brojke) — v. `me
 _C_RED, _C_YEL, _C_GRN, _C_DIM, _C_OFF = "\033[91m", "\033[93m", "\033[92m", "\033[2m", "\033[0m"
 
 
+# TASK-5791: odakle mjerilo uzima token pretplate, redom. Linux čvor ima samo datoteku prijave (CLI je
+# osvježava); macOS je drži u Keychainu ili je token upisan kroz ploču u spremište čvora, a daemon ga
+# dobiva i u okolini (s-okolinom.sh --tajne). Vrijednost se nikad ne ispisuje ni ne logira.
+TOKEN_ENV = "CLAUDE_CODE_OAUTH_TOKEN"
+KEYCHAIN_SERVICE = "Claude Code-credentials"
+PLATFORM = sys.platform  # testovi podmeću "darwin" za macOS granu
+
+
+def _spremiste_tajni() -> Path:
+    tm_home = Path(os.environ.get("TM_HOME") or Path.home() / ".taskmanager")
+    return Path(os.environ.get("TM_CREDENTIALS") or tm_home / "config" / "credentials.env")
+
+
+def _iz_spremista(put: Path) -> str:
+    """Samo ključ TOKEN_ENV iz spremišta; ništa se ne izvršava ni ne razvija (ADR-0007 §5.2)."""
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    try:
+        from tajna_redak import procitaj  # paket: zajednički parser uz ovu skriptu
+        return (procitaj(str(put), TOKEN_ENV) or "").strip()
+    except ImportError:
+        pass  # komplet: tajna_redak.py nije uz skriptu → isti oblici (IME='…', "…", goli, export)
+    finally:
+        sys.path.pop(0)
+    vrijednost = ""
+    try:
+        for red in put.read_text(encoding="utf-8").splitlines():
+            ime, jednako, v = red.strip().removeprefix("export ").partition("=")
+            if jednako and ime.strip() == TOKEN_ENV:
+                v = v.strip()
+                vrijednost = v[1:-1] if len(v) >= 2 and v[0] == v[-1] and v[0] in "'\"" else v
+    except OSError:
+        return ""
+    return vrijednost.strip()
+
+
+def _iz_datoteke_prijave() -> str:
+    try:
+        data = json.loads(CRED_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return ""
+    return str((data.get("claudeAiOauth") or {}).get("accessToken") or "").strip()
+
+
+def _iz_keychaina() -> str:
+    """macOS: stavka koju piše `claude login`. Izlaz alata `security` ne ide nikamo osim u token."""
+    if PLATFORM != "darwin":
+        return ""
+    alat = shutil.which("security") or "/usr/bin/security"
+    try:
+        r = subprocess.run([alat, "find-generic-password", "-s", KEYCHAIN_SERVICE, "-w"],
+                           capture_output=True, text=True, timeout=10)
+        if r.returncode != 0:
+            return ""
+        return str((json.loads(r.stdout).get("claudeAiOauth") or {}).get("accessToken") or "").strip()
+    except Exception:
+        return ""
+
+
 def load_token() -> str:
-    if not CRED_FILE.exists():
-        # TASK-5786: macOS drži prijavu u Keychainu (usluga ga ne vidi), pa je token pretplate u
-        # spremištu čvora i daemon ga dobiva u okolini (s-okolinom.sh --tajne).
-        env_token = (os.environ.get("CLAUDE_CODE_OAUTH_TOKEN") or "").strip()
-        if env_token:
-            return env_token
-        raise SystemExit(f"[GREŠKA] nema prijave za mjerilo: ni {CRED_FILE} ni CLAUDE_CODE_OAUTH_TOKEN u okolini")
-    data = json.loads(CRED_FILE.read_text(encoding="utf-8"))
-    token = data.get("claudeAiOauth", {}).get("accessToken")
-    if not token:
-        raise SystemExit("[GREŠKA] nema claudeAiOauth.accessToken u credentials")
-    return token
+    spremiste = _spremiste_tajni()
+    token = ((os.environ.get(TOKEN_ENV) or "").strip()
+             or _iz_spremista(spremiste)
+             or _iz_datoteke_prijave()
+             or _iz_keychaina())
+    if token:
+        return token
+    keychain = f", ni Keychain '{KEYCHAIN_SERVICE}'" if PLATFORM == "darwin" else ""
+    raise SystemExit(f"[GREŠKA] nema prijave za mjerilo: ni {TOKEN_ENV} u okolini, ni {TOKEN_ENV} u "
+                     f"{spremiste}, ni claudeAiOauth.accessToken u {CRED_FILE}{keychain}")
 
 
 def probe(token: str) -> dict:
