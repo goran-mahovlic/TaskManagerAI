@@ -35,6 +35,16 @@ ZADANI_MODEL = "~/.local/share/piper-voices/hr_regoc.onnx"
 ZADANI_GLAS = {"hr": "hr_regoc", "en": "en_GB-alan-medium"}
 # Piperove zadane vrijednosti za glas bez hrvatskog recepta.
 PIPER_ZADANO = {"length_scale": 1.0, "noise_scale": 0.667, "noise_w": 0.8}
+# macOS: Homebrew (/opt/homebrew/bin) nije u PATH-u ljuske korisnika usluge ni plista.
+FFMPEG_MJESTA = ("/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg")
+
+
+def nadji_ffmpeg() -> str | None:
+    """ffmpeg: TM_GLAS_FFMPEG, PATH, pa uobičajena mjesta Homebrewa."""
+    izbor = os.environ.get("TM_GLAS_FFMPEG")
+    if izbor:
+        return shutil.which(izbor)
+    return shutil.which("ffmpeg") or next((p for p in FFMPEG_MJESTA if os.access(p, os.X_OK)), None)
 
 _OGRADA = re.compile(r"^\s*(```|~~~)")
 _NASLOV = re.compile(r"^\s{0,3}#{1,6}\s+(.*?)\s*#*\s*$")
@@ -217,7 +227,8 @@ def main(argv=None) -> int:
     if not os.path.isfile(model):
         return greska(f"nema modela {model} — pokreni scripts/instaliraj-glas.sh"
                       + (" --engleski-izvor <mapa>" if a.jezik == "en" else ""), 3)
-    if nastavak == ".mp3" and not shutil.which("ffmpeg"):
+    ffmpeg = nadji_ffmpeg()
+    if nastavak == ".mp3" and not ffmpeg:
         return greska("nema ffmpeg-a (potreban za mp3)", 4)
 
     mapa = os.path.dirname(izlaz)
@@ -231,7 +242,7 @@ def main(argv=None) -> int:
             return greska(f"sinteza nije uspjela: {r.stderr.strip()[-400:]}", 4)
         sazetak = json.loads(r.stdout)
         if nastavak == ".mp3":
-            f = subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", wav,
+            f = subprocess.run([ffmpeg, "-y", "-loglevel", "error", "-i", wav,
                                 "-codec:a", "libmp3lame", "-q:a", "4", izlaz],
                                capture_output=True, text=True)
             if f.returncode != 0:

@@ -169,3 +169,16 @@ def test_engleski_mp3(tmp_path):
     assert r.returncode == 0, r.stderr
     j = json.loads(r.stdout)
     assert j["jezik"] == "en" and j["normalizacija"] is False and izlaz.stat().st_size > 1000
+
+
+def test_ffmpeg_iz_homebrewa_kad_nije_u_path(monkeypatch, tmp_path):
+    """TASK-5795: na macOS-u ffmpeg iz Homebrewa nije u PATH-u ljuske korisnika usluge."""
+    import glas
+    lazni = tmp_path / "ffmpeg"
+    lazni.write_text("#!/bin/sh\n"); lazni.chmod(0o755)
+    monkeypatch.setenv("PATH", "/nema")
+    monkeypatch.delenv("TM_GLAS_FFMPEG", raising=False)
+    monkeypatch.setattr(glas, "FFMPEG_MJESTA", (str(lazni),))
+    assert glas.nadji_ffmpeg() == str(lazni)
+    monkeypatch.setattr(glas, "FFMPEG_MJESTA", ())
+    assert glas.nadji_ffmpeg() is None

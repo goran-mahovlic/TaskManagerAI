@@ -51,6 +51,9 @@ describe('instaliraj-glas.sh na macOS-u (lažni Darwin)', () => {
     expect(s).toContain('shasum -a 256')
     expect(s).not.toMatch(/readlink -f/)
     expect(s).toContain('sudo -n -u "$VLASNIK_BREW"')
+    // PyAV 19 izbacio open(metadata_errors) → faster-whisper 1.2.1 pada (izmjereno na macmini-pv, /stt HTTP 500)
+    expect(s).toContain('AV_VERZIJA="18.0.0"')
+    expect(s).toContain('"av==$AV_VERZIJA"')
   })
 })
 

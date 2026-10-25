@@ -26,6 +26,7 @@ set -uo pipefail
 PAKET="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PIPER_VERZIJA="1.8.0"
 WHISPER_VERZIJA="1.2.1"          # ista kao servis na node-A
+AV_VERZIJA="18.0.0"              # PyAV ≥ 19 izbacio je open(metadata_errors=…) koji faster-whisper 1.2.1 zove → /stt HTTP 500
 VENV="${TM_GLAS_VENV:-$HOME/.local/share/regoc-piper/venv}"
 MODEL="${TM_GLAS_MODEL:-$HOME/.local/share/piper-voices/hr_regoc.onnx}"
 SHA="$PAKET/tools/glas/hr_regoc.sha256"
@@ -210,13 +211,14 @@ fi
 
 if [ "$STT" = 1 ]; then
   echo "6) STT i servis glasa (faster-whisper $WHISPER_VERZIJA, model $WHISPER, 127.0.0.1:$VRATA)"
-  if "$VENV/bin/python" -c 'import faster_whisper' 2>/dev/null; then
-    ok "faster-whisper $("$VENV/bin/python" -c 'from importlib.metadata import version; print(version("faster-whisper"))')"
+  if "$VENV/bin/python" -c 'import faster_whisper' 2>/dev/null \
+     && [ "$("$VENV/bin/python" -c 'import av; print(av.__version__)' 2>/dev/null)" = "$AV_VERZIJA" ]; then
+    ok "faster-whisper $("$VENV/bin/python" -c 'from importlib.metadata import version; print(version("faster-whisper"))'), av $AV_VERZIJA"
   else
-    radi "pip install faster-whisper==$WHISPER_VERZIJA u $VENV"
+    radi "pip install faster-whisper==$WHISPER_VERZIJA av==$AV_VERZIJA u $VENV"
     if [ "$SUHO" = 0 ]; then
-      { [ -x "$VENV/bin/pip" ] && "$VENV/bin/pip" install -q "faster-whisper==$WHISPER_VERZIJA"; } \
-        || "$PY" -m pip --python "$VENV/bin/python" install -q "faster-whisper==$WHISPER_VERZIJA" \
+      { [ -x "$VENV/bin/pip" ] && "$VENV/bin/pip" install -q "faster-whisper==$WHISPER_VERZIJA" "av==$AV_VERZIJA"; } \
+        || "$PY" -m pip --python "$VENV/bin/python" install -q "faster-whisper==$WHISPER_VERZIJA" "av==$AV_VERZIJA" \
         || { fali "pip install faster-whisper"; exit 1; }
     fi
   fi
