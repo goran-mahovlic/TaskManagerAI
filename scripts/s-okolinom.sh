@@ -41,6 +41,9 @@ ucitaj "$TM_HOME/config/instalacija.env"   # piše je install.sh
 ucitaj "$TM_HOME/config/postavke.env"      # lokalne postavke čvora — imaju prednost
 for d in "${DATOTEKE[@]+"${DATOTEKE[@]}"}"; do ucitaj "$d"; done
 [ "$TAJNE" = 1 ] && ucitaj "${TM_CREDENTIALS:-$TM_HOME/config/credentials.env}"
+# TASK-5793: korijen paketa — daemon kompleta po njemu nalazi alate paketa (tools/odlucitelj.py).
+TM_PAKET_DIR="${TM_PAKET_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
+export TM_PAKET_DIR
 
 if [ -n "$CEKAJ" ]; then
   kraj=$(( $(date +%s) + ROK ))

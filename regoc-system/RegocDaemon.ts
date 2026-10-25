@@ -199,6 +199,7 @@ import { neprovjerenoIdeUDojavu, dopuniDojavu, razdvojiZaFlush } from './ChatDoj
 import { deliverDocuments } from '../tools/Telegram/lib/SendDoc'   // TASK-5548
 // R2/TASK-2560: pravilo "je li task zaglavljen" + izuzeća (SSOT, dijeli ga i report alat)
 import { loadStaleWatchdogConfig, evaluateStaleTasks, makeCheckpointLookup, type StaleDecision } from './StaleWatchdog'
+import { nadjiPravila } from './PravilaSustava'
 // TASK-5204: naknadna revizija blokiranih — drugi prolaz istog nadzornika (docs/DIZAJN-revizija-blokiranih.md)
 import {
   loadBlockedReviewConfig, nacinRevizije, zadnjiProlazZaPonavljanje, PONOVI_PRESKOCENI_PROLAZ_MS, izmjeriOkolinu, provjeriUzrok, makeBlockedReviewLookup,
@@ -2022,7 +2023,8 @@ let geminiContext: string = ''
 // na svakom čvoru s drugim HOME-om daemon dizao „GEMINI.md not found" i radio BEZ 23 pravila.
 // Nađeno mjerenjem na node-B (HOME korisnika regoc) — normalizacija u isporuci gađa samo obrazac
 // `process.env.HOME || '…'`, a ovo nije bila rezerva nego jedina putanja.
-const GEMINI_PATH = join(HOME, 'app/regoc_system/GEMINI.md')
+// TASK-5793: i to je bio raspored glavnog čvora — na macOS čvoru pravila nosi komplet ($TM_SUSTAV_DIR).
+const GEMINI_PATH = nadjiPravila() ?? join(HOME, 'app/regoc_system/GEMINI.md')
 const AGENT_REGISTRY_PATH = join(HOME, '.claude/regoc/REGOC_AGENTS.json')
 
 interface AgentInfo {

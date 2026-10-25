@@ -285,12 +285,20 @@ export function evaluateStaleTasks(
  */
 export function makeCheckpointLookup(db: { prepare: (sql: string) => { get: (...args: any[]) => any } }): CheckpointLookup {
   const AGE_SQL = `CAST((julianday('now') - julianday(MAX(created_at))) * 86400000 AS INTEGER)`
-  const byTask = db.prepare(
-    `SELECT ${AGE_SQL} AS age_ms, MAX(created_at) AS created_at FROM agent_checkpoints WHERE task_id = ?`
-  )
-  const byAgent = db.prepare(
-    `SELECT ${AGE_SQL} AS age_ms, MAX(created_at) AS created_at FROM agent_checkpoints WHERE agent_id = ?`
-  )
+  // TASK-5793: tablicu stvara AgentDaemon; čvor bez njega (macOS) nema je — tada nema traga,
+  // a `prepare` ne smije srušiti cijeli prolaz nadzornika („no such table: agent_checkpoints").
+  let byTask: { get: (...args: any[]) => any }
+  let byAgent: { get: (...args: any[]) => any }
+  try {
+    byTask = db.prepare(
+      `SELECT ${AGE_SQL} AS age_ms, MAX(created_at) AS created_at FROM agent_checkpoints WHERE task_id = ?`
+    )
+    byAgent = db.prepare(
+      `SELECT ${AGE_SQL} AS age_ms, MAX(created_at) AS created_at FROM agent_checkpoints WHERE agent_id = ?`
+    )
+  } catch {
+    return () => null
+  }
 
   return (taskId: string, assignee: string): CheckpointInfo | null => {
     const candidates: CheckpointInfo[] = []

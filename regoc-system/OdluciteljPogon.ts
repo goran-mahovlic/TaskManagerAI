@@ -21,7 +21,7 @@
  *   - Rok od 3 min: mrezni model koji visi ne smije zaustaviti daemonovu petlju.
  */
 import { existsSync, readFileSync, writeFileSync, mkdirSync, renameSync } from 'fs'
-import { dirname } from 'path'
+import { dirname, join } from 'path'
 // Isti popisi kojima se ravna red autonomije — da se „tko se smije spawnati" ne razidje
 // na dva mjesta. Puštanje koje red ne bi podigao mora se ovdje prepoznati kao neizvedivo.
 import { ORCHESTRATOR_ASSIGNEES, DEFAULT_HUMAN_ASSIGNEES } from './AutonomyQueue'
@@ -110,10 +110,19 @@ export function trebaProlaz(zadnjiMs: number, sadaMs: number,
 }
 
 /** Alat zivi na jednom od tri mjesta, ovisno o tome je li repozitorij spojen. */
-export function nadjiAlat(): string | null {
-  for (const put of [`${HOME}/app/regoc_system/tools/odlucitelj.py`,
-                     `${HOME}/.claude/regoc/tools/odlucitelj.py`]) {
-    if (existsSync(put)) return put
+/**
+ * TASK-5793: raspored glavnog čvora pa komplet (`TM_SUSTAV_DIR` iz instalacija.env) pa paket
+ * (`TM_PAKET_DIR`, daje ga scripts/s-okolinom.sh). Na macOS čvoru je alat samo u paketu.
+ */
+export function nadjiAlat(env: Record<string, string | undefined> = process.env): string | null {
+  const home = env.HOME || HOME
+  const sustav = env.TM_SUSTAV_DIR
+  for (const put of [`${home}/app/regoc_system/tools/odlucitelj.py`,
+                     `${home}/.claude/regoc/tools/odlucitelj.py`,
+                     sustav && join(sustav, 'tools', 'odlucitelj.py'),
+                     sustav && join(sustav, 'tools', 'orkestracija', 'odlucitelj.py'),
+                     env.TM_PAKET_DIR && join(env.TM_PAKET_DIR, 'tools', 'odlucitelj.py')]) {
+    if (put && existsSync(put)) return put
   }
   return null
 }
@@ -247,7 +256,9 @@ export async function pokreniProlaz(opts: {
 
 function zadaniSpawn(rokMs: number) {
   return async (cmd: string[]) => {
-    const pr = Bun.spawn(cmd, { stdout: 'pipe', stderr: 'pipe' })
+    // TASK-5793: alat paketa (tools/odlucitelj.py) prekidač čita iz TM_ODLUCITELJ_CONFIG — isti koji čita daemon.
+    const pr = Bun.spawn(cmd, { stdout: 'pipe', stderr: 'pipe',
+      env: { ...process.env, TM_ODLUCITELJ_CONFIG: process.env.TM_ODLUCITELJ_CONFIG || ODLUCITELJ_CONFIG } })
     const cekaj = (async () => {
       const izlaz = await new Response(pr.stdout).text()
       const greske = await new Response(pr.stderr).text()
