@@ -521,7 +521,11 @@ def _pitaj_claude_cli(model: str, tekst: str) -> str | None:
     if model:
         naredba += ["--model", model]
     try:
-        pr = subprocess.run(naredba, capture_output=True, timeout=180, text=True)
+        # TASK-5792: token pretplate iz spremišta kad ga okolina nema (ploča na macOS-u).
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from tajna_redak import okolina_claudea
+        pr = subprocess.run(naredba, capture_output=True, timeout=180, text=True,
+                            env=okolina_claudea(str(CREDENTIALS)))
         return (pr.stdout or "").strip() or None
     except Exception as e:
         print(f"claude CLI ne odgovara: {e}", file=sys.stderr)

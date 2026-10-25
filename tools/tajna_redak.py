@@ -85,6 +85,23 @@ def procitaj(putanja, ime):
     return v or None
 
 
+CLAUDE_TOKEN_IME = 'CLAUDE_CODE_OAUTH_TOKEN'
+
+
+def okolina_claudea(putanja, env=None):
+    """TASK-5792 (zrcalo `ClaudePrijava.sTokenomPretplate`): okolina za `claude -p`. Kad je okolina
+    nema (ploča na macOS-u kreće bez `s-okolinom.sh --tajne`), iz spremišta se uzima SAMO token
+    pretplate; preusmjereni poziv (ANTHROPIC_BASE_URL) ga ne smije nositi."""
+    o = dict(os.environ if env is None else env)
+    if o.get('ANTHROPIC_BASE_URL'):
+        o.pop(CLAUDE_TOKEN_IME, None)
+    elif not o.get(CLAUDE_TOKEN_IME):
+        t = procitaj(putanja, CLAUDE_TOKEN_IME)
+        if t:
+            o[CLAUDE_TOKEN_IME] = t
+    return o
+
+
 def otisak_hmac(vrijednost, kljuc):
     return hmac.new(kljuc, vrijednost.encode('utf-8'), hashlib.sha256).hexdigest()[:8]
 

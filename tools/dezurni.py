@@ -136,6 +136,16 @@ def _ucitaj_kljuc(ime: str) -> str:
     return ""
 
 
+def _okolina_claudea() -> dict:
+    """TASK-5792: `claude -p` s tokenom pretplate iz spremišta kad ga okolina nema (macOS)."""
+    try:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        from tajna_redak import okolina_claudea
+        return okolina_claudea(str(CREDENTIALS))
+    except Exception:
+        return dict(os.environ)
+
+
 def _konf_davatelja(ime: str) -> dict:
     try:
         return json.loads(KONFIG_MODELA.read_text(encoding="utf-8")).get(
@@ -203,7 +213,7 @@ def pitaj_model(kartica: str, pitanje: str, tokena: int = 200, p: dict | None = 
             naredba = [_claude(), "-p", f"{kartica}\n\n{pitanje}"]
             if model:
                 naredba += ["--model", model]
-            pr = subprocess.run(naredba, capture_output=True, timeout=180, text=True)
+            pr = subprocess.run(naredba, capture_output=True, timeout=180, text=True, env=_okolina_claudea())
             izlaz = (pr.stdout or "").strip()
             # Hook-blokada izlazi s exit 0 i vrati prompt — to nije odgovor modela.
             if "operation blocked by hook:" in izlaz.lower():
@@ -464,7 +474,7 @@ def probaj() -> str:
     try:
         p = subprocess.run(
             [_claude(), "-p", "odgovori samo rijecju: ok", "--model", "claude-haiku-4-5-20251001"],
-            capture_output=True, timeout=90, text=True)
+            capture_output=True, timeout=90, text=True, env=_okolina_claudea())
         izlaz = (p.stdout or "").strip()
         if p.returncode == 0 and izlaz:
             return f"primarni model RADI (odgovor: {izlaz[:60]})"

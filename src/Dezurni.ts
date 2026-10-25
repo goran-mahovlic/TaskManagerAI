@@ -25,6 +25,7 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'fs'
 import { dirname } from 'path'
 import { DEZURNI_CONFIG_PATH, MODEL_CONFIG_PATH, loadDezurniConfig, nacinPoziva, type NacinPoziva } from './DezurniConfig'
 import { procitajTajnu } from './core/ConfigModul'
+import { sTokenomPretplate } from './core/ClaudePrijava'
 import { stanjePutanja } from './core/paths'
 import { ciljRazgovora, jeAnthropicProvider, type CiljRazgovora } from './core/models/PrebaciSve'
 
@@ -187,10 +188,11 @@ export const NACIN_POZIVA_MOSTA: Record<NacinPoziva, (z: Zahtjev) => Promise<str
   },
 
   // Pretplata preko `claude -p`: ima smisla samo kad uzrok kvara nije bio Anthropic.
-  'claude-cli': async ({ p, sustav, pitanje }) => {
+  // TASK-5792: token pretplate iz spremišta kad ga okolina procesa nema (ploča na macOS-u).
+  'claude-cli': async ({ p, sustav, pitanje, o }) => {
     try {
       const proc = Bun.spawn(['claude', '-p', `${sustav}\n\n${pitanje}`, ...(p.model ? ['--model', p.model] : [])],
-        { stdout: 'pipe', stderr: 'ignore' })
+        { stdout: 'pipe', stderr: 'ignore', env: sTokenomPretplate(process.env, ime => tajna(o, ime)) as Record<string, string> })
       const izlaz = await new Response(proc.stdout).text()
       await proc.exited
       if (/operation blocked by hook:/i.test(izlaz)) return null

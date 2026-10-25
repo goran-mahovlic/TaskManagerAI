@@ -20,7 +20,7 @@ import type { Kanal, Razgovor, UlaznaPoruka } from './Kanal'
 import type { RazgovorPostavke } from './RazgovorPostavke'
 import { jeDopusten, razlogZaDrugog, trebaOdgovoriti } from './Filtar'
 import { argumentiOvlasti, okolinaRazgovora, radniDirRazgovora } from './Ovlasti'
-import { CLAUDE_TOKEN_IME } from '../core/ClaudePrijava'
+import { sTokenomPretplate } from '../core/ClaudePrijava'
 import { argumentiGeminija } from './Izvrsitelj'
 import { neutralizirajIme, neutralizirajTekst, zatamniTajne } from './Ciscenje'
 import { autoMemorijaCC, sastaviIdentitet, type OpisAgenta } from './Identitet'
@@ -506,14 +506,11 @@ export function stvoriRazgovor(d: RazgovorOvisnosti): RazgovorJezgra {
     c.botKontrola = kontrola
     const oznaka = `${p.kanal}:${p.chatId}`
     if (cilj.greska) log(`[razgovor] ${c.kljuc}: model ${specPoteza(s)} — ${cilj.greska}`)
-    const okolinaPoteza: Record<string, string | undefined> = { ...okolinaRazgovora(d.env, oznaka), ...cilj.env, ...(nalog ? { [NALOG_ENV]: nalog } : {}) }
-    // Preusmjereni poziv (ANTHROPIC_BASE_URL) ne smije nositi prijavu pretplate.
-    if (cilj.env.ANTHROPIC_BASE_URL) delete okolinaPoteza.CLAUDE_CODE_OAUTH_TOKEN
-    // TASK-5786: samo token pretplate (ne ostale tajne) iz spremišta, kad ga okolina ploče nema.
-    else if (!okolinaPoteza.CLAUDE_CODE_OAUTH_TOKEN && d.citajTajnu) {
-      const t = d.citajTajnu(CLAUDE_TOKEN_IME)
-      if (t) okolinaPoteza.CLAUDE_CODE_OAUTH_TOKEN = t
-    }
+    // Preusmjereni poziv (ANTHROPIC_BASE_URL) ne smije nositi prijavu pretplate; TASK-5786: inače samo
+    // token pretplate (ne ostale tajne) iz spremišta, kad ga okolina ploče nema.
+    const okolinaPoteza = sTokenomPretplate(
+      { ...okolinaRazgovora(d.env, oznaka), ...cilj.env, ...(nalog ? { [NALOG_ENV]: nalog } : {}) },
+      ime => d.citajTajnu?.(ime))
     // `rez` = dežurni kroz isti CLI (TASK-5359): drugi model i preusmjerena okolina, alati ostaju.
     const okolinaDezurnog = (env: Record<string, string>) => {
       const o: Record<string, string | undefined> = { ...okolinaRazgovora(d.env, oznaka), ...env, ...(nalog ? { [NALOG_ENV]: nalog } : {}) }

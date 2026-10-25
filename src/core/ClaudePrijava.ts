@@ -18,6 +18,23 @@ export const CLAUDE_TOKEN_IME = 'CLAUDE_CODE_OAUTH_TOKEN'
 export const CLAUDE_NAREDBA_PRIJAVE = 'claude auth login --claudeai'
 export const CLAUDE_NAREDBA_TOKENA = 'stty cols 500 rows 50 2>/dev/null; claude setup-token'
 
+/**
+ * TASK-5792: okolina za poziv `claude` iz procesa koji nema tajne u okolini (ploča na macOS-u kreće
+ * bez `s-okolinom.sh --tajne`, prijava je samo u spremištu). Iz spremišta se uzima SAMO token
+ * pretplate; preusmjereni poziv (ANTHROPIC_BASE_URL) ga ne smije nositi.
+ */
+export function sTokenomPretplate(
+  env: Record<string, string | undefined>, citajTajnu: (ime: string) => string | null | undefined,
+): Record<string, string | undefined> {
+  const o = { ...env }
+  if (o.ANTHROPIC_BASE_URL) delete o[CLAUDE_TOKEN_IME]
+  else if (!o[CLAUDE_TOKEN_IME]) {
+    const t = citajTajnu(CLAUDE_TOKEN_IME)
+    if (t) o[CLAUDE_TOKEN_IME] = t
+  }
+  return o
+}
+
 /** Naredba prijave i, na macOS-u, ime tajne u koju ide token iz izlaza. */
 export function prijavaClaudea(o?: Okolina): { cmd: string; tokenKey?: string } {
   return jeMac(o) ? { cmd: CLAUDE_NAREDBA_TOKENA, tokenKey: CLAUDE_TOKEN_IME } : { cmd: CLAUDE_NAREDBA_PRIJAVE }
