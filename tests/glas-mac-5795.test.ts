@@ -93,6 +93,12 @@ describe('servis glasa u paketu i okolina usluge', () => {
   test('ugovor kao Glas.ts: /health, /tts, /stt (+ ?lang=), samo 127.0.0.1', () => {
     for (const s of ['"/health"', '"/tts"', '"/stt"', 'parse_qs(put.query).get("lang")', 'ThreadingHTTPServer(("127.0.0.1", PORT)']) expect(srv).toContain(s)
   })
+  test('espeak-ng dobiva tekst kroz stdin (ne argv); preglednik (Origin) i tuđi Host se odbijaju', () => {
+    expect(srv).toContain('"--stdin"], input=text.encode()')
+    expect(srv).not.toMatch(/"-w",wav,text\]/)
+    expect(srv).toContain('not headers.get("Origin")')
+    expect((srv.match(/if not lokalni_zahtjev\(self\.headers\)/g) || []).length).toBe(2)
+  })
   test('python3 -m py_compile prolazi', () => {
     expect(Bun.spawnSync(['python3', '-m', 'py_compile', join(PAKET, 'tools', 'glas', 'regoc-voice-server.py')]).exitCode).toBe(0)
   })

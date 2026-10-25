@@ -115,7 +115,8 @@ def synth_ogg(text, speed=145, tune=None, voice=None):
                      f"--noise-w-scale {shlex.quote(t['noise_w_scale'])} --sentence-silence {shlex.quote(t['sentence_silence'])}")
             subprocess.run(["bash","-c",f"printf '%s' {shlex.quote(text)} | {shlex.quote(PY)} -m piper --model {shlex.quote(model)} {flags} --output_file {shlex.quote(wav)}"], check=True, capture_output=True)
         else:
-            subprocess.run(["espeak-ng","-v",ESPEAK_VOICE,"-s",str(speed),"-w",wav,text], check=True, capture_output=True)
+            # Tekst kroz stdin, ne kao argument: tekst koji počinje s „-" bio bi opcija espeak-ng-a.
+            subprocess.run(["espeak-ng","-v",ESPEAK_VOICE,"-s",str(int(speed)),"-w",wav,"--stdin"], input=text.encode(), check=True, capture_output=True)
         cmd = [FFMPEG,"-y","-i",wav]
         if TTS_BACKEND == "piper" and PIPER_AF.strip():
             cmd += ["-af", PIPER_AF]
@@ -146,16 +147,24 @@ def transcribe(data, ctype, jezik="hr"):
         try: os.unlink(p)
         except OSError: pass
 
+# Samo lokalni pozivatelji (ploča, curl): zahtjev preglednika nosi Origin, a DNS rebinding tuđi Host —
+# oba se odbijaju, da stranica otvorena na stroju ne može slati zvuk servisu (TASK-5795, pregled).
+DOPUSTENI_HOST = {f"127.0.0.1:{PORT}", f"localhost:{PORT}", "127.0.0.1", "localhost"}
+def lokalni_zahtjev(headers):
+    return not headers.get("Origin") and (headers.get("Host") or "127.0.0.1") in DOPUSTENI_HOST
+
 class H(BaseHTTPRequestHandler):
     def log_message(self, *a): pass
     def _send(self, code, body, ctype="application/json"):
         b = body if isinstance(body, (bytes, bytearray)) else json.dumps(body, ensure_ascii=False).encode()
         self.send_response(code); self.send_header("Content-Type", ctype); self.send_header("Content-Length", str(len(b))); self.end_headers(); self.wfile.write(b)
     def do_GET(self):
+        if not lokalni_zahtjev(self.headers): return self._send(403, {"error": "samo lokalni pozivatelj"})
         if urlparse(self.path).path == "/health":
             self._send(200, {"ok": True, "tts_backend": TTS_BACKEND, "voice": PIPER_VOICE or ESPEAK_VOICE, "stt_model": WHISPER_MODEL, "hr_accent": _PIPER is not None, "voices": sorted(available_voices())})
         else: self._send(404, {"error": "not found"})
     def do_POST(self):
+        if not lokalni_zahtjev(self.headers): return self._send(403, {"error": "samo lokalni pozivatelj"})
         n = int(self.headers.get("Content-Length", 0)); data = self.rfile.read(n)
         put = urlparse(self.path)
         try:
