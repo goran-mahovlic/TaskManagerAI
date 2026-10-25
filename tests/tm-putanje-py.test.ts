@@ -54,6 +54,18 @@ describe('tools/tm_putanje.py — isti korijen kao src/core/paths.ts', () => {
     ])
   })
 
+  // TASK-5792: kao `tmHomeKonfiguracije` u paths.ts — bez TM_HOME instalirani čvor (ima
+  // ~/.taskmanager/config/instalacija.env) drži spremište ondje; prije je Python tražio uz paket.
+  test('bez TM_HOME: ~/.taskmanager/config instaliranog čvora, inače uz paket', () => {
+    const dom = privremenaMapa(join(tmpdir(), 'tm-putanje-home-'))
+    const kod = 'import tm_putanje as t; print(t.konfig("credentials.env"))'
+    expect(py(kod, { HOME: dom }).izlaz).toBe(join(PAKET, 'config', 'credentials.env'))
+    mkdirSync(join(dom, '.taskmanager', 'config'), { recursive: true })
+    writeFileSync(join(dom, '.taskmanager', 'config', 'instalacija.env'), '')
+    writeFileSync(join(dom, '.taskmanager', 'config', 'credentials.env'), '')
+    expect(py(kod, { HOME: dom }).izlaz).toBe(join(dom, '.taskmanager', 'config', 'credentials.env'))
+  })
+
   test('Ollama bez TM_OLLAMA_URL nema adresu (nema zadane vrijednosti)', () => {
     expect(py('import tm_putanje as t; print(repr(t.ollama_url()))').izlaz).toBe("''")
     expect(py('import tm_putanje as t; print(t.ollama_url())', { TM_OLLAMA_URL: 'http://o:11434/' }).izlaz)

@@ -35,13 +35,18 @@ def konfig(ime: str, env_var: str | None = None) -> Path:
     """Konfiguracijska datoteka — isti redoslijed kao `konfigPutanja()` u paths.ts:
 
     1. varijabla okoline (puna putanja);
-    2. `$TM_HOME/config/<ime>`, ako ta datoteka ondje POSTOJI;
+    2. `$TM_HOME/config/<ime>`, ako ta datoteka ondje POSTOJI (bez TM_HOME vrijedi
+       `~/.taskmanager` instaliranog čvora — `tmHomeKonfiguracije`, TASK-5792);
     3. `config/<ime>` uz sam paket.
     """
     if env_var and os.environ.get(env_var):
         return Path(os.environ[env_var])
-    if os.environ.get("TM_HOME"):
-        uz_bazu = Path(os.environ["TM_HOME"]) / "config" / ime
+    tm = os.environ.get("TM_HOME")
+    if not tm:
+        zadano = Path(os.environ.get("HOME") or Path.home()) / ".taskmanager"
+        tm = str(zadano) if (zadano / "config" / "instalacija.env").exists() else ""
+    if tm:
+        uz_bazu = Path(tm) / "config" / ime
         if uz_bazu.exists():
             return uz_bazu
     return PAKET_DIR / "config" / ime
