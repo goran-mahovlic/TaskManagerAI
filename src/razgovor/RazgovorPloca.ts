@@ -124,11 +124,6 @@ export interface SklapanjeOpcije extends Omit<RazgovorOvisnosti, 'postavke' | 'i
   agentiPut?: string
   /** Vlasnik čvora: primatelji koda za tajne (TASK-5373) — vlastito ime ga ne utišava. */
   vlasnici?: () => string[]
-  /**
-   * Tajna po imenu (TASK-5728): okolina pa spremište tajni čvora, da tajnu kanala upisanu na stranici
-   * Tajne kanal vidi bez restarta. Zadano samo `env`.
-   */
-  citajTajnu?: (ime: string) => string | null | undefined
 }
 
 /**

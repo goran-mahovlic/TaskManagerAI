@@ -69,7 +69,12 @@ _C_RED, _C_YEL, _C_GRN, _C_DIM, _C_OFF = "\033[91m", "\033[93m", "\033[92m", "\0
 
 def load_token() -> str:
     if not CRED_FILE.exists():
-        raise SystemExit(f"[GREŠKA] credentials nisu nađeni: {CRED_FILE}")
+        # TASK-5786: macOS drži prijavu u Keychainu (usluga ga ne vidi), pa je token pretplate u
+        # spremištu čvora i daemon ga dobiva u okolini (s-okolinom.sh --tajne).
+        env_token = (os.environ.get("CLAUDE_CODE_OAUTH_TOKEN") or "").strip()
+        if env_token:
+            return env_token
+        raise SystemExit(f"[GREŠKA] nema prijave za mjerilo: ni {CRED_FILE} ni CLAUDE_CODE_OAUTH_TOKEN u okolini")
     data = json.loads(CRED_FILE.read_text(encoding="utf-8"))
     token = data.get("claudeAiOauth", {}).get("accessToken")
     if not token:

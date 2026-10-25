@@ -294,6 +294,33 @@ describe('J8 — vrata', () => {
     expect(o.kanal.tekstovi[0]!.tekst).not.toContain('Kvota')
   })
 
+  // TASK-5786: na macOS-u ploča (hr.regoc.taskmanager) kreće BEZ `s-okolinom.sh --tajne`, pa token
+  // pretplate iz spremišta (TASK-5754) nije u njezinoj okolini — potez ga uzima kroz `citajTajnu`.
+  test('token pretplate samo u spremištu → claude potez ga nosi (bez „Not logged in")', async () => {
+    const trazeno: string[] = []
+    const o = okolina({ burstMs: 0, model: 'anthropic:sonnet' }, {
+      ciljModela, env: { PATH: '/bin', HOME: '/h' },
+      citajTajnu: ime => { trazeno.push(ime); return ime === 'CLAUDE_CODE_OAUTH_TOKEN' ? 'sk-ant-oat01-iz-spremista' : null },
+    })
+    o.r.primi(por(), o.kanal)
+    await o.r.mirno()
+    const env = (o.izv.zahtjevi[0]!.extra as any).env
+    expect(env.CLAUDE_CODE_OAUTH_TOKEN).toBe('sk-ant-oat01-iz-spremista')
+    expect(trazeno).toEqual(['CLAUDE_CODE_OAUTH_TOKEN'])   // ostale tajne spremišta ne idu modelu
+  })
+
+  test('token u okolini ima prednost; preusmjereni poziv ni tada ne dobiva token iz spremišta', async () => {
+    const citajTajnu = () => 'sk-ant-oat01-iz-spremista'
+    const a = okolina({ burstMs: 0, model: 'anthropic:sonnet' }, { ciljModela, citajTajnu, env: { PATH: '/bin', HOME: '/h', CLAUDE_CODE_OAUTH_TOKEN: 'iz-okoline' } })
+    a.r.primi(por(), a.kanal)
+    await a.r.mirno()
+    expect((a.izv.zahtjevi[0]!.extra as any).env.CLAUDE_CODE_OAUTH_TOKEN).toBe('iz-okoline')
+    const b = okolina({ burstMs: 0, model: 'openrouter:z-ai/glm-5.2' }, { ciljModela, citajTajnu, env: { PATH: '/bin', HOME: '/h' } })
+    b.r.primi(por(), b.kanal)
+    await b.r.mirno()
+    expect((b.izv.zahtjevi[0]!.extra as any).env.CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined()
+  })
+
   test('kvota puna + razgovor na Anthropicu → i dalje fiksna poruka', async () => {
     const o = okolina({ burstMs: 0, model: 'anthropic:opus' }, { ciljModela })
     o.kvota(true)

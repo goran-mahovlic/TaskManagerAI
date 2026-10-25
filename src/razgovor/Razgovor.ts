@@ -20,6 +20,7 @@ import type { Kanal, Razgovor, UlaznaPoruka } from './Kanal'
 import type { RazgovorPostavke } from './RazgovorPostavke'
 import { jeDopusten, razlogZaDrugog, trebaOdgovoriti } from './Filtar'
 import { argumentiOvlasti, okolinaRazgovora, radniDirRazgovora } from './Ovlasti'
+import { CLAUDE_TOKEN_IME } from '../core/ClaudePrijava'
 import { argumentiGeminija } from './Izvrsitelj'
 import { neutralizirajIme, neutralizirajTekst, zatamniTajne } from './Ciscenje'
 import { autoMemorijaCC, sastaviIdentitet, type OpisAgenta } from './Identitet'
@@ -60,6 +61,11 @@ export interface RazgovorOvisnosti {
   plocaUrl: string
   instalacija: string
   env: Record<string, string | undefined>
+  /**
+   * Tajna po imenu: okolina pa spremište tajni čvora (TASK-5728). TASK-5786: odavde i token pretplate
+   * kad ga okolina nema — ploča na macOS-u kreće bez `s-okolinom.sh --tajne` (token je u spremištu).
+   */
+  citajTajnu?: (ime: string) => string | null | undefined
   /** Model kad `razgovor.model` nije postavljen (model-config `agentOverrides.razgovor`). */
   modelZadano?: () => string | undefined
   /**
@@ -503,6 +509,11 @@ export function stvoriRazgovor(d: RazgovorOvisnosti): RazgovorJezgra {
     const okolinaPoteza: Record<string, string | undefined> = { ...okolinaRazgovora(d.env, oznaka), ...cilj.env, ...(nalog ? { [NALOG_ENV]: nalog } : {}) }
     // Preusmjereni poziv (ANTHROPIC_BASE_URL) ne smije nositi prijavu pretplate.
     if (cilj.env.ANTHROPIC_BASE_URL) delete okolinaPoteza.CLAUDE_CODE_OAUTH_TOKEN
+    // TASK-5786: samo token pretplate (ne ostale tajne) iz spremišta, kad ga okolina ploče nema.
+    else if (!okolinaPoteza.CLAUDE_CODE_OAUTH_TOKEN && d.citajTajnu) {
+      const t = d.citajTajnu(CLAUDE_TOKEN_IME)
+      if (t) okolinaPoteza.CLAUDE_CODE_OAUTH_TOKEN = t
+    }
     // `rez` = dežurni kroz isti CLI (TASK-5359): drugi model i preusmjerena okolina, alati ostaju.
     const okolinaDezurnog = (env: Record<string, string>) => {
       const o: Record<string, string | undefined> = { ...okolinaRazgovora(d.env, oznaka), ...env, ...(nalog ? { [NALOG_ENV]: nalog } : {}) }
