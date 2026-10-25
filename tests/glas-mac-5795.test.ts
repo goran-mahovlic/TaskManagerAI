@@ -74,6 +74,16 @@ describe('usluga voice (templates/servis/usluge.json)', () => {
     expect(d.sadrzaj).toContain('<string>/Users/regoc/TaskManagerAI/tools/glas/regoc-voice-server.py</string>')
     expect(d.sadrzaj).toContain('<string>regoc</string>') // UserName, ne root
   })
+  test('interaktivna: plist BEZ ProcessType=Background/Nice (E-jezgre: /stt 8,1 s umjesto 1,4 s za 9 s zvuka)', () => {
+    expect(opis.interaktivna).toBe(true)
+    const [d] = datotekeUsluge(opis, 'darwin', v)
+    expect(d.sadrzaj).not.toContain('<string>Background</string>')
+    expect(d.sadrzaj).not.toContain('<key>Nice</key>')
+    expect(d.sadrzaj).not.toContain('LowPriorityIO')
+    const ploca = datotekeUsluge(ucitajOpise().find(o => o.ime === 'taskmanager')!, 'darwin', v)[0]
+    expect(ploca.sadrzaj).toContain('<string>Background</string>') // ostale usluge kao prije
+    expect(datotekeUsluge(opis, 'linux', { ...v, HOME: '/home/regoc' })[0].sadrzaj).not.toContain('Nice=10')
+  })
   test('Linux: regoc-voice.service (isto ime kao na node-A)', () => {
     const d = datotekeUsluge(opis, 'linux', { ...v, HOME: '/home/regoc' })
     expect(d[0].put).toBe('/home/regoc/.config/systemd/user/regoc-voice.service')
@@ -101,6 +111,15 @@ describe('servis glasa u paketu i okolina usluge', () => {
     expect(srv).not.toMatch(/"-w",wav,text\]/)
     expect(srv).toContain('not headers.get("Origin")')
     expect((srv.match(/if not lokalni_zahtjev\(self\.headers\)/g) || []).length).toBe(2)
+  })
+  test('STT pozadina: mlx-whisper na Apple Siliconu (izmjereno 0,42 s vs 3,10 s CPU int8 za 9 s zvuka), inače faster-whisper', () => {
+    expect(srv).toContain('STT_BACKEND')
+    expect(srv).toContain('mlx-community/whisper-large-v3-turbo')
+    expect(srv).toContain('platform.machine() == "arm64"')
+    expect(srv).toMatch(/"stt_backend": STT_BACKEND/)
+    const s = readFileSync(join(PAKET, 'scripts', 'instaliraj-glas.sh'), 'utf-8')
+    expect(s).toContain('MLX_VERZIJA="0.4.3"')
+    expect(s).toContain('"mlx-whisper==$MLX_VERZIJA"')
   })
   test('python3 -m py_compile prolazi', () => {
     expect(Bun.spawnSync(['python3', '-m', 'py_compile', join(PAKET, 'tools', 'glas', 'regoc-voice-server.py')]).exitCode).toBe(0)

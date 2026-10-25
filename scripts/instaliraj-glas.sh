@@ -26,6 +26,8 @@ set -uo pipefail
 PAKET="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PIPER_VERZIJA="1.8.0"
 WHISPER_VERZIJA="1.2.1"          # ista kao servis na node-A
+MLX_VERZIJA="0.4.3"              # Apple Silicon: STT na GPU-u (izmjereno 0,42 s vs 3,10 s CPU int8 za 9 s govora)
+MLX_MODEL="${MLX_WHISPER_MODEL:-mlx-community/whisper-large-v3-turbo}"
 AV_VERZIJA="18.0.0"              # PyAV ≥ 19 izbacio je open(metadata_errors=…) koji faster-whisper 1.2.1 zove → /stt HTTP 500
 VENV="${TM_GLAS_VENV:-$HOME/.local/share/regoc-piper/venv}"
 MODEL="${TM_GLAS_MODEL:-$HOME/.local/share/piper-voices/hr_regoc.onnx}"
@@ -220,6 +222,24 @@ if [ "$STT" = 1 ]; then
       { [ -x "$VENV/bin/pip" ] && "$VENV/bin/pip" install -q "faster-whisper==$WHISPER_VERZIJA" "av==$AV_VERZIJA"; } \
         || "$PY" -m pip --python "$VENV/bin/python" install -q "faster-whisper==$WHISPER_VERZIJA" "av==$AV_VERZIJA" \
         || { fali "pip install faster-whisper"; exit 1; }
+    fi
+  fi
+  # Apple Silicon: mlx-whisper (servis ga bira sam, STT_BACKEND=auto); faster-whisper ostaje rezerva.
+  if [ "$OS_IME" = Darwin ] && [ "$(uname -m)" = arm64 ]; then
+    if [ "$("$VENV/bin/python" -c 'from importlib.metadata import version; print(version("mlx-whisper"))' 2>/dev/null)" = "$MLX_VERZIJA" ]; then
+      ok "mlx-whisper $MLX_VERZIJA"
+    else
+      radi "pip install mlx-whisper==$MLX_VERZIJA u $VENV"
+      if [ "$SUHO" = 0 ]; then
+        { [ -x "$VENV/bin/pip" ] && "$VENV/bin/pip" install -q "mlx-whisper==$MLX_VERZIJA"; } \
+          || "$PY" -m pip --python "$VENV/bin/python" install -q "mlx-whisper==$MLX_VERZIJA" \
+          || { fali "pip install mlx-whisper"; exit 1; }
+      fi
+    fi
+    radi "model $MLX_MODEL u lokalni cache (jednom, s mreže)"
+    if [ "$SUHO" = 0 ]; then
+      HF_HUB_OFFLINE=0 "$VENV/bin/python" -c 'import sys, numpy, mlx_whisper; mlx_whisper.transcribe(numpy.zeros(16000, dtype=numpy.float32), path_or_hf_repo=sys.argv[1], language="hr")' "$MLX_MODEL" \
+        && ok "mlx model spreman" || { fali "skidanje modela $MLX_MODEL"; exit 1; }
     fi
   fi
   # Servis učitava model OFFLINE (HF_HUB_OFFLINE=1) — ovdje se skine jednom u lokalni cache.

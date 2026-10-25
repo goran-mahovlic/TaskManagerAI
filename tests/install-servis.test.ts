@@ -34,15 +34,15 @@ describe('opis usluga', () => {
 })
 
 describe('launchd (macOS)', () => {
-  test('svaki plist je ispravan, radi kao korisnik instalacije, u pozadini, bez tajni', () => {
+  test('svaki plist je ispravan, radi kao korisnik instalacije, u pozadini (osim interaktivnih, TASK-5795), bez tajni', () => {
     for (const o of OPISI) {
       const [d] = datotekeUsluge(o, 'darwin', V)
       expect(d.put).toBe(`/Library/LaunchDaemons/hr.regoc.${o.ime}.plist`)
       const p = plist(d.sadrzaj)
       expect(p.Label).toBe(`hr.regoc.${o.ime}`)
       expect(p.UserName).toBe('korisnik')
-      expect(p.ProcessType).toBe('Background')
-      expect(p.LowPriorityIO).toBe(true)
+      expect(p.ProcessType).toBe(o.interaktivna ? undefined : 'Background')
+      expect(p.LowPriorityIO).toBe(o.interaktivna ? undefined : true)
       expect(p.EnvironmentVariables.TMPDIR).toBe('/home/korisnik/.taskmanager/tmp')
       expect(p.EnvironmentVariables.PATH).toContain('/home/korisnik/.local/bin')
       expect(p.StandardOutPath).toBe(`/home/korisnik/.taskmanager/log/${o.ime}.log`)

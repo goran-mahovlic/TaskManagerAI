@@ -6,14 +6,20 @@ Endpointi:
   POST /stt   raw audio bytes (Content-Type audio/*) -> {text, language, seconds}
 Model se učita JEDNOM pri startu (STT brz). Bind 127.0.0.1 (nije izložen). Radi offline nakon što su modeli lokalni.
 Env: REGOC_VOICE_PORT(8899), WHISPER_MODEL(small), PIPER_VOICE(put do .onnx), ESPEAK_VOICE(hr),
-     STT_LANG(hr; "auto" = prepoznaj jezik), TM_GLAS_MODEL (mapa glasova), TM_GLAS_FFMPEG.
+     STT_LANG(hr; "auto" = prepoznaj jezik), TM_GLAS_MODEL (mapa glasova), TM_GLAS_FFMPEG,
+     STT_BACKEND(auto | mlx | faster-whisper), MLX_WHISPER_MODEL(mlx-community/whisper-large-v3-turbo).
+
+STT pozadina (TASK-5795, izmjereno na Apple M-čipu, 8,95 s hrvatskog govora): mlx-whisper
+large-v3-turbo 0,42 s bez greške; faster-whisper CPU int8 large-v3-turbo 3,10 s bez greške,
+small 1,35 s s greškama. Zato `auto` na macOS arm64 s instaliranim mlx-whisperom bira mlx, a
+inače (Linux, Intel Mac) faster-whisper kao prije.
 
 Paketna kopija (TaskManagerAI, TASK-5795): isti ugovor kao servis na node-A, uz macOS —
 Python iz venva (sys.executable, ne `python3` iz PATH-a launchd-a), ffmpeg i iz Homebrewa,
 naglasni leksikon uključen zadano (hr_accent.py i lexicon_hr.json su u istoj mapi), `/stt?lang=en`.
 Pokreće ga usluga `voice` (templates/servis/usluge.json) kroz scripts/s-okolinom.sh.
 """
-import os, sys, json, shutil, subprocess, tempfile, threading, time, glob, shlex
+import os, sys, json, shutil, subprocess, tempfile, threading, time, glob, shlex, platform
 from urllib.parse import urlparse, parse_qs
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -25,6 +31,9 @@ PY = sys.executable or "python3"
 # launchd ne nasljeđuje PATH ljuske — ffmpeg iz Homebrewa (/opt/homebrew/bin) se traži izričito.
 FFMPEG = os.environ.get("TM_GLAS_FFMPEG") or shutil.which("ffmpeg") or next(
     (p for p in ("/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg") if os.path.exists(p)), "ffmpeg")
+# mlx-whisper (i faster-whisper preko PyAV-a ne) zove `ffmpeg` po imenu — mapa mora biti u PATH-u.
+if os.path.isabs(FFMPEG) and os.path.dirname(FFMPEG) not in os.environ.get("PATH", "").split(os.pathsep):
+    os.environ["PATH"] = os.environ.get("PATH", "") + os.pathsep + os.path.dirname(FFMPEG)
 GLASOVI_DIR = os.path.dirname(os.path.expanduser(os.environ.get("TM_GLAS_MODEL", "~/.local/share/piper-voices/hr_regoc.onnx")))
 # Piper prozodija — "radijski voditelj" stil (brže, glatko, manje zastajkivanja).
 # length_scale<1 = brže; sentence_silence nisko = manje pauza; noise_w niže = ujednačeniji ritam (manje zastajkivanja).
@@ -74,10 +83,31 @@ if HR_ACCENT and TTS_BACKEND == "piper":
 # Model je već u lokalnom cacheu; za prvo (online) skidanje pokreni s HF_HUB_OFFLINE=0.
 os.environ.setdefault("HF_HUB_OFFLINE", "1")
 os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
-print(f"[voice] TTS={TTS_BACKEND} voice={PIPER_VOICE or ESPEAK_VOICE} | učitavam STT {WHISPER_MODEL} (offline)...", flush=True)
-from faster_whisper import WhisperModel
-_model = WhisperModel(WHISPER_MODEL, device="cpu", compute_type="int8")
+MLX_MODEL = os.environ.get("MLX_WHISPER_MODEL", "mlx-community/whisper-large-v3-turbo")
+
+def odaberi_stt(zeljeni=None):
+    """auto: mlx na macOS arm64 kad je mlx-whisper instaliran, inače faster-whisper."""
+    zeljeni = (zeljeni or os.environ.get("STT_BACKEND", "auto")).strip().lower()
+    if zeljeni in ("auto", "mlx") and sys.platform == "darwin" and platform.machine() == "arm64":
+        try:
+            import mlx_whisper  # noqa: F401
+            return "mlx"
+        except Exception as e:
+            if zeljeni == "mlx": print(f"[voice] STT_BACKEND=mlx, a mlx-whisper se ne da učitati: {e} — faster-whisper", flush=True)
+    return "faster-whisper"
+
+STT_BACKEND = odaberi_stt()
+STT_MODEL = MLX_MODEL if STT_BACKEND == "mlx" else WHISPER_MODEL
+print(f"[voice] TTS={TTS_BACKEND} voice={PIPER_VOICE or ESPEAK_VOICE} | učitavam STT {STT_BACKEND} {STT_MODEL} (offline)...", flush=True)
 _stt_lock = threading.Lock()
+if STT_BACKEND == "mlx":
+    import numpy as _np
+    import mlx_whisper
+    # Zagrijavanje: model se učita sada (mlx ga drži u memoriji), ne pri prvoj glasovnoj poruci.
+    mlx_whisper.transcribe(_np.zeros(16000, dtype=_np.float32), path_or_hf_repo=MLX_MODEL, language="hr")
+else:
+    from faster_whisper import WhisperModel
+    _model = WhisperModel(WHISPER_MODEL, device="cpu", compute_type="int8")
 print(f"[voice] STT spreman. Sluša 127.0.0.1:{PORT}", flush=True)
 
 # Odabir glasa po zahtjevu (TaskManagerAI TASK-5294): /tts {"voice": "<ime>"} — ime je osnovno ime
@@ -140,6 +170,11 @@ def transcribe(data, ctype, jezik="hr"):
     p = tempfile.mktemp(suffix=ext); open(p,"wb").write(data)
     try:
         with _stt_lock:
+            if STT_BACKEND == "mlx":
+                r = mlx_whisper.transcribe(p, path_or_hf_repo=MLX_MODEL, language=jezik)
+                seg = r.get("segments") or []
+                return {"text": str(r.get("text", "")).strip(), "language": r.get("language") or jezik,
+                        "seconds": round(float(seg[-1]["end"]) if seg else 0.0, 2)}
             segs, info = _model.transcribe(p, language=jezik, beam_size=5)
             txt = "".join(s.text for s in segs).strip()
         return {"text": txt, "language": info.language, "language_probability": round(info.language_probability,3), "seconds": round(info.duration,2)}
@@ -161,7 +196,7 @@ class H(BaseHTTPRequestHandler):
     def do_GET(self):
         if not lokalni_zahtjev(self.headers): return self._send(403, {"error": "samo lokalni pozivatelj"})
         if urlparse(self.path).path == "/health":
-            self._send(200, {"ok": True, "tts_backend": TTS_BACKEND, "voice": PIPER_VOICE or ESPEAK_VOICE, "stt_model": WHISPER_MODEL, "hr_accent": _PIPER is not None, "voices": sorted(available_voices())})
+            self._send(200, {"ok": True, "tts_backend": TTS_BACKEND, "voice": PIPER_VOICE or ESPEAK_VOICE, "stt_model": STT_MODEL, "stt_backend": STT_BACKEND, "hr_accent": _PIPER is not None, "voices": sorted(available_voices())})
         else: self._send(404, {"error": "not found"})
     def do_POST(self):
         if not lokalni_zahtjev(self.headers): return self._send(403, {"error": "samo lokalni pozivatelj"})

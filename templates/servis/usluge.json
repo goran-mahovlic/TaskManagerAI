@@ -32,6 +32,7 @@
       "opis": "Glas čvora — STT (faster-whisper) + TTS (piper) na 127.0.0.1:8899, lokalno (TASK-5795)",
       "uvjet": "glas",
       "vrsta": "stalna",
+      "interaktivna": true,
       "cwd": "{{PAKET}}",
       "argv": ["{{PAKET}}/scripts/s-okolinom.sh", "--", "{{GLAS_VENV}}/bin/python", "{{PAKET}}/tools/glas/regoc-voice-server.py"]
     },

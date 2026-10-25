@@ -29,6 +29,8 @@ export type Vrsta = 'stalna' | 'nakon-pada' | 'periodicna' | 'rucna'
 export interface OpisUsluge {
   ime: string; opis: string; uvjet: string; vrsta: Vrsta; cwd: string; argv: string[]
   poslije?: string; intervalSek?: number
+  /** Čovjek čeka odgovor (glas): bez pozadinskog prioriteta — macOS ga inače drži na E-jezgrama (TASK-5795). */
+  interaktivna?: boolean
 }
 export interface Datoteka { put: string; sadrzaj: string }
 
@@ -99,7 +101,7 @@ export function systemdJedinice(u: OpisUsluge, v: Record<string, string>): Datot
   for (const [k, val] of Object.entries(env)) s.push(`Environment=${citiraj(`${k}=${val}`)}`)
   if (u.vrsta === 'stalna') s.push('Restart=always', 'RestartSec=5')
   if (u.vrsta === 'nakon-pada') s.push('Restart=on-failure', 'RestartSec=5')
-  s.push('Nice=10')
+  if (!u.interaktivna) s.push('Nice=10')
   if (u.vrsta === 'stalna' || u.vrsta === 'nakon-pada') s.push('', '[Install]', 'WantedBy=default.target')
   const van: Datoteka[] = [{ put: join(dir, `${ime}.service`), sadrzaj: s.join('\n') + '\n' }]
   if (u.vrsta === 'periodicna') {
@@ -125,8 +127,8 @@ export function launchdDatoteka(u: OpisUsluge, v: Record<string, string>): Datot
       rucno: u.vrsta === 'rucna',
       intervalSek: u.vrsta === 'periodicna' ? (u.intervalSek ?? 1800) : undefined,
       razmakSek: 5,
-      pozadina: true,
-      nice: 10,
+      pozadina: !u.interaktivna,
+      nice: u.interaktivna ? undefined : 10,
       log: join(v.TM_HOME, 'log', `${u.ime}.log`),
     }),
   }
